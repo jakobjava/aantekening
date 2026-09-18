@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.4
+          cache: true
+
+      - name: Install the Linux desktop toolchain
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - run: flutter pub get
+
+      - run: dart analyze
+
+      - name: Test
+        shell: bash
+        run: |
+          set -e
+          (cd packages/aantekening_core && dart test)
+          (cd packages/aantekening_store && dart test)
+          (cd packages/aantekening_ai && dart test)
+          (cd packages/aantekening_math && flutter test)
+          (cd packages/aantekening_canvas && flutter test)
+          (cd app/aantekening && flutter test)
+
+      - name: Build for Windows
+        if: runner.os == 'Windows'
+        working-directory: app/aantekening
+        run: flutter build windows --release
+
+      - name: Build for Linux
+        if: runner.os == 'Linux'
+        working-directory: app/aantekening
+        run: flutter build linux --release
+
+      # The Windows build, ready to run: unzip it anywhere and start
+      # aantekening.exe.
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: aantekening-windows
+          path: app/aantekening/build/windows/x64/runner/Release

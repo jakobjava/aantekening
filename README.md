@@ -108,7 +108,9 @@ flutter run -d windows                  # add --release for full speed
 
 `flutter build windows --release` makes a copy to keep: the folder
 `build\windows\x64\runner\Release` holds `aantekening.exe` and what it
-needs, and can be moved anywhere.
+needs, and can be moved anywhere. Every push to `master` also builds one on
+GitHub: open the latest run under the repository's **Actions** tab and
+download **aantekening-windows**.
 
 Notes are kept in `%APPDATA%\dev.aantekening\aantekening\workspace`;
 `$env:AANTEKENING_HOME = 'D:\Notes'` before starting the app puts them
