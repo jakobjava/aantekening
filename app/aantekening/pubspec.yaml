@@ -1,0 +1,29 @@
+name: aantekening
+description: The aantekening note-taking application.
+publish_to: none
+version: 0.1.0+1
+
+resolution: workspace
+
+environment:
+  sdk: ^3.13.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  aantekening_core: ^0.1.0
+  aantekening_store: ^0.1.0
+  aantekening_canvas: ^0.1.0
+  aantekening_math: ^0.1.0
+  aantekening_ai: ^0.1.0
+  flutter_riverpod: ^3.4.3
+  path_provider: ^2.1.6
+  sqlite3_flutter_libs: ^0.6.0+eol
+  path: ^1.9.1
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

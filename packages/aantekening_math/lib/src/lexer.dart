@@ -1,0 +1,242 @@
+/// Turns linear math input into a token stream.
+library;
+
+import 'symbols.dart';
+
+/// The kind of a lexed token.
+enum TokenType {
+  number,
+  variable,
+  symbol,
+  operator,
+  slash,
+  caret,
+  underscore,
+  comma,
+  leftParen,
+  rightParen,
+  leftBracket,
+  rightBracket,
+  leftBrace,
+  rightBrace,
+  bar,
+  text,
+  end,
+}
+
+/// One token, with the offset it started at so diagnostics can point into the
+/// user's own input.
+class Token {
+  const Token({
+    required this.type,
+    required this.lexeme,
+    required this.offset,
+    this.latex = '',
+    this.symbol,
+  });
+
+  final TokenType type;
+  final String lexeme;
+  final int offset;
+
+  /// The LaTeX this token stands for, for operators and known symbols.
+  final String latex;
+
+  /// The table entry behind a [TokenType.symbol], which tells the parser
+  /// whether it takes arguments.
+  final MathSymbol? symbol;
+
+  @override
+  String toString() => '${type.name}("$lexeme")@$offset';
+}
+
+/// A problem found while reading or parsing an expression.
+class MathDiagnostic {
+  const MathDiagnostic(this.offset, this.message);
+
+  /// Character offset into the source the user typed.
+  final int offset;
+
+  final String message;
+
+  @override
+  String toString() => '$message (at $offset)';
+}
+
+/// Scans linear math input.
+///
+/// Words are matched greedily against the symbol table, longest first, so
+/// `alpha` reads as one Greek letter while an unrecognised run like `xy` reads
+/// as the separate variables mathematicians mean by it.
+class MathLexer {
+  MathLexer(this.source);
+
+  final String source;
+
+  final List<MathDiagnostic> diagnostics = <MathDiagnostic>[];
+  int _offset = 0;
+
+  /// Scans the whole input, always ending with a [TokenType.end] token.
+  List<Token> tokenize() {
+    final tokens = <Token>[];
+    while (true) {
+      final token = _next();
+      tokens.add(token);
+      if (token.type == TokenType.end) return tokens;
+    }
+  }
+
+  Token _next() {
+    // Loops rather than recurses so that a run of unrecognised characters
+    // costs nothing on the stack.
+    while (true) {
+      _skipWhitespace();
+      if (_offset >= source.length) {
+        return Token(type: TokenType.end, lexeme: '', offset: _offset);
+      }
+
+      final start = _offset;
+      final char = source[start];
+
+      if (_isDigit(char) || (char == '.' && _isDigit(_peek(1)))) {
+        return _number();
+      }
+      if (char == '"') return _text();
+      if (_isLetter(char)) return _word();
+
+      final structural = _structural(char, start);
+      if (structural != null) {
+        _offset++;
+        return structural;
+      }
+
+      final operator = _operator(start);
+      if (operator != null) return operator;
+
+      // Skipping keeps the rest of the expression parseable, so one stray
+      // keystroke does not blank the preview.
+      _offset++;
+      diagnostics.add(MathDiagnostic(start, 'Unexpected character "$char"'));
+    }
+  }
+
+  void _skipWhitespace() {
+    while (_offset < source.length && _isWhitespace(source[_offset])) {
+      _offset++;
+    }
+  }
+
+  Token _number() {
+    final start = _offset;
+    while (_offset < source.length && _isDigit(source[_offset])) {
+      _offset++;
+    }
+    if (_offset < source.length &&
+        source[_offset] == '.' &&
+        _isDigit(_peek(1))) {
+      _offset++;
+      while (_offset < source.length && _isDigit(source[_offset])) {
+        _offset++;
+      }
+    }
+    return Token(
+      type: TokenType.number,
+      lexeme: source.substring(start, _offset),
+      offset: start,
+    );
+  }
+
+  Token _text() {
+    final start = _offset;
+    _offset++; // opening quote
+    final buffer = StringBuffer();
+    while (_offset < source.length && source[_offset] != '"') {
+      buffer.write(source[_offset]);
+      _offset++;
+    }
+    if (_offset >= source.length) {
+      diagnostics.add(MathDiagnostic(start, 'Unclosed quoted text'));
+    } else {
+      _offset++; // closing quote
+    }
+    return Token(
+      type: TokenType.text,
+      lexeme: buffer.toString(),
+      offset: start,
+    );
+  }
+
+  Token _word() {
+    final start = _offset;
+    for (final word in knownWordsByLength) {
+      if (source.startsWith(word, start)) {
+        _offset = start + word.length;
+        return Token(
+          type: TokenType.symbol,
+          lexeme: word,
+          offset: start,
+          latex: mathSymbols[word]!.latex,
+          symbol: mathSymbols[word],
+        );
+      }
+    }
+    _offset = start + 1;
+    return Token(
+      type: TokenType.variable,
+      lexeme: source[start],
+      offset: start,
+    );
+  }
+
+  Token? _structural(String char, int offset) => switch (char) {
+    '(' => Token(type: TokenType.leftParen, lexeme: char, offset: offset),
+    ')' => Token(type: TokenType.rightParen, lexeme: char, offset: offset),
+    '[' => Token(type: TokenType.leftBracket, lexeme: char, offset: offset),
+    ']' => Token(type: TokenType.rightBracket, lexeme: char, offset: offset),
+    '{' => Token(type: TokenType.leftBrace, lexeme: char, offset: offset),
+    '}' => Token(type: TokenType.rightBrace, lexeme: char, offset: offset),
+    '|' => Token(type: TokenType.bar, lexeme: char, offset: offset),
+    '^' => Token(type: TokenType.caret, lexeme: char, offset: offset),
+    '_' => Token(type: TokenType.underscore, lexeme: char, offset: offset),
+    ',' => Token(type: TokenType.comma, lexeme: char, offset: offset),
+    '/' => Token(type: TokenType.slash, lexeme: char, offset: offset),
+    _ => null,
+  };
+
+  /// Matches the longest punctuation operator at [start], so `<=` wins over `<`.
+  Token? _operator(int start) {
+    for (final sequence in _operatorsByLength) {
+      if (source.startsWith(sequence, start)) {
+        _offset = start + sequence.length;
+        return Token(
+          type: TokenType.operator,
+          lexeme: sequence,
+          offset: start,
+          latex: operatorSequences[sequence]!,
+        );
+      }
+    }
+    return null;
+  }
+
+  static final List<String> _operatorsByLength = operatorSequences.keys.toList()
+    ..sort((a, b) => b.length.compareTo(a.length));
+
+  String _peek(int ahead) {
+    final index = _offset + ahead;
+    return index < source.length ? source[index] : '';
+  }
+
+  static bool _isDigit(String char) =>
+      char.isNotEmpty &&
+      char.codeUnitAt(0) >= 0x30 &&
+      char.codeUnitAt(0) <= 0x39;
+
+  static bool _isWhitespace(String char) => char.trim().isEmpty;
+
+  static bool _isLetter(String char) {
+    if (char.isEmpty) return false;
+    final code = char.codeUnitAt(0);
+    return (code >= 0x41 && code <= 0x5A) || (code >= 0x61 && code <= 0x7A);
+  }
+}

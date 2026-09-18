@@ -1,0 +1,69 @@
+/// The public entry point for translating linear math input into LaTeX.
+library;
+
+import 'package:aantekening_core/aantekening_core.dart';
+
+import 'ast.dart';
+import 'lexer.dart';
+import 'parser.dart';
+
+/// The result of translating a linear expression.
+class MathTranslation {
+  const MathTranslation({
+    required this.latex,
+    required this.tree,
+    this.diagnostics = const <MathDiagnostic>[],
+  });
+
+  /// The LaTeX to render. Always present, even when [diagnostics] is not empty,
+  /// so a partially typed formula still previews.
+  final String latex;
+
+  /// The parsed expression, for callers that want to inspect or transform it.
+  final MathNode tree;
+
+  /// Problems found in the input, each pointing at an offset the editor can
+  /// underline.
+  final List<MathDiagnostic> diagnostics;
+
+  bool get isComplete => diagnostics.isEmpty;
+}
+
+/// Translates OneNote-style linear input into LaTeX.
+///
+/// The simple mode exists because most notes are taken under time pressure:
+/// `1/2` and `sqrt(x)` are faster to type than `\frac{1}{2}` and `\sqrt{x}`,
+/// and they read back as mathematics rather than as markup. LaTeX mode remains
+/// available for expressions the linear grammar does not cover, and the two are
+/// never silently converted into one another — see [MathMode].
+abstract final class LinearMath {
+  /// Translates [input], never throwing.
+  static MathTranslation translate(String input) {
+    final lexer = MathLexer(input);
+    final tokens = lexer.tokenize();
+    final diagnostics = List<MathDiagnostic>.of(lexer.diagnostics);
+    final tree = MathParser(tokens, diagnostics).parse();
+    return MathTranslation(
+      latex: tree.toLatex(),
+      tree: tree,
+      diagnostics: diagnostics,
+    );
+  }
+
+  /// Translates [input] and returns only its LaTeX.
+  static String toLatex(String input) => translate(input).latex;
+
+  /// Resolves the LaTeX for a formula authored in either mode.
+  ///
+  /// LaTeX sources pass through untouched; linear sources are translated. The
+  /// stored source is never rewritten, so switching a formula's mode back and
+  /// forth cannot degrade what the user originally typed.
+  static String latexFor(MathMode mode, String source) => switch (mode) {
+    MathMode.latex => source,
+    MathMode.linear => toLatex(source),
+  };
+
+  /// Resolves the LaTeX for [element].
+  static String latexForElement(MathElement element) =>
+      latexFor(element.mode, element.source);
+}
