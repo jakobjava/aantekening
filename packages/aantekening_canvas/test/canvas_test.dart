@@ -154,15 +154,43 @@ void main() {
 
     test('starts a new element after the pen changes', () {
       final controller = CanvasController()
+        ..setTool(CanvasTool.pen)
         ..beginStroke(Offset.zero)
         ..extendStroke(const Offset(10, 10))
         ..endStroke()
-        ..setPen(PenSettings.yellowHighlighter)
-        ..beginStroke(const Offset(100, 0))
-        ..extendStroke(const Offset(110, 10))
+        ..setPen(PenSettings.defaultPen.copyWith(color: 0xFFDC2626))
+        ..beginStroke(const Offset(12, 0))
+        ..extendStroke(const Offset(20, 10))
         ..endStroke();
 
       expect(controller.document.elements, hasLength(2));
+    });
+
+    test('writing somewhere else on the page starts a new element', () {
+      final controller = CanvasController()
+        ..setTool(CanvasTool.pen)
+        ..beginStroke(Offset.zero)
+        ..extendStroke(const Offset(10, 10))
+        ..endStroke()
+        ..beginStroke(const Offset(400, 400))
+        ..extendStroke(const Offset(410, 410))
+        ..endStroke();
+
+      expect(controller.document.elements, hasLength(2));
+    });
+
+    test('the highlighter keeps its own settings and translucency', () {
+      final controller = CanvasController()
+        ..setTool(CanvasTool.highlighter)
+        ..beginStroke(Offset.zero)
+        ..extendStroke(const Offset(40, 0))
+        ..endStroke();
+
+      final stroke =
+          (controller.document.elements.single as InkElement).strokes.single;
+      expect(stroke.tool, InkTool.highlighter);
+      expect(stroke.color >>> 24, PenSettings.highlighterAlpha);
+      expect(controller.penSettings, PenSettings.defaultPen);
     });
 
     test('keeps a tap as a dot', () {

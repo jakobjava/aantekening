@@ -21,6 +21,18 @@ enum TokenType {
   rightBrace,
   bar,
   text,
+
+  /// `;`, which separates the rows of a matrix.
+  semicolon,
+
+  /// `'`, a prime: `f'(x)`.
+  prime,
+
+  /// A LaTeX command typed as it is, such as `\mathcal`.
+  command,
+
+  /// LaTeX quoted in backticks, passed through untouched.
+  raw,
   end,
 }
 
@@ -102,7 +114,10 @@ class MathLexer {
         return _number();
       }
       if (char == '"') return _text();
+      if (char == '`') return _raw();
+      if (char == r'\') return _command();
       if (_isLetter(char)) return _word();
+      if (char.codeUnitAt(0) > 0x7F) return _unicode();
 
       final structural = _structural(char, start);
       if (structural != null) {
@@ -166,6 +181,78 @@ class MathLexer {
     );
   }
 
+  /// LaTeX between backticks, for anything the linear syntax cannot say.
+  Token _raw() {
+    final start = _offset;
+    _offset++; // opening backtick
+    final end = source.indexOf('`', _offset);
+    final String latex;
+    if (end < 0) {
+      diagnostics.add(MathDiagnostic(start, 'Unclosed "`"'));
+      latex = source.substring(_offset);
+      _offset = source.length;
+    } else {
+      latex = source.substring(_offset, end);
+      _offset = end + 1;
+    }
+    return Token(
+      type: TokenType.raw,
+      lexeme: latex,
+      offset: start,
+      latex: latex,
+    );
+  }
+
+  /// A LaTeX command: a backslash and a word, or a backslash and one other
+  /// character (`\,`, `\{`).
+  Token _command() {
+    final start = _offset;
+    _offset++;
+    if (_offset >= source.length) {
+      diagnostics.add(MathDiagnostic(start, 'A command needs a name'));
+      return Token(type: TokenType.raw, lexeme: '', offset: start);
+    }
+    if (_isLetter(source[_offset])) {
+      while (_offset < source.length && _isLetter(source[_offset])) {
+        _offset++;
+      }
+    } else {
+      _offset++;
+    }
+    final command = source.substring(start, _offset);
+    // A command with a word of its own behaves as that word does: `\sqrt`
+    // takes an argument as `sqrt` does.
+    final word = mathSymbols[command.substring(1)];
+    if (word != null && word.latex == command) {
+      return Token(
+        type: TokenType.symbol,
+        lexeme: command,
+        offset: start,
+        latex: command,
+        symbol: word,
+      );
+    }
+    return Token(
+      type: TokenType.command,
+      lexeme: command,
+      offset: start,
+      latex: command,
+    );
+  }
+
+  /// A letter or symbol beyond ASCII, such as a typed π, taken as it is.
+  Token _unicode() {
+    final start = _offset;
+    final code = source.codeUnitAt(start);
+    final isHighSurrogate = code >= 0xD800 && code <= 0xDBFF;
+    _offset += isHighSurrogate && start + 1 < source.length ? 2 : 1;
+    return Token(
+      type: TokenType.variable,
+      lexeme: source.substring(start, _offset),
+      offset: start,
+    );
+  }
+
   Token _word() {
     final start = _offset;
     for (final word in knownWordsByLength) {
@@ -199,6 +286,8 @@ class MathLexer {
     '^' => Token(type: TokenType.caret, lexeme: char, offset: offset),
     '_' => Token(type: TokenType.underscore, lexeme: char, offset: offset),
     ',' => Token(type: TokenType.comma, lexeme: char, offset: offset),
+    ';' => Token(type: TokenType.semicolon, lexeme: char, offset: offset),
+    "'" => Token(type: TokenType.prime, lexeme: char, offset: offset),
     '/' => Token(type: TokenType.slash, lexeme: char, offset: offset),
     _ => null,
   };

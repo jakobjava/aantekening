@@ -1,6 +1,8 @@
 /// Turning sampled ink into paintable geometry.
 library;
 
+import 'dart:math' as math;
+
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/rendering.dart';
 
@@ -77,5 +79,87 @@ abstract final class StrokeGeometry {
     final scale =
         minPressureScale + (maxPressureScale - minPressureScale) * pressure;
     return stroke.width * scale;
+  }
+
+  /// How thick a chisel nib is, relative to its height.
+  static const double chiselThicknessRatio = 0.16;
+
+  /// The area a chisel nib sweeps along a stroke: a thin upright line, the
+  /// way a highlighter marker's flat tip is held.
+  ///
+  /// A horizontal stroke is as tall as the nib and a vertical one as thin as
+  /// its edge. Each step between samples adds the convex hull of the nib at
+  /// both ends, all wound the same way, so the filled path is their union and
+  /// a stroke never darkens where it crosses itself.
+  static Path chiselPath(InkStroke stroke) {
+    final path = Path()..fillType = PathFillType.nonZero;
+    final count = stroke.pointCount;
+    if (count == 0) return path;
+
+    final halfHeight = stroke.width / 2;
+    final halfThickness = math.max(
+      0.75,
+      stroke.width * chiselThicknessRatio / 2,
+    );
+
+    if (count == 1) {
+      path.addRect(
+        Rect.fromCenter(
+          center: Offset(stroke.xAt(0), stroke.yAt(0)),
+          width: halfThickness * 2,
+          height: halfHeight * 2,
+        ),
+      );
+      return path;
+    }
+
+    final corners = List<Offset>.filled(8, Offset.zero);
+    for (var i = 0; i < count - 1; i++) {
+      final x0 = stroke.xAt(i);
+      final y0 = stroke.yAt(i);
+      final x1 = stroke.xAt(i + 1);
+      final y1 = stroke.yAt(i + 1);
+      corners[0] = Offset(x0 - halfThickness, y0 - halfHeight);
+      corners[1] = Offset(x0 + halfThickness, y0 - halfHeight);
+      corners[2] = Offset(x0 + halfThickness, y0 + halfHeight);
+      corners[3] = Offset(x0 - halfThickness, y0 + halfHeight);
+      corners[4] = Offset(x1 - halfThickness, y1 - halfHeight);
+      corners[5] = Offset(x1 + halfThickness, y1 - halfHeight);
+      corners[6] = Offset(x1 + halfThickness, y1 + halfHeight);
+      corners[7] = Offset(x1 - halfThickness, y1 + halfHeight);
+      path.addPolygon(_convexHull(corners), true);
+    }
+    return path;
+  }
+
+  /// The convex hull of [points], counter-clockwise (Andrew's monotone chain).
+  static List<Offset> _convexHull(List<Offset> points) {
+    final sorted = List<Offset>.of(points)
+      ..sort(
+        (a, b) => a.dx != b.dx ? a.dx.compareTo(b.dx) : a.dy.compareTo(b.dy),
+      );
+    double cross(Offset o, Offset a, Offset b) =>
+        (a.dx - o.dx) * (b.dy - o.dy) - (a.dy - o.dy) * (b.dx - o.dx);
+
+    final lower = <Offset>[];
+    for (final point in sorted) {
+      while (lower.length >= 2 &&
+          cross(lower[lower.length - 2], lower.last, point) <= 0) {
+        lower.removeLast();
+      }
+      lower.add(point);
+    }
+    final upper = <Offset>[];
+    for (final point in sorted.reversed) {
+      while (upper.length >= 2 &&
+          cross(upper[upper.length - 2], upper.last, point) <= 0) {
+        upper.removeLast();
+      }
+      upper.add(point);
+    }
+    return <Offset>[
+      ...lower.sublist(0, lower.length - 1),
+      ...upper.sublist(0, upper.length - 1),
+    ];
   }
 }

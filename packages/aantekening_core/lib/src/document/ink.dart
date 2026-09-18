@@ -150,6 +150,34 @@ class InkStroke {
     );
   }
 
+  /// Returns a copy with [transform] applied to every sample. The width
+  /// scales with the transform's mean scale.
+  InkStroke transformed(Affine2D transform) {
+    final moved = Float32List.fromList(points);
+    for (var i = 0; i < moved.length; i += stride) {
+      final point = transform.apply(moved[i], moved[i + 1]);
+      moved[i] = point.x;
+      moved[i + 1] = point.y;
+    }
+    return InkStroke(
+      tool: tool,
+      color: color,
+      width: width * transform.meanScale,
+      points: moved,
+    );
+  }
+
+  /// The share of this stroke's samples that fall inside [region].
+  double fractionInside(Aabb region) {
+    final count = pointCount;
+    if (count == 0) return 0;
+    var inside = 0;
+    for (var i = 0; i < count; i++) {
+      if (region.containsPoint(xAt(i), yAt(i))) inside++;
+    }
+    return inside / count;
+  }
+
   /// Whether the drawn line passes within [radius] of ([x], [y]).
   ///
   /// Used by the stroke eraser, which deletes whole strokes rather than

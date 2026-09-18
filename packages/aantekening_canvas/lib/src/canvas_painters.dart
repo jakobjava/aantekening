@@ -2,12 +2,15 @@
 library;
 
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 
 import 'canvas_viewport.dart';
+import 'selection_handles.dart';
 import 'stroke_geometry.dart';
+import 'tools.dart';
 
 /// Draws the paper and its ruling.
 ///
@@ -137,6 +140,10 @@ class BackgroundPainter extends CustomPainter {
 /// under them, pen over them. That reproduces what the tools mean physically —
 /// a highlighter goes beneath writing, a pen on top — while keeping the text
 /// and formula elements as real widgets that can be edited and selected.
+///
+/// Each ink element is recorded once into a picture in page space and replayed
+/// under the viewport transform. Panning and zooming then cost one picture per
+/// element rather than rebuilding every stroke's path on every frame.
 class InkPainter extends CustomPainter {
   InkPainter({
     required this.elements,
@@ -149,6 +156,9 @@ class InkPainter extends CustomPainter {
   final CanvasViewport viewport;
   final InkLayer layer;
 
+  static final Expando<ui.Picture> _beneath = Expando<ui.Picture>('beneath');
+  static final Expando<ui.Picture> _above = Expando<ui.Picture>('above');
+
   @override
   void paint(Canvas canvas, Size size) {
     if (elements.isEmpty) return;
@@ -157,20 +167,47 @@ class InkPainter extends CustomPainter {
     canvas
       ..save()
       ..transform(viewport.toMatrix().storage);
-
     for (final element in elements) {
       if (!element.bounds.intersects(visible)) continue;
-      for (final stroke in element.strokes) {
-        if (layer.accepts(stroke.tool) && stroke.bounds.intersects(visible)) {
-          paintStroke(canvas, stroke);
-        }
-      }
+      final picture = _pictureOf(element);
+      if (picture != null) canvas.drawPicture(picture);
     }
     canvas.restore();
   }
 
+  /// The element's strokes on this layer, recorded once. Elements are
+  /// immutable, so an edited element is a new object with a new picture.
+  ui.Picture? _pictureOf(InkElement element) {
+    final cache = layer == InkLayer.beneath ? _beneath : _above;
+    final cached = cache[element];
+    if (cached != null) return cached;
+    if (!element.strokes.any((stroke) => layer.accepts(stroke.tool))) {
+      return null;
+    }
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    for (final stroke in element.strokes) {
+      if (layer.accepts(stroke.tool)) paintStroke(canvas, stroke);
+    }
+    return cache[element] = recorder.endRecording();
+  }
+
   /// Paints one stroke in page space.
   static void paintStroke(Canvas canvas, InkStroke stroke) {
+    if (stroke.tool == InkTool.highlighter) {
+      canvas.drawPath(
+        StrokeGeometry.chiselPath(stroke),
+        Paint()
+          ..color = Color(stroke.color)
+          ..style = PaintingStyle.fill
+          ..isAntiAlias = true
+          // Multiply keeps a highlighter from covering what it marks, and lets
+          // overlapping strokes deepen the way a real marker does.
+          ..blendMode = BlendMode.multiply,
+      );
+      return;
+    }
+
     final paint = Paint()
       ..color = Color(stroke.color)
       ..style = PaintingStyle.stroke
@@ -178,14 +215,7 @@ class InkPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true;
 
-    if (stroke.tool == InkTool.highlighter) {
-      // Multiply keeps overlapping highlighter strokes from stacking into an
-      // opaque block, the way a real marker behaves.
-      paint.blendMode = BlendMode.multiply;
-    }
-
     final pressureVaries =
-        stroke.tool != InkTool.highlighter &&
         stroke.tool != InkTool.marker &&
         StrokeGeometry.hasPressureVariation(stroke);
 
@@ -249,17 +279,17 @@ class WetInkPainter extends CustomPainter {
   final List<double> points;
 
   /// The instrument the stroke is being drawn with.
-  final ({InkTool tool, int color, double width}) pen;
+  final PenSettings pen;
 
   final CanvasViewport viewport;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (points.length < InkStroke.stride * 2) return;
+    if (points.length < InkStroke.stride) return;
 
     final stroke = InkStroke(
       tool: pen.tool,
-      color: pen.color,
+      color: pen.strokeColor,
       width: pen.width,
       points: Float32List.fromList(points),
     );
@@ -278,13 +308,20 @@ class WetInkPainter extends CustomPainter {
       old.pen != pen;
 }
 
-/// Draws selection outlines and the handles around them.
+/// Draws the selection box, its handles and the marquee.
+///
+/// Every selected object gets a thin outline of its own; the box that can be
+/// dragged, resized and turned goes round the whole selection. Only the handles
+/// the selection actually supports are drawn — a text box offers its left
+/// and right sides, a picture its corners and all four sides — because a
+/// handle that does nothing is worse than none.
 class SelectionPainter extends CustomPainter {
   const SelectionPainter({
     required this.selected,
     required this.viewport,
     required this.accent,
     this.marquee,
+    this.showHandles = true,
   });
 
   final List<NoteElement> selected;
@@ -294,76 +331,118 @@ class SelectionPainter extends CustomPainter {
   /// The rubber-band rectangle being dragged, in page space.
   final Aabb? marquee;
 
-  /// Size of a resize handle in screen pixels.
-  static const double handleSize = 8;
+  /// Whether to draw the box and its handles, or only the outlines.
+  final bool showHandles;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final thin = Paint()
+      ..color = accent.withValues(alpha: 0.55)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
     final outline = Paint()
       ..color = accent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
 
-    for (final element in selected) {
-      canvas.drawRect(_toScreenRect(element.bounds).inflate(2), outline);
+    if (selected.length > 1) {
+      for (final element in selected) {
+        final frame = SelectionFrame.around(<NoteElement>[element]);
+        if (frame != null) {
+          canvas.drawPath(
+            _polygon(SelectionHandles.outlineOf(frame, viewport)),
+            thin,
+          );
+        }
+      }
     }
 
-    if (selected.isNotEmpty) {
-      _drawHandles(canvas, _unionOf(selected), outline.color);
+    final frame = SelectionFrame.around(selected);
+    if (frame != null) {
+      canvas.drawPath(
+        _polygon(SelectionHandles.outlineOf(frame, viewport)),
+        outline,
+      );
+      if (showHandles) _drawHandles(canvas, frame);
     }
 
     final band = marquee;
     if (band != null) {
-      final rect = _toScreenRect(band);
+      final rect = Rect.fromPoints(
+        viewport.toScreen(Offset(band.left, band.top)),
+        viewport.toScreen(Offset(band.right, band.bottom)),
+      );
       canvas
         ..drawRect(rect, Paint()..color = accent.withValues(alpha: 0.12))
         ..drawRect(rect, outline);
     }
   }
 
-  void _drawHandles(Canvas canvas, Aabb bounds, Color color) {
-    final rect = _toScreenRect(bounds).inflate(2);
-    final fill = Paint()..color = color;
+  void _drawHandles(Canvas canvas, SelectionFrame frame) {
+    final fill = Paint()..color = accent;
     final ring = Paint()
       ..color = const Color(0xFFFFFFFF)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
+    final positions = SelectionHandles.positionsFor(selected, viewport);
 
-    for (final corner in <Offset>[
-      rect.topLeft,
-      rect.topRight,
-      rect.bottomLeft,
-      rect.bottomRight,
-    ]) {
-      final handle = Rect.fromCenter(
-        center: corner,
-        width: handleSize,
-        height: handleSize,
+    final knob = positions[SelectionHandle.rotate];
+    if (knob != null) {
+      final outline = SelectionHandles.outlineOf(frame, viewport);
+      canvas
+        ..drawLine(
+          (outline[0] + outline[1]) / 2,
+          knob,
+          Paint()
+            ..color = accent
+            ..strokeWidth = 1.2,
+        )
+        ..drawCircle(knob, SelectionHandles.size * 0.7, fill)
+        ..drawCircle(knob, SelectionHandles.size * 0.7, ring);
+    }
+
+    for (final entry in positions.entries) {
+      if (entry.key == SelectionHandle.rotate) continue;
+      final isSide = entry.key.isSide;
+      final upright =
+          entry.key == SelectionHandle.left ||
+          entry.key == SelectionHandle.right;
+      // Handles turn with the box, so a side's pill always lies along it.
+      canvas
+        ..save()
+        ..translate(entry.value.dx, entry.value.dy)
+        ..rotate(frame.rotation);
+      const size = SelectionHandles.size;
+      final handle = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset.zero,
+          width: isSide && !upright ? size * 2.5 : size,
+          height: upright ? size * 2.5 : size,
+        ),
+        Radius.circular(isSide ? size / 2 : 1.5),
       );
       canvas
-        ..drawRect(handle, fill)
-        ..drawRect(handle, ring);
+        ..drawRRect(handle, fill)
+        ..drawRRect(handle, ring)
+        ..restore();
     }
   }
 
-  Rect _toScreenRect(Aabb bounds) {
-    final topLeft = viewport.toScreen(Offset(bounds.left, bounds.top));
-    final bottomRight = viewport.toScreen(Offset(bounds.right, bounds.bottom));
-    return Rect.fromPoints(topLeft, bottomRight);
-  }
-
-  static Aabb _unionOf(List<NoteElement> elements) {
-    var bounds = elements.first.bounds;
-    for (var i = 1; i < elements.length; i++) {
-      bounds = bounds.union(elements[i].bounds);
-    }
-    return bounds;
-  }
+  static Path _polygon(List<Offset> points) => Path()..addPolygon(points, true);
 
   @override
   bool shouldRepaint(SelectionPainter old) =>
       old.viewport != viewport ||
       old.marquee != marquee ||
       old.accent != accent ||
-      !identical(old.selected, selected);
+      old.showHandles != showHandles ||
+      !_sameElements(old.selected, selected);
+
+  static bool _sameElements(List<NoteElement> a, List<NoteElement> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!identical(a[i], b[i])) return false;
+    }
+    return true;
+  }
 }

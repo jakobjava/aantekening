@@ -31,8 +31,16 @@ class CanvasController extends ChangeNotifier {
 
   PageDocument _document;
   CanvasViewport _viewport = const CanvasViewport();
-  CanvasTool _tool = CanvasTool.draw;
-  PenSettings _pen = PenSettings.blackPen;
+
+  /// The size of the view the canvas was last laid out in.
+  ///
+  /// Set by the canvas during layout, which is why assigning it does not
+  /// notify: it describes the window, not the page, and nothing needs to
+  /// rebuild because it changed.
+  Size viewSize = Size.zero;
+  CanvasTool _tool = CanvasTool.select;
+  PenSettings _pen = PenSettings.defaultPen;
+  PenSettings _highlighter = PenSettings.defaultHighlighter;
 
   final SpatialIndex _index = SpatialIndex();
   final Map<String, NoteElement> _byId = <String, NoteElement>{};
@@ -52,8 +60,21 @@ class CanvasController extends ChangeNotifier {
   /// save would pay for them.
   String? _activeInkElementId;
 
+  /// When the last stroke was committed; a pause longer than [inkJoinPause]
+  /// starts a new ink element.
+  DateTime _lastStrokeEnd = DateTime.fromMillisecondsSinceEpoch(0);
+
   bool _drawing = false;
   bool _dirty = false;
+
+  /// How close, in page units, a new stroke must be to the ink written just
+  /// before it to join the same element. Handwriting a paragraph stays one
+  /// element; writing somewhere else on the page starts another, which can
+  /// then be selected and moved on its own.
+  static const double inkJoinDistance = 48;
+
+  /// How long a pause between strokes still counts as the same writing.
+  static const Duration inkJoinPause = Duration(seconds: 8);
 
   // ------------------------------------------------------------------- state
 
@@ -63,7 +84,15 @@ class CanvasController extends ChangeNotifier {
 
   CanvasTool get tool => _tool;
 
-  PenSettings get pen => _pen;
+  /// The settings of whichever inking tool is active — the highlighter's
+  /// while it is selected, the pen's otherwise.
+  PenSettings get pen => _tool == CanvasTool.highlighter ? _highlighter : _pen;
+
+  /// The pen's settings, whether or not it is the active tool.
+  PenSettings get penSettings => _pen;
+
+  /// The highlighter's settings, whether or not it is the active tool.
+  PenSettings get highlighterSettings => _highlighter;
 
   /// Identifiers of the selected elements.
   Set<String> get selection => Set<String>.unmodifiable(_selection);
@@ -110,12 +139,21 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The page-space point at the centre of the view.
+  Offset get viewCenter =>
+      _viewport.toPage(Offset(viewSize.width / 2, viewSize.height / 2));
+
   /// Pans by a screen-space delta.
   void panBy(Offset delta) => viewport = _viewport.panBy(delta);
 
   /// Zooms by [factor] about a screen point.
   void zoomBy(double factor, Offset screenFocus) =>
       viewport = _viewport.zoomAround(_viewport.zoom * factor, screenFocus);
+
+  /// Zooms by [factor] about the centre of the view, for keyboard and toolbar
+  /// zooming where there is no pointer to anchor on.
+  void zoomAtCenter(double factor) =>
+      zoomBy(factor, Offset(viewSize.width / 2, viewSize.height / 2));
 
   /// Frames the whole page within a view of [size].
   void zoomToFit(Size size) {
@@ -143,9 +181,16 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Changes the pen's settings, or the highlighter's when [value] is a
+  /// highlighter.
   void setPen(PenSettings value) {
-    if (_pen == value) return;
-    _pen = value;
+    if (value.tool == InkTool.highlighter) {
+      if (_highlighter == value) return;
+      _highlighter = value;
+    } else {
+      if (_pen == value) return;
+      _pen = value;
+    }
     _activeInkElementId = null;
     notifyListeners();
   }
@@ -161,6 +206,11 @@ class CanvasController extends ChangeNotifier {
   }
 
   /// The topmost unlocked element at a page-space point.
+  ///
+  /// Turned elements are tested against their turned shape, and ink only near
+  /// its strokes: a page of handwriting has a large bounding box that is
+  /// mostly empty paper, and should not swallow clicks meant for what lies
+  /// beneath it.
   NoteElement? hitTest(Offset page) {
     final probe = Aabb(
       page.dx - hitSlop,
@@ -172,6 +222,10 @@ class CanvasController extends ChangeNotifier {
     for (final id in _index.query(probe)) {
       final element = _byId[id];
       if (element == null || element.locked) continue;
+      final hit = element is InkElement
+          ? element.hitsStroke(page.dx, page.dy, hitSlop + 2)
+          : element.frame.containsPoint(page.dx, page.dy, slop: hitSlop);
+      if (!hit) continue;
       if (best == null || element.z >= best.z) best = element;
     }
     return best;
@@ -188,10 +242,67 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Selects every element intersecting [region].
+  /// Selects everything the marquee [region] takes in.
+  ///
+  /// Objects are taken whole when the marquee touches them. Handwriting is
+  /// taken stroke by stroke: strokes mostly inside the marquee are split off
+  /// into an element of their own and selected, so one word can be picked out
+  /// of a page of notes, as with OneNote's lasso.
   void selectIn(Aabb region, {bool additive = false}) {
     if (!additive) _selection.clear();
-    _selection.addAll(_index.query(region));
+    var next = _document;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    for (final id in _index.query(region)) {
+      final element = _byId[id];
+      if (element == null || element.locked) continue;
+      if (element is! InkElement) {
+        _selection.add(id);
+        continue;
+      }
+      final inside = <InkStroke>[];
+      final outside = <InkStroke>[];
+      for (final stroke in element.strokes) {
+        final taken =
+            stroke.bounds.intersects(region) &&
+            stroke.fractionInside(region) >= 0.5;
+        (taken ? inside : outside).add(stroke);
+      }
+      if (inside.isEmpty) continue;
+      if (outside.isEmpty) {
+        _selection.add(id);
+        continue;
+      }
+      final split = InkElement(
+        id: Ulid.generate(),
+        frame: element.frame,
+        createdAt: element.createdAt,
+        updatedAt: now,
+      ).withStrokes(inside);
+      next = next
+          .withElementReplaced(element.withStrokes(outside, updatedAt: now))
+          .withElementAdded(split);
+      _selection.add(split.id);
+      if (_activeInkElementId == id) _activeInkElementId = null;
+    }
+
+    if (identical(next, _document)) {
+      notifyListeners();
+    } else {
+      // Splitting changes nothing that can be seen, so it is not an undo step
+      // of its own; it is kept with whatever the selection is used for next.
+      _apply(next, recordUndo: false);
+    }
+  }
+
+  /// Selects everything on the page.
+  void selectEverything() {
+    _selection
+      ..clear()
+      ..addAll(<String>[
+        for (final element in _document.elements)
+          if (!element.locked) element.id,
+      ]);
     notifyListeners();
   }
 
@@ -201,9 +312,10 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The selected elements.
+  /// The selected elements, in paint order.
   List<NoteElement> get selectedElements => <NoteElement>[
-    for (final id in _selection) ?_byId[id],
+    for (final element in _document.elements)
+      if (_selection.contains(element.id)) element,
   ];
 
   /// The bounding box of the selection, or null when nothing is selected.
@@ -220,13 +332,91 @@ class CanvasController extends ChangeNotifier {
   // ----------------------------------------------------------------- editing
 
   /// Adds [element] on top of the page.
-  void addElement(NoteElement element) {
-    _apply(_document.withElementAdded(element));
+  ///
+  /// With [markDirty] false the addition does not by itself cause a save —
+  /// right for a placeholder, such as the empty text box behind a caret, that
+  /// only becomes content once something is typed into it.
+  void addElement(
+    NoteElement element, {
+    bool recordUndo = true,
+    bool markDirty = true,
+  }) {
+    _apply(
+      _document.withElementAdded(element),
+      recordUndo: recordUndo,
+      markDirty: markDirty,
+    );
+  }
+
+  /// Adds several elements as one undoable step, in order, each on top of the
+  /// last — the pages of an imported PDF, say.
+  void addElements(List<NoteElement> elements) {
+    if (elements.isEmpty) return;
+    var next = _document;
+    for (final element in elements) {
+      next = next.withElementAdded(element);
+    }
+    _apply(next);
+  }
+
+  /// Replaces several elements at once, as one change — a group being moved,
+  /// resized or turned.
+  void replaceElements(
+    Iterable<NoteElement> elements, {
+    bool recordUndo = true,
+  }) {
+    final replacements = <String, NoteElement>{
+      for (final element in elements) element.id: element,
+    };
+    if (replacements.isEmpty) return;
+    var changed = false;
+    final updated = <NoteElement>[];
+    for (final element in _document.elements) {
+      final replacement = replacements[element.id];
+      if (replacement != null && !identical(replacement, element)) {
+        changed = true;
+        updated.add(replacement);
+      } else {
+        updated.add(element);
+      }
+    }
+    if (!changed) return;
+    _apply(
+      _document.copyWith(revision: _document.revision + 1, elements: updated),
+      recordUndo: recordUndo,
+    );
+  }
+
+  /// Removes the elements named in [ids].
+  void removeElements(Set<String> ids, {bool recordUndo = true}) {
+    _selection.removeAll(ids);
+    _apply(_document.withElementsRemoved(ids), recordUndo: recordUndo);
+  }
+
+  /// Replaces the selection with [ids].
+  void selectAll(Iterable<String> ids) {
+    _selection
+      ..clear()
+      ..addAll(ids.where(_byId.containsKey));
+    notifyListeners();
   }
 
   /// Replaces the element sharing [element]'s identifier.
-  void replaceElement(NoteElement element, {bool recordUndo = true}) {
-    _apply(_document.withElementReplaced(element), recordUndo: recordUndo);
+  ///
+  /// With [markDirty] false the change is not treated as an edit: it is kept,
+  /// and saved along with the next real edit, but does not on its own cause a
+  /// save. That is right for layout the view derives from the content, such
+  /// as a text box growing to fit text that has not changed.
+  void replaceElement(
+    NoteElement element, {
+    bool recordUndo = true,
+    bool markDirty = true,
+  }) {
+    _apply(
+      _document.withElementReplaced(element),
+      recordUndo: recordUndo,
+      markDirty: markDirty,
+    );
   }
 
   /// Deletes the selected elements.
@@ -302,39 +492,40 @@ class CanvasController extends ChangeNotifier {
       return null;
     }
 
+    final settings = pen;
     final stroke = InkStroke(
-      tool: _pen.tool,
-      color: _pen.color,
-      width: _pen.width,
+      tool: settings.tool,
+      color: settings.strokeColor,
+      width: settings.width,
       points: Float32List.fromList(_wetPoints),
     );
     _wetPoints.clear();
 
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final clock = DateTime.now();
+    final now = clock.millisecondsSinceEpoch;
     final active = _activeInkElementId;
     final existing = active == null ? null : _byId[active];
+    final joins =
+        existing is InkElement &&
+        clock.difference(_lastStrokeEnd) < inkJoinPause &&
+        existing.bounds.inflate(inkJoinDistance).intersects(stroke.bounds);
+    _lastStrokeEnd = clock;
 
-    if (existing is InkElement) {
-      final merged = existing.copyWith(
-        strokes: <InkStroke>[...existing.strokes, stroke],
-        updatedAt: now,
-      );
+    if (joins) {
+      final merged = existing.withStrokes(<InkStroke>[
+        ...existing.strokes,
+        stroke,
+      ], updatedAt: now);
       _apply(_document.withElementReplaced(merged));
       return merged;
     }
 
     final element = InkElement(
       id: Ulid.generate(),
-      frame: Frame(
-        x: stroke.bounds.left,
-        y: stroke.bounds.top,
-        width: stroke.bounds.width,
-        height: stroke.bounds.height,
-      ),
+      frame: const Frame(x: 0, y: 0, width: 0, height: 0),
       createdAt: now,
       updatedAt: now,
-      strokes: <InkStroke>[stroke],
-    );
+    ).withStrokes(<InkStroke>[stroke]);
     _activeInkElementId = element.id;
     _apply(_document.withElementAdded(element));
     return element;
@@ -378,7 +569,7 @@ class CanvasController extends ChangeNotifier {
       if (kept.isEmpty) {
         emptied.add(element.id);
       } else {
-        next = next.withElementReplaced(element.copyWith(strokes: kept));
+        next = next.withElementReplaced(element.withStrokes(kept));
       }
     }
 
@@ -421,10 +612,14 @@ class CanvasController extends ChangeNotifier {
   static const double _minSampleDistanceSquared = 0.5 * 0.5;
 
   double _pressure(double reported) =>
-      _pen.pressureSensitive ? reported.clamp(0.0, 1.0) : 1.0;
+      pen.pressureSensitive ? reported.clamp(0.0, 1.0) : 1.0;
 
   /// Commits [next] as the current document.
-  void _apply(PageDocument next, {bool recordUndo = true}) {
+  void _apply(
+    PageDocument next, {
+    bool recordUndo = true,
+    bool markDirty = true,
+  }) {
     if (identical(next, _document)) return;
 
     if (recordUndo) {
@@ -433,7 +628,7 @@ class CanvasController extends ChangeNotifier {
       _redoStack.clear();
     }
     _document = next;
-    _dirty = true;
+    if (markDirty) _dirty = true;
     _reindex();
     _selection.removeWhere((id) => !_byId.containsKey(id));
     notifyListeners();

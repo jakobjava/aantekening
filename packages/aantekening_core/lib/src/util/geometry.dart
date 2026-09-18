@@ -167,6 +167,83 @@ class Frame {
 
   Frame translate(double dx, double dy) => copyWith(x: x + dx, y: y + dy);
 
+  double get centerX => x + width / 2;
+  double get centerY => y + height / 2;
+
+  /// The four corners after rotation, clockwise from the top-left.
+  List<Vec2> get corners {
+    final toPage = localToPage;
+    return <Vec2>[
+      toPage.apply(0, 0),
+      toPage.apply(width, 0),
+      toPage.apply(width, height),
+      toPage.apply(0, height),
+    ];
+  }
+
+  /// Maps the frame's own coordinates — (0, 0) at its unrotated top-left
+  /// corner — to page coordinates.
+  Affine2D get localToPage =>
+      Affine2D.translation(centerX, centerY) *
+      Affine2D.rotation(rotation) *
+      Affine2D.translation(-width / 2, -height / 2);
+
+  /// Maps a page point to the frame's own coordinates, (0, 0) at its
+  /// unrotated top-left corner: the inverse of [localToPage].
+  Vec2 pageToLocal(double px, double py) {
+    final dx = px - centerX;
+    final dy = py - centerY;
+    if (rotation == 0) return Vec2(dx + width / 2, dy + height / 2);
+    final cos = math.cos(rotation);
+    final sin = math.sin(rotation);
+    return Vec2(
+      dx * cos + dy * sin + width / 2,
+      -dx * sin + dy * cos + height / 2,
+    );
+  }
+
+  /// This frame at [newWidth] × [newHeight], with its top-left corner — where
+  /// its content starts — where it was, turned or not.
+  ///
+  /// Changing the size of a turned frame through [copyWith] keeps [x] and [y],
+  /// the corner of the frame before it is turned; turned about the new centre,
+  /// that moves the whole frame.
+  Frame resizedFromTopLeft(double newWidth, double newHeight) {
+    if (rotation == 0) return copyWith(width: newWidth, height: newHeight);
+    final corner = localToPage.apply(0, 0);
+    final cos = math.cos(rotation);
+    final sin = math.sin(rotation);
+    final cx = corner.x + newWidth / 2 * cos - newHeight / 2 * sin;
+    final cy = corner.y + newWidth / 2 * sin + newHeight / 2 * cos;
+    return Frame(
+      x: cx - newWidth / 2,
+      y: cy - newHeight / 2,
+      width: newWidth,
+      height: newHeight,
+      rotation: rotation,
+    );
+  }
+
+  /// Whether the page point ([px], [py]) lies inside the rotated frame, or
+  /// within [slop] of it.
+  bool containsPoint(double px, double py, {double slop = 0}) {
+    var lx = px - centerX;
+    var ly = py - centerY;
+    if (rotation != 0) {
+      final cos = math.cos(-rotation);
+      final sin = math.sin(-rotation);
+      final rx = lx * cos - ly * sin;
+      final ry = lx * sin + ly * cos;
+      lx = rx;
+      ly = ry;
+    }
+    return lx.abs() <= width / 2 + slop && ly.abs() <= height / 2 + slop;
+  }
+
+  /// A frame of the same size whose centre is at ([cx], [cy]).
+  Frame centeredAt(double cx, double cy) =>
+      copyWith(x: cx - width / 2, y: cy - height / 2);
+
   Map<String, Object?> toJson() => <String, Object?>{
     'x': x,
     'y': y,
@@ -199,4 +276,80 @@ class Frame {
 
   @override
   String toString() => 'Frame($x, $y, ${width}x$height, rot=$rotation)';
+}
+
+/// A 2-D affine transform: `x' = a·x + c·y + tx`, `y' = b·x + d·y + ty`.
+///
+/// Used to move, scale and rotate content whose geometry is absolute, such as
+/// ink, where a transform has to be baked into the samples rather than applied
+/// when painting.
+class Affine2D {
+  const Affine2D(this.a, this.b, this.c, this.d, this.tx, this.ty);
+
+  static const Affine2D identity = Affine2D(1, 0, 0, 1, 0, 0);
+
+  factory Affine2D.translation(double dx, double dy) =>
+      Affine2D(1, 0, 0, 1, dx, dy);
+
+  factory Affine2D.scaling(double sx, double sy) =>
+      Affine2D(sx, 0, 0, sy, 0, 0);
+
+  /// A clockwise rotation by [radians] about the origin, in screen
+  /// orientation where y points down.
+  factory Affine2D.rotation(double radians) {
+    final cos = math.cos(radians);
+    final sin = math.sin(radians);
+    return Affine2D(cos, sin, -sin, cos, 0, 0);
+  }
+
+  /// Scaling by ([sx], [sy]) that keeps ([px], [py]) fixed.
+  factory Affine2D.scalingAbout(double sx, double sy, double px, double py) =>
+      Affine2D.translation(px, py) *
+      Affine2D.scaling(sx, sy) *
+      Affine2D.translation(-px, -py);
+
+  /// Rotation by [radians] about ([px], [py]).
+  factory Affine2D.rotationAbout(double radians, double px, double py) =>
+      Affine2D.translation(px, py) *
+      Affine2D.rotation(radians) *
+      Affine2D.translation(-px, -py);
+
+  final double a;
+  final double b;
+  final double c;
+  final double d;
+  final double tx;
+  final double ty;
+
+  Vec2 apply(double x, double y) =>
+      Vec2(a * x + c * y + tx, b * x + d * y + ty);
+
+  /// How much the transform scales lengths, on average over directions.
+  double get meanScale => math.sqrt((a * d - b * c).abs());
+
+  /// The transform that applies [other] first, then this one.
+  Affine2D operator *(Affine2D other) => Affine2D(
+    a * other.a + c * other.b,
+    b * other.a + d * other.b,
+    a * other.c + c * other.d,
+    b * other.c + d * other.d,
+    a * other.tx + c * other.ty + tx,
+    b * other.tx + d * other.ty + ty,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is Affine2D &&
+      other.a == a &&
+      other.b == b &&
+      other.c == c &&
+      other.d == d &&
+      other.tx == tx &&
+      other.ty == ty;
+
+  @override
+  int get hashCode => Object.hash(a, b, c, d, tx, ty);
+
+  @override
+  String toString() => 'Affine2D($a, $b, $c, $d, $tx, $ty)';
 }

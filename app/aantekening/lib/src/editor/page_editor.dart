@@ -1,18 +1,29 @@
-/// The page editor: canvas, toolbar and autosave.
+/// The page editor: ribbon, canvas and autosave.
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:aantekening_math/aantekening_math.dart';
+import 'package:aantekening_store/aantekening_store.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
-import 'editor_toolbar.dart';
 import 'element_views.dart';
-import 'rich_text_view.dart';
+import 'media_import.dart';
+import 'ribbon/ribbon.dart';
+import 'text/box_formatting.dart';
+import 'text/formula_preview.dart';
+import 'text/math_syntax.dart';
+import 'text/math_templates.dart';
+import 'text/text_box_controller.dart';
+import 'text/text_box_editor.dart';
+import 'trackpad.dart';
 
 /// Edits one page.
 ///
@@ -35,24 +46,92 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// enough that no meaningful work is at risk if the app stops.
   static const Duration _autosaveDelay = Duration(milliseconds: 700);
 
-  /// Default size for a text box or formula dropped on the canvas.
-  static const Size _newTextBoxSize = Size(320, 90);
-  static const Size _newMathBoxSize = Size(260, 70);
+  /// Zoom step for the keyboard shortcuts and toolbar buttons.
+  static const double _zoomStep = 1.25;
+
+  /// The widest a free-standing picture or PDF page is placed.
+  static const double _defaultMediaWidth = 816;
 
   final CanvasController _controller = CanvasController();
+  final TextBoxEditorController _textController = TextBoxEditorController();
+  final FocusNode _canvasFocus = FocusNode(debugLabel: 'Canvas');
+  final ValueNotifier<bool> _saving = ValueNotifier<bool>(false);
+  late final BoxFormatting _boxFormatting = BoxFormatting(_controller);
+
+  /// Where on screen the source of the formula being edited is, for its
+  /// preview.
+  final ValueNotifier<Rect?> _formulaOnScreen = ValueNotifier<Rect?>(null);
+
+  /// Whether that is known yet. The preview waits for it rather than
+  /// appearing somewhere else first and then jumping beneath the formula.
+  final ValueNotifier<bool> _formulaPlaced = ValueNotifier<bool>(false);
+
+  /// The tab showing before a formula brought the Math tab forward, to go
+  /// back to when it is finished.
+  RibbonTab? _tabBeforeMath;
+  bool _formulaOpen = false;
+  final double _trackpadPanScale = trackpadPanScale();
+
+  /// The pen or highlighter used last, which the ribbon's colours and widths
+  /// apply to while neither is in hand.
+  CanvasTool _lastInkTool = CanvasTool.pen;
+
+  /// What the formatting of selected boxes was last worked out from.
+  PageDocument? _formattedDocument;
+  Set<String> _formattedSelection = const <String>{};
+
+  late final RibbonCommands _ribbonCommands = RibbonCommands(
+    canvas: _controller,
+    text: _textController,
+    lastInkTool: () => _lastInkTool,
+    onToolSelected: _selectTool,
+    onFormula: _insertFormula,
+    onInsertTextBox: _insertTextBox,
+    onInsertImage: () => unawaited(_insertMedia(MediaKind.image)),
+    onInsertPdf: () => unawaited(_insertMedia(MediaKind.pdf)),
+    onZoomIn: () => _controller.zoomAtCenter(_zoomStep),
+    onZoomOut: () => _controller.zoomAtCenter(1 / _zoomStep),
+    onFitPage: () => _controller.zoomToFit(_controller.viewSize),
+    onActualSize: () => _controller.resetZoom(_controller.viewSize),
+    onMathInsert: _insertMath,
+    saving: _saving,
+  );
 
   Timer? _autosave;
-  String? _editingElementId;
+
+  /// The text box with the caret, if any.
+  String? _editingId;
+
+  /// Whether the box being edited should open straight into a formula.
+  bool _editingStartsInFormula = false;
+
   bool _loading = true;
-  bool _saving = false;
+  bool _disposed = false;
   Object? _error;
+
+  /// Held in fields rather than read through `ref` when saving, because the
+  /// final save runs from [dispose], where `ref` may no longer be used.
+  AantekeningStore? _store;
+  late final LibraryRevision _libraryRevision;
 
   @override
   void initState() {
     super.initState();
+    _libraryRevision = ref.read(libraryRevisionProvider.notifier);
     _controller.addListener(_onCanvasChanged);
+    _textController.formula.addListener(_onFormulaChanged);
+    _textController.formulaAnchor.addListener(_placeFormulaPanel);
+    // The syntax formulas are typed in is the person's preference, which a
+    // text box can switch too.
+    _textController.formulaSyntax
+      ..value = ref.read(mathSyntaxProvider)
+      ..addListener(_onSyntaxChosen);
     unawaited(_load());
   }
+
+  void _onSyntaxChosen() => ref
+      .read(mathSyntaxProvider.notifier)
+      .set(_textController.formulaSyntax.value);
 
   @override
   void didUpdateWidget(PageEditor old) {
@@ -68,10 +147,19 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   void dispose() {
     _autosave?.cancel();
     _controller.removeListener(_onCanvasChanged);
+    _disposed = true;
     if (_controller.isDirty) {
       unawaited(_persist(widget.pageId, _controller.document));
     }
+    _textController.formula.removeListener(_onFormulaChanged);
+    _textController.formulaAnchor.removeListener(_placeFormulaPanel);
+    _textController.formulaSyntax.removeListener(_onSyntaxChosen);
     _controller.dispose();
+    _textController.dispose();
+    _canvasFocus.dispose();
+    _saving.dispose();
+    _formulaOnScreen.dispose();
+    _formulaPlaced.dispose();
     super.dispose();
   }
 
@@ -83,12 +171,21 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       _error = null;
     });
     try {
-      final store = await ref.read(storeProvider.future);
-      final document = await store.pages.loadDocument(widget.pageId);
+      final AantekeningStore store =
+          _store ?? await ref.read(storeProvider.future);
+      _store = store;
+      final stored = await store.pages.loadDocument(widget.pageId);
       if (!mounted) return;
-      _controller.loadDocument(
-        document ?? PageDocument.empty(id: widget.pageId),
+      final page = _withoutEmptyTextBoxes(
+        stored ?? PageDocument.empty(id: widget.pageId),
       );
+      // Formulas are stored as LaTeX; older pages held some in Simple
+      // syntax, which are translated once and saved that way.
+      final document = MathStorage.withLatexFormulas(page);
+      _controller.loadDocument(document);
+      if (!identical(document, page)) {
+        unawaited(_persist(widget.pageId, document));
+      }
       setState(() => _loading = false);
     } on Object catch (error) {
       if (!mounted) return;
@@ -99,17 +196,42 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     }
   }
 
+  /// Drops text boxes with nothing in them, which an interrupted session or
+  /// an undo can leave behind invisibly.
+  static PageDocument _withoutEmptyTextBoxes(PageDocument document) =>
+      document.withElementsRemoved(<String>{
+        for (final element in document.elements)
+          if (element is TextElement && TextBoxEditor.isEmpty(element.blocks))
+            element.id,
+      });
+
   Future<void> _flushThenLoad(String previousPageId) async {
     _autosave?.cancel();
+    _editingId = null;
     if (_controller.isDirty) {
       await _persist(previousPageId, _controller.document);
     }
-    _editingElementId = null;
     await _load();
   }
 
+  /// Called on every change to the page and the view — every frame of
+  /// scrolling among them — so it rebuilds nothing itself: the canvas and
+  /// the ribbon's buttons each listen for what they show.
   void _onCanvasChanged() {
-    if (mounted) setState(() {});
+    if (traceInput) _traceView();
+    final tool = _controller.tool;
+    if (tool.draws) _lastInkTool = tool;
+    _syncBoxFormatting();
+    _placeFormulaPanel();
+
+    final editingId = _editingId;
+    if (editingId != null &&
+        _controller.document.elementById(editingId) == null) {
+      // The box was removed from under the caret — by undo, say.
+      _editingId = null;
+      if (mounted) setState(() {});
+    }
+
     if (!_controller.isDirty) return;
 
     _autosave?.cancel();
@@ -118,300 +240,605 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     });
   }
 
+  CanvasViewport? _tracedView;
+
+  /// Prints each change of view, how far it moved and what moved it.
+  void _traceView() {
+    final view = _controller.viewport;
+    final before = _tracedView;
+    _tracedView = view;
+    if (before == null || before == view) return;
+    final moved = view.toScreen(before.origin);
+    traceLine(
+      'view origin=(${view.origin.dx.toStringAsFixed(1)}, '
+      '${view.origin.dy.toStringAsFixed(1)}) '
+      'zoom=${view.zoom.toStringAsFixed(4)} '
+      'moved=(${moved.dx.toStringAsFixed(1)}, ${moved.dy.toStringAsFixed(1)}) '
+      'by ${traceCaller()}',
+    );
+  }
+
+  /// Writes [document] to disk.
+  ///
+  /// Also called from [dispose] for the final save, so it touches neither
+  /// `ref` nor the widget once the widget is gone.
   Future<void> _persist(String pageId, PageDocument document) async {
-    if (mounted) setState(() => _saving = true);
+    final store = _store;
+    // Nothing can have been edited on a page that never loaded.
+    if (store == null) return;
+    if (!_disposed) _saving.value = true;
     try {
-      final store = await ref.read(storeProvider.future);
       await store.pages.saveDocument(pageId, document);
-      if (pageId == widget.pageId && mounted) _controller.markSaved();
+      if (!_disposed && pageId == widget.pageId) _controller.markSaved();
       // The page list shows titles and previews derived from the body, so it
       // has to be refreshed once the save lands.
-      ref.read(libraryRevisionProvider.notifier).bump();
+      _libraryRevision.bump();
     } on Object catch (error) {
-      if (mounted) setState(() => _error = error);
+      if (!_disposed) setState(() => _error = error);
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (!_disposed) _saving.value = false;
     }
   }
 
-  // -------------------------------------------------------------- authoring
+  // ----------------------------------------------------------- text editing
 
-  void _createElementAt(CanvasTool tool, Offset page) {
+  /// Makes [id] the text box with the caret.
+  void _startEditing(String id, {bool inFormula = false}) {
+    if (_editingId == id) return;
+    _stopEditing();
+    setState(() {
+      _editingId = id;
+      _editingStartsInFormula = inFormula;
+    });
+    // An empty box is only a caret on the paper: it gets its outline and
+    // handles once something is written in it.
+    final element = _controller.document.elementById(id);
+    if (element is TextElement && !TextBoxEditor.isEmpty(element.blocks)) {
+      _controller.select(id);
+    } else {
+      _controller.clearSelection();
+    }
+  }
+
+  /// Lets the ribbon's formatting apply to whole text boxes while they are
+  /// selected and none is being edited.
+  void _syncBoxFormatting() {
+    final document = _controller.document;
+    final selection = _controller.selection;
+    if (identical(document, _formattedDocument) &&
+        setEquals(selection, _formattedSelection)) {
+      return;
+    }
+    _formattedDocument = document;
+    _formattedSelection = selection;
+    final hasBoxes = selection.any(
+      (id) => document.elementById(id) is TextElement,
+    );
+    _textController.setFallback(
+      hasBoxes ? _boxFormatting : null,
+      hasBoxes ? _boxFormatting.state : TextFormatState.none,
+    );
+  }
+
+  /// Ends text editing, removing the box if it was left empty.
+  void _stopEditing({bool refocusCanvas = true}) {
+    final id = _editingId;
+    if (id == null) return;
+    setState(() => _editingId = null);
+    if (_controller.selection.contains(id)) _controller.clearSelection();
+    if (refocusCanvas) _canvasFocus.requestFocus();
+    // The box finishes any open formula as it leaves editing, which happens
+    // in this frame's rebuild; only after that is it known to be empty.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final element = _controller.document.elementById(id);
+      if (element is TextElement && TextBoxEditor.isEmpty(element.blocks)) {
+        _controller.removeElements(<String>{id}, recordUndo: false);
+      }
+    });
+  }
+
+  /// Places a caret at [page]: an empty text box, invisible until something
+  /// is typed, whose first line starts there. It widens with its text, as a
+  /// new OneNote container does.
+  String _createTextBox(Offset page) {
     final now = DateTime.now().millisecondsSinceEpoch;
     final id = Ulid.generate();
-
-    switch (tool) {
-      case CanvasTool.text:
-        _controller.addElement(
-          TextElement(
-            id: id,
-            frame: Frame(
-              x: page.dx,
-              y: page.dy,
-              width: _newTextBoxSize.width,
-              height: _newTextBoxSize.height,
-            ),
-            createdAt: now,
-            updatedAt: now,
-            blocks: <TextBlock>[TextBlock.plain('')],
-          ),
-        );
-        setState(() => _editingElementId = id);
-        _controller.setTool(CanvasTool.select);
-      case CanvasTool.math:
-        _controller.addElement(
-          MathElement(
-            id: id,
-            frame: Frame(
-              x: page.dx,
-              y: page.dy,
-              width: _newMathBoxSize.width,
-              height: _newMathBoxSize.height,
-            ),
-            createdAt: now,
-            updatedAt: now,
-            source: '',
-          ),
-        );
-        unawaited(_editFormula(id));
-        _controller.setTool(CanvasTool.select);
-      case CanvasTool.select:
-      case CanvasTool.pan:
-      case CanvasTool.draw:
-      case CanvasTool.eraser:
-        break;
-    }
+    _controller.addElement(
+      TextElement(
+        id: id,
+        frame: Frame(
+          x: page.dx - TextBoxEditor.padding.left,
+          y: page.dy - TextBoxEditor.grabBand - 10,
+          width: TextBoxEditor.newBoxSize.width,
+          height: TextBoxEditor.newBoxSize.height,
+        ),
+        createdAt: now,
+        updatedAt: now,
+        blocks: const <TextBlock>[TextBlock()],
+        autoWidth: true,
+      ),
+      // The box is recorded in history and saved with its first edit; an
+      // empty box that is abandoned leaves no trace.
+      recordUndo: false,
+      markDirty: false,
+    );
+    return id;
   }
+
+  void _onEmptyTap(Offset page) {
+    _stopEditing(refocusCanvas: false);
+    _startEditing(_createTextBox(page));
+  }
+
+  void _onCanvasPress(NoteElement? hit) {
+    if (hit?.id != _editingId) _stopEditing();
+    _canvasFocus.requestFocus();
+  }
+
+  bool _claimsPointer(NoteElement element, Offset page) =>
+      element is TextElement && !TextBoxEditor.isInGrabBand(element, page);
 
   void _onElementDoubleTap(NoteElement element) {
-    switch (element) {
-      case TextElement():
-        setState(() => _editingElementId = element.id);
-      case MathElement():
-        unawaited(_editFormula(element.id));
-      case _:
-        break;
-    }
+    if (element is MathElement) _convertLegacyFormula(element);
   }
 
-  void _onTextChanged(String elementId, String text) {
-    final element = _controller.document.elementById(elementId);
+  /// Turns a free-standing formula from an earlier build into a text box
+  /// holding it, where it can be edited in place.
+  void _convertLegacyFormula(MathElement formula) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final box = TextElement(
+      id: Ulid.generate(),
+      frame: Frame(
+        x: formula.frame.x,
+        y: formula.frame.y - TextBoxEditor.grabBand,
+        width: math.max(formula.frame.width, 240),
+        height: formula.frame.height + TextBoxEditor.grabBand,
+      ),
+      createdAt: now,
+      updatedAt: now,
+      blocks: <TextBlock>[
+        TextBlock(runs: <TextRun>[TextRun.math(formula.source, formula.mode)]),
+      ],
+    );
+    _controller
+      ..removeElements(<String>{formula.id})
+      ..addElement(box);
+    _startEditing(box.id);
+  }
+
+  void _onTextChanged(
+    String id,
+    List<TextBlock> blocks, {
+    required bool recordUndo,
+  }) {
+    final element = _controller.document.elementById(id);
     if (element is! TextElement) return;
     _controller.replaceElement(
       element.copyWith(
-        blocks: applyPlainText(element.blocks, text),
+        blocks: blocks,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
-      // One undo step per editing session rather than one per keystroke.
+      recordUndo: recordUndo,
+    );
+    // The first thing typed at a bare caret turns it into a box, with its
+    // outline and handles.
+    if (id == _editingId &&
+        !_controller.selection.contains(id) &&
+        !TextBoxEditor.isEmpty(blocks)) {
+      _controller.select(id);
+    }
+  }
+
+  void _onTextSizeChanged(String id, Size size) {
+    final element = _controller.document.elementById(id);
+    if (element is! TextElement) return;
+    final frame = element.frame;
+    _controller.replaceElement(
+      // copyWith rather than withFrame: fitting the text is not the user
+      // resizing the box, so a box that widens with its text keeps doing so.
+      // It grows from its top-left corner, where its text starts, even when
+      // turned.
+      element.copyWith(
+        frame: frame.resizedFromTopLeft(
+          element.autoWidth ? size.width : frame.width,
+          size.height,
+        ),
+      ),
+      // Growing with the text belongs to the edit that caused it, and a box
+      // measuring itself on first layout is not an edit at all.
       recordUndo: false,
+      markDirty: false,
     );
   }
 
-  Future<void> _editFormula(String elementId) async {
-    final element = _controller.document.elementById(elementId);
-    if (element is! MathElement) return;
+  // --------------------------------------------------------------- formulas
 
-    final edited = await showDialog<MathElement>(
-      context: context,
-      builder: (context) => _FormulaDialog(element: element),
+  /// A formula opening brings the Math tab forward, as Office does with its
+  /// equation tools; finishing it goes back to where the ribbon was.
+  void _onFormulaChanged() {
+    final open = _textController.formula.value != null;
+    if (open != _formulaOpen) {
+      _formulaOpen = open;
+      final ribbon = ref.read(ribbonProvider.notifier);
+      final tab = ref.read(ribbonProvider).tab;
+      if (open) {
+        if (tab != RibbonTab.math) {
+          _tabBeforeMath = tab;
+          ribbon.show(RibbonTab.math);
+        }
+      } else {
+        final before = _tabBeforeMath;
+        _tabBeforeMath = null;
+        if (before != null && tab == RibbonTab.math) ribbon.show(before);
+      }
+    }
+    _placeFormulaPanel();
+  }
+
+  /// Works out where on screen the formula being edited is, from where its
+  /// text box reports it and where the box is in view.
+  void _placeFormulaPanel() {
+    final id = _editingId;
+    final element = id == null ? null : _controller.document.elementById(id);
+    final local = _textController.formulaAnchor.value;
+    if (_textController.formula.value == null ||
+        element == null ||
+        local == null) {
+      _formulaOnScreen.value = null;
+      _formulaPlaced.value = false;
+      return;
+    }
+    final toPage = element.frame.localToPage;
+    final viewport = _controller.viewport;
+    Offset screen(Offset point) {
+      final page = toPage.apply(point.dx, point.dy);
+      return viewport.toScreen(Offset(page.x, page.y));
+    }
+
+    final corners = <Offset>[
+      screen(local.topLeft),
+      screen(local.topRight),
+      screen(local.bottomLeft),
+      screen(local.bottomRight),
+    ];
+    var rect = Rect.fromPoints(corners[0], corners[1]);
+    for (final corner in corners.skip(2)) {
+      rect = rect.expandToInclude(Rect.fromPoints(corner, corner));
+    }
+    _formulaOnScreen.value = rect;
+    _formulaPlaced.value = true;
+  }
+
+  /// Puts a structure or symbol from the ribbon into the formula being
+  /// edited, or into a new one.
+  void _insertMath(MathTemplate template) {
+    if (_textController.isActive) {
+      _textController.insertMath(template);
+      return;
+    }
+    _textController.queueMath(template);
+    _insertFormula();
+  }
+
+  /// Places a caret in the middle of the view, for typing without first
+  /// clicking the page.
+  void _insertTextBox() {
+    _stopEditing(refocusCanvas: false);
+    _controller.setTool(CanvasTool.select);
+    final center = _controller.viewCenter;
+    _startEditing(
+      _createTextBox(
+        Offset(center.dx - TextBoxEditor.newBoxSize.width / 2, center.dy),
+      ),
     );
-    if (edited == null || !mounted) return;
-    _controller.replaceElement(edited);
+  }
+
+  /// Writes a formula: in the box being edited, or in a new box in view.
+  void _insertFormula() {
+    if (_textController.isActive) {
+      _textController.toggleFormula();
+      return;
+    }
+    _controller.setTool(CanvasTool.select);
+    final center = _controller.viewCenter;
+    final id = _createTextBox(
+      Offset(center.dx - TextBoxEditor.newBoxSize.width / 2, center.dy),
+    );
+    _startEditing(id, inFormula: true);
+  }
+
+  // ------------------------------------------------------------------ media
+
+  /// Inserts pictures or PDF pages: into the text box being edited, at its
+  /// caret, or onto the canvas in view if no box is being edited.
+  Future<void> _insertMedia(MediaKind kind) async {
+    final store = _store;
+    if (store == null) return;
+    final List<ImportedMedia> items;
+    try {
+      items = await MediaImport.pickAndImport(store, kind);
+    } on Object catch (error) {
+      _showMessage('Could not import: $error');
+      return;
+    }
+    if (items.isEmpty || !mounted) return;
+
+    // At a bare caret the pictures go onto the paper where the caret is, as
+    // in OneNote; in a box with text they go into the box.
+    final editingId = _editingId;
+    final editing = editingId == null
+        ? null
+        : _controller.document.elementById(editingId);
+    final atBareCaret =
+        editing is TextElement && TextBoxEditor.isEmpty(editing.blocks);
+    if (_textController.isActive && !atBareCaret) {
+      _textController.insertEmbeds(<BlockEmbed>[
+        for (final item in items) item.toEmbed(),
+      ]);
+      return;
+    }
+
+    final width = _controller.document.canvas.paperWidth ?? _defaultMediaWidth;
+    final center = _controller.viewCenter;
+    var y = center.dy - 120;
+    if (editing != null && atBareCaret) {
+      y = editing.frame.y + TextBoxEditor.grabBand;
+      _stopEditing();
+    }
+    final elements = <NoteElement>[];
+    for (final item in items) {
+      final itemWidth = math.min(item.width, width);
+      final element = item.toElement(
+        editing != null && atBareCaret
+            ? Offset(editing.frame.x + TextBoxEditor.padding.left, y)
+            : Offset(center.dx - itemWidth / 2, y),
+        maxWidth: width,
+      );
+      elements.add(element);
+      y += element.frame.height + 24;
+    }
+    _controller
+      ..setTool(CanvasTool.select)
+      ..addElements(elements)
+      ..selectAll(elements.map((element) => element.id));
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(message)));
   }
 
   // ------------------------------------------------------------- shortcuts
 
-  Map<ShortcutActivator, VoidCallback> get _shortcuts =>
-      <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
-            _controller.undo,
-        const SingleActivator(
-          LogicalKeyboardKey.keyZ,
-          control: true,
-          shift: true,
-        ): _controller.redo,
-        const SingleActivator(LogicalKeyboardKey.keyY, control: true):
-            _controller.redo,
-        const SingleActivator(LogicalKeyboardKey.delete):
-            _controller.deleteSelection,
-        const SingleActivator(LogicalKeyboardKey.backspace):
-            _controller.deleteSelection,
-        const SingleActivator(LogicalKeyboardKey.escape): () =>
-            setState(() => _editingElementId = null),
-        const SingleActivator(LogicalKeyboardKey.keyV): () =>
-            _controller.setTool(CanvasTool.select),
-        const SingleActivator(LogicalKeyboardKey.keyH): () =>
-            _controller.setTool(CanvasTool.pan),
-        const SingleActivator(LogicalKeyboardKey.keyP): () =>
-            _controller.setTool(CanvasTool.draw),
-        const SingleActivator(LogicalKeyboardKey.keyE): () =>
-            _controller.setTool(CanvasTool.eraser),
-        const SingleActivator(LogicalKeyboardKey.keyT): () =>
-            _controller.setTool(CanvasTool.text),
-        const SingleActivator(LogicalKeyboardKey.keyM): () =>
-            _controller.setTool(CanvasTool.math),
-        const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
-            unawaited(_persist(widget.pageId, _controller.document)),
-      };
+  /// Page-level shortcuts. A text box being edited stops the plain-letter
+  /// ones from reaching here, so typing never switches tools.
+  Map<ShortcutActivator, VoidCallback>
+  get _shortcuts => <ShortcutActivator, VoidCallback>{
+    const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
+        _controller.undo,
+    const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true):
+        _controller.redo,
+    const SingleActivator(LogicalKeyboardKey.keyY, control: true):
+        _controller.redo,
+    const SingleActivator(LogicalKeyboardKey.delete): _deleteSelection,
+    const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelection,
+    const SingleActivator(LogicalKeyboardKey.escape): () {
+      _stopEditing();
+      _controller.clearSelection();
+    },
+    // A tool's shortcut also brings its tab forward on the ribbon.
+    const SingleActivator(LogicalKeyboardKey.keyV): () =>
+        _useTool(CanvasTool.select),
+    const SingleActivator(LogicalKeyboardKey.keyT): () =>
+        _useTool(CanvasTool.select),
+    const SingleActivator(LogicalKeyboardKey.keyP): () =>
+        _useTool(CanvasTool.pen),
+    const SingleActivator(LogicalKeyboardKey.keyH): () =>
+        _useTool(CanvasTool.highlighter),
+    const SingleActivator(LogicalKeyboardKey.keyE): () =>
+        _useTool(CanvasTool.eraser),
+    const SingleActivator(LogicalKeyboardKey.keyM): _formulaShortcut,
+    const SingleActivator(LogicalKeyboardKey.keyM, control: true):
+        _formulaShortcut,
+    const SingleActivator(LogicalKeyboardKey.equal, alt: true):
+        _formulaShortcut,
+    const SingleActivator(LogicalKeyboardKey.f1, control: true): () =>
+        ref.read(ribbonProvider.notifier).toggleCollapsed(),
+    const SingleActivator(LogicalKeyboardKey.equal, control: true): () =>
+        _controller.zoomAtCenter(_zoomStep),
+    const SingleActivator(LogicalKeyboardKey.add, control: true): () =>
+        _controller.zoomAtCenter(_zoomStep),
+    const SingleActivator(LogicalKeyboardKey.numpadAdd, control: true): () =>
+        _controller.zoomAtCenter(_zoomStep),
+    const SingleActivator(LogicalKeyboardKey.minus, control: true): () =>
+        _controller.zoomAtCenter(1 / _zoomStep),
+    const SingleActivator(
+      LogicalKeyboardKey.numpadSubtract,
+      control: true,
+    ): () =>
+        _controller.zoomAtCenter(1 / _zoomStep),
+    const SingleActivator(LogicalKeyboardKey.digit0, control: true): () =>
+        _controller.resetZoom(_controller.viewSize),
+    const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
+        unawaited(_persist(widget.pageId, _controller.document)),
+    const SingleActivator(LogicalKeyboardKey.keyA, control: true): () {
+      _controller
+        ..setTool(CanvasTool.select)
+        ..selectEverything();
+    },
+    for (final (key, direction)
+        in _arrows) ...<ShortcutActivator, VoidCallback>{
+      SingleActivator(key): () => _nudge(direction),
+      SingleActivator(key, shift: true): () => _nudge(direction * 10),
+    },
+  };
+
+  static const List<(LogicalKeyboardKey, Offset)> _arrows =
+      <(LogicalKeyboardKey, Offset)>[
+        (LogicalKeyboardKey.arrowLeft, Offset(-1, 0)),
+        (LogicalKeyboardKey.arrowRight, Offset(1, 0)),
+        (LogicalKeyboardKey.arrowUp, Offset(0, -1)),
+        (LogicalKeyboardKey.arrowDown, Offset(0, 1)),
+      ];
+
+  /// Moves the selection by [delta] page units, as the arrow keys do.
+  void _nudge(Offset delta) {
+    if (_editingId != null) return;
+    _controller.translateSelection(delta);
+  }
+
+  void _deleteSelection() {
+    // The box being edited is selected so its handles show, but a key that
+    // reaches the page while it has lost focus must not delete it.
+    if (_editingId != null) return;
+    _controller.deleteSelection();
+  }
+
+  /// Takes up [tool], from the ribbon.
+  void _selectTool(CanvasTool tool) {
+    if (tool != CanvasTool.select) _stopEditing();
+    _controller.setTool(tool);
+  }
+
+  /// Takes up [tool] from its shortcut, and shows its tab: Draw for the pens
+  /// and the eraser, Home — with the text formatting — for typing.
+  void _useTool(CanvasTool tool) {
+    _selectTool(tool);
+    ref
+        .read(ribbonProvider.notifier)
+        .show(tool == CanvasTool.select ? RibbonTab.home : RibbonTab.draw);
+  }
+
+  void _formulaShortcut() => _insertFormula();
 
   // ----------------------------------------------------------------- build
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<MathMode>(
+      mathSyntaxProvider,
+      (_, syntax) => _textController.formulaSyntax.value = syntax,
+    );
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
     return Column(
       children: <Widget>[
-        EditorToolbar(
-          controller: _controller,
-          isSaving: _saving,
-          onZoomToFit: () => _controller.zoomToFit(_canvasSize(context)),
-          onResetZoom: () => _controller.resetZoom(_canvasSize(context)),
-        ),
+        Ribbon(commands: _ribbonCommands),
         if (_error != null) _ErrorBanner(error: _error!),
         Expanded(
-          child: CallbackShortcuts(
-            bindings: _shortcuts,
-            child: Focus(
-              autofocus: true,
-              // Typing into a text box must not be intercepted by the
-              // single-letter tool shortcuts.
-              skipTraversal: true,
-              descendantsAreFocusable: true,
-              child: InfiniteCanvas(
-                controller: _controller,
-                onCreate: _createElementAt,
-                onElementDoubleTap: _onElementDoubleTap,
-                elementBuilder: (context, element) => CanvasElementView(
-                  element: element,
-                  isEditing: element.id == _editingElementId,
-                  onTextChanged: (text) => _onTextChanged(element.id, text),
-                  onEditingFinished: () {
-                    if (_editingElementId == element.id) {
-                      setState(() => _editingElementId = null);
-                    }
-                  },
+          child: Stack(
+            children: <Widget>[
+              Positioned.fill(child: _canvas()),
+              // The formula being edited is typed in its text box and shown
+              // typeset beneath, at a size that does not change with zoom.
+              Positioned.fill(
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _formulaPlaced,
+                  builder: (context, placed, _) => !placed
+                      ? const SizedBox.shrink()
+                      : ValueListenableBuilder<FormulaSession?>(
+                          valueListenable: _textController.formula,
+                          builder: (context, session, _) => session == null
+                              ? const SizedBox.shrink()
+                              : CustomSingleChildLayout(
+                                  delegate: _BelowFormula(_formulaOnScreen),
+                                  child: FormulaPreview(
+                                    session: session,
+                                    onDone: _textController.finishFormula,
+                                  ),
+                                ),
+                        ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Size _canvasSize(BuildContext context) {
-    final box = context.findRenderObject();
-    return box is RenderBox ? box.size : const Size(1024, 768);
-  }
-}
-
-/// Edits a formula's source and previews the result as it is typed.
-class _FormulaDialog extends StatefulWidget {
-  const _FormulaDialog({required this.element});
-
-  final MathElement element;
-
-  @override
-  State<_FormulaDialog> createState() => _FormulaDialogState();
-}
-
-class _FormulaDialogState extends State<_FormulaDialog> {
-  late final TextEditingController _source = TextEditingController(
-    text: widget.element.source,
-  );
-  late MathMode _mode = widget.element.mode;
-
-  @override
-  void dispose() {
-    _source.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return AlertDialog(
-      title: const Text('Formula'),
-      content: SizedBox(
-        width: 520,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            SegmentedButton<MathMode>(
-              segments: const <ButtonSegment<MathMode>>[
-                ButtonSegment<MathMode>(
-                  value: MathMode.linear,
-                  label: Text('Simple'),
-                  icon: Icon(Icons.keyboard_rounded, size: 15),
-                ),
-                ButtonSegment<MathMode>(
-                  value: MathMode.latex,
-                  label: Text('LaTeX'),
-                  icon: Icon(Icons.code_rounded, size: 15),
-                ),
-              ],
-              selected: <MathMode>{_mode},
-              onSelectionChanged: (selection) =>
-                  setState(() => _mode = selection.first),
-              showSelectedIcon: false,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _source,
-              autofocus: true,
-              maxLines: 3,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-              decoration: InputDecoration(
-                hintText: _mode == MathMode.linear
-                    ? 'e.g.  sum_(i=1)^n i^2 = n(n+1)(2n+1)/6'
-                    : r'e.g.  \sum_{i=1}^{n} i^2',
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              constraints: const BoxConstraints(minHeight: 72),
-              alignment: Alignment.center,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: CanvasElementView(
-                  element: widget.element.copyWith(
-                    source: _source.text,
-                    mode: _mode,
-                  ),
-                  isEditing: false,
-                ),
-              ),
-            ),
-          ],
-        ),
+  Widget _canvas() => CallbackShortcuts(
+    bindings: _shortcuts,
+    child: Focus(
+      focusNode: _canvasFocus,
+      autofocus: true,
+      child: InfiniteCanvas(
+        controller: _controller,
+        claimsPointer: _claimsPointer,
+        onEmptyTap: _onEmptyTap,
+        onCanvasPress: _onCanvasPress,
+        onElementDoubleTap: _onElementDoubleTap,
+        elementBuilder: _buildElement,
+        trackpadPanScale: _trackpadPanScale,
       ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(
-            widget.element.copyWith(
-              source: _source.text,
-              mode: _mode,
-              updatedAt: DateTime.now().millisecondsSinceEpoch,
-            ),
-          ),
-          child: const Text('Apply'),
-        ),
-      ],
+    ),
+  );
+
+  /// The widget last built for each element, with what it was built from.
+  ///
+  /// The canvas asks for every visible element's widget whenever the view
+  /// moves. Handing back the same widget for an unchanged element lets the
+  /// framework skip rebuilding it, so panning and zooming never re-lay out
+  /// text or re-typeset formulas.
+  final Map<String, (NoteElement, bool, bool, bool, Widget)> _elementWidgets =
+      <String, (NoteElement, bool, bool, bool, Widget)>{};
+
+  Widget? _buildElement(BuildContext context, NoteElement element) {
+    final id = element.id;
+    final isEditing = id == _editingId;
+    final startsInFormula = isEditing && _editingStartsInFormula;
+    final interactive = _controller.tool == CanvasTool.select;
+    final cached = _elementWidgets[id];
+    if (cached != null &&
+        identical(cached.$1, element) &&
+        cached.$2 == isEditing &&
+        cached.$3 == startsInFormula &&
+        cached.$4 == interactive) {
+      return cached.$5;
+    }
+    if (_elementWidgets.length > _controller.document.elements.length + 64) {
+      _elementWidgets.removeWhere(
+        (key, _) => _controller.document.elementById(key) == null,
+      );
+    }
+    final widget = _elementWidget(
+      element,
+      isEditing,
+      startsInFormula,
+      interactive,
+    );
+    _elementWidgets[id] = (
+      element,
+      isEditing,
+      startsInFormula,
+      interactive,
+      widget,
+    );
+    return widget;
+  }
+
+  Widget _elementWidget(
+    NoteElement element,
+    bool isEditing,
+    bool startsInFormula,
+    bool interactive,
+  ) {
+    if (element is! TextElement) return CanvasElementView(element: element);
+    final id = element.id;
+    return TextBoxEditor(
+      element: element,
+      isEditing: isEditing,
+      controller: _textController,
+      interactive: interactive,
+      startInFormula: startsInFormula,
+      onStartEditing: () => _startEditing(id),
+      onChanged: (blocks, {required recordUndo}) =>
+          _onTextChanged(id, blocks, recordUndo: recordUndo),
+      onSizeChanged: (size) => _onTextSizeChanged(id, size),
+      onExit: _stopEditing,
     );
   }
 }
@@ -434,4 +861,59 @@ class _ErrorBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Places the formula panel beneath the formula being edited, or above it
+/// when there is no room below, always within the view.
+class _BelowFormula extends SingleChildLayoutDelegate {
+  _BelowFormula(this.formula) : super(relayout: formula);
+
+  /// Where the formula is on screen.
+  final ValueListenable<Rect?> formula;
+
+  static const double _gap = 6;
+  static const double _margin = 8;
+
+  /// As wide as the source above it, within the preview's limits.
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final available = math.max(0.0, constraints.maxWidth - 2 * _margin);
+    final source = formula.value?.width ?? 0;
+    final width = math.min(
+      available,
+      (source + 24).clamp(FormulaPreview.minWidth, FormulaPreview.maxWidth),
+    );
+    return BoxConstraints(
+      minWidth: width,
+      maxWidth: width,
+      maxHeight: math.max(0, constraints.maxHeight - 2 * _margin),
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final anchor = formula.value ?? const Rect.fromLTWH(24, 24, 0, 0);
+    final x = (anchor.left - 6)
+        .clamp(
+          _margin,
+          math.max(_margin, size.width - childSize.width - _margin),
+        )
+        .toDouble();
+    var y = anchor.bottom + _gap;
+    final above = anchor.top - _gap - childSize.height;
+    if (y + childSize.height > size.height - _margin && above >= _margin) {
+      y = above;
+    }
+    y = y
+        .clamp(
+          _margin,
+          math.max(_margin, size.height - childSize.height - _margin),
+        )
+        .toDouble();
+    return Offset(x, y);
+  }
+
+  @override
+  bool shouldRelayout(_BelowFormula oldDelegate) =>
+      !identical(oldDelegate.formula, formula);
 }

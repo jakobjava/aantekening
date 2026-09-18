@@ -1,6 +1,8 @@
 # 6. Two maths modes, and no conversion between them
 
-**Status:** accepted
+**Status:** superseded by [ADR 10](0010-latex-stored-formulas.md). Formulas
+are now stored as LaTeX and translated both ways; the parser described here
+is unchanged and does the Simple-to-LaTeX half.
 
 ## Context
 

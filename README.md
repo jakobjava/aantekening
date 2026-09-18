@@ -16,15 +16,40 @@ stays instant.
 
 * **Organisation** — notebooks, sections nested to any depth, pages and
   subpages. Soft deletion with restore.
-* **Infinite canvas** — pan, zoom, marquee selection, moving elements, undo and
-  redo, with viewport culling so paint cost tracks what is visible.
-* **Ink** — pressure-sensitive pen, highlighter, stroke eraser; stylus barrel
-  button erases.
-* **Text boxes** — headings, bullets, numbering, to-dos, quotes, code, inline
-  bold/italic/underline/strike/colour/highlight.
-* **Mathematics** — two authoring modes. LaTeX, or OneNote-style linear input
-  (`sum_(i=1)^n i^2`, `(a+b)/c`, `sqrt(x)`) parsed by a real grammar and
-  typeset natively.
+* **Ribbon** — OneNote-style tabs (Home, Insert, Draw, Math, View), each in named
+  sections. It stays put while you work; a tool's shortcut brings its tab
+  forward, and any button can be dragged to another place, section or tab.
+* **Infinite canvas** — scroll and zoom with a mouse wheel, a trackpad
+  (two-finger scroll with momentum, pinch) or two fingers on a touchscreen; no
+  separate pan tool. Undo and redo, with viewport culling so paint cost tracks
+  what is visible.
+* **Selection** — one tool moves, resizes and rotates anything on the page —
+  text boxes, pictures, PDF pages, handwriting — alone or as a group. A corner
+  resizes in proportion; a side, dragged anywhere along it, stretches in that
+  direction alone. Rotation snaps to upright, sideways and the diagonals. A
+  marquee over handwriting picks out just the strokes inside it.
+* **Ink** — pressure-sensitive pen and a OneNote-style chisel highlighter, each
+  with its own colour and width; stroke eraser; stylus barrel button erases.
+* **Text boxes** — OneNote-style: click anywhere and a caret appears; start
+  typing and a box forms around the text, widening as you type. Headings,
+  bullets, numbering, to-dos, quotes, code, font size, text colour, highlight
+  colour, bold/italic/underline/strike, Markdown shortcuts, and pictures and
+  PDF pages on lines of their own. Resizing a box changes its width, never its
+  font.
+* **Colours** — one palette for pens, text and highlights, plus a picker for
+  any other colour.
+* **Mathematics** — written inside the text box, in the flow of a sentence.
+  Press Alt+= and type the formula right there, in a code face on a tinted
+  box, with the formula typeset live just beneath; finish it and it is
+  typeset in the line. Type in either syntax: LaTeX, or OneNote-style Simple
+  syntax (`sum_(i=1)^n i^2`, `(a+b)/c`, `sqrt(x)`, `vec(1, 2, 3)`,
+  `mat(1, 2; 3, 4)`, `cases(…)`), parsed by a real grammar. Formulas are
+  stored as LaTeX either way, and switching syntax translates the formula.
+  The **Math** tab has structures (fractions, roots, integrals, sums,
+  brackets, accents, matrices) and symbols to click in.
+* **Pictures and PDFs** — insert them onto the canvas to annotate, or into a
+  text box as a printout. PDF pages are rendered sharply at any zoom and their
+  text is searchable.
 * **Search** — SQLite FTS5 across every page, ranked, with highlighted
   snippets, updating as you type.
 * **Local AI** — optional, off by default, and wired only to runtimes on your
@@ -45,6 +70,58 @@ flutter run -d linux            # or: -d windows, or an Android device
 workspace definition.
 
 Point the workspace somewhere else with `AANTEKENING_HOME=/path/to/dir`.
+
+### Using it
+
+The default tool types and selects: click empty paper and start typing, click
+a text box to place the caret, drag a box by the band along its top. Click a
+picture, PDF page or ink to select it; drag across empty paper to select
+several. Drag a corner to resize in proportion, a side to stretch that way,
+and the knob above the box to rotate (hold Shift for 15° steps).
+
+Commands are on the ribbon: text formatting on **Home**, pictures, PDFs and
+formulas on **Insert**, the pens, their colours and widths on **Draw**,
+structures and symbols for formulas on **Math** (shown while a formula is
+open), and zoom on **View**. Formatting with a text box selected (rather than being typed
+in) formats all of it. To rearrange the ribbon, drag a button to where you want
+it; hold it over another tab's name to open that tab. **View → Reset ribbon**
+puts everything back.
+
+| Keys | Does |
+| --- | --- |
+| Alt+= or Ctrl+M | Start a formula at the caret; again (or Enter, Esc) to finish |
+| Ctrl+Shift+M | Switch formulas between Simple and LaTeX syntax, translating the open one |
+| Tab (in a formula) | Go to the next place a structure left to fill in |
+| `$$` | Start a formula in LaTeX |
+| Ctrl+B / I / U | Bold, italic, underline |
+| Ctrl+− / Ctrl+E / Ctrl+Shift+H | Strikethrough, inline code, highlight |
+| Ctrl+. / Ctrl+/ / Ctrl+1 | Bullets, numbering, to-do (Ctrl+Enter ticks it) |
+| Ctrl+Alt+1–3, Ctrl+Shift+N | Headings, normal text |
+| `- `, `1. `, `[] `, `# `, `> ` | Markdown shortcuts at the start of a line |
+| Tab / Shift+Tab | Indent / outdent |
+| V or T, P, H, E | Type-and-select, pen, highlighter, eraser (outside a text box); shows the Home or Draw tab |
+| Ctrl+F1 | Collapse or show the ribbon |
+| Ctrl+A, arrow keys | Select everything; nudge the selection (Shift: further) |
+| Shift+click | Add to or remove from the selection |
+| Ctrl+scroll, Ctrl+= / Ctrl+− / Ctrl+0 | Zoom, or reset to 100% |
+| Scroll, space+drag, middle-drag | Move around the page with any tool |
+
+Arrowing into a typeset formula, or clicking it, shows its source again with
+the caret in it; arrowing off either end goes back to the text beside it and
+typesets it. In a formula, Tab moves to the next place a structure left to
+fill in, Enter or Esc finishes it, and Ctrl+Shift+M switches between Simple
+and LaTeX. Backspace after a formula selects it before deleting it.
+
+Simple syntax, in short: `x^2`, `x_i`, `a/b`, `sqrt(x)`, `root(3, x)`,
+`sum_(i=1)^n`, `prod`, `int_a^b`, `lim_(x->0)`, `vec(v)` (arrow) and
+`vec(1, 2, 3)` (column), `mat(1, 2; 3, 4)` (also `bmat`, `vmat`, `matrix`),
+`cases(x, x>0; -x, x<0)`, `abs(x)`, `norm(v)`, `set(1, 2)`, `binom(n, k)`,
+`n!`, `f'(x)`, Greek letters by name, `oo`, `->`, `<=`, `!=`, `+-`, `*`,
+`"text"`. Any `\command`, or LaTeX in backticks, passes through as it is.
+
+If scrolling or zooming with a trackpad ever jumps, run the app with
+`AANTEKENING_TRACE_INPUT=1` to print every pointer event as the engine
+delivers it, every key, and every change of view with the code that made it.
 
 ### Tests
 
@@ -76,7 +153,7 @@ Nothing leaves your machine, and nothing is contacted until you switch it on.
 packages/aantekening_core     model + page format   (pure Dart)
 packages/aantekening_store    SQLite, search, assets
 packages/aantekening_canvas   infinite canvas engine
-packages/aantekening_math     linear maths input + LaTeX
+packages/aantekening_math     Simple syntax ⇄ LaTeX, typesetting
 packages/aantekening_ai       local model clients
 app/aantekening               the application
 docs/                         architecture, file format, decisions, roadmap
@@ -89,6 +166,7 @@ bearing choices is in [`docs/adr/`](docs/adr/).
 ## Open source
 
 Flutter and Dart (BSD-3), SQLite (public domain), `sqlite3.dart` (MIT),
-Riverpod (MIT), `flutter_math_fork` (MIT/Apache-2.0), `http`, `path`, `crypto`
-and `path_provider` (BSD-3). The note format is plain JSON in a plain SQLite
+Riverpod (MIT), `flutter_math_fork` (MIT/Apache-2.0), `pdfrx` (MIT) over
+PDFium (BSD-3/Apache-2.0), `file_selector`, `http`, `path`, `crypto` and
+`path_provider` (BSD-3). The note format is plain JSON in a plain SQLite
 file — both readable without this application.

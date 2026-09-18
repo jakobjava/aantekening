@@ -4,18 +4,23 @@ What the groundwork deliberately leaves for later, and why it is safe to leave.
 
 ## Not yet built
 
-### PDF page rendering
-`PdfElement`, the asset store, text extraction and annotation-over-PDF all
-exist; what is missing is drawing the page image. The element renders as a
-placeholder that keeps its position, so ink annotated over it is already
-anchored correctly. Wiring `pdfrx` (pdfium, BSD-3) into `_PdfBox` is a
-self-contained change — it needs no format or schema change.
+### Touch editing on phones
+Text boxes are edited with the platform keyboard and IME on Android as on the
+desktop, but the touch conventions are not all there yet: no selection handles
+or long-press menu, and a finger dragged across a text box selects text rather
+than scrolling the page. Two fingers pan and zoom anywhere.
 
-### Rich-text editing in place
-Text is *rendered* with full formatting. Editing goes through a plain-text
-field that preserves each line's kind, indentation and inline marks
-(`applyPlainText`). A proper inline editor — selection-based bold/italic,
-per-run marks, lists that respond to Tab — replaces that one widget.
+### Pasting and dropping files
+Pictures and PDFs come in through the insert buttons. Pasting a screenshot
+from the clipboard and dropping files onto the page both need a clipboard or
+drag-and-drop plugin; the importer they would call (`MediaImport.importFile`)
+already exists.
+
+### Formulas edited as typeset maths
+A formula being edited shows its source, with the typeset result previewed
+beneath it; everywhere else it is typeset. Editing directly in the typeset
+form, as OneNote's "professional" mode does, is a structured editor of its own
+and would build on the same runs.
 
 ### Handwriting recognition
 `InkElement.writeSearchText` is intentionally empty, and the schema already has
@@ -27,18 +32,29 @@ it exists, handwriting is not searchable and nothing pretends otherwise.
 What is missing is the background job that keeps embeddings in step with edits,
 and the UI that blends semantic hits with FTS hits.
 
-### Resize handles and rotation
-The selection overlay draws handles; dragging them is not yet wired. The model
-(`Frame.rotation`, `NoteElement.withFrame`) already supports both.
+### Smaller gaps
+* Pictures inside a text box take the box's width at most, but cannot be
+  resized on their own.
+* Tables render but are not yet edited in place.
+* Colours picked with the colour picker are remembered for the session only.
+* Pen and highlighter settings belong to the page editor, so opening another
+  page starts from the default pen again.
+* The ribbon has no keyboard route of its own (Office's Alt key tips); its
+  commands have shortcuts, and it deliberately never takes the focus.
+* Trackpad scrolling on Linux is scaled back to finger distance from what GTK
+  reports (see `trackpadPanScale`); there is no setting to make it faster or
+  slower yet.
+* The text box editor does not yet describe itself to screen readers; a stock
+  text field would have, and it needs adding by hand (see ADR 8).
 
 ## Planned, in rough order
 
 1. **Move the database onto an isolate.** Every repository method is already
    `Future`-returning for exactly this, so it is an internal change. Worth doing
    before workspaces get large, not before.
-2. **PDF rendering** via `pdfrx`.
-3. **Inline rich-text editing.**
-4. **Import and export.** The page format is already stable and documented;
+2. **Touch editing and the Android build.**
+3. **Paste and drop** for pictures and PDFs.
+4. **Import and export.** The page format is stable and documented;
    `.enex`/OneNote import and Markdown/PDF export sit on top of it.
 5. **Embedding indexer** running in the background, then hybrid search.
 6. **Sync.** Deliberately last. Pages are immutable, revision-numbered

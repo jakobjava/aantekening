@@ -14,16 +14,6 @@ import 'rich_text.dart';
 /// How an image or PDF fills its frame.
 enum MediaFit { contain, cover, stretch }
 
-/// The authoring mode of a [MathElement].
-enum MathMode {
-  /// Raw LaTeX, authored directly by the user.
-  latex,
-
-  /// OneNote-style linear input (`1/2`, `x^2`, `sqrt(3)`), translated to LaTeX
-  /// before rendering.
-  linear,
-}
-
 /// Thrown when a page document cannot be interpreted at all.
 class PageFormatException implements Exception {
   PageFormatException(this.message);
@@ -133,6 +123,7 @@ final class TextElement extends NoteElement {
     super.locked,
     this.blocks = const <TextBlock>[],
     this.autoGrow = true,
+    this.autoWidth = false,
   });
 
   final List<TextBlock> blocks;
@@ -141,12 +132,25 @@ final class TextElement extends NoteElement {
   /// containers do, instead of clipping at a fixed height.
   final bool autoGrow;
 
+  /// Whether the box widens to fit its longest line, up to a limit, as a new
+  /// OneNote text container does while you type. Resizing the box by hand
+  /// fixes its width.
+  final bool autoWidth;
+
   @override
   String get type => 'text';
 
   @override
+  Iterable<String> get assetIds => <String>{
+    for (final block in blocks)
+      if (block.embed case final embed?) embed.assetId,
+  };
+
+  @override
   void writeSearchText(StringBuffer out) {
     for (final block in blocks) {
+      final embedText = block.embed?.text;
+      if (embedText != null) out.write(embedText);
       for (final run in block.runs) {
         out.write(run.text);
       }
@@ -161,6 +165,7 @@ final class TextElement extends NoteElement {
     int? updatedAt,
     List<TextBlock>? blocks,
     bool? autoGrow,
+    bool? autoWidth,
   }) => TextElement(
     id: id,
     frame: frame ?? this.frame,
@@ -170,10 +175,16 @@ final class TextElement extends NoteElement {
     locked: locked ?? this.locked,
     blocks: blocks ?? this.blocks,
     autoGrow: autoGrow ?? this.autoGrow,
+    autoWidth: autoWidth ?? this.autoWidth,
   );
 
+  /// Moves, rotates or resizes the box. A new width means the user has sized
+  /// it, so it stops widening by itself.
   @override
-  TextElement withFrame(Frame frame) => copyWith(frame: frame);
+  TextElement withFrame(Frame frame) => copyWith(
+    frame: frame,
+    autoWidth: autoWidth && frame.width == this.frame.width,
+  );
 
   @override
   TextElement withZ(int z) => copyWith(z: z);
@@ -186,6 +197,7 @@ final class TextElement extends NoteElement {
     ...baseJson(),
     'blocks': <Object?>[for (final block in blocks) block.toJson()],
     if (!autoGrow) 'autoGrow': false,
+    if (autoWidth) 'autoWidth': true,
   };
 
   static TextElement fromJson(Map<String, Object?> json) => TextElement(
@@ -200,6 +212,7 @@ final class TextElement extends NoteElement {
         TextBlock.fromJson(block),
     ],
     autoGrow: readBool(json, 'autoGrow', true),
+    autoWidth: readBool(json, 'autoWidth'),
   );
 }
 
@@ -261,6 +274,43 @@ final class InkElement extends NoteElement {
     locked: locked ?? this.locked,
     strokes: strokes ?? this.strokes,
   );
+
+  /// A copy holding [strokes], with its frame recomputed to fit them, so the
+  /// frame never goes stale as strokes are added or erased.
+  InkElement withStrokes(List<InkStroke> strokes, {int? updatedAt}) {
+    var box = Aabb.empty;
+    for (final stroke in strokes) {
+      box = box.union(stroke.bounds);
+    }
+    return copyWith(
+      strokes: strokes,
+      updatedAt: updatedAt,
+      frame: box.isEmpty
+          ? frame
+          : Frame(
+              x: box.left,
+              y: box.top,
+              width: box.width,
+              height: box.height,
+            ),
+    );
+  }
+
+  /// A copy with [transform] baked into every stroke.
+  InkElement transformed(Affine2D transform) => withStrokes(<InkStroke>[
+    for (final stroke in strokes) stroke.transformed(transform),
+  ]);
+
+  /// Whether a drawn stroke passes within [radius] of ([x], [y]) — tighter
+  /// than [bounds], which for a page of handwriting covers a lot of paper
+  /// that has nothing on it.
+  bool hitsStroke(double x, double y, double radius) {
+    if (!bounds.inflate(radius).containsPoint(x, y)) return false;
+    for (final stroke in strokes) {
+      if (stroke.hitTest(x, y, radius)) return true;
+    }
+    return false;
+  }
 
   /// Moves and scales the contained strokes to match [frame].
   ///

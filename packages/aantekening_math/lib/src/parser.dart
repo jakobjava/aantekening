@@ -23,67 +23,9 @@ class MathParser {
   /// mistaken for the start of another absolute value.
   int _openBars = 0;
 
-  /// Operators that separate the two sides of a statement.
-  static const Set<String> _relations = <String>{
-    '=',
-    '<',
-    '>',
-    r'\leq',
-    r'\geq',
-    r'\neq',
-    r'\approx',
-    r'\equiv',
-    r'\simeq',
-    r'\cong',
-    r'\sim',
-    r'\propto',
-    r'\to',
-    r'\mapsto',
-    r'\iff',
-    r'\implies',
-    r'\impliedby',
-    r'\Rightarrow',
-    r'\leftarrow',
-    r'\in',
-    r'\notin',
-    r'\ni',
-    r'\subset',
-    r'\subseteq',
-    r'\supset',
-    r'\supseteq',
-    r'\ll',
-    r'\gg',
-    r'\perp',
-    r'\parallel',
-    r'\therefore',
-    r'\because',
-  };
-
-  /// Operators at addition's precedence level.
-  static const Set<String> _additive = <String>{
-    '+',
-    '-',
-    r'\pm',
-    r'\mp',
-    r'\cup',
-    r'\cap',
-    r'\setminus',
-    r'\oplus',
-    r'\wedge',
-    r'\vee',
-  };
-
-  /// Operators at multiplication's precedence level.
-  static const Set<String> _multiplicative = <String>{
-    r'\cdot',
-    r'\times',
-    r'\div',
-    r'\otimes',
-    r'\circ',
-    r'\star',
-    r'\bullet',
-    '.',
-  };
+  static const Set<String> _relations = relationOperators;
+  static const Set<String> _additive = additiveOperators;
+  static const Set<String> _multiplicative = multiplicativeOperators;
 
   /// Operators that may appear as a prefix.
   static const Set<String> _prefixes = <String>{
@@ -111,14 +53,38 @@ class MathParser {
   MathNode parse() {
     if (_check(TokenType.end)) return const EmptyNode();
 
-    final node = _parseExpression();
-    if (!_check(TokenType.end)) {
+    // A stray token is reported and shown as it is, and parsing carries on
+    // after it, so one slip does not hide the rest of the formula.
+    final parts = <MathNode>[];
+    while (true) {
+      parts.add(_parseTopLevelList());
+      if (_check(TokenType.end)) break;
+      final stray = _advance();
       diagnostics.add(
-        MathDiagnostic(_current.offset, 'Unexpected "${_current.lexeme}"'),
+        MathDiagnostic(stray.offset, 'Unexpected "${stray.lexeme}"'),
       );
+      parts.add(SymbolNode(_asLatex(stray)));
+      if (_check(TokenType.end)) break;
     }
-    return node;
+    return parts.length == 1 ? parts.single : SequenceNode(parts);
   }
+
+  /// Expressions separated by commas, as in `x = 1, 2, 3`.
+  MathNode _parseTopLevelList() {
+    final items = <MathNode>[_parseExpression()];
+    while (_matched(TokenType.comma)) {
+      items.add(_check(TokenType.end) ? const EmptyNode() : _parseExpression());
+    }
+    return items.length == 1 ? items.single : ListNode(items);
+  }
+
+  /// A token's LaTeX, for showing it where it does not belong.
+  static String _asLatex(Token token) => switch (token.lexeme) {
+    '{' => r'\{',
+    '}' => r'\}',
+    ';' => ';',
+    _ => token.latex.isNotEmpty ? token.latex : token.lexeme,
+  };
 
   MathNode _parseExpression() => _parseRelation();
 
@@ -187,19 +153,46 @@ class MathParser {
       final operator = _advance();
       return UnaryNode(operator.latex, _parseUnary());
     }
-    return _parsePostfix();
+    var node = _parsePostfix();
+    // Factorials: `n!`, `(n - k)!`.
+    while (_check(TokenType.operator) && _current.latex == '!') {
+      _advance();
+      node = PostfixNode(node, '!');
+    }
+    return node;
   }
 
   /// Parses a primary and any subscripts or superscripts attached to it.
   MathNode _parsePostfix() {
     final base = _parsePrimary();
-    if (!_check(TokenType.caret) && !_check(TokenType.underscore)) {
+    if (!_check(TokenType.caret) &&
+        !_check(TokenType.underscore) &&
+        !_check(TokenType.prime)) {
       return base;
     }
 
     MathNode? subscript;
     MathNode? superscript;
-    while (_check(TokenType.caret) || _check(TokenType.underscore)) {
+    while (_check(TokenType.caret) ||
+        _check(TokenType.underscore) ||
+        _check(TokenType.prime)) {
+      if (_check(TokenType.prime)) {
+        // f' and f'': primes are superscripts, as TeX reads them.
+        final first = _current;
+        var primes = 0;
+        while (_matched(TokenType.prime)) {
+          primes++;
+        }
+        if (superscript != null) {
+          diagnostics.add(MathDiagnostic(first.offset, 'Repeated superscript'));
+        }
+        superscript = primes == 1
+            ? const SymbolNode(r'\prime')
+            : SequenceNode(<MathNode>[
+                for (var i = 0; i < primes; i++) const SymbolNode(r'\prime'),
+              ]);
+        continue;
+      }
       final marker = _advance();
       final operand = _parseScriptOperand();
       if (marker.type == TokenType.caret) {
@@ -268,8 +261,20 @@ class MathParser {
 
       case TokenType.leftBrace:
         _advance();
+        // `{}` is an empty group, something to hang a script on: `{}^14 C`.
+        if (_matched(TokenType.rightBrace)) {
+          return const GroupNode(SequenceNode(<MathNode>[]));
+        }
         final child = _parseListUntil(TokenType.rightBrace, '}');
         return GroupNode(child);
+
+      case TokenType.command:
+        _advance();
+        return SymbolNode(token.latex);
+
+      case TokenType.raw:
+        _advance();
+        return RawNode(token.latex);
 
       case TokenType.bar:
         _advance();
@@ -324,6 +329,17 @@ class MathParser {
         return SymbolNode(symbol.latex);
 
       case SymbolRole.unaryConstruct:
+        // `vec(1, 2, 3)` is a column vector; `vec(v)` and `vec v` an arrow.
+        if (symbol.latex == r'\vec' && _check(TokenType.leftParen)) {
+          final grid = _parseGrid(token);
+          final cells = <MathNode>[for (final row in grid) ...row];
+          if (cells.length > 1) {
+            return MatrixNode('pmatrix', <List<MathNode>>[
+              for (final cell in cells) <MathNode>[cell],
+            ]);
+          }
+          return AccentNode(symbol.latex, _unwrap(cells.single));
+        }
         final argument = _parseConstructArgument(token);
         return symbol.latex == r'\sqrt'
             ? RootNode(argument)
@@ -340,6 +356,45 @@ class MathParser {
         final delimiters = fenceConstructs[token.lexeme]!;
         final argument = _parseConstructArgument(token);
         return FencedNode(delimiters[0], delimiters[1], argument);
+
+      case SymbolRole.matrixConstruct:
+        return MatrixNode(symbol.latex, _parseGrid(token));
+    }
+  }
+
+  /// Reads the `(a, b; c, d)` of a grid: cells separated by commas, rows by
+  /// semicolons.
+  List<List<MathNode>> _parseGrid(Token construct) {
+    if (!_matched(TokenType.leftParen)) {
+      diagnostics.add(
+        MathDiagnostic(
+          construct.offset,
+          '"${construct.lexeme}" needs its rows in brackets: '
+          '${construct.lexeme}(a, b; c, d)',
+        ),
+      );
+      return <List<MathNode>>[
+        <MathNode>[const EmptyNode()],
+      ];
+    }
+    final rows = <List<MathNode>>[<MathNode>[]];
+    while (true) {
+      rows.last.add(
+        _check(TokenType.comma) ||
+                _check(TokenType.semicolon) ||
+                _check(TokenType.rightParen)
+            ? const EmptyNode()
+            : _unwrap(_parseExpression()),
+      );
+      if (_matched(TokenType.comma)) continue;
+      if (_matched(TokenType.semicolon)) {
+        rows.add(<MathNode>[]);
+        continue;
+      }
+      if (!_matched(TokenType.rightParen)) {
+        diagnostics.add(MathDiagnostic(_current.offset, 'Missing ")"'));
+      }
+      return rows;
     }
   }
 
@@ -365,6 +420,14 @@ class MathParser {
 
   /// Reads the `(a, b)` arguments of a two-argument construct.
   List<MathNode> _parseArgumentPair(Token construct) {
+    // LaTeX's own form, `\frac{a}{b}`, is read too.
+    if (_check(TokenType.leftBrace)) {
+      final first = _parsePrimary();
+      final second = _check(TokenType.leftBrace)
+          ? _parsePrimary()
+          : const EmptyNode();
+      return <MathNode>[_unwrap(first), _unwrap(second)];
+    }
     if (!_matched(TokenType.leftParen)) {
       diagnostics.add(
         MathDiagnostic(
@@ -438,6 +501,8 @@ class MathParser {
       case TokenType.leftParen:
       case TokenType.leftBracket:
       case TokenType.leftBrace:
+      case TokenType.command:
+      case TokenType.raw:
         return true;
       case TokenType.bar:
         // Inside `|...|` the next bar closes the fence rather than opening one.

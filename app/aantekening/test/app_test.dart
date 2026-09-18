@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:aantekening/src/editor/rich_text_view.dart';
 import 'package:aantekening/src/providers.dart';
 import 'package:aantekening/src/search/search_results_pane.dart';
 import 'package:aantekening/src/shell/home_shell.dart';
@@ -94,6 +93,30 @@ void main() {
       expect(find.text('Convergence tests'), findsOneWidget);
     });
 
+    testWidgets('creates a notebook from the header button', (tester) async {
+      useSurface(tester, wideWindow);
+      await tester.pumpWidget(shellWith(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('New notebook'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        ),
+        'Algebra',
+      );
+      // Settling runs the dialog's exit animation to the end, which is where a
+      // controller disposed too early would be caught being used again.
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('Algebra'), findsOneWidget);
+      expect(find.text('Notes'), findsOneWidget);
+    });
+
     testWidgets('opens the editor when a page is selected', (tester) async {
       final notebook = await store.library.createNotebook(title: 'Physics');
       final section = await store.library.createSection(
@@ -128,13 +151,13 @@ void main() {
       await tester.tap(find.text('Lecture 1').last);
       await tester.pumpAndSettle();
 
-      // The toolbar is up and the element is rendered on the canvas itself,
+      // The ribbon is up and the element is rendered on the canvas itself,
       // not merely echoed in the page list's preview line.
-      expect(find.byTooltip('Fit page'), findsOneWidget);
+      expect(find.byTooltip('Undo  (Ctrl+Z)'), findsOneWidget);
       expect(
         find.descendant(
           of: find.byType(InfiniteCanvas),
-          matching: find.text('Newtons second law'),
+          matching: find.text('Newtons second law', findRichText: true),
         ),
         findsOneWidget,
       );
@@ -249,52 +272,6 @@ void main() {
         span.children!.cast<TextSpan>().map((c) => c.text).join(),
         'a broken',
       );
-    });
-  });
-
-  group('plain-text editing', () {
-    test("keeps each line's kind, indent and formatting", () {
-      final existing = <TextBlock>[
-        const TextBlock(
-          kind: TextBlockKind.heading1,
-          runs: <TextRun>[TextRun('Title', TextMarks(bold: true))],
-        ),
-        const TextBlock(
-          kind: TextBlockKind.bulleted,
-          indent: 2,
-          runs: <TextRun>[TextRun('point')],
-        ),
-      ];
-
-      final updated = applyPlainText(existing, 'New title\nnew point');
-
-      expect(updated[0].kind, TextBlockKind.heading1);
-      expect(updated[0].runs.single.marks.bold, isTrue);
-      expect(updated[0].plainText, 'New title');
-      expect(updated[1].kind, TextBlockKind.bulleted);
-      expect(updated[1].indent, 2);
-    });
-
-    test('new trailing lines inherit the last block', () {
-      final existing = <TextBlock>[
-        const TextBlock(
-          kind: TextBlockKind.bulleted,
-          runs: <TextRun>[TextRun('first')],
-        ),
-      ];
-
-      final updated = applyPlainText(existing, 'first\nsecond\nthird');
-
-      expect(updated, hasLength(3));
-      expect(updated.last.kind, TextBlockKind.bulleted);
-    });
-
-    test('round-trips through plain text', () {
-      final blocks = <TextBlock>[
-        TextBlock.plain('one'),
-        TextBlock.plain('two'),
-      ];
-      expect(plainTextOf(applyPlainText(blocks, 'one\ntwo')), 'one\ntwo');
     });
   });
 }

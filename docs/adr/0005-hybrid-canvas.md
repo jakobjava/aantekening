@@ -16,8 +16,9 @@ Highlighter paints beneath the widget layer, pen above it.
 
 ## Consequences
 
-* Text boxes get the framework's text engine, IME, focus and accessibility for
-  free; formulas get `flutter_math_fork`; images get `Image`.
+* Text boxes get the framework's text layout, input methods and focus, with
+  the editor on top of them described in ADR 8; formulas get
+  `flutter_math_fork`; images get `Image`.
 * Ink costs no widgets at all, and the stroke in progress has its own layer, so
   a new sample repaints only that.
 * Splitting ink around the widget layer means ink cannot interleave arbitrarily

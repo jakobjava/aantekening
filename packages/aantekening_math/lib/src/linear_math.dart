@@ -4,7 +4,10 @@ library;
 import 'package:aantekening_core/aantekening_core.dart';
 
 import 'ast.dart';
+import 'latex_reader.dart';
 import 'lexer.dart';
+import 'linear_writer.dart';
+import 'math_storage.dart';
 import 'parser.dart';
 
 /// The result of translating a linear expression.
@@ -33,9 +36,9 @@ class MathTranslation {
 ///
 /// The simple mode exists because most notes are taken under time pressure:
 /// `1/2` and `sqrt(x)` are faster to type than `\frac{1}{2}` and `\sqrt{x}`,
-/// and they read back as mathematics rather than as markup. LaTeX mode remains
-/// available for expressions the linear grammar does not cover, and the two are
-/// never silently converted into one another — see [MathMode].
+/// and they read back as mathematics rather than as markup. Formulas are
+/// stored as LaTeX either way ([MathStorage]); [fromLatex] writes one back in
+/// the linear syntax for editing.
 abstract final class LinearMath {
   /// Translates [input], never throwing.
   static MathTranslation translate(String input) {
@@ -52,6 +55,12 @@ abstract final class LinearMath {
 
   /// Translates [input] and returns only its LaTeX.
   static String toLatex(String input) => translate(input).latex;
+
+  /// Writes [latex] in the linear syntax: what a formula stored as LaTeX
+  /// looks like when it is edited in Simple mode. [toLatex] of the result
+  /// renders the same as [latex].
+  static String fromLatex(String latex) =>
+      LinearWriter.write(LatexReader(latex).read());
 
   /// Resolves the LaTeX for a formula authored in either mode.
   ///

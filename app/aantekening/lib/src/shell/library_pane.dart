@@ -354,31 +354,58 @@ Future<String?> promptForName(
   String title,
   String hint,
 ) async {
-  final controller = TextEditingController();
   final name = await showDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        decoration: InputDecoration(hintText: hint),
-        onSubmitted: (value) => Navigator.of(context).pop(value),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(controller.text),
-          child: const Text('Create'),
-        ),
-      ],
-    ),
+    builder: (context) => _NameDialog(title: title, hint: hint),
   );
-  controller.dispose();
 
   final trimmed = name?.trim();
   return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+}
+
+/// The dialog behind [promptForName].
+///
+/// It owns its controller rather than borrowing the caller's: `showDialog`
+/// completes as soon as the route pops, but the dialog keeps rebuilding through
+/// its exit animation, so a controller disposed by the caller would be used
+/// after disposal.
+class _NameDialog extends StatefulWidget {
+  const _NameDialog({required this.title, required this.hint});
+
+  final String title;
+  final String hint;
+
+  @override
+  State<_NameDialog> createState() => _NameDialogState();
+}
+
+class _NameDialogState extends State<_NameDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: TextField(
+      controller: _controller,
+      autofocus: true,
+      decoration: InputDecoration(hintText: widget.hint),
+      onSubmitted: (value) => Navigator.of(context).pop(value),
+    ),
+    actions: <Widget>[
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.of(context).pop(_controller.text),
+        child: const Text('Create'),
+      ),
+    ],
+  );
 }

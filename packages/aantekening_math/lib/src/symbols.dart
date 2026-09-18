@@ -24,6 +24,9 @@ enum SymbolRole {
 
   /// A fenced construct: `abs`, `norm`, `floor`, `ceil`.
   fenceConstruct,
+
+  /// A grid of cells, rows separated by `;` and cells by `,`: `mat`, `cases`.
+  matrixConstruct,
 }
 
 /// A word the parser knows about.
@@ -165,6 +168,84 @@ const Map<String, List<String>> fenceConstructs = <String, List<String>>{
   'floor': <String>[r'\lfloor', r'\rfloor'],
   'ceil': <String>[r'\lceil', r'\rceil'],
   'inner': <String>[r'\langle', r'\rangle'],
+  'set': <String>[r'\{', r'\}'],
+};
+
+/// Grids and the LaTeX environment each is written as: `mat(1, 2; 3, 4)` is a
+/// matrix in round brackets, `cases(x, x > 0; -x, x < 0)` a case split.
+const Map<String, String> matrixConstructs = <String, String>{
+  'mat': 'pmatrix',
+  'pmat': 'pmatrix',
+  'bmat': 'bmatrix',
+  'Bmat': 'Bmatrix',
+  'vmat': 'vmatrix',
+  'Vmat': 'Vmatrix',
+  'matrix': 'matrix',
+  'cases': 'cases',
+};
+
+/// Operators that separate the two sides of a statement, as LaTeX.
+const Set<String> relationOperators = <String>{
+  '=',
+  '<',
+  '>',
+  r'\leq',
+  r'\geq',
+  r'\neq',
+  r'\approx',
+  r'\equiv',
+  r'\simeq',
+  r'\cong',
+  r'\sim',
+  r'\propto',
+  r'\to',
+  r'\mapsto',
+  r'\iff',
+  r'\implies',
+  r'\impliedby',
+  r'\Rightarrow',
+  r'\leftarrow',
+  r'\in',
+  r'\notin',
+  r'\ni',
+  r'\subset',
+  r'\subseteq',
+  r'\supset',
+  r'\supseteq',
+  r'\ll',
+  r'\gg',
+  r'\perp',
+  r'\parallel',
+  r'\therefore',
+  r'\because',
+  ':',
+  r'\colon',
+};
+
+/// Operators at addition's precedence level, as LaTeX.
+const Set<String> additiveOperators = <String>{
+  '+',
+  '-',
+  r'\pm',
+  r'\mp',
+  r'\cup',
+  r'\cap',
+  r'\setminus',
+  r'\oplus',
+  r'\wedge',
+  r'\vee',
+};
+
+/// Operators at multiplication's precedence level, as LaTeX.
+const Set<String> multiplicativeOperators = <String>{
+  r'\cdot',
+  r'\times',
+  r'\div',
+  r'\otimes',
+  r'\circ',
+  r'\star',
+  r'\bullet',
+  '.',
 };
 
 /// Standalone symbols spelled as words.
@@ -252,6 +333,7 @@ const Map<String, String> operatorSequences = <String, String>{
   '+-': r'\pm',
   '-+': r'\mp',
   '::': r'\colon',
+  ':': ':',
   '...': r'\ldots',
   '.': '.',
   '*': r'\cdot',
@@ -279,6 +361,8 @@ final Map<String, MathSymbol> mathSymbols = <String, MathSymbol>{
     entry.key: MathSymbol(entry.value, SymbolRole.binaryConstruct),
   for (final entry in fenceConstructs.entries)
     entry.key: MathSymbol(entry.value.first, SymbolRole.fenceConstruct),
+  for (final entry in matrixConstructs.entries)
+    entry.key: MathSymbol(entry.value, SymbolRole.matrixConstruct),
 };
 
 /// Every word the parser knows, longest first.

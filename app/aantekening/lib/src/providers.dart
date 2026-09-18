@@ -133,6 +133,20 @@ final assetBytesProvider = FutureProvider.family<Uint8List?, String>((
   return store.assets.readBytes(assetId);
 });
 
+/// The file holding an imported asset, for renderers that read from disk —
+/// such as the PDF engine, which should not need a large document copied into
+/// memory first.
+final assetFileProvider = FutureProvider.family<File?, String>((
+  ref,
+  assetId,
+) async {
+  final store = await ref.watch(storeProvider.future);
+  final asset = await store.assets.find(assetId);
+  if (asset == null) return null;
+  final file = store.assets.fileFor(asset);
+  return file.existsSync() ? file : null;
+});
+
 /// Settings for the local AI features.
 class AiSettingsController extends Notifier<AiSettings> {
   @override

@@ -9,6 +9,7 @@ export 'src/document/elements.dart';
 export 'src/document/ink.dart';
 export 'src/document/page_document.dart';
 export 'src/document/rich_text.dart';
+export 'src/document/rich_text_editing.dart';
 export 'src/tree/tree.dart';
 export 'src/util/fractional_index.dart';
 export 'src/util/geometry.dart';

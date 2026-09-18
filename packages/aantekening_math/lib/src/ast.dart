@@ -333,3 +333,52 @@ final class ApplicationNode extends MathNode {
     argument.writeLatex(out);
   }
 }
+
+/// A grid of cells in a LaTeX environment: a matrix, a column vector, or a
+/// case split.
+final class MatrixNode extends MathNode {
+  const MatrixNode(this.environment, this.rows);
+
+  /// `pmatrix`, `bmatrix`, `vmatrix`, `matrix`, `cases` and the like.
+  final String environment;
+
+  final List<List<MathNode>> rows;
+
+  @override
+  void writeLatex(StringBuffer out) {
+    out.write('\\begin{$environment} ');
+    for (var r = 0; r < rows.length; r++) {
+      if (r > 0) out.write(r' \\ ');
+      for (var c = 0; c < rows[r].length; c++) {
+        if (c > 0) out.write(' & ');
+        rows[r][c].writeLatex(out);
+      }
+    }
+    out.write(' \\end{$environment}');
+  }
+}
+
+/// LaTeX passed through as it is: a command the linear syntax has no word
+/// for, or a fragment quoted in backticks.
+final class RawNode extends MathNode {
+  const RawNode(this.latex);
+
+  final String latex;
+
+  @override
+  void writeLatex(StringBuffer out) => out.write(latex);
+}
+
+/// A postfix operator on its operand: a factorial, `n!`.
+final class PostfixNode extends MathNode {
+  const PostfixNode(this.operand, this.operatorLatex);
+
+  final MathNode operand;
+  final String operatorLatex;
+
+  @override
+  void writeLatex(StringBuffer out) {
+    operand.writeLatex(out);
+    out.write(operatorLatex);
+  }
+}
