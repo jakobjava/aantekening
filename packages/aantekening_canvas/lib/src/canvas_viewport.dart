@@ -8,10 +8,10 @@ import 'package:flutter/widgets.dart';
 
 /// An immutable pan-and-zoom transform over the infinite canvas.
 ///
-/// Page space is unbounded in every direction and independent of the window, so
-/// a note laid out on a phone opens identically on a desktop. Everything stored
-/// in a [PageDocument] is in page space; this class is the only place that
-/// converts to and from pixels.
+/// Page space runs on without end to the right and downwards, and is
+/// independent of the window, so a note laid out on a phone opens identically
+/// on a desktop. Everything stored in a [PageDocument] is in page space; this
+/// class is the only place that converts to and from pixels.
 @immutable
 class CanvasViewport {
   const CanvasViewport({this.origin = Offset.zero, this.zoom = 1});

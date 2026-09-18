@@ -1,9 +1,6 @@
 #include "my_application.h"
 
 #include <flutter_linux/flutter_linux.h>
-#ifdef GDK_WINDOWING_X11
-#include <gdk/gdkx.h>
-#endif
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -19,35 +16,45 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+// Whether the desktop is GNOME, whose own windows have header bars.
+static gboolean is_gnome() {
+  const gchar* desktop = g_getenv("XDG_CURRENT_DESKTOP");
+  return desktop != nullptr && g_strrstr(desktop, "GNOME") != nullptr;
+}
+
+// Trims header bars to the height of their buttons. GNOME's default leaves a
+// tall band above the ribbon with nothing in it but the title.
+static void make_header_bars_compact(GtkWindow* window) {
+  g_autoptr(GtkCssProvider) css = gtk_css_provider_new();
+  gtk_css_provider_load_from_data(
+      css,
+      "headerbar { min-height: 0; padding-top: 0; padding-bottom: 0; }"
+      "headerbar button.titlebutton {"
+      "  min-height: 16px; min-width: 16px; padding: 3px; margin: 3px 0;"
+      "}",
+      -1, nullptr);
+  gtk_style_context_add_provider_for_screen(
+      gtk_window_get_screen(window), GTK_STYLE_PROVIDER(css),
+      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
-  // Use a header bar when running in GNOME as this is the common style used
-  // by applications and is the setup most users will be using (e.g. Ubuntu
-  // desktop).
-  // If running on X and not using GNOME then just use a traditional title bar
-  // in case the window manager does more exotic layout, e.g. tiling.
-  // If running on Wayland assume the header bar will work (may need changing
-  // if future cases occur).
-  gboolean use_header_bar = TRUE;
-#ifdef GDK_WINDOWING_X11
-  GdkScreen* screen = gtk_window_get_screen(window);
-  if (GDK_IS_X11_SCREEN(screen)) {
-    const gchar* wm_name = gdk_x11_screen_get_window_manager_name(screen);
-    if (g_strcmp0(wm_name, "GNOME Shell") != 0) {
-      use_header_bar = FALSE;
-    }
-  }
-#endif
-  if (use_header_bar) {
+  // GNOME's windows have header bars, so this one does too, made compact.
+  // Anywhere else the window keeps a plain title and GTK asks the compositor
+  // to draw its title bar, as KDE and most tiling compositors do: a thin one
+  // in the desktop's own style and colours, rather than GTK's own tall bar.
+  if (is_gnome()) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
     gtk_header_bar_set_title(header_bar, "aantekening");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
+    make_header_bars_compact(window);
   } else {
     gtk_window_set_title(window, "aantekening");
   }

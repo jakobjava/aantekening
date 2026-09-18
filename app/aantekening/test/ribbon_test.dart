@@ -24,6 +24,10 @@ RibbonState _ribbon(WidgetTester tester) =>
     ProviderScope.containerOf(tester.element(find.byType(Ribbon)))
         .read(ribbonProvider);
 
+RibbonLayout _layout(WidgetTester tester) =>
+    ProviderScope.containerOf(tester.element(find.byType(Ribbon)))
+        .read(ribbonLayoutProvider);
+
 /// The icon button showing [tooltip].
 IconButton _button(WidgetTester tester, String tooltip) =>
     tester.widget<IconButton>(
@@ -249,12 +253,12 @@ void main() {
           tester.getRect(find.byTooltip(_bold)).centerLeft + const Offset(3, 0),
     );
 
-    final font = _ribbon(tester).layout.itemsIn(RibbonGroup.font);
+    final font = _layout(tester).itemsIn(RibbonGroup.font);
     expect(font.indexOf(RibbonItem.italic), font.indexOf(RibbonItem.bold) - 1);
     expect(preferences['ribbon.layout'], isNotNull, reason: 'saved');
     expect(
-      RibbonLayout.fromJson(preferences['ribbon.layout']),
-      _ribbon(tester).layout,
+      RibbonLayout.fromJson(RibbonGroup.values, preferences['ribbon.layout']),
+      _layout(tester),
     );
   });
 
@@ -274,10 +278,7 @@ void main() {
     );
 
     expect(_ribbon(tester).tab, RibbonTab.insert);
-    expect(
-      _ribbon(tester).layout.itemsIn(RibbonGroup.files).first,
-      RibbonItem.undo,
-    );
+    expect(_layout(tester).itemsIn(RibbonGroup.files).first, RibbonItem.undo);
     expect(find.byTooltip('Undo  (Ctrl+Z)'), findsOneWidget);
 
     // And everything put back from the View tab.
@@ -285,22 +286,19 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Reset ribbon'));
     await tester.pumpAndSettle();
-    expect(_ribbon(tester).layout.isDefault, isTrue);
+    expect(_layout(tester).isDefault, isTrue);
     expect(preferences['ribbon.layout'], isNull);
   });
 
   testWidgets('a saved arrangement is there next time', (tester) async {
-    final moved = RibbonLayout.defaults.move(
-      RibbonItem.pen,
-      RibbonGroup.history,
-      0,
-    );
+    final moved = RibbonLayout.defaults(RibbonGroup.values)
+        .move(RibbonItem.pen, RibbonGroup.history, 0);
     final preferences = Preferences.inMemory(<String, Object?>{
       'ribbon.layout': moved.toJson(),
     });
     await openEditor(tester, store, pageId, preferences: preferences);
 
-    expect(_ribbon(tester).layout, moved);
+    expect(_layout(tester), moved);
     expect(find.byTooltip('Pen  (P)'), findsOneWidget, reason: 'on Home');
   });
 

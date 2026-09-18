@@ -33,6 +33,17 @@ abstract final class RichTextStyles {
   /// The grip drawn in the middle of that band.
   static const Color boxGrip = Color(0x59000000);
 
+  /// Text that says something about the page rather than being on it: the
+  /// date and time beneath the title, and the title's hint.
+  static const Color inkMuted = Color(0xFF6B7280);
+
+  /// The line beneath a page's title.
+  static const Color titleRule = Color(0xFFD5D9E0);
+
+  /// Behind words a search found: amber, so it is not taken for a yellow
+  /// highlight someone made.
+  static const Color searchMatch = Color(0x99FFB020);
+
   /// The font sizes offered, in points.
   static const List<double> pointSizes = <double>[
     8,

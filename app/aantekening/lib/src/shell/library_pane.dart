@@ -7,17 +7,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
 import '../theme.dart';
+import 'library_actions.dart';
+import 'library_menu.dart';
 
 /// Lists notebooks and, beneath the selected one, its section tree.
 ///
 /// Sections nest arbitrarily, so the tree is assembled in one pass from the
-/// flat list the store returns rather than by querying level by level.
+/// flat list the store returns rather than by querying level by level. Every
+/// row has a menu on a right-click, or on a long press.
 class LibraryPane extends ConsumerWidget {
-  const LibraryPane({super.key, this.width = AppTheme.libraryPaneWidth});
-
-  /// Fixed pane width, or null to fill the available space — which is what the
-  /// compact layout needs when the panes move into a drawer.
-  final double? width;
+  const LibraryPane({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -30,22 +29,28 @@ class LibraryPane extends ConsumerWidget {
     // between would cover both.
     return Material(
       color: AppTheme.paneColor(scheme),
-      child: SizedBox(
-        width: width,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _PaneHeader(
-              title: 'Notebooks',
-              onAdd: () => _createNotebook(context, ref),
-              addTooltip: 'New notebook',
-            ),
-            Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          PaneHeader(
+            title: 'Notebooks',
+            onAction: () => createNamedNotebook(context, ref),
+            actionTooltip: 'New notebook',
+          ),
+          Expanded(
+            child: PaneBackgroundMenu(
+              commands: () => <MenuCommand>[
+                MenuCommand(
+                  'New notebook',
+                  Icons.library_add_outlined,
+                  () => createNamedNotebook(context, ref),
+                ),
+              ],
               child: notebooks.when(
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) => _PaneError(message: '$error'),
+                error: (error, _) => PaneMessage('$error', error: true),
                 data: (books) => books.isEmpty
-                    ? const _PaneEmpty(message: 'No notebooks yet')
+                    ? const PaneMessage('No notebooks yet')
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 6,
@@ -54,39 +59,18 @@ class LibraryPane extends ConsumerWidget {
                         itemCount: books.length,
                         itemBuilder: (context, index) {
                           final notebook = books[index];
-                          final isSelected = notebook.id == selectedNotebook;
                           return _NotebookTile(
                             notebook: notebook,
-                            expanded: isSelected,
+                            expanded: notebook.id == selectedNotebook,
                           );
                         },
                       ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
-  }
-
-  Future<void> _createNotebook(BuildContext context, WidgetRef ref) async {
-    final title = await promptForName(context, 'New notebook', 'Notebook');
-    if (title == null) return;
-
-    final store = await ref.read(storeProvider.future);
-    final notebook = await store.library.createNotebook(title: title);
-    // A notebook with nowhere to write is not useful, so it starts with one
-    // section and one page, the way a paper notebook starts with a first page.
-    final section = await store.library.createSection(
-      notebookId: notebook.id,
-      title: 'Notes',
-    );
-    final page = await store.pages.createPage(sectionId: section.id);
-
-    ref.read(libraryRevisionProvider.notifier).bump();
-    ref.read(selectedNotebookProvider.notifier).select(notebook.id);
-    ref.read(selectedSectionProvider.notifier).select(section.id);
-    ref.read(selectedPageProvider.notifier).select(page.id);
   }
 }
 
@@ -103,25 +87,25 @@ class _NotebookTile extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        ListTile(
-          selected: expanded,
-          selectedTileColor: scheme.primary.withValues(alpha: 0.10),
-          leading: Icon(
-            expanded ? Icons.menu_book_rounded : Icons.book_outlined,
-            size: 18,
-            color: notebook.color != null ? Color(notebook.color!) : null,
+        LibraryTile(
+          node: notebook,
+          child: ListTile(
+            selected: expanded,
+            selectedTileColor: scheme.primary.withValues(alpha: 0.10),
+            leading: Icon(
+              expanded ? Icons.menu_book_rounded : Icons.book_outlined,
+              size: 18,
+              color: notebook.color != null ? Color(notebook.color!) : null,
+            ),
+            title: Text(
+              notebook.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            onTap: () =>
+                ref.read(libraryActionsProvider).openNotebook(notebook.id),
           ),
-          title: Text(
-            notebook.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
-          onTap: () {
-            ref.read(selectedNotebookProvider.notifier).select(notebook.id);
-            ref.read(selectedSectionProvider.notifier).select(null);
-            ref.read(selectedPageProvider.notifier).select(null);
-          },
         ),
         if (expanded) _SectionTree(notebookId: notebook.id),
       ],
@@ -151,20 +135,24 @@ class _SectionTree extends ConsumerWidget {
         padding: EdgeInsets.all(12),
         child: LinearProgressIndicator(minHeight: 2),
       ),
-      error: (error, _) => _PaneError(message: '$error'),
+      error: (error, _) => PaneMessage('$error', error: true),
       data: (flat) {
         final roots = _buildSectionTree(flat);
+        final parents = <String, String?>{
+          for (final section in flat) section.id: section.parentId,
+        };
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             for (final node in roots)
-              ..._renderNode(context, ref, node, depth: 0),
+              ..._renderNode(context, ref, node, parents, depth: 0),
             Padding(
               padding: const EdgeInsets.only(left: 24, top: 2, bottom: 6),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
-                  onPressed: () => _createSection(context, ref, null),
+                  onPressed: () =>
+                      createNamedSection(context, ref, notebookId: notebookId),
                   icon: const Icon(Icons.add, size: 15),
                   label: const Text('Section'),
                   style: TextButton.styleFrom(
@@ -183,69 +171,57 @@ class _SectionTree extends ConsumerWidget {
   List<Widget> _renderNode(
     BuildContext context,
     WidgetRef ref,
-    _SectionNode node, {
+    _SectionNode node,
+    Map<String, String?> parents, {
     required int depth,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    final selected = ref.watch(selectedSectionProvider) == node.section.id;
+    final section = node.section;
+    final selected = ref.watch(selectedSectionProvider) == section.id;
 
     return <Widget>[
       Padding(
         padding: EdgeInsets.only(left: 16.0 + depth * 14),
-        child: ListTile(
-          selected: selected,
-          selectedTileColor: scheme.primary.withValues(alpha: 0.10),
-          leading: Icon(
-            node.children.isEmpty
-                ? Icons.article_outlined
-                : Icons.folder_outlined,
-            size: 16,
-            color: node.section.color != null
-                ? Color(node.section.color!)
-                : scheme.onSurfaceVariant,
+        child: LibraryTile(
+          node: section,
+          parents: parents,
+          child: ListTile(
+            selected: selected,
+            selectedTileColor: scheme.primary.withValues(alpha: 0.10),
+            leading: Icon(
+              node.children.isEmpty
+                  ? Icons.article_outlined
+                  : Icons.folder_outlined,
+              size: 16,
+              color: section.color != null
+                  ? Color(section.color!)
+                  : scheme.onSurfaceVariant,
+            ),
+            title: Text(
+              section.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13),
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.add, size: 14),
+              tooltip: 'New subsection',
+              onPressed: () => createNamedSection(
+                context,
+                ref,
+                notebookId: notebookId,
+                parentId: section.id,
+              ),
+            ),
+            onTap: () => ref
+                .read(libraryActionsProvider)
+                .openSection(notebookId, section.id),
           ),
-          title: Text(
-            node.section.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13),
-          ),
-          trailing: IconButton(
-            icon: const Icon(Icons.add, size: 14),
-            tooltip: 'New subsection',
-            onPressed: () => _createSection(context, ref, node.section.id),
-          ),
-          onTap: () {
-            ref.read(selectedSectionProvider.notifier).select(node.section.id);
-            ref.read(selectedPageProvider.notifier).select(null);
-          },
         ),
       ),
       for (final child in node.children)
-        ..._renderNode(context, ref, child, depth: depth + 1),
+        ..._renderNode(context, ref, child, parents, depth: depth + 1),
     ];
-  }
-
-  Future<void> _createSection(
-    BuildContext context,
-    WidgetRef ref,
-    String? parentId,
-  ) async {
-    final title = await promptForName(
-      context,
-      parentId == null ? 'New section' : 'New subsection',
-      'Section',
-    );
-    if (title == null) return;
-
-    final store = await ref.read(storeProvider.future);
-    final section = await store.library.createSection(
-      notebookId: notebookId,
-      title: title,
-      parentId: parentId,
-    );
-    ref.read(libraryRevisionProvider.notifier).bump();
-    ref.read(selectedSectionProvider.notifier).select(section.id);
   }
 }
 
@@ -272,17 +248,97 @@ List<_SectionNode> _buildSectionTree(List<Section> sections) {
   return roots;
 }
 
-/// A titled pane header with an add button.
-class _PaneHeader extends StatelessWidget {
-  const _PaneHeader({
+/// A row for a notebook, section or page: its menu on a right-click or a
+/// long press, and faded while it is cut, waiting to be pasted elsewhere.
+class LibraryTile extends ConsumerWidget {
+  const LibraryTile({
+    required this.node,
+    required this.child,
+    this.parents = const {},
+    super.key,
+  });
+
+  final TreeNode node;
+
+  /// The parents of the nodes of [node]'s kind nearby; see
+  /// [LibraryActions.canPaste].
+  final Map<String, String?> parents;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cut = ref.watch(
+      libraryClipboardProvider.select(
+        (clip) => clip != null && clip.cut && clip.node.id == node.id,
+      ),
+    );
+    return GestureDetector(
+      onSecondaryTapUp: (details) => showLibraryMenu(
+        context,
+        ref,
+        node,
+        details.globalPosition,
+        parents: parents,
+      ),
+      onLongPressStart: (details) => showLibraryMenu(
+        context,
+        ref,
+        node,
+        details.globalPosition,
+        parents: parents,
+      ),
+      child: Opacity(opacity: cut ? 0.45 : 1, child: child),
+    );
+  }
+}
+
+/// A pane whose empty space has a menu of [commands] on a right-click or a
+/// long press.
+class PaneBackgroundMenu extends StatelessWidget {
+  const PaneBackgroundMenu({
+    required this.commands,
+    required this.child,
+    super.key,
+  });
+
+  /// The commands, worked out when the menu opens.
+  final List<MenuCommand> Function() commands;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onSecondaryTapUp: (details) => showCommandMenu(
+      context,
+      details.globalPosition,
+      <List<MenuCommand>>[commands()],
+    ),
+    onLongPressStart: (details) => showCommandMenu(
+      context,
+      details.globalPosition,
+      <List<MenuCommand>>[commands()],
+    ),
+    child: child,
+  );
+}
+
+/// A pane's title, with a button for the pane's main command: adding
+/// something, unless [actionIcon] says otherwise.
+class PaneHeader extends StatelessWidget {
+  const PaneHeader({
     required this.title,
-    required this.onAdd,
-    required this.addTooltip,
+    required this.onAction,
+    required this.actionTooltip,
+    this.actionIcon = Icons.add,
+    super.key,
   });
 
   final String title;
-  final VoidCallback onAdd;
-  final String addTooltip;
+
+  /// Carries out the command, or null while it has nothing to act on.
+  final VoidCallback? onAction;
+  final String actionTooltip;
+  final IconData actionIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -303,9 +359,9 @@ class _PaneHeader extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.add, size: 18),
-            tooltip: addTooltip,
-            onPressed: onAdd,
+            icon: Icon(actionIcon, size: 18),
+            tooltip: actionTooltip,
+            onPressed: onAction,
           ),
         ],
       ),
@@ -313,99 +369,28 @@ class _PaneHeader extends StatelessWidget {
   }
 }
 
-class _PaneEmpty extends StatelessWidget {
-  const _PaneEmpty({required this.message});
+/// A short message filling a pane: that it is empty, or what went wrong.
+class PaneMessage extends StatelessWidget {
+  const PaneMessage(this.message, {this.error = false, super.key});
 
   final String message;
+  final bool error;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Text(
-      message,
-      style: TextStyle(
-        fontSize: 12,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 12,
+            color: error ? scheme.error : scheme.onSurfaceVariant,
+          ),
+        ),
       ),
-    ),
-  );
-}
-
-class _PaneError extends StatelessWidget {
-  const _PaneError({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.all(16),
-    child: Text(
-      message,
-      style: TextStyle(
-        fontSize: 12,
-        color: Theme.of(context).colorScheme.error,
-      ),
-    ),
-  );
-}
-
-/// Asks the user for a name, returning null if they cancel.
-Future<String?> promptForName(
-  BuildContext context,
-  String title,
-  String hint,
-) async {
-  final name = await showDialog<String>(
-    context: context,
-    builder: (context) => _NameDialog(title: title, hint: hint),
-  );
-
-  final trimmed = name?.trim();
-  return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
-}
-
-/// The dialog behind [promptForName].
-///
-/// It owns its controller rather than borrowing the caller's: `showDialog`
-/// completes as soon as the route pops, but the dialog keeps rebuilding through
-/// its exit animation, so a controller disposed by the caller would be used
-/// after disposal.
-class _NameDialog extends StatefulWidget {
-  const _NameDialog({required this.title, required this.hint});
-
-  final String title;
-  final String hint;
-
-  @override
-  State<_NameDialog> createState() => _NameDialogState();
-}
-
-class _NameDialogState extends State<_NameDialog> {
-  final TextEditingController _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+    );
   }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.title),
-    content: TextField(
-      controller: _controller,
-      autofocus: true,
-      decoration: InputDecoration(hintText: widget.hint),
-      onSubmitted: (value) => Navigator.of(context).pop(value),
-    ),
-    actions: <Widget>[
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: () => Navigator.of(context).pop(_controller.text),
-        child: const Text('Create'),
-      ),
-    ],
-  );
 }

@@ -1,6 +1,7 @@
 /// Mutable editing state for one open page.
 library;
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
@@ -17,6 +18,9 @@ import 'tools.dart';
 /// [PageDocument]. That makes undo a matter of keeping references rather than
 /// replaying inverse operations, and lets the renderer decide what to repaint
 /// by comparing identity instead of diffing contents.
+///
+/// The page has a top-left corner, which the view never scrolls past and
+/// content is kept within: see [PageDocument.shiftOntoPage].
 class CanvasController extends ChangeNotifier {
   CanvasController({PageDocument? document})
     : _document = document ?? PageDocument.empty() {
@@ -110,9 +114,11 @@ class CanvasController extends ChangeNotifier {
 
   bool get canRedo => _redoStack.isNotEmpty;
 
-  /// Replaces the open page, discarding history and selection.
+  /// Replaces the open page, discarding history and selection, and shows it
+  /// from its top-left corner at the zoom in use.
   void loadDocument(PageDocument document) {
     _document = document;
+    _viewport = CanvasViewport(zoom: _viewport.zoom);
     _undoStack.clear();
     _redoStack.clear();
     _selection.clear();
@@ -133,9 +139,17 @@ class CanvasController extends ChangeNotifier {
 
   // ---------------------------------------------------------------- viewport
 
+  /// Moves the view, stopping it at the page's top and left edges.
   set viewport(CanvasViewport value) {
-    if (_viewport == value) return;
-    _viewport = value;
+    final origin = value.origin;
+    final kept = origin.dx >= 0 && origin.dy >= 0
+        ? value
+        : CanvasViewport(
+            origin: Offset(math.max(0, origin.dx), math.max(0, origin.dy)),
+            zoom: value.zoom,
+          );
+    if (_viewport == kept) return;
+    _viewport = kept;
     notifyListeners();
   }
 
@@ -167,6 +181,29 @@ class CanvasController extends ChangeNotifier {
   void resetZoom(Size size) {
     final center = _viewport.toPage(Offset(size.width / 2, size.height / 2));
     viewport = _viewport.zoomAround(1, Offset.zero).centeredOn(center, size);
+  }
+
+  /// Scrolls just far enough to show [bounds] with [margin] screen pixels
+  /// around it, or, if it does not fit, to show its top-left part.
+  void reveal(Aabb bounds, {double margin = 48}) {
+    final visible = _viewport.visibleBounds(viewSize);
+    final pad = _viewport.toPageDistance(margin);
+    double along(double start, double end, double viewStart, double viewEnd) {
+      if (start - pad >= viewStart && end + pad <= viewEnd) return viewStart;
+      final length = viewEnd - viewStart;
+      // The far edge in view if the whole of it fits, else its start.
+      return end - start + 2 * pad <= length && start - pad >= viewStart
+          ? end + pad - length
+          : start - pad;
+    }
+
+    viewport = CanvasViewport(
+      origin: Offset(
+        along(bounds.left, bounds.right, visible.left, visible.right),
+        along(bounds.top, bounds.bottom, visible.top, visible.bottom),
+      ),
+      zoom: _viewport.zoom,
+    );
   }
 
   // ------------------------------------------------------------------- tools
@@ -342,7 +379,7 @@ class CanvasController extends ChangeNotifier {
     bool markDirty = true,
   }) {
     _apply(
-      _document.withElementAdded(element),
+      _document.withElementAdded(_keptOnPage(<NoteElement>[element]).single),
       recordUndo: recordUndo,
       markDirty: markDirty,
     );
@@ -353,20 +390,20 @@ class CanvasController extends ChangeNotifier {
   void addElements(List<NoteElement> elements) {
     if (elements.isEmpty) return;
     var next = _document;
-    for (final element in elements) {
+    for (final element in _keptOnPage(elements)) {
       next = next.withElementAdded(element);
     }
     _apply(next);
   }
 
   /// Replaces several elements at once, as one change — a group being moved,
-  /// resized or turned.
+  /// resized or turned. Moved together if need be, they stay on the page.
   void replaceElements(
     Iterable<NoteElement> elements, {
     bool recordUndo = true,
   }) {
     final replacements = <String, NoteElement>{
-      for (final element in elements) element.id: element,
+      for (final element in _keptOnPage(elements.toList())) element.id: element,
     };
     if (replacements.isEmpty) return;
     var changed = false;
@@ -413,7 +450,7 @@ class CanvasController extends ChangeNotifier {
     bool markDirty = true,
   }) {
     _apply(
-      _document.withElementReplaced(element),
+      _document.withElementReplaced(_keptOnPage(<NoteElement>[element]).single),
       recordUndo: recordUndo,
       markDirty: markDirty,
     );
@@ -427,13 +464,25 @@ class CanvasController extends ChangeNotifier {
     _apply(_document.withElementsRemoved(removed));
   }
 
-  /// Moves the selection by a page-space delta.
+  /// Moves the selection by a page-space delta, or as far as it goes before
+  /// reaching the page's top or left edge.
   void translateSelection(Offset delta, {bool recordUndo = true}) {
-    if (_selection.isEmpty || delta == Offset.zero) return;
+    final bounds = selectionBounds;
+    if (bounds == null) return;
+    final back = PageDocument.shiftOntoPage(
+      bounds.translate(delta.dx, delta.dy),
+    );
+    // Content already past the edge, from before pages had edges, is kept
+    // from going further rather than pushed back.
+    final moved = Offset(
+      delta.dx + math.min(back.x, math.max(0, -delta.dx)),
+      delta.dy + math.min(back.y, math.max(0, -delta.dy)),
+    );
+    if (moved == Offset.zero) return;
     var next = _document;
     for (final element in selectedElements) {
       next = next.withElementReplaced(
-        element.withFrame(element.frame.translate(delta.dx, delta.dy)),
+        element.withFrame(element.frame.translate(moved.dx, moved.dy)),
       );
     }
     _apply(next, recordUndo: recordUndo);
@@ -607,6 +656,21 @@ class CanvasController extends ChangeNotifier {
   }
 
   // ----------------------------------------------------------------- helpers
+
+  /// [elements] moved together, if need be, to lie on the page.
+  static List<NoteElement> _keptOnPage(List<NoteElement> elements) {
+    if (elements.isEmpty) return elements;
+    var bounds = elements.first.bounds;
+    for (final element in elements.skip(1)) {
+      bounds = bounds.union(element.bounds);
+    }
+    final shift = PageDocument.shiftOntoPage(bounds);
+    if (shift.x == 0 && shift.y == 0) return elements;
+    return <NoteElement>[
+      for (final element in elements)
+        element.withFrame(element.frame.translate(shift.x, shift.y)),
+    ];
+  }
 
   /// Minimum squared distance between kept samples, in page units.
   static const double _minSampleDistanceSquared = 0.5 * 0.5;

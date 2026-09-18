@@ -5,6 +5,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'database.dart';
+import 'page_repository.dart';
 import 'row_read.dart';
 
 /// Stores notebooks and sections.
@@ -14,10 +15,14 @@ import 'row_read.dart';
 /// background isolate, which is the planned answer to large-workspace
 /// scalability.
 class LibraryRepository {
-  LibraryRepository(this._db, {DateTime Function()? clock})
+  LibraryRepository(this._db, this._pages, {DateTime Function()? clock})
     : _clock = clock ?? DateTime.now;
 
   final AantekeningDatabase _db;
+
+  /// The pages sections hold, which copying a section copies too.
+  final PageRepository _pages;
+
   final DateTime Function() _clock;
 
   int get _now => _clock().millisecondsSinceEpoch;
@@ -53,7 +58,7 @@ class LibraryRepository {
     final notebook = Notebook(
       id: Ulid.generate(),
       title: title,
-      position: await _nextNotebookPosition(),
+      position: _nextNotebookPosition(),
       createdAt: now,
       updatedAt: now,
       color: color,
@@ -90,6 +95,14 @@ class LibraryRepository {
         notebook.deletedAt,
         notebook.id,
       ],
+    );
+  }
+
+  /// Renames a notebook.
+  Future<void> renameNotebook(String id, String title) async {
+    _db.run(
+      'UPDATE notebooks SET title = ?, updated_at = ? WHERE id = ?',
+      <Object?>[title, _now, id],
     );
   }
 
@@ -156,12 +169,7 @@ class LibraryRepository {
   }
 
   /// Fetches one section, or null when it does not exist.
-  Future<Section?> findSection(String id) async {
-    final rows = _db.select('SELECT * FROM sections WHERE id = ?', <Object?>[
-      id,
-    ]);
-    return rows.isEmpty ? null : _section(rows.first);
-  }
+  Future<Section?> findSection(String id) async => _findSection(id);
 
   /// Creates a section, nested under [parentId] when one is given.
   Future<Section> createSection({
@@ -176,7 +184,7 @@ class LibraryRepository {
       notebookId: notebookId,
       title: title,
       parentId: parentId,
-      position: await _nextSectionPosition(notebookId, parentId),
+      position: _nextSectionPosition(notebookId, parentId),
       createdAt: now,
       updatedAt: now,
       color: color,
@@ -218,6 +226,14 @@ class LibraryRepository {
     );
   }
 
+  /// Renames a section.
+  Future<void> renameSection(String id, String title) async {
+    _db.run(
+      'UPDATE sections SET title = ?, updated_at = ? WHERE id = ?',
+      <Object?>[title, _now, id],
+    );
+  }
+
   /// Re-parents [sectionId] and places it at [position] among its new siblings.
   ///
   /// Throws [ArgumentError] when the move would put a section inside its own
@@ -228,14 +244,14 @@ class LibraryRepository {
     String? parentId,
     double? position,
   }) async {
-    if (parentId != null && await _isDescendantOrSelf(parentId, sectionId)) {
+    if (parentId != null && _isDescendantOrSelf(parentId, sectionId)) {
       throw ArgumentError.value(
         parentId,
         'parentId',
         'a section cannot be moved inside itself',
       );
     }
-    final target = position ?? await _nextSectionPosition(notebookId, parentId);
+    final target = position ?? _nextSectionPosition(notebookId, parentId);
     _db.transaction(() {
       _db.run(
         'UPDATE sections SET notebook_id = ?, parent_id = ?, position = ?, '
@@ -255,24 +271,153 @@ class LibraryRepository {
     });
   }
 
-  /// Moves a section and its subtree to the recycle bin.
-  Future<void> deleteSection(String id) async {
-    _db.run('UPDATE sections SET deleted_at = ? WHERE id = ?', <Object?>[
-      _now,
-      id,
-    ]);
+  /// Copies a section, with its subsections and every page in them, into
+  /// [notebookId] — under [parentId] when given — at the end; returns the
+  /// copy.
+  ///
+  /// Throws [ArgumentError] when [parentId] is the section or one of its
+  /// subsections, which would copy the section into itself without end.
+  Future<Section> copySection(
+    String sectionId, {
+    required String notebookId,
+    String? parentId,
+  }) async => _db.transaction(() {
+    if (parentId != null && _isDescendantOrSelf(parentId, sectionId)) {
+      throw ArgumentError.value(
+        parentId,
+        'parentId',
+        'a section cannot be copied into itself',
+      );
+    }
+    final source = _findSection(sectionId);
+    if (source == null) {
+      throw ArgumentError.value(sectionId, 'sectionId', 'no such section');
+    }
+    return _copyTree(
+      source,
+      notebookId: notebookId,
+      parentId: parentId,
+      position: _nextSectionPosition(notebookId, parentId),
+    );
+  });
+
+  /// Moves a section and its subtree to the recycle bin. Returns the sections
+  /// it deleted; their pages go with them, hidden with their sections.
+  Future<List<String>> deleteSection(String id) async => _db.transaction(() {
+    // Subsections deleted earlier keep their own time, so restoring this
+    // section does not bring them back with it.
+    final deleted = _subtree(id, live: true);
+    final now = _now;
+    for (final section in deleted) {
+      _db.run('UPDATE sections SET deleted_at = ? WHERE id = ?', <Object?>[
+        now,
+        section,
+      ]);
+    }
+    return deleted;
+  });
+
+  /// Restores a section from the recycle bin, with the subsections deleted
+  /// along with it.
+  Future<void> restoreSection(String id) async {
+    final deletedAt = _findSection(id)?.deletedAt;
+    if (deletedAt == null) return;
+    _db.transaction(() {
+      final now = _now;
+      for (final section in _subtree(id, deletedAt: deletedAt)) {
+        _db.run(
+          'UPDATE sections SET deleted_at = NULL, updated_at = ? WHERE id = ?',
+          <Object?>[now, section],
+        );
+      }
+    });
   }
 
-  /// Restores a section from the recycle bin.
-  Future<void> restoreSection(String id) async {
-    _db.run(
-      'UPDATE sections SET deleted_at = NULL, updated_at = ? WHERE id = ?',
-      <Object?>[_now, id],
+  Section? _findSection(String id) {
+    final rows = _db.select('SELECT * FROM sections WHERE id = ?', <Object?>[
+      id,
+    ]);
+    return rows.isEmpty ? null : _section(rows.first);
+  }
+
+  /// [sectionId] and the sections beneath it, parents before their
+  /// subsections: every one, only the live ones with [live], or only those
+  /// deleted at [deletedAt] — deleted along with it.
+  List<String> _subtree(String sectionId, {bool live = false, int? deletedAt}) {
+    final condition = live
+        ? 'WHERE s.deleted_at IS NULL'
+        : deletedAt != null
+        ? 'WHERE s.deleted_at = ?'
+        : '';
+    final rows = _db.select(
+      'WITH RECURSIVE subtree(id, depth) AS ('
+      '  SELECT ?, 0'
+      '  UNION ALL'
+      '  SELECT s.id, t.depth + 1 FROM sections s '
+      '  JOIN subtree t ON s.parent_id = t.id $condition'
+      ') SELECT id FROM subtree ORDER BY depth',
+      <Object?>[sectionId, ?deletedAt],
     );
+    return <String>[for (final row in rows) str(row, 'id')];
+  }
+
+  /// Copies [source], its pages and its live subsections into [notebookId],
+  /// under [parentId] at [position]; subsections keep their order.
+  Section _copyTree(
+    Section source, {
+    required String notebookId,
+    required String? parentId,
+    required double position,
+  }) {
+    final children = <Section>[
+      for (final row in _db.select(
+        'SELECT * FROM sections WHERE parent_id = ? AND deleted_at IS NULL '
+        'ORDER BY position, id',
+        <Object?>[source.id],
+      ))
+        _section(row),
+    ];
+    final now = _now;
+    final copy = Section(
+      id: Ulid.generate(),
+      notebookId: notebookId,
+      parentId: parentId,
+      title: source.title,
+      position: position,
+      color: source.color,
+      createdAt: now,
+      updatedAt: now,
+    );
+    _db.run(
+      'INSERT INTO sections '
+      '(id, notebook_id, parent_id, title, position, color, created_at, '
+      ' updated_at, deleted_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)',
+      <Object?>[
+        copy.id,
+        copy.notebookId,
+        copy.parentId,
+        copy.title,
+        copy.position,
+        copy.color,
+        copy.createdAt,
+        copy.updatedAt,
+      ],
+    );
+    _pages.copySectionPages(source.id, copy.id);
+    for (final child in children) {
+      _copyTree(
+        child,
+        notebookId: notebookId,
+        parentId: copy.id,
+        position: child.position,
+      );
+    }
+    return copy;
   }
 
   /// Whether [candidate] is [ancestor] or sits anywhere beneath it.
-  Future<bool> _isDescendantOrSelf(String candidate, String ancestor) async {
+  bool _isDescendantOrSelf(String candidate, String ancestor) {
     if (candidate == ancestor) return true;
     final rows = _db.select(
       'WITH RECURSIVE ancestors(id, parent_id) AS ('
@@ -286,10 +431,7 @@ class LibraryRepository {
     return rows.isNotEmpty;
   }
 
-  Future<double> _nextSectionPosition(
-    String notebookId,
-    String? parentId,
-  ) async {
+  double _nextSectionPosition(String notebookId, String? parentId) {
     final rows = parentId == null
         ? _db.select(
             'SELECT MAX(position) AS m FROM sections '
@@ -305,7 +447,7 @@ class LibraryRepository {
     return max == null ? 0 : FractionalIndex.after((max as num).toDouble());
   }
 
-  Future<double> _nextNotebookPosition() async {
+  double _nextNotebookPosition() {
     final rows = _db.select('SELECT MAX(position) AS m FROM notebooks');
     final max = rows.first['m'];
     return max == null ? 0 : FractionalIndex.after((max as num).toDouble());

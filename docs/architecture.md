@@ -23,8 +23,9 @@ packages. Dependencies point in one direction only.
   and in any future command-line importer.
 * **`aantekening_store`** — SQLite, full-text search, embeddings and the
   content-addressed asset store.
-* **`aantekening_canvas`** — the infinite canvas: viewport, spatial index, ink
-  capture and the painted layers. Knows nothing about maths or PDFs.
+* **`aantekening_canvas`** — the infinite canvas, running right and down from
+  a page's top-left corner: viewport, spatial index, ink capture and the
+  painted layers. Knows nothing about maths or PDFs.
 * **`aantekening_math`** — linear-input parsing and LaTeX rendering.
 * **`aantekening_ai`** — interfaces to language models running locally.
 * **`app/aantekening`** — the window, navigation, and the wiring between them.
@@ -68,8 +69,11 @@ will not be a breaking change. See `docs/roadmap.md`.
 ## Platforms
 
 Linux, Windows and Android share all Dart code. The only platform-specific
-pieces are the workspace directory (`path_provider`) and the bundled SQLite
-(`sqlite3_flutter_libs`). Nothing in the codebase branches on platform.
+pieces are the workspace directory (`path_provider`), and the SQLite and
+PDFium libraries, which `package:sqlite3` and `pdfrx` fetch prebuilt for each
+platform as the app is built — SQLite with FTS5. Nothing in the codebase
+branches on platform, except the trackpad scaling Linux needs (see
+`trackpadPanScale`) and the Linux window's title bar.
 
 ## Testing
 

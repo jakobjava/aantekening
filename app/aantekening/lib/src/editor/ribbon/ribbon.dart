@@ -8,29 +8,30 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../arrangement/arrangement_drag.dart';
 import 'ribbon_items.dart';
 import 'ribbon_layout.dart';
 import 'ribbon_state.dart';
 
 export 'ribbon_items.dart' show RibbonCommands;
 export 'ribbon_layout.dart' show RibbonTab;
-export 'ribbon_state.dart' show ribbonProvider;
-
-/// Where a dragged button would land: in front of the button now at [index]
-/// in [group], or at its end.
-typedef _Slot = ({RibbonGroup group, int index});
+export 'ribbon_state.dart' show ribbonLayoutProvider, ribbonProvider;
 
 /// Tabs of commands, each in sections divided by lines, with every section's
-/// name beneath it.
+/// name beneath it, across the top of the window.
 ///
 /// It is always there — nothing appears or disappears as the caret moves —
 /// and commands with nothing to act on are greyed out. Tool shortcuts bring
 /// the matching tab forward (see [RibbonController.show]), and any button can
 /// be dragged to another place, section or tab, which is remembered.
 class Ribbon extends ConsumerStatefulWidget {
-  const Ribbon({required this.commands, super.key});
+  const Ribbon({required this.commands, this.enabled = true, super.key});
 
   final RibbonCommands commands;
+
+  /// Whether there is a page for the commands to act on. Without one they
+  /// are shown greyed out, so the ribbon keeps its place and its size.
+  final bool enabled;
 
   static const double tabStripHeight = 30;
   static const double labelHeight = 16;
@@ -43,70 +44,33 @@ class Ribbon extends ConsumerStatefulWidget {
 }
 
 class _RibbonState extends ConsumerState<Ribbon> {
-  /// The button being dragged, if any.
-  final ValueNotifier<RibbonItem?> _dragging = ValueNotifier<RibbonItem?>(null);
-
-  /// Where it would land if dropped now.
-  final ValueNotifier<_Slot?> _slot = ValueNotifier<_Slot?>(null);
-
-  /// Each button's key, by which its place on screen is found while another
-  /// is dragged over it — and which lets a moved button keep its state.
-  final Map<RibbonItem, GlobalKey> _keys = <RibbonItem, GlobalKey>{
-    for (final item in RibbonItem.values)
-      item: GlobalKey(debugLabel: 'ribbon ${item.name}'),
-  };
+  final ArrangementDrag<RibbonGroup, RibbonItem> _drag =
+      ArrangementDrag<RibbonGroup, RibbonItem>();
 
   final ScrollController _scroll = ScrollController();
 
   @override
   void dispose() {
-    _dragging.dispose();
-    _slot.dispose();
+    _drag.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
-  void _startDrag(RibbonItem item) => _dragging.value = item;
-
-  void _endDrag() {
-    _dragging.value = null;
-    _slot.value = null;
-  }
-
-  void _drop(RibbonItem item, RibbonGroup group, int index) {
-    ref.read(ribbonProvider.notifier).move(item, group, index);
-    _endDrag();
-  }
+  void _drop(RibbonItem item, RibbonGroup group, int index) =>
+      ref.read(ribbonLayoutProvider.notifier).move(item, group, index);
 
   /// A button dropped on a tab's name goes at the end of that tab.
   void _dropOnTab(RibbonItem item, RibbonTab tab) {
     final group = RibbonGroup.of(tab).last;
-    final controller = ref.read(ribbonProvider.notifier);
-    controller.move(
-      item,
-      group,
-      ref.read(ribbonProvider).layout.itemsIn(group).length,
-    );
-    controller.open(tab);
-    _endDrag();
-  }
-
-  /// Where [pointer], in global coordinates, falls among [items]: in front of
-  /// the nearest button, or after it if the pointer is past its middle.
-  int _indexAt(List<RibbonItem> items, Offset pointer) {
-    var best = items.length;
-    var bestDistance = double.infinity;
-    for (var i = 0; i < items.length; i++) {
-      final box = _keys[items[i]]!.currentContext?.findRenderObject();
-      if (box is! RenderBox || !box.hasSize) continue;
-      final center = box.localToGlobal(box.size.center(Offset.zero));
-      final distance = (center - pointer).distance;
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = pointer.dx < center.dx ? i : i + 1;
-      }
-    }
-    return best;
+    ref
+        .read(ribbonLayoutProvider.notifier)
+        .move(
+          item,
+          group,
+          ref.read(ribbonLayoutProvider).itemsIn(group).length,
+        );
+    ref.read(ribbonProvider.notifier).open(tab);
+    _drag.end();
   }
 
   /// Lets a mouse wheel scroll a ribbon too wide for the window sideways.
@@ -127,6 +91,7 @@ class _RibbonState extends ConsumerState<Ribbon> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(ribbonProvider);
+    final layout = ref.watch(ribbonLayoutProvider);
     final scheme = Theme.of(context).colorScheme;
 
     return RibbonScope(
@@ -146,7 +111,17 @@ class _RibbonState extends ConsumerState<Ribbon> {
                 onDropped: _dropOnTab,
               ),
               if (!state.collapsed)
-                SizedBox(height: Ribbon.bodyHeight, child: _body(state)),
+                SizedBox(
+                  height: Ribbon.bodyHeight,
+                  child: IgnorePointer(
+                    ignoring: !widget.enabled,
+                    child: AnimatedOpacity(
+                      opacity: widget.enabled ? 1 : 0.4,
+                      duration: const Duration(milliseconds: 150),
+                      child: _body(state, layout),
+                    ),
+                  ),
+                ),
               Divider(height: 1, thickness: 1, color: scheme.outlineVariant),
             ],
           ),
@@ -155,43 +130,41 @@ class _RibbonState extends ConsumerState<Ribbon> {
     );
   }
 
-  Widget _body(RibbonState state) => ValueListenableBuilder<RibbonItem?>(
-    valueListenable: _dragging,
-    builder: (context, dragging, _) {
-      // A section emptied by moving its buttons away is hidden, except while
-      // a button is being dragged, when it is somewhere to put one back.
-      final groups = <RibbonGroup>[
-        for (final group in RibbonGroup.of(state.tab))
-          if (dragging != null || state.layout.itemsIn(group).isNotEmpty) group,
-      ];
-      return Listener(
-        onPointerSignal: _scrollSideways,
-        child: SingleChildScrollView(
-          controller: _scroll,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              for (var i = 0; i < groups.length; i++) ...<Widget>[
-                if (i > 0) const _GroupDivider(),
-                _GroupView(
-                  group: groups[i],
-                  items: state.layout.itemsIn(groups[i]),
-                  keys: _keys,
-                  slot: _slot,
-                  indexAt: _indexAt,
-                  onDragStarted: _startDrag,
-                  onDragEnded: _endDrag,
-                  onDrop: _drop,
-                ),
-              ],
-            ],
-          ),
-        ),
+  Widget _body(RibbonState state, RibbonLayout layout) =>
+      ValueListenableBuilder<RibbonItem?>(
+        valueListenable: _drag.dragging,
+        builder: (context, dragging, _) {
+          // A section emptied by moving its buttons away is hidden, except
+          // while a button is being dragged, when it is somewhere to put one
+          // back.
+          final groups = <RibbonGroup>[
+            for (final group in RibbonGroup.of(state.tab))
+              if (dragging != null || layout.itemsIn(group).isNotEmpty) group,
+          ];
+          return Listener(
+            onPointerSignal: _scrollSideways,
+            child: SingleChildScrollView(
+              controller: _scroll,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (var i = 0; i < groups.length; i++) ...<Widget>[
+                    if (i > 0) const _GroupDivider(),
+                    _GroupView(
+                      group: groups[i],
+                      items: layout.itemsIn(groups[i]),
+                      drag: _drag,
+                      onDrop: _drop,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
       );
-    },
-  );
 }
 
 // ------------------------------------------------------------------ tabs
@@ -365,41 +338,28 @@ class _GroupView extends StatelessWidget {
   const _GroupView({
     required this.group,
     required this.items,
-    required this.keys,
-    required this.slot,
-    required this.indexAt,
-    required this.onDragStarted,
-    required this.onDragEnded,
+    required this.drag,
     required this.onDrop,
   });
 
   final RibbonGroup group;
   final List<RibbonItem> items;
-  final Map<RibbonItem, GlobalKey> keys;
-  final ValueNotifier<_Slot?> slot;
-  final int Function(List<RibbonItem> items, Offset pointer) indexAt;
-  final ValueChanged<RibbonItem> onDragStarted;
-  final VoidCallback onDragEnded;
+  final ArrangementDrag<RibbonGroup, RibbonItem> drag;
   final void Function(RibbonItem item, RibbonGroup group, int index) onDrop;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return DragTarget<RibbonItem>(
-      onWillAcceptWithDetails: (_) => true,
-      onMove: (details) =>
-          slot.value = (group: group, index: indexAt(items, details.offset)),
-      onLeave: (_) {
-        if (slot.value?.group == group) slot.value = null;
-      },
-      onAcceptWithDetails: (details) =>
-          onDrop(details.data, group, indexAt(items, details.offset)),
-      builder: (context, candidates, _) => Container(
+    return ArrangementDropTarget<RibbonGroup, RibbonItem>(
+      drag: drag,
+      group: group,
+      items: items,
+      axis: Axis.horizontal,
+      onDrop: onDrop,
+      builder: (context, highlighted) => Container(
         padding: const EdgeInsets.fromLTRB(3, 4, 3, 2),
         decoration: BoxDecoration(
-          color: candidates.isEmpty
-              ? null
-              : scheme.primary.withValues(alpha: 0.05),
+          color: highlighted ? scheme.primary.withValues(alpha: 0.05) : null,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Column(
@@ -408,7 +368,7 @@ class _GroupView extends StatelessWidget {
             SizedBox(
               height: RibbonMetrics.content,
               child: items.isEmpty
-                  ? _EmptyGroup(highlighted: candidates.isNotEmpty)
+                  ? ArrangementEmptyGroup(highlighted: highlighted)
                   : Row(mainAxisSize: MainAxisSize.min, children: _columns()),
             ),
             SizedBox(
@@ -469,265 +429,17 @@ class _GroupView extends StatelessWidget {
 
   Widget _cell(int index) {
     final item = items[index];
-    return ValueListenableBuilder<_Slot?>(
-      valueListenable: slot,
-      builder: (context, slot, child) {
-        final here = slot != null && slot.group == group;
-        return _DropMarker(
-          before: here && slot.index == index,
-          after:
-              here && slot.index == items.length && index == items.length - 1,
-          child: child!,
-        );
-      },
-      child: KeyedSubtree(
-        key: keys[item],
-        child: _ItemDraggable(
-          item: item,
-          onDragStarted: () => onDragStarted(item),
-          onDragEnded: onDragEnded,
-        ),
-      ),
+    return ArrangeableItem<RibbonGroup, RibbonItem>(
+      drag: drag,
+      item: item,
+      group: group,
+      index: index,
+      count: items.length,
+      axis: Axis.horizontal,
+      icon: ribbonGlyphOf(item),
+      label: item.label,
+      child: RibbonItemView(item: item),
     );
-  }
-}
-
-/// An emptied section, while a button is dragged: somewhere to drop it.
-class _EmptyGroup extends StatelessWidget {
-  const _EmptyGroup({required this.highlighted});
-
-  final bool highlighted;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 52,
-      margin: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: highlighted ? scheme.primary : scheme.outlineVariant,
-        ),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Icon(Icons.add_rounded, size: 16, color: scheme.outline),
-    );
-  }
-}
-
-/// Marks where a dragged button would go: a line at the left or right edge
-/// of the button beside that place.
-class _DropMarker extends StatelessWidget {
-  const _DropMarker({
-    required this.before,
-    required this.after,
-    required this.child,
-  });
-
-  final bool before;
-  final bool after;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => CustomPaint(
-    foregroundPainter: before || after
-        ? _DropMarkerPainter(
-            atStart: before,
-            color: Theme.of(context).colorScheme.primary,
-          )
-        : null,
-    child: child,
-  );
-}
-
-class _DropMarkerPainter extends CustomPainter {
-  _DropMarkerPainter({required this.atStart, required this.color});
-
-  final bool atStart;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final x = atStart ? 1.0 : size.width - 1;
-    canvas.drawLine(
-      Offset(x, 2),
-      Offset(x, size.height - 2),
-      Paint()
-        ..color = color
-        ..strokeWidth = 2.5
-        ..strokeCap = StrokeCap.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_DropMarkerPainter oldDelegate) =>
-      oldDelegate.atStart != atStart || oldDelegate.color != color;
-}
-
-// -------------------------------------------------------------- dragging
-
-/// A ribbon button that can be picked up and moved.
-class _ItemDraggable extends StatelessWidget {
-  const _ItemDraggable({
-    required this.item,
-    required this.onDragStarted,
-    required this.onDragEnded,
-  });
-
-  final RibbonItem item;
-  final VoidCallback onDragStarted;
-  final VoidCallback onDragEnded;
-
-  @override
-  Widget build(BuildContext context) {
-    final button = RibbonItemView(item: item);
-    return _RibbonDraggable(
-      data: item,
-      dragAnchorStrategy: pointerDragAnchorStrategy,
-      feedback: _DragPreview(item: item),
-      childWhenDragging: Opacity(
-        opacity: 0.3,
-        child: IgnorePointer(child: button),
-      ),
-      onDragStarted: onDragStarted,
-      // Called even if the tab it came from has been switched away from,
-      // unlike onDragEnd.
-      onDragCompleted: onDragEnded,
-      onDraggableCanceled: (_, _) => onDragEnded(),
-      child: button,
-    );
-  }
-}
-
-/// What follows the pointer while a button is dragged.
-class _DragPreview extends StatelessWidget {
-  const _DragPreview({required this.item});
-
-  final RibbonItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return FractionalTranslation(
-      translation: const Offset(-0.5, -0.5),
-      child: Material(
-        elevation: 6,
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ribbonGlyphOf(item),
-              const SizedBox(width: 6),
-              Text(item.label, style: theme.textTheme.labelMedium),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RibbonDraggable extends Draggable<RibbonItem> {
-  const _RibbonDraggable({
-    required super.child,
-    required super.feedback,
-    required super.data,
-    super.childWhenDragging,
-    super.dragAnchorStrategy,
-    super.onDragStarted,
-    super.onDragCompleted,
-    super.onDraggableCanceled,
-  });
-
-  @override
-  MultiDragGestureRecognizer createRecognizer(
-    GestureMultiDragStartCallback onStart,
-  ) =>
-      _RibbonDragRecognizer(allowedButtonsFilter: allowedButtonsFilter)
-        ..onStart = onStart;
-}
-
-/// Picks a button up once a mouse has moved it a few pixels, or once a
-/// finger has held it: a click still presses the button, and a finger
-/// swiping along the ribbon still scrolls it.
-class _RibbonDragRecognizer extends MultiDragGestureRecognizer {
-  _RibbonDragRecognizer({super.debugOwner, super.allowedButtonsFilter});
-
-  @override
-  MultiDragPointerState createNewPointerState(PointerDownEvent event) =>
-      event.kind == PointerDeviceKind.touch
-      ? _HoldToDrag(event.position, event.kind, gestureSettings)
-      : _MoveToDrag(event.position, event.kind, gestureSettings);
-
-  @override
-  String get debugDescription => 'ribbon drag';
-}
-
-class _MoveToDrag extends MultiDragPointerState {
-  _MoveToDrag(super.initialPosition, super.kind, super.gestureSettings);
-
-  /// Far enough that a click with a slight wobble is still a click.
-  static const double _slop = 6;
-
-  @override
-  void checkForResolutionAfterMove() {
-    if (pendingDelta!.distance > _slop) resolve(GestureDisposition.accepted);
-  }
-
-  @override
-  void accepted(GestureMultiDragStartCallback starter) =>
-      starter(initialPosition);
-}
-
-class _HoldToDrag extends MultiDragPointerState {
-  _HoldToDrag(super.initialPosition, super.kind, super.gestureSettings) {
-    _timer = Timer(_delay, _held);
-  }
-
-  /// A little shorter than a long press, so the drag wins over the tooltip.
-  static const Duration _delay = Duration(milliseconds: 400);
-
-  Timer? _timer;
-  GestureMultiDragStartCallback? _starter;
-
-  void _held() {
-    _timer = null;
-    final starter = _starter;
-    if (starter != null) {
-      _starter = null;
-      starter(initialPosition);
-    } else {
-      resolve(GestureDisposition.accepted);
-    }
-  }
-
-  @override
-  void accepted(GestureMultiDragStartCallback starter) {
-    if (_timer == null) {
-      starter(initialPosition);
-    } else {
-      _starter = starter;
-    }
-  }
-
-  @override
-  void checkForResolutionAfterMove() {
-    if (_timer == null) return;
-    if (pendingDelta!.distance > computeHitSlop(kind, gestureSettings)) {
-      resolve(GestureDisposition.rejected);
-      _timer?.cancel();
-      _timer = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _timer = null;
-    super.dispose();
   }
 }
 

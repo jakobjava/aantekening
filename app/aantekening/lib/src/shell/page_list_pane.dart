@@ -7,78 +7,44 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
 import '../theme.dart';
+import 'library_actions.dart';
+import 'library_menu.dart';
+import 'library_pane.dart';
 
 /// Lists the pages of the selected section, with subpages indented beneath
-/// their parent.
+/// their parent. Every row has a menu on a right-click or a long press, and
+/// the empty space below has one for adding and pasting pages.
 class PageListPane extends ConsumerWidget {
-  const PageListPane({super.key, this.width = AppTheme.pageListPaneWidth});
-
-  /// Fixed pane width, or null to fill the available space — which is what the
-  /// compact layout needs when the panes move into a drawer.
-  final double? width;
+  const PageListPane({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final sectionId = ref.watch(selectedSectionProvider);
+    final actions = ref.read(libraryActionsProvider);
 
     // ListTile paints its selection tint and ink onto the nearest Material,
     // so the pane's background has to be one rather than a coloured box.
     return Material(
       color: AppTheme.paneColor(scheme).withValues(alpha: 0.6),
-      child: SizedBox(
-        width: width,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 6, 6),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      'PAGES',
-                      style: TextStyle(
-                        fontSize: 11,
-                        letterSpacing: 0.8,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add, size: 18),
-                    tooltip: 'New page',
-                    onPressed: sectionId == null
-                        ? null
-                        : () => _createPage(ref, sectionId),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: sectionId == null
-                  ? const _Hint(message: 'Select a section')
-                  : _PageList(sectionId: sectionId),
-            ),
-          ],
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          PaneHeader(
+            title: 'Pages',
+            actionTooltip: 'New page',
+            onAction: sectionId == null
+                ? null
+                : () => actions.createPage(sectionId: sectionId),
+          ),
+          Expanded(
+            child: sectionId == null
+                ? const PaneMessage('Select a section')
+                : _PageList(sectionId: sectionId),
+          ),
+        ],
       ),
     );
-  }
-
-  Future<void> _createPage(
-    WidgetRef ref,
-    String sectionId, {
-    String? parentId,
-  }) async {
-    final store = await ref.read(storeProvider.future);
-    final page = await store.pages.createPage(
-      sectionId: sectionId,
-      parentId: parentId,
-    );
-    ref.read(libraryRevisionProvider.notifier).bump();
-    ref.read(selectedPageProvider.notifier).select(page.id);
   }
 }
 
@@ -90,31 +56,55 @@ class _PageList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pages = ref.watch(pagesProvider(sectionId));
+    final section = ref.watch(sectionProvider(sectionId)).value;
     final selected = ref.watch(selectedPageProvider);
+    final actions = ref.read(libraryActionsProvider);
 
-    return pages.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => _Hint(message: '$error'),
-      data: (all) {
-        if (all.isEmpty) return const _Hint(message: 'No pages yet');
-
-        // Subpages are drawn under their parent, so the list is ordered by
-        // parent first rather than by raw sibling position.
-        final ordered = orderPagesWithSubpages(all);
-
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          itemCount: ordered.length,
-          itemBuilder: (context, index) {
-            final entry = ordered[index];
-            return _PageTile(
-              page: entry.page,
-              depth: entry.depth,
-              selected: entry.page.id == selected,
-            );
-          },
-        );
+    return PaneBackgroundMenu(
+      commands: () {
+        return <MenuCommand>[
+          MenuCommand(
+            'New page',
+            Icons.note_add_outlined,
+            () => actions.createPage(sectionId: sectionId),
+          ),
+          MenuCommand(
+            'Paste page',
+            Icons.content_paste_rounded,
+            section != null && actions.canPaste(section)
+                ? () => actions.paste(section)
+                : null,
+          ),
+        ];
       },
+      child: pages.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => PaneMessage('$error', error: true),
+        data: (all) {
+          if (all.isEmpty) return const PaneMessage('No pages yet');
+
+          // Subpages are drawn under their parent, so the list is ordered by
+          // parent first rather than by raw sibling position.
+          final ordered = orderPagesWithSubpages(all);
+          final parents = <String, String?>{
+            for (final page in all) page.id: page.parentId,
+          };
+
+          return ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            itemCount: ordered.length,
+            itemBuilder: (context, index) {
+              final entry = ordered[index];
+              return _PageTile(
+                page: entry.page,
+                depth: entry.depth,
+                selected: entry.page.id == selected,
+                parents: parents,
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
@@ -154,65 +144,52 @@ class _PageTile extends ConsumerWidget {
     required this.page,
     required this.depth,
     required this.selected,
+    required this.parents,
   });
 
   final PageRef page;
   final int depth;
   final bool selected;
+  final Map<String, String?> parents;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final title = page.title.trim().isEmpty ? 'Untitled page' : page.title;
 
     return Padding(
       padding: EdgeInsets.only(left: depth * 14.0),
-      child: ListTile(
-        selected: selected,
-        selectedTileColor: scheme.primary.withValues(alpha: 0.12),
-        title: Text(
-          title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-            fontStyle: page.title.trim().isEmpty
-                ? FontStyle.italic
-                : FontStyle.normal,
+      child: LibraryTile(
+        node: page,
+        parents: parents,
+        child: ListTile(
+          selected: selected,
+          selectedTileColor: scheme.primary.withValues(alpha: 0.12),
+          title: Text(
+            displayTitle(page),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              fontStyle: page.title.trim().isEmpty
+                  ? FontStyle.italic
+                  : FontStyle.normal,
+            ),
           ),
+          subtitle: page.preview.isEmpty
+              ? null
+              : Text(
+                  page.preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+          onTap: () => ref.read(selectedPageProvider.notifier).select(page.id),
         ),
-        subtitle: page.preview.isEmpty
-            ? null
-            : Text(
-                page.preview,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-              ),
-        onTap: () => ref.read(selectedPageProvider.notifier).select(page.id),
       ),
     );
   }
-}
-
-class _Hint extends StatelessWidget {
-  const _Hint({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 12,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
-    ),
-  );
 }

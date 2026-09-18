@@ -82,6 +82,16 @@ final sectionsProvider = FutureProvider.family<List<Section>, String>((
   return store.library.listAllSections(notebookId);
 });
 
+/// One section.
+final sectionProvider = FutureProvider.family<Section?, String>((
+  ref,
+  sectionId,
+) async {
+  ref.watch(libraryRevisionProvider);
+  final store = await ref.watch(storeProvider.future);
+  return store.library.findSection(sectionId);
+});
+
 /// The pages of a section.
 final pagesProvider = FutureProvider.family<List<PageRef>, String>((
   ref,
@@ -92,11 +102,14 @@ final pagesProvider = FutureProvider.family<List<PageRef>, String>((
   return store.pages.listPages(sectionId);
 });
 
-/// The most recently edited pages across the workspace.
-final recentPagesProvider = FutureProvider<List<PageRef>>((ref) async {
+/// One page's metadata, its title and date among them.
+final pageProvider = FutureProvider.family<PageRef?, String>((
+  ref,
+  pageId,
+) async {
   ref.watch(libraryRevisionProvider);
   final store = await ref.watch(storeProvider.future);
-  return store.pages.recentPages();
+  return store.pages.findPage(pageId);
 });
 
 /// The current search text.

@@ -189,6 +189,134 @@ void main() {
       expect((await store.library.listAllSections(from.id)), isEmpty);
     });
 
+    test('renames notebooks and sections', () async {
+      final book = await store.library.createNotebook(title: 'Draft');
+      final section = await store.library.createSection(
+        notebookId: book.id,
+        title: 'Untitled',
+      );
+
+      await store.library.renameNotebook(book.id, 'Physics');
+      await store.library.renameSection(section.id, 'Optics');
+
+      expect((await store.library.findNotebook(book.id))!.title, 'Physics');
+      expect((await store.library.findSection(section.id))!.title, 'Optics');
+    });
+
+    test(
+      'deleting a section takes its subsections and pages with it',
+      () async {
+        final book = await store.library.createNotebook(title: 'Maths');
+        final parent = await store.library.createSection(
+          notebookId: book.id,
+          title: 'Analysis',
+        );
+        final child = await store.library.createSection(
+          notebookId: book.id,
+          title: 'Series',
+          parentId: parent.id,
+        );
+        final page = await store.pages.createPage(sectionId: child.id);
+        await store.pages.saveDocument(
+          page.id,
+          documentWithText(page.id, 'ratio test'),
+        );
+
+        final deleted = await store.library.deleteSection(parent.id);
+
+        expect(deleted, unorderedEquals(<String>[parent.id, child.id]));
+        expect(await store.library.listAllSections(book.id), isEmpty);
+        expect(await store.search.search('ratio'), isEmpty);
+        expect(await store.pages.listAllPages(), isEmpty);
+
+        await store.library.restoreSection(parent.id);
+        expect(await store.library.listAllSections(book.id), hasLength(2));
+        expect(await store.search.search('ratio'), hasLength(1));
+      },
+    );
+
+    test('restoring a section leaves what was deleted before it', () async {
+      final book = await store.library.createNotebook(title: 'Maths');
+      final parent = await store.library.createSection(
+        notebookId: book.id,
+        title: 'Analysis',
+      );
+      final gone = await store.library.createSection(
+        notebookId: book.id,
+        title: 'Old',
+        parentId: parent.id,
+      );
+      await store.library.deleteSection(gone.id);
+      // Deletions are told apart by when they were made.
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await store.library.deleteSection(parent.id);
+
+      await store.library.restoreSection(parent.id);
+
+      expect(
+        (await store.library.listAllSections(book.id)).map((s) => s.title),
+        <String>['Analysis'],
+      );
+    });
+
+    test('copies a section with its subsections and pages', () async {
+      final book = await store.library.createNotebook(title: 'Maths');
+      final other = await store.library.createNotebook(title: 'Archive');
+      final parent = await store.library.createSection(
+        notebookId: book.id,
+        title: 'Analysis',
+      );
+      final child = await store.library.createSection(
+        notebookId: book.id,
+        title: 'Series',
+        parentId: parent.id,
+      );
+      final page = await store.pages.createPage(
+        sectionId: child.id,
+        title: 'Tests',
+      );
+      await store.pages.saveDocument(
+        page.id,
+        documentWithText(page.id, 'ratio test'),
+      );
+
+      final copy = await store.library.copySection(
+        parent.id,
+        notebookId: other.id,
+      );
+
+      final copied = await store.library.listAllSections(other.id);
+      expect(copied.map((s) => s.title), <String>['Analysis', 'Series']);
+      expect(copied.last.parentId, copy.id);
+      final pages = await store.pages.listPages(copied.last.id);
+      expect(pages.single.title, 'Tests');
+      expect(pages.single.id, isNot(page.id));
+      expect(
+        (await store.pages.loadDocument(pages.single.id))!.id,
+        pages.single.id,
+      );
+      expect(await store.search.search('ratio'), hasLength(2));
+      // The original is untouched.
+      expect(await store.library.listAllSections(book.id), hasLength(2));
+    });
+
+    test('refuses to copy a section into itself', () async {
+      final book = await store.library.createNotebook(title: 'Maths');
+      final parent = await store.library.createSection(
+        notebookId: book.id,
+        title: 'Analysis',
+      );
+
+      expect(
+        () => store.library.copySection(
+          parent.id,
+          notebookId: book.id,
+          parentId: parent.id,
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('soft deletion hides a notebook but keeps it recoverable', () async {
       final book = await store.library.createNotebook(title: 'Temp');
 
@@ -247,7 +375,7 @@ void main() {
       expect(encoding, BodyEncoding.json);
     });
 
-    test('derives a title from the first line of an untitled page', () async {
+    test('never takes a title from the text', () async {
       final sectionId = await workspace.seedSection();
       final page = await store.pages.createPage(sectionId: sectionId);
 
@@ -256,7 +384,7 @@ void main() {
         documentWithText(page.id, 'Taylor series\nremainder term'),
       );
 
-      expect(saved.title, 'Taylor series');
+      expect(saved.title, isEmpty);
       expect(saved.preview, contains('remainder term'));
     });
 
@@ -313,15 +441,166 @@ void main() {
     test('refuses to make a page its own subpage', () async {
       final sectionId = await workspace.seedSection();
       final page = await store.pages.createPage(sectionId: sectionId);
+      final subpage = await store.pages.createPage(
+        sectionId: sectionId,
+        parentId: page.id,
+      );
+
+      for (final parentId in <String>[page.id, subpage.id]) {
+        expect(
+          () => store.pages.movePage(
+            page.id,
+            sectionId: sectionId,
+            parentId: parentId,
+          ),
+          throwsArgumentError,
+        );
+      }
+    });
+
+    test('moves a page with its subpages to another section', () async {
+      final from = await workspace.seedSection();
+      final to = await workspace.seedSection(notebook: 'Other');
+      final page = await store.pages.createPage(sectionId: from);
+      final subpage = await store.pages.createPage(
+        sectionId: from,
+        parentId: page.id,
+      );
+
+      await store.pages.movePage(page.id, sectionId: to);
+
+      expect(await store.pages.listPages(from), isEmpty);
+      expect((await store.pages.findPage(subpage.id))!.sectionId, to);
+      expect((await store.pages.findPage(subpage.id))!.parentId, page.id);
+    });
+
+    test('places a page after another, before the one that followed', () async {
+      final sectionId = await workspace.seedSection();
+      final first = await store.pages.createPage(
+        sectionId: sectionId,
+        title: 'First',
+      );
+      await store.pages.createPage(sectionId: sectionId, title: 'Second');
+      final moved = await store.pages.createPage(
+        sectionId: sectionId,
+        title: 'Moved',
+      );
+
+      await store.pages.movePage(
+        moved.id,
+        sectionId: sectionId,
+        after: first.id,
+      );
 
       expect(
-        () => store.pages.movePage(
-          page.id,
-          sectionId: sectionId,
-          parentId: page.id,
-        ),
-        throwsArgumentError,
+        (await store.pages.listPages(sectionId)).map((p) => p.title),
+        <String>['First', 'Moved', 'Second'],
       );
+    });
+
+    test('copies a page with its subpages under a new identity', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(
+        sectionId: sectionId,
+        title: 'Lecture',
+      );
+      await store.pages.saveDocument(
+        page.id,
+        documentWithText(page.id, 'Green theorem'),
+      );
+      await store.pages.createPage(
+        sectionId: sectionId,
+        title: 'Exercises',
+        parentId: page.id,
+      );
+
+      final copy = await store.pages.copyPage(
+        page.id,
+        sectionId: sectionId,
+        after: page.id,
+      );
+
+      final topLevel = await store.pages.listPages(
+        sectionId,
+        topLevelOnly: true,
+      );
+      expect(topLevel.map((p) => p.id), <String>[page.id, copy.id]);
+      expect(copy.title, 'Lecture');
+      expect(copy.createdAt, page.createdAt);
+      expect(
+        (await store.pages.listPages(
+          sectionId,
+          parentId: copy.id,
+        )).single.title,
+        'Exercises',
+      );
+      final document = await store.pages.loadDocument(copy.id);
+      expect(document!.id, copy.id);
+      expect(document.extractSearchText(), 'Green theorem');
+      expect(await store.search.search('green'), hasLength(2));
+    });
+
+    test('copies a page beneath one of its own subpages', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+      final subpage = await store.pages.createPage(
+        sectionId: sectionId,
+        parentId: page.id,
+      );
+
+      final copy = await store.pages.copyPage(
+        page.id,
+        sectionId: sectionId,
+        parentId: page.id,
+        after: subpage.id,
+      );
+
+      expect(copy.parentId, page.id);
+      // The page, its subpage, the copy and the copy of the subpage.
+      expect(await store.pages.listPages(sectionId), hasLength(4));
+    });
+
+    test('deleting a page takes its subpages with it', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+      final subpage = await store.pages.createPage(
+        sectionId: sectionId,
+        parentId: page.id,
+      );
+
+      final deleted = await store.pages.deletePage(page.id);
+
+      expect(deleted, <String>[page.id, subpage.id]);
+      expect(await store.pages.listPages(sectionId), isEmpty);
+
+      await store.pages.restorePage(page.id);
+      expect(await store.pages.listPages(sectionId), hasLength(2));
+    });
+
+    test('changes the date shown under the title', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+      final date = DateTime(2026, 3, 14, 9, 26).millisecondsSinceEpoch;
+
+      await store.pages.setPageDate(page.id, date);
+
+      expect((await store.pages.findPage(page.id))!.createdAt, date);
+    });
+
+    test('lists every live page in the workspace', () async {
+      final sectionId = await workspace.seedSection();
+      final kept = await store.pages.createPage(sectionId: sectionId);
+      final gone = await store.pages.createPage(sectionId: sectionId);
+      final hidden = await store.pages.createPage(
+        sectionId: await workspace.seedSection(notebook: 'Deleted'),
+      );
+      await store.pages.deletePage(gone.id);
+      final section = await store.library.findSection(hidden.sectionId);
+      await store.library.deleteNotebook(section!.notebookId);
+
+      expect((await store.pages.listAllPages()).map((p) => p.id), <String>[
+        kept.id,
+      ]);
     });
 
     test('lists recently edited pages first', () async {

@@ -38,7 +38,8 @@ Replace both rows with one ribbon above the page:
   are fixed; only buttons move. `RibbonLayout` keeps every button in exactly
   one section, so nothing can be lost or doubled, and reads a saved layout
   leniently: unknown names are dropped and buttons added in later versions
-  appear where they start out.
+  appear where they start out. (The sidebar's buttons have since come to be
+  arranged the same way, by the same code; see ADR 11.)
 * **Never takes the focus.** The ribbon sits inside `ExcludeFocus`, so pressing
   Bold leaves the caret — and the input method's connection — in the text it
   formats.

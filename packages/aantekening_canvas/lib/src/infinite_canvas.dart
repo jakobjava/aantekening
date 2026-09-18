@@ -29,6 +29,19 @@ typedef CanvasElementBuilder =
 /// point, in which case the canvas leaves that press alone.
 typedef CanvasPointerClaim = bool Function(NoteElement element, Offset page);
 
+/// Something fixed to the page but not stored on it, such as its title.
+///
+/// Laid out at [frame], in page units, it moves and scales with the page as
+/// an element does, beneath the elements, and handles the presses that land
+/// on it while the select tool is in hand.
+@immutable
+class CanvasHeader {
+  const CanvasHeader({required this.frame, required this.child});
+
+  final Frame frame;
+  final Widget child;
+}
+
 /// An infinitely pannable, zoomable page.
 ///
 /// Layers are stacked so each repaints independently: paper, highlighter ink,
@@ -44,6 +57,7 @@ class InfiniteCanvas extends StatefulWidget {
     this.onEmptyTap,
     this.onCanvasPress,
     this.onElementDoubleTap,
+    this.header,
     this.trackpadPanScale = 1,
   });
 
@@ -66,6 +80,9 @@ class InfiniteCanvas extends StatefulWidget {
 
   /// Invoked when an element is double-tapped.
   final void Function(NoteElement element)? onElementDoubleTap;
+
+  /// Drawn on the page beneath its elements: the page's title, say.
+  final CanvasHeader? header;
 
   /// How far the page moves per logical pixel of pan a trackpad reports.
   ///
@@ -515,6 +532,12 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     final hit = _controller.hitTest(page);
     final selection = _controller.selection;
 
+    // The header takes its own presses where no element lies over it.
+    if (hit == null &&
+        (widget.header?.frame.containsPoint(page.dx, page.dy) ?? false)) {
+      return _PointerAction.claimed;
+    }
+
     // Shift adds to the selection or takes away from it, whatever is clicked.
     if (hit != null && shift) {
       _pressed(hit);
@@ -562,9 +585,13 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   // --------------------------------------------------------------- transform
 
-  void _updateTransform(Offset page) {
+  void _updateTransform(Offset pointer) {
     final gesture = _transform;
     if (gesture == null) return;
+    // A handle is dragged no further than the page's top and left edges.
+    final page = gesture.handle == SelectionHandle.rotate
+        ? pointer
+        : Offset(math.max(0, pointer.dx), math.max(0, pointer.dy));
     final shift = HardwareKeyboard.instance.isShiftPressed;
     final List<NoteElement> updated;
 
@@ -993,6 +1020,8 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
                       viewport: viewport,
                       builder: widget.elementBuilder,
                       onDoubleTap: widget.onElementDoubleTap,
+                      header: widget.header,
+                      headerInteractive: controller.tool == CanvasTool.select,
                     ),
                   ),
                   IgnorePointer(
@@ -1061,7 +1090,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   };
 }
 
-/// Positions element widgets over the canvas.
+/// Positions element widgets over the canvas, with the header beneath them.
 ///
 /// Each element is placed at its on-screen rectangle and scaled from page
 /// units, rather than the whole layer being transformed. Keeping every child
@@ -1072,36 +1101,80 @@ class _ElementLayer extends StatelessWidget {
     required this.elements,
     required this.viewport,
     required this.builder,
+    required this.header,
+    required this.headerInteractive,
     this.onDoubleTap,
   });
 
   final List<NoteElement> elements;
   final CanvasViewport viewport;
   final CanvasElementBuilder? builder;
+  final CanvasHeader? header;
+
+  /// Whether the header takes presses: only with the select tool, so a pen
+  /// can write over it.
+  final bool headerInteractive;
   final void Function(NoteElement element)? onDoubleTap;
 
   @override
   Widget build(BuildContext context) {
     final build = builder;
-    if (build == null) return const SizedBox.shrink();
-
-    final zoom = viewport.zoom;
-    final children = <Widget>[];
+    final header = this.header;
+    final children = <Widget>[
+      // Placed whether or not it is in view: scrolling it out of sight must
+      // not take the keyboard from someone typing a title.
+      if (header != null)
+        _placed(
+          const ValueKey<String>('header'),
+          header.frame,
+          IgnorePointer(ignoring: !headerInteractive, child: header.child),
+        ),
+    ];
     for (final element in elements) {
-      if (element is InkElement) continue;
+      if (element is InkElement || build == null) continue;
 
       final content = build(context, element);
       if (content == null) continue;
 
-      final frame = element.frame;
-      // The element is laid out at its size in page units and then scaled as
-      // a whole; scaling the constraints instead would reflow text
-      // differently at every zoom level. It is placed in the box around its
-      // turned shape, so every visible part of it is inside its parent and can
-      // be hit. The structure is the same at any angle, so turning an element
-      // never rebuilds it from scratch.
-      final box = frame.rotatedBounds;
-      final placed = OverflowBox(
+      children.add(
+        _placed(
+          // Keyed by identity so an element keeps its widget state — a text
+          // box its caret, a PDF page its rendered image — while others are
+          // added, removed or scrolled out of view around it.
+          ValueKey<String>(element.id),
+          element.frame,
+          GestureDetector(
+            onDoubleTap: onDoubleTap == null
+                ? null
+                : () => onDoubleTap!(element),
+            behavior: HitTestBehavior.deferToChild,
+            child: content,
+          ),
+        ),
+      );
+    }
+
+    return Stack(clipBehavior: Clip.none, children: children);
+  }
+
+  /// [content] laid out at [frame], in page units, and placed on screen.
+  Widget _placed(Key key, Frame frame, Widget content) {
+    final zoom = viewport.zoom;
+    // The content is laid out at its size in page units and then scaled as a
+    // whole; scaling the constraints instead would reflow text differently at
+    // every zoom level. It is placed in the box around its turned shape, so
+    // every visible part of it is inside its parent and can be hit. The
+    // structure is the same at any angle, so turning an element never
+    // rebuilds it from scratch.
+    final box = frame.rotatedBounds;
+    final topLeft = viewport.toScreen(Offset(box.left, box.top));
+    return Positioned(
+      key: key,
+      left: topLeft.dx,
+      top: topLeft.dy,
+      width: box.width * zoom,
+      height: box.height * zoom,
+      child: OverflowBox(
         minWidth: 0,
         minHeight: 0,
         maxWidth: double.infinity,
@@ -1122,31 +1195,8 @@ class _ElementLayer extends StatelessWidget {
             ),
           ),
         ),
-      );
-
-      final topLeft = viewport.toScreen(Offset(box.left, box.top));
-      children.add(
-        Positioned(
-          // Keyed by identity so an element keeps its widget state — a text
-          // box its caret, a PDF page its rendered image — while others are
-          // added, removed or scrolled out of view around it.
-          key: ValueKey<String>(element.id),
-          left: topLeft.dx,
-          top: topLeft.dy,
-          width: box.width * zoom,
-          height: box.height * zoom,
-          child: GestureDetector(
-            onDoubleTap: onDoubleTap == null
-                ? null
-                : () => onDoubleTap!(element),
-            behavior: HitTestBehavior.deferToChild,
-            child: placed,
-          ),
-        ),
-      );
-    }
-
-    return Stack(clipBehavior: Clip.none, children: children);
+      ),
+    );
   }
 }
 

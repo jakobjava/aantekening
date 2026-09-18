@@ -232,6 +232,28 @@ void main() {
       expect(page.hitTest(10, 10)?.id, 'over');
       expect(page.hitTest(-500, -500), isNull);
     });
+
+    test('content beyond the top or left edge moves onto the page', () {
+      final page = PageDocument.empty(id: 'PAGE07')
+          .withElementAdded(_text('left', 'a', x: -30, y: 50))
+          .withElementAdded(_text('high', 'b', x: 40, y: -10));
+
+      final moved = page.withContentOnPage();
+
+      expect(moved.contentBounds.left, 0);
+      expect(moved.contentBounds.top, 0);
+      // Moved together, so the content keeps its layout.
+      expect(moved.elementById('high')!.frame.x, 70);
+      expect(moved.elementById('left')!.frame.y, 60);
+    });
+
+    test('a page whose content is on it is left as it is', () {
+      final page = PageDocument.empty(
+        id: 'PAGE08',
+      ).withElementAdded(_text('a', 'first', x: 0, y: 12));
+
+      expect(identical(page.withContentOnPage(), page), isTrue);
+    });
   });
 
   group('PageDocument indexing', () {

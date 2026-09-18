@@ -14,10 +14,6 @@ abstract final class AppTheme {
   /// Accent colour, used for selection, focus and the active tool.
   static const Color seed = Color(0xFF3B6EA5);
 
-  /// Width of the notebook and page-list panes.
-  static const double libraryPaneWidth = 248;
-  static const double pageListPaneWidth = 268;
-
   static ThemeData light() => _build(Brightness.light);
 
   static ThemeData dark() => _build(Brightness.dark);

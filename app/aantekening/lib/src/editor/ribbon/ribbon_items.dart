@@ -462,7 +462,7 @@ class RibbonItemView extends StatelessWidget {
       RibbonItem.resetRibbon => Consumer(
         builder: (context, ref, _) {
           final isDefault = ref.watch(
-            ribbonProvider.select((state) => state.layout.isDefault),
+            ribbonLayoutProvider.select((layout) => layout.isDefault),
           );
           return RibbonLargeButton(
             icon: Icon(ribbonIconOf(item), size: RibbonMetrics.largeIcon),
@@ -472,7 +472,7 @@ class RibbonItemView extends StatelessWidget {
                 'Drag any button to move it, to another section or tab',
             onPressed: isDefault
                 ? null
-                : ref.read(ribbonProvider.notifier).resetLayout,
+                : ref.read(ribbonLayoutProvider.notifier).reset,
           );
         },
       ),

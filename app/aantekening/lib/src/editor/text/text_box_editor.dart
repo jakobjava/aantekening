@@ -50,6 +50,8 @@ class TextBoxEditor extends StatefulWidget {
     this.onChanged,
     this.onSizeChanged,
     this.onExit,
+    this.highlight,
+    this.onMatchPlaced,
   });
 
   final TextElement element;
@@ -81,6 +83,13 @@ class TextBoxEditor extends StatefulWidget {
   /// Asks the host to stop editing, as Escape does.
   final VoidCallback? onExit;
 
+  /// Words to mark wherever they occur in the box, as a search found them.
+  final SearchTerms? highlight;
+
+  /// Told where the first word [highlight] marks lies, in the box's own page
+  /// units, once it has been laid out: for the page to bring it into view.
+  final ValueChanged<Rect>? onMatchPlaced;
+
   /// Height of the band along the top edge that moves the box when dragged.
   static const double grabBand = 12;
 
@@ -100,6 +109,20 @@ class TextBoxEditor extends StatefulWidget {
   /// runs along its top edge however the box is turned.
   static bool isInGrabBand(TextElement element, Offset page) =>
       element.frame.pageToLocal(page.dx, page.dy).y < grabBand;
+
+  /// Where [terms] occur in [block]'s text, in the model's offsets.
+  ///
+  /// Only the text is searched, not formulas: they are shown typeset, where
+  /// a word of their source cannot be pointed to.
+  static List<TextMatch> matchesIn(TextBlock block, SearchTerms terms) =>
+      terms.matchesIn(
+        <String>[
+          // As many spaces as the formula is long, so offsets stay the model's
+          // and words either side of it stay apart.
+          for (final run in block.runs)
+            run.isMath ? ' ' * run.text.length : run.text,
+        ].join(),
+      );
 
   /// Whether [blocks] hold nothing worth keeping: no text, no formula and no
   /// embed. An empty box is removed when editing ends.
@@ -181,6 +204,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
   /// What the preview was last told about the formula being edited.
   FormulaSession? _session;
   Rect? _reportedAnchor;
+
+  /// The search whose first match was last reported to [onMatchPlaced].
+  SearchTerms? _placedMatchesOf;
 
   /// The syntax setting this box follows while it is being edited.
   ValueNotifier<MathMode>? _syntaxSetting;
@@ -2327,8 +2353,53 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
   }
 
+  /// Where the search's words are in block [index], laid out as [view].
+  List<TextRange> _matchesIn(int index, BlockView view) {
+    final terms = widget.highlight;
+    if (terms == null) return const <TextRange>[];
+    return <TextRange>[
+      for (final match in TextBoxEditor.matchesIn(_blocks[index], terms))
+        TextRange(start: view.toView(match.start), end: view.toView(match.end)),
+    ];
+  }
+
+  /// Tells [TextBoxEditor.onMatchPlaced] where the first match is, once for
+  /// each search.
+  void _placeFirstMatch() {
+    if (!mounted) return;
+    final terms = widget.highlight;
+    final report = widget.onMatchPlaced;
+    final box = context.findRenderObject();
+    if (terms == null ||
+        report == null ||
+        identical(terms, _placedMatchesOf) ||
+        box is! RenderBox) {
+      return;
+    }
+    for (var i = 0; i < _blocks.length; i++) {
+      final matches = _matchesIn(i, _viewFor(i));
+      if (matches.isEmpty) continue;
+      final paragraph = _paragraph(i);
+      final rects = paragraph?.rangeRects(
+        matches.first.start,
+        matches.first.end,
+      );
+      if (paragraph == null || rects == null || rects.isEmpty) return;
+      _placedMatchesOf = terms;
+      report(
+        MatrixUtils.transformRect(paragraph.getTransformTo(box), rects.first),
+      );
+      return;
+    }
+  }
+
   BlockDecoration _decorationFor(int index, BlockView view, bool focused) {
-    if (!widget.isEditing) return BlockDecoration.none;
+    final matches = _matchesIn(index, view);
+    if (!widget.isEditing) {
+      return matches.isEmpty
+          ? BlockDecoration.none
+          : BlockDecoration(matches: matches);
+    }
     final start = _selection.start;
     final end = _selection.end;
 
@@ -2359,6 +2430,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       caretAffinity: _affinity,
       composing: caret.block == index ? _composing : null,
       formula: formulaRange,
+      matches: matches,
     );
   }
 
@@ -2378,6 +2450,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       formulaColor: RichTextStyles.formulaFill,
       formulaOutline: RichTextStyles.formulaOutline,
       composingColor: RichTextStyles.ink,
+      matchColor: RichTextStyles.searchMatch,
     );
 
     final ordinals = _ordinals();
@@ -2391,6 +2464,10 @@ class TextBoxEditorState extends State<TextBoxEditor>
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _reportFormulaAnchor(),
       );
+    }
+    if (widget.onMatchPlaced != null &&
+        !identical(widget.highlight, _placedMatchesOf)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _placeFirstMatch());
     }
 
     // Until something is typed, a new box is only a caret on the paper, as in

@@ -5,7 +5,7 @@
 /// and the arrangement is saved, see [RibbonLayout].
 library;
 
-import 'package:flutter/foundation.dart';
+import '../../arrangement/arrangement.dart';
 
 /// A ribbon tab.
 enum RibbonTab {
@@ -91,7 +91,7 @@ enum RibbonItem {
 }
 
 /// A section of a tab, and the buttons it starts out with.
-enum RibbonGroup {
+enum RibbonGroup implements ArrangementGroup<RibbonItem> {
   history(RibbonTab.home, 'Undo', <RibbonItem>[
     RibbonItem.undo,
     RibbonItem.redo,
@@ -165,7 +165,7 @@ enum RibbonGroup {
   final RibbonTab tab;
   final String label;
 
-  /// The buttons this section holds before anything is moved.
+  @override
   final List<RibbonItem> defaults;
 
   /// The sections of [tab], in order.
@@ -175,101 +175,5 @@ enum RibbonGroup {
   ];
 }
 
-/// Which buttons each section holds, in order.
-///
-/// Every [RibbonItem] is in exactly one section, so moving buttons around can
-/// never lose one or show one twice.
-@immutable
-class RibbonLayout {
-  RibbonLayout._(Map<RibbonGroup, List<RibbonItem>> items)
-    : _items = Map<RibbonGroup, List<RibbonItem>>.unmodifiable(
-        <RibbonGroup, List<RibbonItem>>{
-          for (final group in RibbonGroup.values)
-            group: List<RibbonItem>.unmodifiable(
-              items[group] ?? const <RibbonItem>[],
-            ),
-        },
-      );
-
-  /// Every button where it starts out.
-  static final RibbonLayout defaults = RibbonLayout._(
-    <RibbonGroup, List<RibbonItem>>{
-      for (final group in RibbonGroup.values) group: group.defaults,
-    },
-  );
-
-  final Map<RibbonGroup, List<RibbonItem>> _items;
-
-  /// The buttons in [group], in order.
-  List<RibbonItem> itemsIn(RibbonGroup group) => _items[group]!;
-
-  /// The section holding [item].
-  RibbonGroup groupOf(RibbonItem item) =>
-      RibbonGroup.values.firstWhere((group) => itemsIn(group).contains(item));
-
-  bool get isDefault => this == defaults;
-
-  /// [item] moved into [group], in front of the button now at [index] there,
-  /// or at the end for an index past the last.
-  RibbonLayout move(RibbonItem item, RibbonGroup group, int index) {
-    final from = groupOf(item);
-    final items = <RibbonGroup, List<RibbonItem>>{
-      for (final entry in _items.entries) entry.key: List.of(entry.value),
-    };
-    var at = index.clamp(0, items[group]!.length);
-    // Taking the button out first shifts everything after it along by one.
-    if (from == group && items[from]!.indexOf(item) < at) at--;
-    items[from]!.remove(item);
-    items[group]!.insert(at, item);
-    return RibbonLayout._(items);
-  }
-
-  Map<String, Object?> toJson() => <String, Object?>{
-    'version': 1,
-    'groups': <String, Object?>{
-      for (final group in RibbonGroup.values)
-        group.name: <String>[for (final item in itemsIn(group)) item.name],
-    },
-  };
-
-  /// The layout saved by [toJson], or the defaults if [json] is not one.
-  ///
-  /// Unknown names are skipped and a button named twice keeps its first
-  /// place. Buttons the saved layout does not mention — added in a later
-  /// version — appear where they start out.
-  static RibbonLayout fromJson(Object? json) {
-    if (json is! Map || json['groups'] is! Map) return defaults;
-    final stored = json['groups'] as Map;
-    final names = RibbonItem.values.asNameMap();
-    final placed = <RibbonItem>{};
-    final items = <RibbonGroup, List<RibbonItem>>{
-      for (final group in RibbonGroup.values) group: <RibbonItem>[],
-    };
-    for (final group in RibbonGroup.values) {
-      final saved = stored[group.name];
-      if (saved is! List) continue;
-      for (final name in saved) {
-        final item = names[name];
-        if (item != null && placed.add(item)) items[group]!.add(item);
-      }
-    }
-    for (final group in RibbonGroup.values) {
-      for (final item in group.defaults) {
-        if (placed.add(item)) items[group]!.add(item);
-      }
-    }
-    return RibbonLayout._(items);
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      other is RibbonLayout &&
-      RibbonGroup.values.every(
-        (group) => listEquals(other.itemsIn(group), itemsIn(group)),
-      );
-
-  @override
-  int get hashCode => Object.hashAll(<Object>[
-    for (final group in RibbonGroup.values) Object.hashAll(itemsIn(group)),
-  ]);
-}
+/// Which buttons each section of the ribbon holds, in order.
+typedef RibbonLayout = Arrangement<RibbonGroup, RibbonItem>;

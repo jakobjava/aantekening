@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import '../util/geometry.dart';
 import '../util/json_read.dart';
@@ -79,9 +80,9 @@ class CanvasSettings {
   /// Width of the printable column in page-space pixels, or null for a truly
   /// unbounded canvas.
   ///
-  /// A page is always infinite in both directions; this only draws a guide and
-  /// sets the wrap width for new text boxes, the way OneNote's page-width rule
-  /// does.
+  /// A page always runs on without end to the right; this only draws a guide
+  /// and sets the wrap width for new text boxes, the way OneNote's page-width
+  /// rule does.
   final double? paperWidth;
 
   CanvasSettings copyWith({
@@ -158,6 +159,31 @@ class PageDocument {
       box = box.union(elements[i].bounds);
     }
     return box;
+  }
+
+  /// How far content spanning [bounds] has to move, right and down, to lie on
+  /// the page: nothing when it already does.
+  ///
+  /// A page has a top-left corner, at (0, 0), and runs on without end to the
+  /// right and downwards, as a OneNote page does. Nothing is placed above or
+  /// left of the corner, and the view never scrolls there.
+  static Vec2 shiftOntoPage(Aabb bounds) =>
+      Vec2(math.max(0.0, -bounds.left), math.max(0.0, -bounds.top));
+
+  /// This page with its content moved just far enough right and down to lie
+  /// on the page, or this page when it already does — as a page kept from
+  /// before pages had edges may not.
+  PageDocument withContentOnPage() {
+    if (elements.isEmpty) return this;
+    final shift = shiftOntoPage(contentBounds);
+    if (shift.x == 0 && shift.y == 0) return this;
+    return copyWith(
+      revision: revision + 1,
+      elements: <NoteElement>[
+        for (final element in elements)
+          element.withFrame(element.frame.translate(shift.x, shift.y)),
+      ],
+    );
   }
 
   /// The highest paint order currently in use.

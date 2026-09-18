@@ -14,8 +14,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import '../search/search_panel.dart';
 import 'element_views.dart';
 import 'media_import.dart';
+import 'page_title.dart';
 import 'ribbon/ribbon.dart';
 import 'text/box_formatting.dart';
 import 'text/formula_preview.dart';
@@ -25,15 +27,22 @@ import 'text/text_box_controller.dart';
 import 'text/text_box_editor.dart';
 import 'trackpad.dart';
 
-/// Edits one page.
+/// Edits the page that is open: the ribbon across the top of the window, and
+/// beneath it the page, laid out among whatever [around] puts beside it.
 ///
-/// The editor owns the [CanvasController] directly rather than holding it in a
-/// provider: its lifetime is exactly this widget's, and tying it to the widget
-/// makes switching pages a plain state change with a guaranteed final save.
+/// The editor stays as other pages are opened, loading each in turn, so the
+/// ribbon, the tool in hand and the pens stay as they were. It owns the
+/// [CanvasController] directly rather than holding it in a provider: its
+/// lifetime is exactly this widget's, which guarantees a final save.
 class PageEditor extends ConsumerStatefulWidget {
-  const PageEditor({required this.pageId, super.key});
+  const PageEditor({required this.pageId, this.around, super.key});
 
-  final String pageId;
+  /// The page open, or null for none.
+  final String? pageId;
+
+  /// Lays the page out in the window below the ribbon — beside the sidebar,
+  /// say. The ribbon spans the whole window, over both.
+  final Widget Function(BuildContext context, Widget page)? around;
 
   @override
   ConsumerState<PageEditor> createState() => _PageEditorState();
@@ -105,7 +114,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// Whether the box being edited should open straight into a formula.
   bool _editingStartsInFormula = false;
 
-  bool _loading = true;
+  /// Whether the open page is being read, and whether it has been: the
+  /// canvas shows it, and edits to it are saved, only once it is ready.
+  bool _loading = false;
+  bool _ready = false;
   bool _disposed = false;
   Object? _error;
 
@@ -126,7 +138,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _textController.formulaSyntax
       ..value = ref.read(mathSyntaxProvider)
       ..addListener(_onSyntaxChosen);
-    unawaited(_load());
+    if (widget.pageId != null) unawaited(_load());
   }
 
   void _onSyntaxChosen() => ref
@@ -136,11 +148,18 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   @override
   void didUpdateWidget(PageEditor old) {
     super.didUpdateWidget(old);
-    if (old.pageId != widget.pageId) {
-      // Leaving a page must never lose what is on it, so the pending save is
-      // flushed before the new one is loaded.
-      unawaited(_flushThenLoad(old.pageId));
+    if (old.pageId == widget.pageId) return;
+    // Leaving a page must never lose what is on it: its last changes are
+    // saved to it before the next page is read.
+    _autosave?.cancel();
+    final leaving = old.pageId;
+    if (leaving != null && _ready && _controller.isDirty) {
+      unawaited(_persist(leaving, _controller.document));
     }
+    _ready = false;
+    _editingId = null;
+    _elementWidgets.clear();
+    if (widget.pageId != null) unawaited(_load());
   }
 
   @override
@@ -148,8 +167,9 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _autosave?.cancel();
     _controller.removeListener(_onCanvasChanged);
     _disposed = true;
-    if (_controller.isDirty) {
-      unawaited(_persist(widget.pageId, _controller.document));
+    final pageId = widget.pageId;
+    if (pageId != null && _ready && _controller.isDirty) {
+      unawaited(_persist(pageId, _controller.document));
     }
     _textController.formula.removeListener(_onFormulaChanged);
     _textController.formulaAnchor.removeListener(_placeFormulaPanel);
@@ -165,7 +185,9 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
   // ------------------------------------------------------------ load / save
 
+  /// Reads the open page into the canvas.
   Future<void> _load() async {
+    final pageId = widget.pageId!;
     setState(() {
       _loading = true;
       _error = null;
@@ -174,21 +196,24 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       final AantekeningStore store =
           _store ?? await ref.read(storeProvider.future);
       _store = store;
-      final stored = await store.pages.loadDocument(widget.pageId);
-      if (!mounted) return;
+      final stored = await store.pages.loadDocument(pageId);
+      // Another page may have been opened while this one was read.
+      if (!mounted || pageId != widget.pageId) return;
       final page = _withoutEmptyTextBoxes(
-        stored ?? PageDocument.empty(id: widget.pageId),
+        stored ?? PageDocument.empty(id: pageId),
       );
       // Formulas are stored as LaTeX; older pages held some in Simple
-      // syntax, which are translated once and saved that way.
-      final document = MathStorage.withLatexFormulas(page);
+      // syntax, which are translated once and saved that way — as is content
+      // from before pages had a top-left corner, moved onto the page.
+      final document = MathStorage.withLatexFormulas(page).withContentOnPage();
       _controller.loadDocument(document);
-      if (!identical(document, page)) {
-        unawaited(_persist(widget.pageId, document));
-      }
-      setState(() => _loading = false);
+      if (!identical(document, page)) unawaited(_persist(pageId, document));
+      setState(() {
+        _loading = false;
+        _ready = true;
+      });
     } on Object catch (error) {
-      if (!mounted) return;
+      if (!mounted || pageId != widget.pageId) return;
       setState(() {
         _error = error;
         _loading = false;
@@ -204,15 +229,6 @@ class _PageEditorState extends ConsumerState<PageEditor> {
           if (element is TextElement && TextBoxEditor.isEmpty(element.blocks))
             element.id,
       });
-
-  Future<void> _flushThenLoad(String previousPageId) async {
-    _autosave?.cancel();
-    _editingId = null;
-    if (_controller.isDirty) {
-      await _persist(previousPageId, _controller.document);
-    }
-    await _load();
-  }
 
   /// Called on every change to the page and the view — every frame of
   /// scrolling among them — so it rebuilds nothing itself: the canvas and
@@ -232,12 +248,22 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       if (mounted) setState(() {});
     }
 
-    if (!_controller.isDirty) return;
+    // Until the page has been read, the canvas still holds the one before.
+    final pageId = widget.pageId;
+    if (pageId == null || !_ready || !_controller.isDirty) return;
 
     _autosave?.cancel();
     _autosave = Timer(_autosaveDelay, () {
-      unawaited(_persist(widget.pageId, _controller.document));
+      unawaited(_persist(pageId, _controller.document));
     });
+  }
+
+  /// Saves the open page now, as Ctrl+S does.
+  void _saveNow() {
+    final pageId = widget.pageId;
+    if (pageId == null || !_ready) return;
+    _autosave?.cancel();
+    unawaited(_persist(pageId, _controller.document));
   }
 
   CanvasViewport? _tracedView;
@@ -660,8 +686,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
         _controller.zoomAtCenter(1 / _zoomStep),
     const SingleActivator(LogicalKeyboardKey.digit0, control: true): () =>
         _controller.resetZoom(_controller.viewSize),
-    const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
-        unawaited(_persist(widget.pageId, _controller.document)),
+    const SingleActivator(LogicalKeyboardKey.keyS, control: true): _saveNow,
     const SingleActivator(LogicalKeyboardKey.keyA, control: true): () {
       _controller
         ..setTool(CanvasTool.select)
@@ -714,53 +739,66 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
   // ----------------------------------------------------------------- build
 
+  /// The page laid out alone, where no [PageEditor.around] is given.
+  static Widget _alone(BuildContext context, Widget page) => page;
+
   @override
   Widget build(BuildContext context) {
     ref.listen<MathMode>(
       mathSyntaxProvider,
       (_, syntax) => _textController.formulaSyntax.value = syntax,
     );
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    final highlight = ref.watch(searchHighlightProvider);
 
     return Column(
       children: <Widget>[
-        Ribbon(commands: _ribbonCommands),
-        if (_error != null) _ErrorBanner(error: _error!),
-        Expanded(
-          child: Stack(
-            children: <Widget>[
-              Positioned.fill(child: _canvas()),
-              // The formula being edited is typed in its text box and shown
-              // typeset beneath, at a size that does not change with zoom.
-              Positioned.fill(
-                child: ValueListenableBuilder<bool>(
-                  valueListenable: _formulaPlaced,
-                  builder: (context, placed, _) => !placed
-                      ? const SizedBox.shrink()
-                      : ValueListenableBuilder<FormulaSession?>(
-                          valueListenable: _textController.formula,
-                          builder: (context, session, _) => session == null
-                              ? const SizedBox.shrink()
-                              : CustomSingleChildLayout(
-                                  delegate: _BelowFormula(_formulaOnScreen),
-                                  child: FormulaPreview(
-                                    session: session,
-                                    onDone: _textController.finishFormula,
-                                  ),
-                                ),
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        Ribbon(commands: _ribbonCommands, enabled: _ready),
+        Expanded(child: (widget.around ?? _alone)(context, _page(highlight))),
       ],
     );
   }
 
-  Widget _canvas() => CallbackShortcuts(
+  Widget _page(SearchTerms? highlight) {
+    final pageId = widget.pageId;
+    if (pageId == null) return const _NoPageSelected();
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    return Column(
+      children: <Widget>[
+        if (_error != null) _ErrorBanner(error: _error!),
+        if (_ready)
+          Expanded(
+            child: Stack(
+              children: <Widget>[
+                Positioned.fill(child: _canvas(pageId, highlight)),
+                // The formula being edited is typed in its text box and shown
+                // typeset beneath, at a size that does not change with zoom.
+                Positioned.fill(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _formulaPlaced,
+                    builder: (context, placed, _) => !placed
+                        ? const SizedBox.shrink()
+                        : ValueListenableBuilder<FormulaSession?>(
+                            valueListenable: _textController.formula,
+                            builder: (context, session, _) => session == null
+                                ? const SizedBox.shrink()
+                                : CustomSingleChildLayout(
+                                    delegate: _BelowFormula(_formulaOnScreen),
+                                    child: FormulaPreview(
+                                      session: session,
+                                      onDone: _textController.finishFormula,
+                                    ),
+                                  ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _canvas(String pageId, SearchTerms? highlight) => CallbackShortcuts(
     bindings: _shortcuts,
     child: Focus(
       focusNode: _canvasFocus,
@@ -771,74 +809,169 @@ class _PageEditorState extends ConsumerState<PageEditor> {
         onEmptyTap: _onEmptyTap,
         onCanvasPress: _onCanvasPress,
         onElementDoubleTap: _onElementDoubleTap,
-        elementBuilder: _buildElement,
+        elementBuilder: (context, element) =>
+            _buildElement(element, highlight, _firstMatchIn(highlight)),
+        header: CanvasHeader(
+          frame: PageTitle.frame,
+          child: Listener(
+            // Going to the title ends typing in a text box.
+            onPointerDown: (_) => _stopEditing(refocusCanvas: false),
+            child: PageTitle(
+              key: ValueKey<String>(pageId),
+              pageId: pageId,
+              highlight: highlight,
+              onFinished: _canvasFocus.requestFocus,
+            ),
+          ),
+        ),
         trackpadPanScale: _trackpadPanScale,
       ),
     ),
   );
 
-  /// The widget last built for each element, with what it was built from.
+  /// The text box holding the first word [highlight] finds, reading down the
+  /// page: the one brought into view.
+  String? _firstMatchIn(SearchTerms? highlight) {
+    if (highlight == null) return null;
+    final document = _controller.document;
+    if (identical(document, _matchedDocument) &&
+        identical(highlight, _matchedTerms)) {
+      return _firstMatch;
+    }
+    _matchedDocument = document;
+    _matchedTerms = highlight;
+    final boxes = document.elements.whereType<TextElement>().toList()
+      ..sort((a, b) {
+        final byTop = a.bounds.top.compareTo(b.bounds.top);
+        return byTop != 0 ? byTop : a.bounds.left.compareTo(b.bounds.left);
+      });
+    return _firstMatch = boxes
+        .where(
+          (box) => box.blocks.any(
+            (block) => TextBoxEditor.matchesIn(block, highlight).isNotEmpty,
+          ),
+        )
+        .firstOrNull
+        ?.id;
+  }
+
+  /// What [_firstMatchIn] last looked through, and what it found.
+  PageDocument? _matchedDocument;
+  SearchTerms? _matchedTerms;
+  String? _firstMatch;
+
+  /// Scrolls to [local], where a match lies in [element], in its own units.
+  void _revealMatch(NoteElement element, Rect local) {
+    final toPage = element.frame.localToPage;
+    var bounds = Aabb.empty;
+    for (final corner in <Offset>[
+      local.topLeft,
+      local.topRight,
+      local.bottomLeft,
+      local.bottomRight,
+    ]) {
+      final page = toPage.apply(corner.dx, corner.dy);
+      bounds = bounds.union(Aabb(page.x, page.y, page.x, page.y));
+    }
+    _controller.reveal(bounds);
+  }
+
+  /// What each element's widget was last built from, and the widget.
   ///
   /// The canvas asks for every visible element's widget whenever the view
   /// moves. Handing back the same widget for an unchanged element lets the
   /// framework skip rebuilding it, so panning and zooming never re-lay out
   /// text or re-typeset formulas.
-  final Map<String, (NoteElement, bool, bool, bool, Widget)> _elementWidgets =
-      <String, (NoteElement, bool, bool, bool, Widget)>{};
+  final Map<String, (_ElementBuild, Widget)> _elementWidgets =
+      <String, (_ElementBuild, Widget)>{};
 
-  Widget? _buildElement(BuildContext context, NoteElement element) {
+  Widget? _buildElement(
+    NoteElement element,
+    SearchTerms? highlight,
+    String? firstMatch,
+  ) {
     final id = element.id;
     final isEditing = id == _editingId;
-    final startsInFormula = isEditing && _editingStartsInFormula;
-    final interactive = _controller.tool == CanvasTool.select;
+    final built = (
+      element: element,
+      isEditing: isEditing,
+      startsInFormula: isEditing && _editingStartsInFormula,
+      interactive: _controller.tool == CanvasTool.select,
+      highlight: element is TextElement ? highlight : null,
+      placesMatch: id == firstMatch,
+    );
     final cached = _elementWidgets[id];
-    if (cached != null &&
-        identical(cached.$1, element) &&
-        cached.$2 == isEditing &&
-        cached.$3 == startsInFormula &&
-        cached.$4 == interactive) {
-      return cached.$5;
-    }
+    if (cached != null && cached.$1 == built) return cached.$2;
     if (_elementWidgets.length > _controller.document.elements.length + 64) {
       _elementWidgets.removeWhere(
         (key, _) => _controller.document.elementById(key) == null,
       );
     }
-    final widget = _elementWidget(
-      element,
-      isEditing,
-      startsInFormula,
-      interactive,
-    );
-    _elementWidgets[id] = (
-      element,
-      isEditing,
-      startsInFormula,
-      interactive,
-      widget,
-    );
+    final widget = _elementWidget(built);
+    _elementWidgets[id] = (built, widget);
     return widget;
   }
 
-  Widget _elementWidget(
-    NoteElement element,
-    bool isEditing,
-    bool startsInFormula,
-    bool interactive,
-  ) {
+  Widget _elementWidget(_ElementBuild built) {
+    final element = built.element;
     if (element is! TextElement) return CanvasElementView(element: element);
     final id = element.id;
     return TextBoxEditor(
       element: element,
-      isEditing: isEditing,
+      isEditing: built.isEditing,
       controller: _textController,
-      interactive: interactive,
-      startInFormula: startsInFormula,
+      interactive: built.interactive,
+      startInFormula: built.startsInFormula,
+      highlight: built.highlight,
+      onMatchPlaced: built.placesMatch
+          ? (local) => _revealMatch(element, local)
+          : null,
       onStartEditing: () => _startEditing(id),
       onChanged: (blocks, {required recordUndo}) =>
           _onTextChanged(id, blocks, recordUndo: recordUndo),
       onSizeChanged: (size) => _onTextSizeChanged(id, size),
       onExit: _stopEditing,
+    );
+  }
+}
+
+/// What an element's widget is built from: built from the same again, it is
+/// the same widget.
+typedef _ElementBuild = ({
+  NoteElement element,
+  bool isEditing,
+  bool startsInFormula,
+  bool interactive,
+  SearchTerms? highlight,
+  bool placesMatch,
+});
+
+/// Where the page goes while none is open.
+class _NoPageSelected extends StatelessWidget {
+  const _NoPageSelected();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: scheme.surfaceContainerLowest,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.edit_note_rounded,
+              size: 48,
+              color: scheme.outlineVariant,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Select a page, or create one',
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

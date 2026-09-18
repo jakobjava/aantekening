@@ -15,10 +15,22 @@ stays instant.
 ## What works today
 
 * **Organisation** — notebooks, sections nested to any depth, pages and
-  subpages. Soft deletion with restore.
-* **Ribbon** — OneNote-style tabs (Home, Insert, Draw, Math, View), each in named
-  sections. It stays put while you work; a tool's shortcut brings its tab
-  forward, and any button can be dragged to another place, section or tab.
+  subpages. Right-click any of them (or long-press) to add to it, cut, copy,
+  paste, rename or delete it. Deleting asks first; what is deleted stays in the
+  workspace and can be restored.
+* **Ribbon** — OneNote-style tabs (Home, Insert, Draw, Math, View) across the
+  top of the window, each in named sections. It stays put while you work; a
+  tool's shortcut brings its tab forward, and any button can be dragged to
+  another place, section or tab.
+* **Sidebar** — a strip of buttons down the left opens panels beside the page:
+  the notebooks and pages, search, a graph of the workspace, and the local AI.
+  A panel's button closes it again, its columns are widened by dragging their
+  edges, and the buttons can be dragged into another order, as the ribbon's
+  can.
+* **Pages** — each has its title and its date and time at the top, as in
+  OneNote. The title is the page's name in the page list, so renaming either
+  renames both; the date and time open pickers to change them. A page starts
+  at its top-left corner and runs on to the right and down.
 * **Infinite canvas** — scroll and zoom with a mouse wheel, a trackpad
   (two-finger scroll with momentum, pinch) or two fingers on a touchscreen; no
   separate pan tool. Undo and redo, with viewport culling so paint cost tracks
@@ -51,13 +63,19 @@ stays instant.
   text box as a printout. PDF pages are rendered sharply at any zoom and their
   text is searchable.
 * **Search** — SQLite FTS5 across every page, ranked, with highlighted
-  snippets, updating as you type.
-* **Local AI** — optional, off by default, and wired only to runtimes on your
-  own machine.
+  snippets. The best match opens as you type, with the words found marked on
+  the page and the view on the first of them; Enter steps through the other
+  pages that match.
+* **Graph** — every notebook, section and page as a dot joined to what it is
+  in, laid out by a force simulation, as Obsidian draws a vault. Drag the dots
+  about; click one to open it.
+* **Local AI** — optional, off by default, set up in its sidebar panel, and
+  wired only to runtimes on your own machine.
 
 ## Running it
 
-Requires the Flutter SDK (3.47+).
+Requires the Flutter SDK (3.47+). The first build downloads SQLite and PDFium
+for the platform, so it needs an internet connection.
 
 ```bash
 flutter pub get                 # resolves the whole workspace, from any member
@@ -71,6 +89,31 @@ workspace definition.
 
 Point the workspace somewhere else with `AANTEKENING_HOME=/path/to/dir`.
 
+### On Windows
+
+Install the [Flutter SDK](https://docs.flutter.dev/get-started/install/windows/desktop)
+and Git, and [Visual Studio](https://visualstudio.microsoft.com/downloads/) 2022
+or newer (Community is enough) with the **Desktop development with C++** workload.
+Turn on **Developer Mode** (Settings → System → For developers), which
+Flutter needs to link the app's plugins. `flutter doctor` says whether
+anything is missing. Then, in PowerShell:
+
+```powershell
+git clone https://github.com/jakobjava/aantekening.git
+cd aantekening
+flutter pub get
+cd app\aantekening
+flutter run -d windows                  # add --release for full speed
+```
+
+`flutter build windows --release` makes a copy to keep: the folder
+`build\windows\x64\runner\Release` holds `aantekening.exe` and what it
+needs, and can be moved anywhere.
+
+Notes are kept in `%APPDATA%\dev.aantekening\aantekening\workspace`;
+`$env:AANTEKENING_HOME = 'D:\Notes'` before starting the app puts them
+elsewhere.
+
 ### Using it
 
 The default tool types and selects: click empty paper and start typing, click
@@ -78,6 +121,9 @@ a text box to place the caret, drag a box by the band along its top. Click a
 picture, PDF page or ink to select it; drag across empty paper to select
 several. Drag a corner to resize in proportion, a side to stretch that way,
 and the knob above the box to rotate (hold Shift for 15° steps).
+
+Notebooks, sections and pages are in the sidebar's first panel; right-click
+one for what can be done to it. A new page opens with the caret in its title.
 
 Commands are on the ribbon: text formatting on **Home**, pictures, PDFs and
 formulas on **Insert**, the pens, their colours and widths on **Draw**,
@@ -105,6 +151,8 @@ puts everything back.
 | Shift+click | Add to or remove from the selection |
 | Ctrl+scroll, Ctrl+= / Ctrl+− / Ctrl+0 | Zoom, or reset to 100% |
 | Scroll, space+drag, middle-drag | Move around the page with any tool |
+| Enter / Shift+Enter (in search) | Open the next / previous page found; Esc clears the search |
+| Enter or Esc (in the title) | Back to the page |
 
 Arrowing into a typeset formula, or clicking it, shows its source again with
 the caret in it; arrowing off either end goes back to the text beside it and
@@ -138,7 +186,7 @@ dart analyze
 ### Optional: local AI
 
 Install [Ollama](https://ollama.com) and pull a chat model and an embedding
-model, then enable the features in the app's AI settings:
+model, then enable the features in the sidebar's **Local AI** panel:
 
 ```bash
 ollama pull llama3.2

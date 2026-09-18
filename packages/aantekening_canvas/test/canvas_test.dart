@@ -367,6 +367,50 @@ void main() {
       expect(controller.document.id, 'fresh');
     });
 
+    test('a loaded page shows from its corner, at the zoom in use', () {
+      final controller = CanvasController()
+        ..viewport = const CanvasViewport(origin: Offset(300, 900), zoom: 1.5);
+
+      controller.loadDocument(PageDocument.empty(id: 'next'));
+
+      expect(controller.viewport.origin, Offset.zero);
+      expect(controller.viewport.zoom, 1.5);
+    });
+
+    test('content is added and moved on the page, never past its corner', () {
+      final controller = CanvasController()
+        ..addElement(_text('a', x: -30, y: -5))
+        ..addElement(_text('b', x: 10, y: 10));
+
+      expect(controller.document.elementById('a')!.frame.x, 0);
+      expect(controller.document.elementById('a')!.frame.y, 0);
+
+      controller
+        ..select('b')
+        ..translateSelection(const Offset(-50, 20));
+      expect(controller.document.elementById('b')!.frame.x, 0);
+      expect(controller.document.elementById('b')!.frame.y, 30);
+    });
+
+    test('revealing a region scrolls only as far as needed', () {
+      final controller = CanvasController()
+        ..viewSize = const Size(800, 600)
+        ..addElement(_text('a'));
+
+      controller.reveal(const Aabb(100, 100, 300, 200));
+      expect(controller.viewport.origin, Offset.zero, reason: 'in view');
+
+      controller.reveal(const Aabb(100, 1000, 300, 1100));
+      expect(controller.viewport.origin, const Offset(0, 1100 + 48 - 600));
+
+      controller.reveal(const Aabb(100, 3000, 300, 5000));
+      expect(
+        controller.viewport.origin.dy,
+        3000 - 48,
+        reason: 'too tall to fit: its top is shown',
+      );
+    });
+
     test('only visible elements are returned for painting', () {
       final controller = CanvasController()
         ..addElement(_text('near', x: 0, y: 0))

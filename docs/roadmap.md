@@ -37,8 +37,14 @@ and the UI that blends semantic hits with FTS hits.
   resized on their own.
 * Tables render but are not yet edited in place.
 * Colours picked with the colour picker are remembered for the session only.
-* Pen and highlighter settings belong to the page editor, so opening another
-  page starts from the default pen again.
+* Deleted notebooks, sections and pages stay in the workspace and the store can
+  restore them, but there is no recycle bin in the app to do it from yet.
+* Pages and sections move and copy by cut, copy and paste; they cannot yet be
+  dragged about the panes.
+* The graph shows how notes nest, not how they refer to one another: pages
+  have no links between them yet. Its layout compares every dot with every
+  other, comfortable for a thousand or so pages; a Barnes–Hut quadtree would
+  take it further.
 * The ribbon has no keyboard route of its own (Office's Alt key tips); its
   commands have shortcuts, and it deliberately never takes the focus.
 * Trackpad scrolling on Linux is scaled back to finger distance from what GTK

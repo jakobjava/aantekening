@@ -46,11 +46,12 @@ class AantekeningStore {
     final database = AantekeningDatabase.open(
       p.join(directory, databaseFileName),
     );
+    final pages = PageRepository(database);
     return AantekeningStore._(
       directory: directory,
       database: database,
-      library: LibraryRepository(database),
-      pages: PageRepository(database),
+      library: LibraryRepository(database, pages),
+      pages: pages,
       search: SearchRepository(database),
       embeddings: EmbeddingRepository(database),
       assets: AssetStore(database, assetsDirectory),
@@ -66,11 +67,12 @@ class AantekeningStore {
     final assets =
         assetDirectory ??
         Directory.systemTemp.createTempSync('aantekening_assets_');
+    final pages = PageRepository(database);
     return AantekeningStore._(
       directory: ':memory:',
       database: database,
-      library: LibraryRepository(database),
-      pages: PageRepository(database),
+      library: LibraryRepository(database, pages),
+      pages: pages,
       search: SearchRepository(database),
       embeddings: EmbeddingRepository(database),
       assets: AssetStore(database, assets),

@@ -22,7 +22,8 @@ disk. There is no second, private representation.
 
 Every element carries `id`, `type`, `frame`, `createdAt`, `updatedAt`, and
 optionally `z` and `locked`. `frame` is `{x, y, width, height, rotation?}` in
-page units; rotation is radians clockwise about the frame's centre. Ink has no
+page units, from the page's top-left corner, so `x` and `y` are not negative;
+rotation is radians clockwise about the frame's centre. Ink has no
 rotation of its own: turning or scaling handwriting rewrites its samples, and
 its frame is the box around its strokes.
 
@@ -121,7 +122,7 @@ someone out of their own notes.
 
 ## What is *not* in the page file
 
-Titles, position among siblings, the search index, tags and embeddings live in
-SQLite, because they are properties of how a page sits in a workspace rather
-than of its contents. Attachments live in the content-addressed asset store;
+Titles, the date shown beneath a title (`pages.created_at`), position among
+siblings, the search index, tags and embeddings live in SQLite, because they
+are properties of how a page sits in a workspace rather than of its contents. Attachments live in the content-addressed asset store;
 the page refers to them by `assetId`.

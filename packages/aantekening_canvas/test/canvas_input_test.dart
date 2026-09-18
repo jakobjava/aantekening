@@ -32,6 +32,7 @@ Widget _host(
   ValueChanged<NoteElement?>? onCanvasPress,
   double trackpadPanScale = 1,
   Offset offset = Offset.zero,
+  CanvasHeader? header,
 }) => MaterialApp(
   home: Scaffold(
     body: Padding(
@@ -41,6 +42,7 @@ Widget _host(
         claimsPointer: claimsPointer,
         onEmptyTap: onEmptyTap,
         onCanvasPress: onCanvasPress,
+        header: header,
         trackpadPanScale: trackpadPanScale,
         elementBuilder: (context, element) =>
             const ColoredBox(color: Colors.blue),
@@ -387,6 +389,113 @@ void main() {
       expect(frame.x, 50);
       controller.undo();
       expect(controller.document.elementById('a')!.frame.width, 200);
+    });
+  });
+
+  group('InfiniteCanvas page edges', () {
+    testWidgets('the view stops at the top and left of the page', (
+      tester,
+    ) async {
+      final controller = CanvasController();
+      await tester.pumpWidget(_host(controller));
+
+      await tester.dragFrom(const Offset(300, 300), const Offset(150, 100));
+      expect(controller.viewport.origin, Offset.zero);
+
+      // Zooming out about a point far from the corner keeps the corner.
+      await tester.sendEventToBinding(
+        const PointerScaleEvent(position: Offset(600, 400), scale: 0.5),
+      );
+      expect(controller.viewport.zoom, 0.5);
+      expect(controller.viewport.origin, Offset.zero);
+    });
+
+    testWidgets('an element dragged past the edge stops at it', (tester) async {
+      final controller = CanvasController()
+        ..addElement(_image('a', x: 50, y: 50));
+      await tester.pumpWidget(_host(controller));
+
+      await tester.dragFrom(
+        const Offset(100, 100),
+        const Offset(-200, -30),
+        kind: PointerDeviceKind.mouse,
+      );
+
+      final frame = controller.document.elementById('a')!.frame;
+      expect(frame.x, 0);
+      expect(frame.y, 20);
+    });
+
+    testWidgets('a handle stops at the edge', (tester) async {
+      final controller = CanvasController()
+        ..addElement(_image('a', x: 50, y: 50));
+      controller.select('a');
+      await tester.pumpWidget(_host(controller));
+
+      // The left side's handle, dragged far past the page's left edge.
+      final gesture = await tester.startGesture(const Offset(48, 100));
+      await gesture.moveBy(const Offset(-20, 0));
+      await gesture.moveBy(const Offset(-200, 0));
+      await gesture.up();
+
+      final frame = controller.document.elementById('a')!.frame;
+      expect(frame.x, closeTo(0, 2));
+      expect(frame.x + frame.width, 250, reason: 'the far side stays put');
+    });
+
+    testWidgets('the header takes its own presses, but not the pen', (
+      tester,
+    ) async {
+      final controller = CanvasController();
+      final taps = <Offset>[];
+      var headerTaps = 0;
+      await tester.pumpWidget(
+        _host(
+          controller,
+          onEmptyTap: taps.add,
+          header: CanvasHeader(
+            frame: const Frame(x: 40, y: 20, width: 300, height: 60),
+            child: GestureDetector(
+              onTap: () => headerTaps++,
+              child: const ColoredBox(color: Colors.amber),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tapAt(const Offset(100, 50), kind: PointerDeviceKind.mouse);
+      expect(headerTaps, 1);
+      expect(taps, isEmpty, reason: 'no text box is started under the title');
+
+      controller.setTool(CanvasTool.pen);
+      await tester.pump();
+      await tester.dragFrom(const Offset(100, 50), const Offset(80, 10));
+      expect(headerTaps, 1);
+      expect(
+        controller.document.elements.whereType<InkElement>(),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('the header moves and scales with the page', (tester) async {
+      final controller = CanvasController()
+        ..viewport = const CanvasViewport(origin: Offset(20, 10), zoom: 2);
+      await tester.pumpWidget(
+        _host(
+          controller,
+          header: const CanvasHeader(
+            frame: Frame(x: 40, y: 20, width: 100, height: 30),
+            child: ColoredBox(
+              key: ValueKey<String>('title'),
+              color: Colors.amber,
+            ),
+          ),
+        ),
+      );
+
+      final rect = tester.getRect(find.byKey(const ValueKey<String>('title')));
+      expect(rect.topLeft, const Offset(40, 20));
+      expect(rect.size, const Size(200, 60));
     });
   });
 
@@ -777,7 +886,9 @@ void main() {
     testWidgets('a scroll starts smoothly wherever the canvas sits', (
       tester,
     ) async {
-      final controller = CanvasController();
+      // Scrolled down the page, away from its top and left edges.
+      final controller = CanvasController()
+        ..viewport = const CanvasViewport(origin: Offset(500, 500));
       // Below a ribbon and beside the sidebars, as in the app. The events are
       // as recorded from a touchpad under KDE Plasma: each reports the running
       // pan, 5.3 times as far as the fingers went.
@@ -799,8 +910,11 @@ void main() {
       ]);
 
       expect(largest, lessThan(2));
-      expect(controller.viewport.origin.dx, closeTo(-2 * 81 * 10 / 53, 1e-9));
-      expect(controller.viewport.origin.dy, 0);
+      expect(
+        controller.viewport.origin.dx,
+        closeTo(500 - 2 * 81 * 10 / 53, 1e-9),
+      );
+      expect(controller.viewport.origin.dy, 500);
     });
 
     testWidgets('a pinch event in the middle of a scroll does not jump', (

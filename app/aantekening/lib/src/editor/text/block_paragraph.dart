@@ -1,4 +1,5 @@
-/// A paragraph that draws its own caret, selection and formula highlight.
+/// A paragraph that draws its own caret, selection, formula highlight and
+/// search matches.
 library;
 
 import 'dart:math' as math;
@@ -17,6 +18,7 @@ class BlockDecoration {
     this.caretAffinity = TextAffinity.downstream,
     this.composing,
     this.formula,
+    this.matches = const <TextRange>[],
   });
 
   static const BlockDecoration none = BlockDecoration();
@@ -37,6 +39,9 @@ class BlockDecoration {
   /// drawn in a tinted, outlined box.
   final TextRange? formula;
 
+  /// Words a search found, marked behind the text.
+  final List<TextRange> matches;
+
   @override
   bool operator ==(Object other) =>
       other is BlockDecoration &&
@@ -44,11 +49,18 @@ class BlockDecoration {
       other.caret == caret &&
       other.caretAffinity == caretAffinity &&
       other.composing == composing &&
-      other.formula == formula;
+      other.formula == formula &&
+      listEquals(other.matches, matches);
 
   @override
-  int get hashCode =>
-      Object.hash(selection, caret, caretAffinity, composing, formula);
+  int get hashCode => Object.hash(
+    selection,
+    caret,
+    caretAffinity,
+    composing,
+    formula,
+    Object.hashAll(matches),
+  );
 }
 
 /// Colours and sizes for [BlockParagraph].
@@ -59,6 +71,7 @@ class BlockPaint {
     required this.selectionColor,
     required this.formulaColor,
     required this.composingColor,
+    required this.matchColor,
     this.formulaOutline,
     this.caretWidth = 1.6,
   });
@@ -66,6 +79,9 @@ class BlockPaint {
   final Color caretColor;
   final Color selectionColor;
   final Color formulaColor;
+
+  /// Behind the words a search found.
+  final Color matchColor;
 
   /// The line drawn around the formula being edited, if any.
   final Color? formulaOutline;
@@ -84,6 +100,7 @@ class BlockPaint {
       other.formulaColor == formulaColor &&
       other.formulaOutline == formulaOutline &&
       other.composingColor == composingColor &&
+      other.matchColor == matchColor &&
       other.caretWidth == caretWidth;
 
   @override
@@ -93,6 +110,7 @@ class BlockPaint {
     formulaColor,
     formulaOutline,
     composingColor,
+    matchColor,
     caretWidth,
   );
 }
@@ -327,6 +345,15 @@ class RenderBlockParagraph extends RenderProxyBox {
         );
         canvas.drawRRect(box, fill);
         if (stroke != null) canvas.drawRRect(box, stroke);
+      }
+    }
+
+    if (_decoration.matches.isNotEmpty) {
+      final paint = Paint()..color = _blockPaint.matchColor;
+      for (final match in _decoration.matches) {
+        for (final rect in rangeRects(match.start, match.end)) {
+          canvas.drawRect(rect.shift(offset), paint);
+        }
       }
     }
 
