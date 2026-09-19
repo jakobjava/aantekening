@@ -358,12 +358,7 @@ class CanvasController extends ChangeNotifier {
   /// The bounding box of the selection, or null when nothing is selected.
   Aabb? get selectionBounds {
     final elements = selectedElements;
-    if (elements.isEmpty) return null;
-    var bounds = elements.first.bounds;
-    for (var i = 1; i < elements.length; i++) {
-      bounds = bounds.union(elements[i].bounds);
-    }
-    return bounds;
+    return elements.isEmpty ? null : NoteElement.boundsOf(elements);
   }
 
   // ----------------------------------------------------------------- editing
@@ -486,17 +481,6 @@ class CanvasController extends ChangeNotifier {
       );
     }
     _apply(next, recordUndo: recordUndo);
-  }
-
-  /// Brings the selection to the front of the paint order.
-  void bringSelectionToFront() {
-    if (_selection.isEmpty) return;
-    var next = _document;
-    var z = next.topZ;
-    for (final element in selectedElements) {
-      next = next.withElementReplaced(element.withZ(++z));
-    }
-    _apply(next);
   }
 
   // ------------------------------------------------------------ ink capture
@@ -660,11 +644,7 @@ class CanvasController extends ChangeNotifier {
   /// [elements] moved together, if need be, to lie on the page.
   static List<NoteElement> _keptOnPage(List<NoteElement> elements) {
     if (elements.isEmpty) return elements;
-    var bounds = elements.first.bounds;
-    for (final element in elements.skip(1)) {
-      bounds = bounds.union(element.bounds);
-    }
-    final shift = PageDocument.shiftOntoPage(bounds);
+    final shift = PageDocument.shiftOntoPage(NoteElement.boundsOf(elements));
     if (shift.x == 0 && shift.y == 0) return elements;
     return <NoteElement>[
       for (final element in elements)

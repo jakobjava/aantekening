@@ -29,6 +29,10 @@ typedef CanvasElementBuilder =
 /// point, in which case the canvas leaves that press alone.
 typedef CanvasPointerClaim = bool Function(NoteElement element, Offset page);
 
+/// Decides whether a page-space point is on an element's grip: the part
+/// that picks it up to move it, such as a text box's band along its top.
+typedef CanvasGrip = bool Function(NoteElement element, Offset page);
+
 /// Something fixed to the page but not stored on it, such as its title.
 ///
 /// Laid out at [frame], in page units, it moves and scales with the page as
@@ -54,6 +58,7 @@ class InfiniteCanvas extends StatefulWidget {
     super.key,
     this.elementBuilder,
     this.claimsPointer,
+    this.grips,
     this.onEmptyTap,
     this.onCanvasPress,
     this.onElementDoubleTap,
@@ -69,6 +74,11 @@ class InfiniteCanvas extends StatefulWidget {
   /// Lets an element's widget take a press with the select tool — a text box
   /// placing its caret, say — instead of the canvas picking the element up.
   final CanvasPointerClaim? claimsPointer;
+
+  /// Finds a selected element's grip under a press. A selected element is
+  /// picked up by its grip even where another element lies over it, as the
+  /// grip shows it will be.
+  final CanvasGrip? grips;
 
   /// Invoked when empty canvas is clicked or tapped with the select tool,
   /// without dragging. This is where a caret is placed.
@@ -526,6 +536,18 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
         );
         _pressed(selected.length == 1 ? selected.single : null);
         return _PointerAction.transform;
+      }
+    }
+
+    final grips = widget.grips;
+    if (grips != null) {
+      for (final element in selected.reversed) {
+        if (!grips(element, page)) continue;
+        _pressed(element);
+        if (!_controller.selection.contains(element.id)) {
+          _controller.select(element.id);
+        }
+        return _PointerAction.move;
       }
     }
 

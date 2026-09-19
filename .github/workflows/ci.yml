@@ -40,6 +40,7 @@ jobs:
           (cd packages/aantekening_core && dart test)
           (cd packages/aantekening_store && dart test)
           (cd packages/aantekening_ai && dart test)
+          (cd packages/aantekening_spell && dart test)
           (cd packages/aantekening_math && flutter test)
           (cd packages/aantekening_canvas && flutter test)
           (cd app/aantekening && flutter test)

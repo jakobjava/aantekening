@@ -602,24 +602,6 @@ void main() {
         kept.id,
       ]);
     });
-
-    test('lists recently edited pages first', () async {
-      final sectionId = await workspace.seedSection();
-      final older = await store.pages.createPage(
-        sectionId: sectionId,
-        title: 'Older',
-      );
-      final newer = await store.pages.createPage(
-        sectionId: sectionId,
-        title: 'Newer',
-      );
-
-      await store.pages.saveDocument(older.id, documentWithText(older.id, 'a'));
-      await store.pages.saveDocument(newer.id, documentWithText(newer.id, 'b'));
-
-      final recent = await store.pages.recentPages(limit: 2);
-      expect(recent.first.id, newer.id);
-    });
   });
 
   group('search', () {

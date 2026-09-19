@@ -22,6 +22,9 @@ enum RibbonTab {
   /// Brought forward while a formula is being edited.
   math('Math'),
 
+  /// Checking the text: spelling, in the languages chosen.
+  review('Review'),
+
   /// Zoom, and the ribbon itself.
   view('View');
 
@@ -50,6 +53,7 @@ enum RibbonItem {
   paragraphStyle('Paragraph style'),
   formula('Formula'),
   formulaSyntax('Formula syntax'),
+  mathCheatSheet('Cheat sheet', large: true),
   textBox('Text box', large: true),
   picture('Picture', large: true),
   pdf('PDF printout', large: true),
@@ -78,7 +82,9 @@ enum RibbonItem {
   mathOperators('Operators', large: true),
   mathRelations('Relations', large: true),
   mathArrows('Arrows', large: true),
-  mathOther('Other', large: true);
+  mathOther('Other', large: true),
+  spelling('Spelling', large: true),
+  spellingLanguages('Languages', large: true);
 
   const RibbonItem(this.label, {this.large = false});
 
@@ -133,6 +139,7 @@ enum RibbonGroup implements ArrangementGroup<RibbonItem> {
   thickness(RibbonTab.draw, 'Thickness', <RibbonItem>[RibbonItem.inkThickness]),
   formulaSyntax(RibbonTab.math, 'Syntax', <RibbonItem>[
     RibbonItem.formulaSyntax,
+    RibbonItem.mathCheatSheet,
   ]),
   structures(RibbonTab.math, 'Structures', <RibbonItem>[
     RibbonItem.mathFraction,
@@ -151,6 +158,10 @@ enum RibbonGroup implements ArrangementGroup<RibbonItem> {
     RibbonItem.mathRelations,
     RibbonItem.mathArrows,
     RibbonItem.mathOther,
+  ]),
+  proofing(RibbonTab.review, 'Proofing', <RibbonItem>[
+    RibbonItem.spelling,
+    RibbonItem.spellingLanguages,
   ]),
   zoom(RibbonTab.view, 'Zoom', <RibbonItem>[
     RibbonItem.zoomIn,

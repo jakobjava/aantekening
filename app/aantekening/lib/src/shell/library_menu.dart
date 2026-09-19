@@ -5,68 +5,8 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../command_menu.dart';
 import 'library_actions.dart';
-
-/// One command in a menu; greyed out without [onSelected].
-@immutable
-class MenuCommand {
-  const MenuCommand(
-    this.label,
-    this.icon,
-    this.onSelected, {
-    this.destructive = false,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback? onSelected;
-
-  /// Whether it cannot be taken back, and is drawn in the error colour.
-  final bool destructive;
-}
-
-/// Shows [groups] of commands as a menu at [position], in global
-/// coordinates, with a line between groups, and runs the one picked once
-/// the menu has closed.
-Future<void> showCommandMenu(
-  BuildContext context,
-  Offset position,
-  List<List<MenuCommand>> groups,
-) async {
-  final scheme = Theme.of(context).colorScheme;
-  final entries = <PopupMenuEntry<VoidCallback>>[];
-  for (final group in groups.where((group) => group.isNotEmpty)) {
-    if (entries.isNotEmpty) entries.add(const PopupMenuDivider(height: 8));
-    for (final command in group) {
-      final color = command.destructive ? scheme.error : null;
-      entries.add(
-        PopupMenuItem<VoidCallback>(
-          value: command.onSelected,
-          enabled: command.onSelected != null,
-          height: 36,
-          child: Row(
-            children: <Widget>[
-              Icon(command.icon, size: 18, color: color),
-              const SizedBox(width: 12),
-              Text(command.label, style: TextStyle(color: color)),
-            ],
-          ),
-        ),
-      );
-    }
-  }
-  final picked = await showMenu<VoidCallback>(
-    context: context,
-    position: RelativeRect.fromLTRB(
-      position.dx,
-      position.dy,
-      position.dx,
-      position.dy,
-    ),
-    items: entries,
-  );
-  picked?.call();
-}
 
 /// The name shown for [node], which for a page without a title is a
 /// stand-in.
@@ -81,15 +21,12 @@ String pageTitleOrPlaceholder(String title) =>
 ///
 /// The commands come in the same order whatever [node] is: making something
 /// new first, then cutting, copying and pasting, then renaming and deleting.
-/// [parents] maps the ids of [node]'s kind nearby to their parents', which
-/// pasting needs; see [LibraryActions.canPaste].
 Future<void> showLibraryMenu(
   BuildContext context,
   WidgetRef ref,
   TreeNode node,
-  Offset position, {
-  Map<String, String?> parents = const {},
-}) {
+  Offset position,
+) {
   final actions = ref.read(libraryActionsProvider);
   final clip = ref.read(libraryClipboardProvider);
 
@@ -156,7 +93,7 @@ Future<void> showLibraryMenu(
   final paste = MenuCommand(
     pasteLabel,
     Icons.content_paste_rounded,
-    actions.canPaste(node, parents: parents) ? () => actions.paste(node) : null,
+    actions.canPaste(node) ? () => actions.paste(node) : null,
   );
 
   return showCommandMenu(context, position, <List<MenuCommand>>[

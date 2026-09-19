@@ -6,12 +6,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../command_menu.dart';
 import '../arrangement/arrangement_drag.dart';
 import '../graph/graph_panel.dart';
 import '../providers.dart';
 import '../search/search_panel.dart';
 import '../settings/ai_panel.dart';
-import 'library_menu.dart';
 import 'library_pane.dart';
 import 'page_list_pane.dart';
 import 'sidebar_state.dart';

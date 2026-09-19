@@ -52,6 +52,10 @@ and the UI that blends semantic hits with FTS hits.
   slower yet.
 * The text box editor does not yet describe itself to screen readers; a stock
   text field would have, and it needs adding by hand (see ADR 8).
+* Spelling is checked in text boxes but not yet in page titles. Every chosen
+  language is checked at once; the language of a paragraph is not detected,
+  and there is no grammar checking. A word added to the dictionary cannot yet
+  be taken out again from the app.
 
 ## Planned, in rough order
 

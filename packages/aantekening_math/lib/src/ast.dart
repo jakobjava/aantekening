@@ -382,3 +382,36 @@ final class PostfixNode extends MathNode {
     out.write(operatorLatex);
   }
 }
+
+/// Dirac notation, written with the braket package's commands.
+enum BraketKind {
+  /// ⟨φ|, `\bra`.
+  bra(r'\bra'),
+
+  /// |ψ⟩, `\ket`.
+  ket(r'\ket'),
+
+  /// ⟨A⟩, ⟨φ|ψ⟩ or ⟨φ|A|ψ⟩: `\braket`, its parts divided by bars.
+  braket(r'\braket');
+
+  const BraketKind(this.command);
+
+  final String command;
+}
+
+/// A bra, a ket, or a bra-ket of one to three [parts].
+final class BraketNode extends MathNode {
+  const BraketNode(this.kind, this.parts);
+
+  final BraketKind kind;
+  final List<MathNode> parts;
+
+  @override
+  void writeLatex(StringBuffer out) {
+    out
+      ..write(kind.command)
+      ..write('{')
+      ..writeAll(parts.map((part) => part.toLatex()), ' | ')
+      ..write('}');
+  }
+}

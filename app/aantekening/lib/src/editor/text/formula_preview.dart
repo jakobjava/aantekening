@@ -4,7 +4,6 @@ library;
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'math_syntax.dart';
 import 'text_box_controller.dart';
@@ -15,7 +14,7 @@ import 'text_styles.dart';
 ///
 /// The formula is typed in the box itself; nothing here takes the keyboard,
 /// so clicking the switch or the button leaves the caret where it was.
-class FormulaPreview extends ConsumerWidget {
+class FormulaPreview extends StatelessWidget {
   const FormulaPreview({
     required this.session,
     required this.onDone,
@@ -31,9 +30,8 @@ class FormulaPreview extends ConsumerWidget {
   static const double maxWidth = 560;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final syntax = ref.watch(mathSyntaxProvider);
     final error = session.error;
 
     return ExcludeFocus(
@@ -83,11 +81,7 @@ class FormulaPreview extends ConsumerWidget {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 runSpacing: 4,
                 children: <Widget>[
-                  _SyntaxToggle(
-                    syntax: syntax,
-                    onChanged: (value) =>
-                        ref.read(mathSyntaxProvider.notifier).set(value),
-                  ),
+                  const MathSyntaxToggle(),
                   Tooltip(
                     message: 'Done  (Enter)',
                     child: TextButton.icon(
@@ -153,71 +147,6 @@ class _Typeset extends StatelessWidget {
                   ),
                 ),
               ),
-      ),
-    );
-  }
-}
-
-/// Simple or LaTeX.
-class _SyntaxToggle extends StatelessWidget {
-  const _SyntaxToggle({required this.syntax, required this.onChanged});
-
-  final MathMode syntax;
-  final ValueChanged<MathMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    Widget segment(MathMode value, String label, String tooltip) {
-      final selected = syntax == value;
-      return Tooltip(
-        message: tooltip,
-        child: InkWell(
-          onTap: selected ? null : () => onChanged(value),
-          child: Container(
-            height: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 9),
-            alignment: Alignment.center,
-            color: selected ? scheme.primary.withValues(alpha: 0.14) : null,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? scheme.primary : scheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(5),
-        child: Material(
-          type: MaterialType.transparency,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              segment(
-                MathMode.linear,
-                'Simple',
-                'Type it as you would say it: x^2, a/b, sqrt(x), sum_(i=1)^n\n'
-                    'Ctrl+Shift+M switches',
-              ),
-              segment(
-                MathMode.latex,
-                'LaTeX',
-                'Type LaTeX, as formulas are stored\nCtrl+Shift+M switches',
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

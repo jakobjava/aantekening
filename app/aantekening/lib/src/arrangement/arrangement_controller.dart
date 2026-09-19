@@ -1,8 +1,6 @@
 /// Where the person has put the buttons, remembered between sessions.
 library;
 
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../preferences.dart';
@@ -22,7 +20,7 @@ class ArrangementController<G extends ArrangementGroup<I>, I extends Enum>
 
   @override
   Arrangement<G, I> build() =>
-      Arrangement.fromJson(groups, ref.watch(preferencesProvider).value?[key]);
+      Arrangement.fromJson(groups, ref.preference(key));
 
   /// Moves [item] into [group], in front of the item now at [index].
   void move(I item, G group, int index) {
@@ -39,9 +37,6 @@ class ArrangementController<G extends ArrangementGroup<I>, I extends Enum>
     _save();
   }
 
-  void _save() {
-    final preferences = ref.read(preferencesProvider).value;
-    if (preferences == null) return;
-    unawaited(preferences.set(key, state.isDefault ? null : state.toJson()));
-  }
+  void _save() =>
+      ref.savePreference(key, state.isDefault ? null : state.toJson());
 }

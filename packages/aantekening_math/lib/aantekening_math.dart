@@ -15,4 +15,6 @@ export 'src/linear_writer.dart';
 export 'src/math_storage.dart';
 export 'src/math_view.dart';
 export 'src/parser.dart';
+export 'src/renderer_latex.dart';
 export 'src/symbols.dart';
+export 'src/syntax_guide.dart';

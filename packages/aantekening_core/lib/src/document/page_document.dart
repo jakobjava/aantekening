@@ -152,14 +152,7 @@ class PageDocument {
   /// The bounding box of all content, or an empty box for a blank page.
   ///
   /// Drives "zoom to fit" and the scrollable extent of the infinite canvas.
-  Aabb get contentBounds {
-    if (elements.isEmpty) return Aabb.empty;
-    var box = elements.first.bounds;
-    for (var i = 1; i < elements.length; i++) {
-      box = box.union(elements[i].bounds);
-    }
-    return box;
-  }
+  Aabb get contentBounds => NoteElement.boundsOf(elements);
 
   /// How far content spanning [bounds] has to move, right and down, to lie on
   /// the page: nothing when it already does.
@@ -206,17 +199,6 @@ class PageDocument {
       if (element.id == elementId) return element;
     }
     return null;
-  }
-
-  /// Returns the topmost element whose bounds contain ([x], [y]).
-  NoteElement? hitTest(double x, double y) {
-    NoteElement? best;
-    for (final element in elements) {
-      if (element.locked) continue;
-      if (!element.bounds.containsPoint(x, y)) continue;
-      if (best == null || element.z >= best.z) best = element;
-    }
-    return best;
   }
 
   /// The plain text of the page, used to build the full-text index and to
@@ -302,10 +284,6 @@ class PageDocument {
 
   /// Encodes the document as compact JSON.
   String encode() => jsonEncode(toJson());
-
-  /// Encodes the document as indented JSON, for export and for diffing in
-  /// version control.
-  String encodePretty() => const JsonEncoder.withIndent('  ').convert(toJson());
 
   /// Decodes a document from a JSON string.
   ///

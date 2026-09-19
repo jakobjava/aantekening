@@ -62,6 +62,10 @@ class Aabb {
   factory Aabb.fromLTWH(double left, double top, double width, double height) =>
       Aabb(left, top, left + width, top + height);
 
+  /// The box around every one of [boxes], or [empty] for none.
+  factory Aabb.around(Iterable<Aabb> boxes) =>
+      boxes.fold(empty, (around, box) => around.union(box));
+
   final double left;
   final double top;
   final double right;

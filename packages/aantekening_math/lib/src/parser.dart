@@ -359,6 +359,27 @@ class MathParser {
 
       case SymbolRole.matrixConstruct:
         return MatrixNode(symbol.latex, _parseGrid(token));
+
+      case SymbolRole.braketConstruct:
+        final kind = BraketKind.values.byName(token.lexeme);
+        if (kind != BraketKind.braket) {
+          return BraketNode(kind, <MathNode>[_parseConstructArgument(token)]);
+        }
+        // `braket(A)` is ⟨A⟩, `braket(phi, psi)` is ⟨φ|ψ⟩ and
+        // `braket(phi, A, psi)` is ⟨φ|A|ψ⟩.
+        final argument = _parseConstructArgument(token);
+        final parts = argument is ListNode
+            ? <MathNode>[for (final item in argument.items) _unwrap(item)]
+            : <MathNode>[argument];
+        if (parts.length > 3) {
+          diagnostics.add(
+            MathDiagnostic(
+              token.offset,
+              '"braket" takes one to three parts: braket(phi, A, psi)',
+            ),
+          );
+        }
+        return BraketNode(kind, parts);
     }
   }
 

@@ -15,13 +15,15 @@ stays instant.
 ## What works today
 
 * **Organisation** — notebooks, sections nested to any depth, pages and
-  subpages. Right-click any of them (or long-press) to add to it, cut, copy,
-  paste, rename or delete it. Deleting asks first; what is deleted stays in the
-  workspace and can be restored.
-* **Ribbon** — OneNote-style tabs (Home, Insert, Draw, Math, View) across the
-  top of the window, each in named sections. It stays put while you work; a
-  tool's shortcut brings its tab forward, and any button can be dragged to
-  another place, section or tab.
+  subpages, each joined to what it is in by a line. Click a line, or the
+  chevron beside a name, to fold away what lies beneath; the panes remember
+  what is folded. Right-click any of them (or long-press) to add to it, cut,
+  copy, paste, rename or delete it. Deleting asks first; what is deleted stays
+  in the workspace and can be restored.
+* **Ribbon** — OneNote-style tabs (Home, Insert, Draw, Math, Review, View)
+  across the top of the window, each in named sections. It stays put while
+  you work; a tool's shortcut brings its tab forward, and any button can be
+  dragged to another place, section or tab.
 * **Sidebar** — a strip of buttons down the left opens panels beside the page:
   the notebooks and pages, search, a graph of the workspace, and the local AI.
   A panel's button closes it again, its columns are widened by dragging their
@@ -57,8 +59,16 @@ stays instant.
   syntax (`sum_(i=1)^n i^2`, `(a+b)/c`, `sqrt(x)`, `vec(1, 2, 3)`,
   `mat(1, 2; 3, 4)`, `cases(…)`), parsed by a real grammar. Formulas are
   stored as LaTeX either way, and switching syntax translates the formula.
-  The **Math** tab has structures (fractions, roots, integrals, sums,
-  brackets, accents, matrices) and symbols to click in.
+  A formula takes the size and colour of the text it is written in. The
+  **Math** tab has structures (fractions, roots, integrals, sums, brackets,
+  bras and kets, accents, matrices) and symbols to click in, and a cheat
+  sheet of the Simple syntax beside the page: click an example to write it.
+* **Spelling** — words spelled wrongly are underlined with a wavy red line as
+  you type, in any number of languages at once; right-click one for
+  corrections, to add it to your dictionary, or to ignore it. The **Review**
+  tab turns it on and off and chooses the languages: British English, Dutch
+  and German are downloaded when first chosen, and any Hunspell dictionary
+  (as LibreOffice uses) can be added from its `.aff` and `.dic` files.
 * **Pictures and PDFs** — insert them onto the canvas to annotate, or into a
   text box as a printout. PDF pages are rendered sharply at any zoom and their
   text is searchable.
@@ -129,8 +139,9 @@ one for what can be done to it. A new page opens with the caret in its title.
 
 Commands are on the ribbon: text formatting on **Home**, pictures, PDFs and
 formulas on **Insert**, the pens, their colours and widths on **Draw**,
-structures and symbols for formulas on **Math** (shown while a formula is
-open), and zoom on **View**. Formatting with a text box selected (rather than being typed
+structures and symbols for formulas and the cheat sheet on **Math** (shown
+while a formula is open), spelling and its languages on **Review**, and zoom
+on **View**. Formatting with a text box selected (rather than being typed
 in) formats all of it. To rearrange the ribbon, drag a button to where you want
 it; hold it over another tab's name to open that tab. **View → Reset ribbon**
 puts everything back.
@@ -166,8 +177,10 @@ Simple syntax, in short: `x^2`, `x_i`, `a/b`, `sqrt(x)`, `root(3, x)`,
 `sum_(i=1)^n`, `prod`, `int_a^b`, `lim_(x->0)`, `vec(v)` (arrow) and
 `vec(1, 2, 3)` (column), `mat(1, 2; 3, 4)` (also `bmat`, `vmat`, `matrix`),
 `cases(x, x>0; -x, x<0)`, `abs(x)`, `norm(v)`, `set(1, 2)`, `binom(n, k)`,
-`n!`, `f'(x)`, Greek letters by name, `oo`, `->`, `<=`, `!=`, `+-`, `*`,
-`"text"`. Any `\command`, or LaTeX in backticks, passes through as it is.
+`n!`, `f'(x)`, `ket(psi)`, `bra(phi)`, `braket(phi, psi)`,
+`braket(phi, H, psi)`, Greek letters by name, `oo`, `->`, `<=`, `!=`, `+-`,
+`*`, `"text"`. Any `\command`, or LaTeX in backticks, passes through as it
+is. **Math → Cheat sheet** lists it all.
 
 If scrolling or zooming with a trackpad ever jumps, run the app with
 `AANTEKENING_TRACE_INPUT=1` to print every pointer event as the engine
@@ -180,6 +193,7 @@ dart analyze
 (cd packages/aantekening_core  && dart test)
 (cd packages/aantekening_store && dart test)
 (cd packages/aantekening_ai    && dart test)
+(cd packages/aantekening_spell && dart test)
 (cd packages/aantekening_math  && flutter test)
 (cd packages/aantekening_canvas && flutter test)
 (cd app/aantekening            && flutter test)
@@ -205,6 +219,7 @@ packages/aantekening_store    SQLite, search, assets
 packages/aantekening_canvas   infinite canvas engine
 packages/aantekening_math     Simple syntax ⇄ LaTeX, typesetting
 packages/aantekening_ai       local model clients
+packages/aantekening_spell    spell checking, Hunspell ported to Dart
 app/aantekening               the application
 docs/                         architecture, file format, decisions, roadmap
 ```
@@ -218,5 +233,11 @@ bearing choices is in [`docs/adr/`](docs/adr/).
 Flutter and Dart (BSD-3), SQLite (public domain), `sqlite3.dart` (MIT),
 Riverpod (MIT), `flutter_math_fork` (MIT/Apache-2.0), `pdfrx` (MIT) over
 PDFium (BSD-3/Apache-2.0), `file_selector`, `http`, `path`, `crypto` and
-`path_provider` (BSD-3). The note format is plain JSON in a plain SQLite
-file — both readable without this application.
+`path_provider` (BSD-3). `aantekening_spell` is in large part a port of
+[Hunspell](https://hunspell.github.io) 1.7.3 and those files are under
+Hunspell's licence, MPL 1.1, GPL 2 or LGPL 2.1 — see its `LICENSE`. The
+spelling dictionaries are not part of the app: they are downloaded from
+[wooorm/dictionaries](https://github.com/wooorm/dictionaries) when a language
+is first chosen, each under its own licence, which is saved beside it. The
+note format is plain JSON in a plain SQLite file — both readable without this
+application.

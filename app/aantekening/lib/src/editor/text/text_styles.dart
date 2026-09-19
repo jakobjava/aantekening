@@ -16,6 +16,18 @@ abstract final class RichTextStyles {
   /// Body text size in page units.
   static const double bodySize = defaultPoints * unitsPerPoint;
 
+  /// Code, and the source of formulas: the platform's monospace face, and
+  /// those most systems have in case it has none.
+  static const TextStyle monospace = TextStyle(
+    fontFamily: 'monospace',
+    fontFamilyFallback: <String>[
+      'DejaVu Sans Mono',
+      'Noto Sans Mono',
+      'Liberation Mono',
+      'Courier New',
+    ],
+  );
+
   /// The default text colour. The paper is white in light and dark mode alike,
   /// so text is black rather than following the interface's theme.
   static const Color ink = Color(0xFF000000);
@@ -43,6 +55,9 @@ abstract final class RichTextStyles {
   /// Behind words a search found: amber, so it is not taken for a yellow
   /// highlight someone made.
   static const Color searchMatch = Color(0x99FFB020);
+
+  /// The wavy line beneath a word spelled wrongly.
+  static const Color misspelling = Color(0xFFD93025);
 
   /// The font sizes offered, in points.
   static const List<double> pointSizes = <double>[
@@ -107,11 +122,8 @@ abstract final class RichTextStyles {
         fontSize: size * 1.15,
         fontWeight: FontWeight.w600,
       ),
-      TextBlockKind.code => base.copyWith(
-        fontFamily: 'monospace',
-        fontFamilyFallback: const <String>['Courier New', 'DejaVu Sans Mono'],
-        fontSize: size * 0.92,
-      ),
+      TextBlockKind.code =>
+        base.merge(monospace).copyWith(fontSize: size * 0.92),
       TextBlockKind.quote => base.copyWith(fontStyle: FontStyle.italic),
       _ => base,
     };
@@ -121,7 +133,7 @@ abstract final class RichTextStyles {
   /// unformatted run.
   static TextStyle? runStyle(TextMarks marks) {
     if (marks.isEmpty) return null;
-    return TextStyle(
+    final style = TextStyle(
       fontWeight: marks.bold ? FontWeight.w700 : null,
       fontStyle: marks.italic ? FontStyle.italic : null,
       decoration: TextDecoration.combine(<TextDecoration>[
@@ -131,30 +143,20 @@ abstract final class RichTextStyles {
       color: marks.color != null ? Color(marks.color!) : null,
       backgroundColor: marks.highlight != null ? Color(marks.highlight!) : null,
       fontSize: marks.size != null ? marks.size! * unitsPerPoint : null,
-      fontFamily: marks.code ? 'monospace' : null,
-      fontFamilyFallback: marks.code
-          ? const <String>['Courier New', 'DejaVu Sans Mono']
-          : null,
     );
+    return marks.code ? style.merge(monospace) : style;
   }
 
   /// The source of the formula being edited: code-like, in the accent the
-  /// box marks it with, at the formula's own size.
+  /// box marks it with, at the formula's own size — the size of the text
+  /// it is written in.
   static TextStyle formulaSource(TextStyle blockStyle, TextMarks marks) {
     final size =
         (marks.size != null ? marks.size! * unitsPerPoint : null) ??
         blockStyle.fontSize ??
         bodySize;
-    return TextStyle(
-      fontFamily: 'monospace',
-      fontFamilyFallback: const <String>[
-        'DejaVu Sans Mono',
-        'Noto Sans Mono',
-        'Liberation Mono',
-        'Courier New',
-      ],
-      // Monospace faces run large beside the text around them.
-      fontSize: size * 0.92,
+    return monospace.copyWith(
+      fontSize: size,
       fontWeight: FontWeight.w400,
       fontStyle: FontStyle.normal,
       color: formulaAccent,

@@ -85,10 +85,7 @@ class SelectionFrame {
       );
     }
     // Ink is framed by its strokes; its geometry has no rotation of its own.
-    var bounds = elements.first.bounds;
-    for (var i = 1; i < elements.length; i++) {
-      bounds = bounds.union(elements[i].bounds);
-    }
+    final bounds = NoteElement.boundsOf(elements);
     return SelectionFrame(
       center: Offset(bounds.centerX, bounds.centerY),
       width: bounds.width,

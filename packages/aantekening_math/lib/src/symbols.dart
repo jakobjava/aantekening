@@ -1,9 +1,12 @@
 /// The vocabulary recognised by the linear math parser.
 ///
 /// Every entry maps a word a user can type to the LaTeX that renders it. The
-/// tables are the single source of truth for both the lexer (which matches the
-/// longest known word at each position) and the editor's autocomplete.
+/// tables are the single source of truth for both the lexer, which matches
+/// the longest known word at each position, and the writer, which spells
+/// LaTeX back in these words.
 library;
+
+import 'ast.dart' show BraketKind;
 
 /// How a recognised word behaves in the grammar.
 enum SymbolRole {
@@ -27,6 +30,9 @@ enum SymbolRole {
 
   /// A grid of cells, rows separated by `;` and cells by `,`: `mat`, `cases`.
   matrixConstruct,
+
+  /// Dirac notation: `bra(psi)`, `ket(psi)`, `braket(phi, psi)`.
+  braketConstruct,
 }
 
 /// A word the parser knows about.
@@ -111,6 +117,22 @@ const List<String> namedFunctions = <String>[
   'tan',
   'tanh',
 ];
+
+/// Operators without a command of their own, typeset upright as named
+/// functions are: `\operatorname{tr}`.
+const List<String> operatorNames = <String>[
+  'tr',
+  'Tr',
+  'rank',
+  'sgn',
+  'diag',
+  'erf',
+  'Var',
+  'Cov',
+];
+
+/// The LaTeX for operator [name].
+String operatorNameLatex(String name) => '\\operatorname{$name}';
 
 /// Operators that carry limits above and below.
 const Map<String, String> bigOperators = <String, String>{
@@ -200,6 +222,7 @@ const Set<String> relationOperators = <String>{
   r'\propto',
   r'\to',
   r'\mapsto',
+  r'\leftrightarrow',
   r'\iff',
   r'\implies',
   r'\impliedby',
@@ -245,6 +268,7 @@ const Set<String> multiplicativeOperators = <String>{
   r'\circ',
   r'\star',
   r'\bullet',
+  r'\bmod',
   '.',
 };
 
@@ -313,6 +337,15 @@ const Map<String, String> wordSymbols = <String, String>{
   'bullet': r'\bullet',
   'therefore': r'\therefore',
   'because': r'\because',
+  'dagger': r'\dagger',
+  'angle': r'\angle',
+  'mod': r'\bmod',
+  // The number sets, doubled as AsciiMath and many notes write them.
+  'NN': r'\mathbb{N}',
+  'ZZ': r'\mathbb{Z}',
+  'QQ': r'\mathbb{Q}',
+  'RR': r'\mathbb{R}',
+  'CC': r'\mathbb{C}',
 };
 
 /// Multi-character operators typed with punctuation.
@@ -320,6 +353,7 @@ const Map<String, String> wordSymbols = <String, String>{
 /// Longest match wins, so `<=>` is tried before `<=` and `<`.
 const Map<String, String> operatorSequences = <String, String>{
   '<=>': r'\iff',
+  '<->': r'\leftrightarrow',
   '==>': r'\implies',
   '<==': r'\impliedby',
   '!=': r'\neq',
@@ -353,6 +387,8 @@ final Map<String, MathSymbol> mathSymbols = <String, MathSymbol>{
     entry.key: MathSymbol(entry.value, SymbolRole.atom),
   for (final name in namedFunctions)
     name: MathSymbol('\\$name', SymbolRole.function),
+  for (final name in operatorNames)
+    name: MathSymbol(operatorNameLatex(name), SymbolRole.function),
   for (final entry in bigOperators.entries)
     entry.key: MathSymbol(entry.value, SymbolRole.bigOperator),
   for (final entry in unaryConstructs.entries)
@@ -363,6 +399,8 @@ final Map<String, MathSymbol> mathSymbols = <String, MathSymbol>{
     entry.key: MathSymbol(entry.value.first, SymbolRole.fenceConstruct),
   for (final entry in matrixConstructs.entries)
     entry.key: MathSymbol(entry.value, SymbolRole.matrixConstruct),
+  for (final kind in BraketKind.values)
+    kind.name: MathSymbol(kind.command, SymbolRole.braketConstruct),
 };
 
 /// Every word the parser knows, longest first.

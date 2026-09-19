@@ -224,15 +224,6 @@ void main() {
       );
     });
 
-    test('hit testing returns the topmost unlocked element', () {
-      final page = PageDocument.empty(id: 'PAGE06')
-          .withElementAdded(_text('under', 'a'))
-          .withElementAdded(_text('over', 'b'));
-
-      expect(page.hitTest(10, 10)?.id, 'over');
-      expect(page.hitTest(-500, -500), isNull);
-    });
-
     test('content beyond the top or left edge moves onto the page', () {
       final page = PageDocument.empty(id: 'PAGE07')
           .withElementAdded(_text('left', 'a', x: -30, y: 50))

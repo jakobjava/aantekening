@@ -189,22 +189,7 @@ class LibraryRepository {
       updatedAt: now,
       color: color,
     );
-    _db.run(
-      'INSERT INTO sections '
-      '(id, notebook_id, parent_id, title, position, color, created_at, '
-      ' updated_at, deleted_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)',
-      <Object?>[
-        section.id,
-        section.notebookId,
-        section.parentId,
-        section.title,
-        section.position,
-        section.color,
-        section.createdAt,
-        section.updatedAt,
-      ],
-    );
+    _insertSection(section);
     return section;
   }
 
@@ -258,16 +243,13 @@ class LibraryRepository {
         'updated_at = ? WHERE id = ?',
         <Object?>[notebookId, parentId, target, _now, sectionId],
       );
-      // Descendants follow their parent to the new notebook.
-      _db.run(
-        'WITH RECURSIVE subtree(id) AS ('
-        '  SELECT id FROM sections WHERE parent_id = ?'
-        '  UNION ALL'
-        '  SELECT s.id FROM sections s JOIN subtree ON s.parent_id = subtree.id'
-        ') '
-        'UPDATE sections SET notebook_id = ? WHERE id IN (SELECT id FROM subtree)',
-        <Object?>[sectionId, notebookId],
-      );
+      // Subsections follow their section to its new notebook.
+      for (final id in _subtree(sectionId).skip(1)) {
+        _db.run('UPDATE sections SET notebook_id = ? WHERE id = ?', <Object?>[
+          notebookId,
+          id,
+        ]);
+      }
     });
   }
 
@@ -333,6 +315,23 @@ class LibraryRepository {
     });
   }
 
+  void _insertSection(Section section) => _db.run(
+    'INSERT INTO sections '
+    '(id, notebook_id, parent_id, title, position, color, created_at, '
+    ' updated_at, deleted_at) '
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)',
+    <Object?>[
+      section.id,
+      section.notebookId,
+      section.parentId,
+      section.title,
+      section.position,
+      section.color,
+      section.createdAt,
+      section.updatedAt,
+    ],
+  );
+
   Section? _findSection(String id) {
     final rows = _db.select('SELECT * FROM sections WHERE id = ?', <Object?>[
       id,
@@ -340,26 +339,13 @@ class LibraryRepository {
     return rows.isEmpty ? null : _section(rows.first);
   }
 
-  /// [sectionId] and the sections beneath it, parents before their
-  /// subsections: every one, only the live ones with [live], or only those
-  /// deleted at [deletedAt] — deleted along with it.
-  List<String> _subtree(String sectionId, {bool live = false, int? deletedAt}) {
-    final condition = live
-        ? 'WHERE s.deleted_at IS NULL'
-        : deletedAt != null
-        ? 'WHERE s.deleted_at = ?'
-        : '';
-    final rows = _db.select(
-      'WITH RECURSIVE subtree(id, depth) AS ('
-      '  SELECT ?, 0'
-      '  UNION ALL'
-      '  SELECT s.id, t.depth + 1 FROM sections s '
-      '  JOIN subtree t ON s.parent_id = t.id $condition'
-      ') SELECT id FROM subtree ORDER BY depth',
-      <Object?>[sectionId, ?deletedAt],
-    );
-    return <String>[for (final row in rows) str(row, 'id')];
-  }
+  /// [sectionId] and the sections beneath it; see
+  /// [AantekeningDatabase.subtree].
+  List<String> _subtree(
+    String sectionId, {
+    bool live = false,
+    int? deletedAt,
+  }) => _db.subtree('sections', sectionId, live: live, deletedAt: deletedAt);
 
   /// Copies [source], its pages and its live subsections into [notebookId],
   /// under [parentId] at [position]; subsections keep their order.
@@ -388,22 +374,7 @@ class LibraryRepository {
       createdAt: now,
       updatedAt: now,
     );
-    _db.run(
-      'INSERT INTO sections '
-      '(id, notebook_id, parent_id, title, position, color, created_at, '
-      ' updated_at, deleted_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)',
-      <Object?>[
-        copy.id,
-        copy.notebookId,
-        copy.parentId,
-        copy.title,
-        copy.position,
-        copy.color,
-        copy.createdAt,
-        copy.updatedAt,
-      ],
-    );
+    _insertSection(copy);
     _pages.copySectionPages(source.id, copy.id);
     for (final child in children) {
       _copyTree(
@@ -417,41 +388,18 @@ class LibraryRepository {
   }
 
   /// Whether [candidate] is [ancestor] or sits anywhere beneath it.
-  bool _isDescendantOrSelf(String candidate, String ancestor) {
-    if (candidate == ancestor) return true;
-    final rows = _db.select(
-      'WITH RECURSIVE ancestors(id, parent_id) AS ('
-      '  SELECT id, parent_id FROM sections WHERE id = ?'
-      '  UNION ALL'
-      '  SELECT s.id, s.parent_id FROM sections s '
-      '    JOIN ancestors a ON s.id = a.parent_id'
-      ') SELECT 1 FROM ancestors WHERE id = ? LIMIT 1',
-      <Object?>[candidate, ancestor],
-    );
-    return rows.isNotEmpty;
-  }
+  bool _isDescendantOrSelf(String candidate, String ancestor) =>
+      _subtree(ancestor).contains(candidate);
 
-  double _nextSectionPosition(String notebookId, String? parentId) {
-    final rows = parentId == null
-        ? _db.select(
-            'SELECT MAX(position) AS m FROM sections '
-            'WHERE notebook_id = ? AND parent_id IS NULL',
-            <Object?>[notebookId],
-          )
-        : _db.select(
-            'SELECT MAX(position) AS m FROM sections '
-            'WHERE notebook_id = ? AND parent_id = ?',
-            <Object?>[notebookId, parentId],
-          );
-    final max = rows.first['m'];
-    return max == null ? 0 : FractionalIndex.after((max as num).toDouble());
-  }
+  double _nextSectionPosition(String notebookId, String? parentId) =>
+      _db.nextPosition(
+        'sections',
+        'notebook_id = ? AND parent_id IS ?',
+        <Object?>[notebookId, parentId],
+      );
 
-  double _nextNotebookPosition() {
-    final rows = _db.select('SELECT MAX(position) AS m FROM notebooks');
-    final max = rows.first['m'];
-    return max == null ? 0 : FractionalIndex.after((max as num).toDouble());
-  }
+  double _nextNotebookPosition() =>
+      _db.nextPosition('notebooks', '1', const <Object?>[]);
 
   static Notebook _notebook(Row row) => Notebook(
     id: str(row, 'id'),

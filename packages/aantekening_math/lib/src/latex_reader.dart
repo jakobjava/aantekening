@@ -331,6 +331,18 @@ class LatexReader {
       case 'textnormal':
       case 'mbox':
         return TextNode(_bracedText());
+      case 'bra':
+      case 'Bra':
+        return BraketNode(BraketKind.bra, <MathNode>[_argument()]);
+      case 'ket':
+      case 'Ket':
+        return BraketNode(BraketKind.ket, <MathNode>[_argument()]);
+      case 'braket':
+      case 'Braket':
+        return BraketNode(BraketKind.braket, <MathNode>[
+          for (final part in _barSeparated(_bracedText()))
+            LatexReader(part).read(),
+        ]);
       case 'operatorname':
         return SymbolNode('\\operatorname{${_bracedText()}}');
       case 'left':
@@ -370,6 +382,28 @@ class LatexReader {
       );
     }
     return SymbolNode(command);
+  }
+
+  /// [text] divided at each bar outside braces: the parts of a bra-ket.
+  static List<String> _barSeparated(String text) {
+    final parts = <String>[];
+    var depth = 0;
+    var start = 0;
+    for (var i = 0; i < text.length; i++) {
+      switch (text[i]) {
+        case r'\':
+          // A command's character, `\|` among them, is never a divider.
+          i++;
+        case '{':
+          depth++;
+        case '}':
+          depth--;
+        case '|' when depth == 0:
+          parts.add(text.substring(start, i));
+          start = i + 1;
+      }
+    }
+    return parts..add(text.substring(start));
   }
 
   /// `\begin{...}` to its `\end`: a grid of cells for a matrix or cases, the

@@ -62,17 +62,10 @@ abstract final class LinearMath {
   static String fromLatex(String latex) =>
       LinearWriter.write(LatexReader(latex).read());
 
-  /// Resolves the LaTeX for a formula authored in either mode.
-  ///
-  /// LaTeX sources pass through untouched; linear sources are translated. The
-  /// stored source is never rewritten, so switching a formula's mode back and
-  /// forth cannot degrade what the user originally typed.
+  /// The LaTeX for a formula written in [mode]: [source] itself, or its
+  /// translation.
   static String latexFor(MathMode mode, String source) => switch (mode) {
     MathMode.latex => source,
     MathMode.linear => toLatex(source),
   };
-
-  /// Resolves the LaTeX for [element].
-  static String latexForElement(MathElement element) =>
-      latexFor(element.mode, element.source);
 }

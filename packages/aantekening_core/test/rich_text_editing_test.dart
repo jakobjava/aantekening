@@ -62,6 +62,27 @@ void main() {
       expect(RichTextEditing.marksAt(block, 3).bold, isFalse);
       expect(RichTextEditing.marksAt(block, 0).bold, isFalse);
     });
+
+    test('typing after a formula continues the text before it', () {
+      const large = TextMarks(size: 20);
+      const block = TextBlock(
+        runs: <TextRun>[
+          TextRun('area ', large),
+          TextRun.math('x^2', MathMode.latex, TextMarks(size: 20)),
+        ],
+      );
+      expect(RichTextEditing.marksAt(block, 8), large);
+    });
+
+    test('beside a lone formula, typing takes its size and colour', () {
+      const marks = TextMarks(size: 24, color: 0xFF1A73E8);
+      const block = TextBlock(
+        runs: <TextRun>[TextRun.math('x', MathMode.latex, marks)],
+      );
+      expect(RichTextEditing.marksAt(block, 1), marks);
+      expect(RichTextEditing.marksAt(block, 0), marks);
+      expect(RichTextEditing.marksAt(const TextBlock(), 0), TextMarks.none);
+    });
   });
 
   group('typing', () {
@@ -302,6 +323,19 @@ void main() {
       expect(block, 0);
       expect(run, 1);
       expect(edit.blocks[0].runs[1], const TextRun.math('', MathMode.linear));
+    });
+
+    test('a new formula takes the size and colour of its text', () {
+      final (edit, :block, :run) = RichTextEditing.insertMath(
+        <TextBlock>[p('area = ')],
+        at(0, 7),
+        MathMode.latex,
+        marks: const TextMarks(bold: true, size: 20, color: 0xFFD93025),
+      );
+      expect(
+        edit.blocks[block].runs[run].marks,
+        const TextMarks(size: 20, color: 0xFFD93025),
+      );
     });
 
     test('a formula inserted mid-word splits the word around it', () {

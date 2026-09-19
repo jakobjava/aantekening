@@ -31,6 +31,9 @@ abstract final class LinearWriter {
     for (final name in namedFunctions) {
       add('\\$name', name);
     }
+    for (final name in operatorNames) {
+      add(operatorNameLatex(name), name);
+    }
     for (final entry in bigOperators.entries) {
       add(entry.value, entry.key);
     }
@@ -52,6 +55,7 @@ abstract final class LinearWriter {
     r'\Rightarrow': '=>',
     r'\iff': '<=>',
     r'\Leftrightarrow': '<=>',
+    r'\leftrightarrow': '<->',
     r'\implies': '==>',
     r'\impliedby': '<==',
     r'\approx': '~~',
@@ -157,6 +161,9 @@ abstract final class LinearWriter {
     ],
     MatrixNode() => <_Piece>[_Piece(_matrix(node))],
     RawNode(:final latex) => <_Piece>[_raw(latex)],
+    BraketNode(:final kind, :final parts) => <_Piece>[
+      _Piece('${kind.name}(${parts.map(write).join(', ')})', apart: true),
+    ],
   };
 
   static List<_Piece> _sequence(List<MathNode> children) {
@@ -247,7 +254,8 @@ abstract final class LinearWriter {
     GroupNode() ||
     MatrixNode() ||
     RawNode() ||
-    ApplicationNode() => true,
+    ApplicationNode() ||
+    BraketNode() => true,
     SequenceNode(:final children) =>
       children.length == 1 && _isAtom(children.single),
     _ => false,
@@ -286,6 +294,9 @@ abstract final class LinearWriter {
   }
 
   static String _accent(String command, MathNode operand) {
+    // A styled letter with a word of its own: `\mathbb{R}` is `RR`.
+    final symbol = _words['$command{${operand.toLatex()}}'];
+    if (symbol != null) return symbol;
     final word = _accentWords[command];
     if (word != null) return '$word(${write(operand)})';
     return '$command{${write(operand)}}';

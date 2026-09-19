@@ -2,12 +2,15 @@
 /// renaming, deleting, copying and moving them.
 library;
 
+import 'dart:async';
+
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import 'tree_rows.dart';
 
 /// A section or page cut or copied, to be pasted elsewhere: moved there if it
 /// was cut, copied there if it was copied.
@@ -53,16 +56,6 @@ final titleFocusProvider = NotifierProvider<TitleFocusRequest, String?>(
   TitleFocusRequest.new,
 );
 
-/// Whether [id] is [ancestor] or lies beneath it, going by [parents], which
-/// maps each id to its parent's.
-bool isWithin(String id, String ancestor, Map<String, String?> parents) {
-  final seen = <String>{};
-  for (String? at = id; at != null && seen.add(at); at = parents[at]) {
-    if (at == ancestor) return true;
-  }
-  return false;
-}
-
 /// Everything done to notebooks, sections and pages: each change written to
 /// the store, the lists refreshed, and the selection kept on something that
 /// exists.
@@ -79,10 +72,33 @@ class LibraryActions {
 
   void _changed() => _ref.read(libraryRevisionProvider.notifier).bump();
 
+  /// Selects what is opened, and expands the rows above it in the panes so
+  /// it shows there, wherever it was opened from.
   void _select({String? notebookId, String? sectionId, String? pageId}) {
     _ref.read(selectedNotebookProvider.notifier).select(notebookId);
     _ref.read(selectedSectionProvider.notifier).select(sectionId);
     _ref.read(selectedPageProvider.notifier).select(pageId);
+    unawaited(
+      _reveal(notebookId: notebookId, sectionId: sectionId, pageId: pageId),
+    );
+  }
+
+  Future<void> _reveal({
+    String? notebookId,
+    String? sectionId,
+    String? pageId,
+  }) async {
+    if (notebookId == null) return;
+    final above = <String>[notebookId];
+    if (sectionId != null) {
+      final sections = await _ref.read(sectionTreeProvider(notebookId).future);
+      above.addAll(sections.ancestorsOf(sectionId));
+      if (pageId != null) {
+        final pages = await _ref.read(pageTreeProvider(sectionId).future);
+        above.addAll(pages.ancestorsOf(pageId));
+      }
+    }
+    _ref.read(collapsedRowsProvider.notifier).expand(above);
   }
 
   // ---------------------------------------------------------------- opening
@@ -231,22 +247,36 @@ class LibraryActions {
 
   /// Whether what is cut or copied can be pasted onto [target]: a page into a
   /// section or after another page, a section into a notebook or another
-  /// section.
-  ///
-  /// [parents] maps the ids of [target]'s kind — the pages of its section, or
-  /// the sections of its notebook — to their parents', so that nothing is
-  /// pasted inside itself.
-  bool canPaste(TreeNode target, {Map<String, String?> parents = const {}}) {
+  /// section — though never a section into itself, nor a cut page beneath
+  /// itself.
+  bool canPaste(TreeNode target) {
     final clip = _ref.read(libraryClipboardProvider);
     return switch ((clip?.node, target)) {
       (PageRef(), Section()) => true,
-      (PageRef(:final id), PageRef()) =>
-        !clip!.cut || !isWithin(target.id, id, parents),
+      (PageRef(:final id), PageRef(:final sectionId)) =>
+        !clip!.cut ||
+            !_isWithin(
+              _ref.read(pageTreeProvider(sectionId)).value,
+              target,
+              id,
+            ),
       (Section(), Notebook()) => true,
-      (Section(:final id), Section()) => !isWithin(target.id, id, parents),
+      (Section(:final id), Section(:final notebookId)) => !_isWithin(
+        _ref.read(sectionTreeProvider(notebookId)).value,
+        target,
+        id,
+      ),
       _ => false,
     };
   }
+
+  /// Whether [node] is [ancestor] or lies beneath it in [tree], taking it to
+  /// be until [tree] has been read.
+  static bool _isWithin(
+    Hierarchy<TreeNode>? tree,
+    TreeNode node,
+    String ancestor,
+  ) => tree?.isWithin(node.id, ancestor) ?? true;
 
   /// Pastes what is cut or copied onto [target], as [canPaste] allows, and
   /// opens what was pasted.

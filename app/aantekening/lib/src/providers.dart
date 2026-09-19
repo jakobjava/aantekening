@@ -72,14 +72,14 @@ final notebooksProvider = FutureProvider<List<Notebook>>((ref) async {
   return store.library.listNotebooks();
 });
 
-/// Every section of a notebook, at any depth.
-final sectionsProvider = FutureProvider.family<List<Section>, String>((
+/// Every section of a notebook, at any depth, in their tree.
+final sectionTreeProvider = FutureProvider.family<Hierarchy<Section>, String>((
   ref,
   notebookId,
 ) async {
   ref.watch(libraryRevisionProvider);
   final store = await ref.watch(storeProvider.future);
-  return store.library.listAllSections(notebookId);
+  return Section.hierarchy(await store.library.listAllSections(notebookId));
 });
 
 /// One section.
@@ -92,14 +92,14 @@ final sectionProvider = FutureProvider.family<Section?, String>((
   return store.library.findSection(sectionId);
 });
 
-/// The pages of a section.
-final pagesProvider = FutureProvider.family<List<PageRef>, String>((
+/// The pages of a section, in their tree.
+final pageTreeProvider = FutureProvider.family<Hierarchy<PageRef>, String>((
   ref,
   sectionId,
 ) async {
   ref.watch(libraryRevisionProvider);
   final store = await ref.watch(storeProvider.future);
-  return store.pages.listPages(sectionId);
+  return PageRef.hierarchy(await store.pages.listPages(sectionId));
 });
 
 /// One page's metadata, its title and date among them.

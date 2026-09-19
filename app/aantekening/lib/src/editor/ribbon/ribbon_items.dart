@@ -8,9 +8,14 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:aantekening_math/aantekening_math.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
 import '../palette.dart';
+import '../../spelling/dictionaries.dart';
+import '../../spelling/spelling.dart';
+import '../text/cheat_sheet.dart';
 import '../text/math_syntax.dart';
 import '../text/math_templates.dart';
 import '../text/text_box_controller.dart';
@@ -116,6 +121,9 @@ IconData ribbonIconOf(RibbonItem item) => switch (item) {
   RibbonItem.paragraphStyle => Icons.title_rounded,
   RibbonItem.formula || RibbonItem.insertFormula => Icons.functions_rounded,
   RibbonItem.formulaSyntax => Icons.data_object_rounded,
+  RibbonItem.mathCheatSheet => Icons.list_alt_rounded,
+  RibbonItem.spelling => Icons.spellcheck_rounded,
+  RibbonItem.spellingLanguages => Icons.translate_rounded,
   RibbonItem.textBox => Icons.text_fields_rounded,
   RibbonItem.picture => Icons.image_outlined,
   RibbonItem.pdf => Icons.picture_as_pdf_outlined,
@@ -322,12 +330,36 @@ class RibbonItemView extends StatelessWidget {
           onPressed: commands.onFormula,
         ),
       ),
-      RibbonItem.formulaSyntax => Consumer(
-        builder: (context, ref, _) => _FormulaSyntaxToggle(
-          mode: ref.watch(mathSyntaxProvider),
-          onSwitch: ref.read(mathSyntaxProvider.notifier).toggle,
+      RibbonItem.formulaSyntax => const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+        child: MathSyntaxToggle(),
+      ),
+      RibbonItem.mathCheatSheet => Consumer(
+        builder: (context, ref, _) => RibbonLargeButton(
+          icon: Icon(ribbonIconOf(item), size: RibbonMetrics.largeIcon),
+          label: item.label,
+          tooltip: 'Cheat sheet\nWhat to type for every structure and symbol',
+          selected: ref.watch(cheatSheetProvider),
+          onPressed: ref.read(cheatSheetProvider.notifier).toggle,
         ),
       ),
+      RibbonItem.spelling => Consumer(
+        builder: (context, ref, _) {
+          final enabled = ref.watch(spellingProvider.select((s) => s.enabled));
+          return RibbonLargeButton(
+            icon: Icon(ribbonIconOf(item), size: RibbonMetrics.largeIcon),
+            label: item.label,
+            tooltip: enabled
+                ? 'Spelling\nWords spelled wrongly are underlined, in the '
+                      'languages chosen'
+                : 'Spelling\nUnderline words spelled wrongly',
+            selected: enabled,
+            onPressed: () =>
+                ref.read(spellingProvider.notifier).setEnabled(!enabled),
+          );
+        },
+      ),
+      RibbonItem.spellingLanguages => _LanguagesMenu(item: item),
       RibbonItem.textBox => RibbonLargeButton(
         icon: Icon(ribbonIconOf(item), size: RibbonMetrics.largeIcon),
         label: item.label,
@@ -983,71 +1015,107 @@ class _ColorButtonState extends State<_ColorButton> {
   }
 }
 
-/// Which syntax formulas are typed in. Switching it translates the formula
-/// being edited.
-class _FormulaSyntaxToggle extends StatelessWidget {
-  const _FormulaSyntaxToggle({required this.mode, required this.onSwitch});
+// ------------------------------------------------------------- spelling
 
-  final MathMode mode;
-  final VoidCallback onSwitch;
+/// The languages spelling is checked in: those installed, ticked while they
+/// are used, and more to download or to add from files.
+class _LanguagesMenu extends ConsumerWidget {
+  const _LanguagesMenu({required this.item});
+
+  final RibbonItem item;
+
+  static const XTypeGroup _hunspell = XTypeGroup(
+    label: 'Hunspell dictionaries',
+    extensions: <String>['aff', 'dic'],
+  );
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final used = ref.watch(spellingProvider.select((s) => s.languages));
+    final reading = ref.watch(installedDictionariesProvider);
+    final installed = reading.value ?? const <InstalledDictionary>[];
+    final downloading = ref.watch(dictionariesProvider);
+    final dictionaries = ref.read(dictionariesProvider.notifier);
+    final installedCodes = <String>{
+      for (final dictionary in installed) dictionary.code,
+    };
 
-    Widget segment(MathMode value, String label, String tooltip) {
-      final selected = mode == value;
-      return Tooltip(
-        message: tooltip,
-        child: InkWell(
-          onTap: selected ? null : onSwitch,
-          child: Container(
-            height: RibbonMetrics.row - 6,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            alignment: Alignment.center,
-            color: selected ? scheme.primary.withValues(alpha: 0.14) : null,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? scheme.primary : scheme.onSurface,
-              ),
-            ),
-          ),
-        ),
-      );
+    /// Carries out [action], saying what went wrong if it fails.
+    Future<void> attempt(Future<void> Function() action) async {
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      try {
+        await action();
+      } on Object catch (error) {
+        messenger?.showSnackBar(SnackBar(content: Text('$error')));
+      }
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border.all(color: scheme.outlineVariant),
-          borderRadius: BorderRadius.circular(5),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: Material(
-            type: MaterialType.transparency,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                segment(
-                  MathMode.linear,
-                  'Simple',
-                  'Simple syntax: x^2/3, sqrt(x), alpha',
-                ),
-                segment(
-                  MathMode.latex,
-                  'LaTeX',
-                  r'LaTeX syntax: x^{2}/3, \sqrt{x}, \alpha',
-                ),
-              ],
-            ),
-          ),
-        ),
+    return MenuAnchor(
+      builder: (context, menu, _) => RibbonLargeButton(
+        icon: Icon(ribbonIconOf(item), size: RibbonMetrics.largeIcon),
+        label: item.label,
+        tooltip: 'Languages\nThe languages spelling is checked in',
+        onPressed: () => menu.isOpen ? menu.close() : menu.open(),
       ),
+      menuChildren: <Widget>[
+        if (installed.isEmpty)
+          MenuItemButton(
+            child: Text(
+              reading.isLoading
+                  ? 'Looking for dictionaries…'
+                  : 'No dictionaries yet',
+            ),
+          )
+        else
+          for (final dictionary in installed)
+            CheckboxMenuButton(
+              value: used.contains(dictionary.code),
+              onChanged: (value) => ref
+                  .read(spellingProvider.notifier)
+                  .useLanguage(dictionary.code, used: value ?? false),
+              child: Text(dictionary.name),
+            ),
+        const Divider(height: 8),
+        for (final dictionary in DictionaryCatalog.languages)
+          if (!installedCodes.contains(dictionary.code))
+            MenuItemButton(
+              leadingIcon: const Icon(Icons.download_rounded, size: 18),
+              onPressed: downloading.contains(dictionary.code)
+                  ? null
+                  : () => attempt(() => dictionaries.download(dictionary)),
+              child: Text(
+                downloading.contains(dictionary.code)
+                    ? 'Downloading ${dictionary.name}…'
+                    : 'Download ${dictionary.name}',
+              ),
+            ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.folder_open_outlined, size: 18),
+          onPressed: () => attempt(() async {
+            final files = await openFiles(
+              acceptedTypeGroups: const <XTypeGroup>[_hunspell],
+            );
+            if (files.isEmpty) return;
+            // Either file will do: the other is beside it, named the same.
+            final chosen = p.withoutExtension(files.first.path);
+            await dictionaries.import('$chosen.aff', '$chosen.dic');
+          }),
+          child: const Text('Add a dictionary from files…'),
+        ),
+        if (installed.isNotEmpty)
+          SubmenuButton(
+            leadingIcon: const Icon(Icons.delete_outline_rounded, size: 18),
+            menuChildren: <Widget>[
+              for (final dictionary in installed)
+                MenuItemButton(
+                  onPressed: () =>
+                      attempt(() => dictionaries.remove(dictionary.code)),
+                  child: Text(dictionary.name),
+                ),
+            ],
+            child: const Text('Remove a dictionary'),
+          ),
+      ],
     );
   }
 }

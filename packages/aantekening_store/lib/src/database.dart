@@ -1,6 +1,7 @@
 /// The database connection: pragmas, statement caching and transactions.
 library;
 
+import 'package:aantekening_core/aantekening_core.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'schema.dart';
@@ -87,6 +88,43 @@ class AantekeningDatabase {
   /// Runs a statement that returns no rows.
   void run(String sql, [List<Object?> parameters = const <Object?>[]]) =>
       statement(sql).execute(parameters);
+
+  /// [id] and the rows beneath it in [table], which nests its rows through
+  /// its `parent_id` column, parents before what lies beneath them: every
+  /// one, only the live ones with [live], or only those deleted at
+  /// [deletedAt] — deleted along with it.
+  List<String> subtree(
+    String table,
+    String id, {
+    bool live = false,
+    int? deletedAt,
+  }) {
+    final condition = live
+        ? 'WHERE t.deleted_at IS NULL'
+        : deletedAt != null
+        ? 'WHERE t.deleted_at = ?'
+        : '';
+    final rows = select(
+      'WITH RECURSIVE subtree(id, depth) AS ('
+      '  SELECT ?, 0'
+      '  UNION ALL'
+      '  SELECT t.id, s.depth + 1 FROM $table t '
+      '  JOIN subtree s ON t.parent_id = s.id $condition'
+      ') SELECT id FROM subtree ORDER BY depth',
+      <Object?>[id, ?deletedAt],
+    );
+    return <String>[for (final row in rows) row['id'] as String];
+  }
+
+  /// The position after every row of [table] matching [where], for a row
+  /// added at the end of them.
+  double nextPosition(String table, String where, List<Object?> parameters) {
+    final max = select(
+      'SELECT MAX(position) AS m FROM $table WHERE $where',
+      parameters,
+    ).first['m'];
+    return max == null ? 0 : FractionalIndex.after((max as num).toDouble());
+  }
 
   /// Runs [body] inside a transaction, rolling back if it throws.
   ///

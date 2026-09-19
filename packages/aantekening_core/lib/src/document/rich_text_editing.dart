@@ -147,25 +147,31 @@ abstract final class RichTextEditing {
   }
 
   /// The formatting that typing at [offset] in [block] should pick up: that of
-  /// the text just before it, or just after it at the start of a block.
+  /// the text before it, or of the text after it where none comes before.
   ///
-  /// Formulas lend no formatting, so typing after one starts plain.
+  /// Formulas are passed over, so writing on after one continues the text
+  /// before it. Beside a formula with no text either side, typing takes the
+  /// formula's size and colour, the only formatting it has.
   static TextMarks marksAt(TextBlock block, int offset) {
     var position = 0;
     TextRun? before;
     TextRun? after;
+    TextRun? formula;
     for (final run in block.runs) {
       final end = position + run.text.length;
-      if (end <= offset && run.text.isNotEmpty) before = run;
-      if (position >= offset && after == null && run.text.isNotEmpty) {
-        after = run;
+      if (!run.isMath && position < offset && offset < end) return run.marks;
+      if (run.isMath) {
+        formula ??= run;
+      } else if (run.text.isNotEmpty) {
+        if (end <= offset) {
+          before = run;
+        } else {
+          after ??= run;
+        }
       }
-      if (position < offset && offset < end) return run.marks;
       position = end;
     }
-    final source = before ?? after;
-    if (source == null || source.isMath) return TextMarks.none;
-    return source.marks;
+    return (before ?? after)?.marks ?? formula?.marks ?? TextMarks.none;
   }
 
   // ----------------------------------------------------------------- blocks
@@ -668,16 +674,19 @@ abstract final class RichTextEditing {
 
   /// Inserts an empty formula at [at] and returns where it went.
   ///
-  /// At an embed, the formula starts a new line beside it.
+  /// The formula takes the size and colour of [marks] — the formatting the
+  /// text around it has — so it matches what it is written among. At an
+  /// embed, the formula starts a new line beside it.
   static (RichEdit, {int block, int run}) insertMath(
     List<TextBlock> blocks,
     RichSelection selection,
-    MathMode mode,
-  ) {
+    MathMode mode, {
+    TextMarks marks = TextMarks.none,
+  }) {
     final edit = deleteRange(blocks, selection);
     final position = edit.selection.extent;
     final block = edit.blocks[position.block];
-    final formula = TextRun.math('', mode);
+    final formula = TextRun.math('', mode, marks.forFormula);
 
     if (block.isEmbed) {
       final index = position.offset == 0 ? position.block : position.block + 1;

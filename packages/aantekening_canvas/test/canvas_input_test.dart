@@ -28,6 +28,7 @@ TextElement _textBox(String id, {double x = 0, double y = 0}) => TextElement(
 Widget _host(
   CanvasController controller, {
   CanvasPointerClaim? claimsPointer,
+  CanvasGrip? grips,
   ValueChanged<Offset>? onEmptyTap,
   ValueChanged<NoteElement?>? onCanvasPress,
   double trackpadPanScale = 1,
@@ -40,6 +41,7 @@ Widget _host(
       child: InfiniteCanvas(
         controller: controller,
         claimsPointer: claimsPointer,
+        grips: grips,
         onEmptyTap: onEmptyTap,
         onCanvasPress: onCanvasPress,
         header: header,
@@ -345,6 +347,46 @@ void main() {
       expect(controller.selection, isEmpty);
       expect(controller.document.elementById('t')!.frame.x, 50);
       expect(presses, isEmpty);
+    });
+
+    testWidgets("a selected box's grip picks it up under another box", (
+      tester,
+    ) async {
+      // The lower box's band along its top lies under the upper box.
+      final controller = CanvasController()
+        ..addElement(_textBox('lower', x: 50, y: 100))
+        ..addElement(_textBox('upper', x: 50, y: 60))
+        ..select('lower');
+      final presses = <NoteElement?>[];
+      await tester.pumpWidget(
+        _host(
+          controller,
+          claimsPointer: (element, page) => true,
+          grips: (element, page) =>
+              element.frame.containsPoint(page.dx, page.dy) &&
+              element.frame.pageToLocal(page.dx, page.dy).y < 12,
+          onCanvasPress: presses.add,
+        ),
+      );
+
+      await tester.dragFrom(
+        const Offset(150, 105),
+        const Offset(0, 100),
+        kind: PointerDeviceKind.mouse,
+      );
+
+      expect(controller.document.elementById('lower')!.frame.y, 200);
+      expect(controller.document.elementById('upper')!.frame.y, 60);
+      expect(presses.single?.id, 'lower');
+
+      // Where no selected box's grip is, the box on top takes the press.
+      controller.clearSelection();
+      await tester.dragFrom(
+        const Offset(150, 110),
+        const Offset(0, 50),
+        kind: PointerDeviceKind.mouse,
+      );
+      expect(controller.document.elementById('upper')!.frame.y, 60);
     });
 
     testWidgets('dragging an element moves it as one undo step', (

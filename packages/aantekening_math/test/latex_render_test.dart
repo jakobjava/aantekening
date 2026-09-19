@@ -40,6 +40,25 @@ void main() {
     'lim_(n->oo) (1+1/n)^n',
   ];
 
+  group('every example the cheat sheet shows parses', () {
+    for (final topic in SimpleSyntaxGuide.topics) {
+      for (final example in topic.examples) {
+        test('${topic.title}: "${example.typed}"', () {
+          final translation = LinearMath.translate(example.typed);
+          expect(translation.diagnostics, isEmpty);
+          expect(
+            () => TexParser(
+              RendererLatex.of(example.latex),
+              const TexParserSettings(),
+            ).parse(),
+            returnsNormally,
+            reason: 'produced: ${example.latex}',
+          );
+        });
+      }
+    }
+  });
+
   group('generated LaTeX parses', () {
     for (final expression in expressions) {
       test('"$expression"', () {
@@ -51,6 +70,30 @@ void main() {
         );
       });
     }
+  });
+
+  test('named operators parse before anything that follows them', () {
+    for (final latex in <String>[
+      r'\operatorname{tr} \left( A \right)',
+      r'\operatorname{tr}^2 \sqrt{x}',
+      r'\operatorname{tr}_{i}^{2} \frac{a}{b}',
+      r'\operatorname*{arg\,max}_{x} f(x)',
+      r'\operatorname{sgn}{x} + \operatorname{sgn}',
+    ]) {
+      expect(
+        () => TexParser(
+          RendererLatex.of(latex),
+          const TexParserSettings(),
+        ).parse(),
+        returnsNormally,
+        reason: RendererLatex.of(latex),
+      );
+    }
+    expect(
+      RendererLatex.of(r'\operatorname{tr}^2 \left( A \right)'),
+      r'\operatorname{tr}^2{} \left( A \right)',
+    );
+    expect(RendererLatex.of(r'\sin x'), r'\sin x');
   });
 
   test('a recovered fragment still parses', () {

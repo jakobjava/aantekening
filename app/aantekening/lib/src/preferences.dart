@@ -10,8 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-/// A few values kept in a small JSON file beside the workspace, not in it, so
-/// copying a workspace to another machine carries notes and nothing else.
+/// A few values kept in a small JSON file outside the workspace, so copying
+/// a workspace to another machine carries notes and nothing else.
 class Preferences {
   Preferences._(this._file, this._values);
 
@@ -71,14 +71,29 @@ class Preferences {
   }
 }
 
-/// This machine's preferences.
+/// Reading and saving [Preferences] from a provider.
+extension PreferenceAccess on Ref {
+  /// The preference [key], or null until the preferences have been read.
+  /// Watched, so the provider asking is built again once they have been.
+  Object? preference(String key) => watch(preferencesProvider).value?[key];
+
+  /// Saves [value] as [key], or removes [key] with null. Nothing is saved
+  /// before the preferences have been read.
+  void savePreference(String key, Object? value) {
+    final preferences = read(preferencesProvider).value;
+    if (preferences != null) unawaited(preferences.set(key, value));
+  }
+}
+
+/// This machine's preferences, in its directory for application support
+/// wherever the workspace is, since they belong to the machine and not to
+/// the notes.
 final preferencesProvider = FutureProvider<Preferences>((ref) async {
   try {
-    final override = Platform.environment['AANTEKENING_HOME'];
-    final directory = override != null && override.isNotEmpty
-        ? override
-        : (await getApplicationSupportDirectory()).path;
-    return await Preferences.open(File(p.join(directory, 'preferences.json')));
+    final directory = await getApplicationSupportDirectory();
+    return await Preferences.open(
+      File(p.join(directory.path, 'preferences.json')),
+    );
   } on Object {
     return Preferences.inMemory();
   }

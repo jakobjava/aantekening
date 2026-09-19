@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/text/block_paragraph.dart';
+import 'package:aantekening/src/editor/text/block_widgets.dart';
+import 'package:aantekening/src/editor/text/cheat_sheet.dart';
 import 'package:aantekening/src/editor/text/formula_preview.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/editor/text/text_styles.dart';
@@ -224,6 +226,39 @@ void main() {
         latex,
         reason: 'switching changes how it is typed, not what it is',
       );
+    });
+
+    testWidgets('the cheat sheet writes an example into the formula', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await tester.tap(find.text('Math'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cheat sheet'));
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await tester.pumpAndSettle();
+      await type(tester, 'x = ');
+
+      final example = find.descendant(
+        of: find.byType(CheatSheet),
+        matching: find.text('ket(psi)'),
+      );
+      await tester.scrollUntilVisible(
+        example,
+        200,
+        scrollable: find.descendant(
+          of: find.byType(CheatSheet),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.tap(example);
+      await tester.pumpAndSettle();
+
+      expect(inFormula(tester), isTrue, reason: 'the caret stays put');
+      expect(typedLine(tester), 'x = ket(psi) ');
+      expect(blocksOf(tester).single.runs.single.text, r'x = \ket{\psi}');
     });
 
     testWidgets(r'typing $$ starts a formula in LaTeX', (tester) async {
@@ -710,6 +745,66 @@ void main() {
     });
   });
 
+  group('moving a box', () {
+    TextElement box(String id, double y, List<TextRun> runs) => TextElement(
+      id: id,
+      frame: Frame(x: 200, y: y, width: 240, height: 60),
+      createdAt: 0,
+      updatedAt: 0,
+      blocks: <TextBlock>[TextBlock(runs: runs)],
+    );
+
+    Finder editorOf(String id) => find.byWidgetPredicate(
+      (widget) => widget is TextBoxEditor && widget.element.id == id,
+    );
+
+    bool bandShows(WidgetTester tester, String id) => tester
+        .widget<GrabBand>(
+          find.descendant(of: editorOf(id), matching: find.byType(GrabBand)),
+        )
+        .visible;
+
+    testWidgets('keeps its band in view however it is dragged', (tester) async {
+      await store.pages.saveDocument(
+        pageId,
+        PageDocument(
+          id: pageId,
+          elements: <NoteElement>[
+            box('below', 420, const <TextRun>[
+              TextRun('area '),
+              TextRun.math(r'\frac{a}{b}', MathMode.latex),
+            ]),
+            box('above', 220, const <TextRun>[TextRun('in the way')]),
+          ],
+        ),
+      );
+      await openEditor(tester, store, pageId);
+
+      final topLeft = tester.getTopLeft(editorOf('below'));
+      final mouse = await tester.startGesture(
+        topLeft + const Offset(120, 5),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      // Up, faster than the box can follow within a frame, and across the
+      // other box's band.
+      for (var i = 0; i < 12; i++) {
+        await mouse.moveBy(const Offset(3, -20));
+        expect(bandShows(tester, 'below'), isTrue, reason: 'step $i');
+        await tester.pump();
+        expect(bandShows(tester, 'below'), isTrue, reason: 'step $i');
+        expect(
+          bandShows(tester, 'above'),
+          isFalse,
+          reason: 'a box passed over while dragging is not pointed at',
+        );
+      }
+      await mouse.up();
+      await tester.pumpAndSettle();
+      expect(bandShows(tester, 'below'), isTrue);
+    });
+  });
+
   group('formatting', () {
     RibbonCommands bar(WidgetTester tester) =>
         tester.widget<Ribbon>(find.byType(Ribbon)).commands;
@@ -735,6 +830,105 @@ void main() {
       expect(runs.last.marks.color, 0xFFD93025);
       expect(runs.last.marks.highlight! >>> 24, RichTextStyles.highlightAlpha);
       expect(bar(tester).text.state.fontSize, 24);
+    });
+
+    RenderBlockParagraph paragraph(WidgetTester tester) => tester
+        .renderObject<RenderBlockParagraph>(find.byType(BlockParagraph).first);
+
+    /// The caret as it is drawn, and the box of the letter before it.
+    (Rect, Rect) caretAndLetter(WidgetTester tester) {
+      final render = paragraph(tester);
+      final decoration = render.decoration;
+      final caret = decoration.caret!;
+      final letter = render.paragraph
+          .getBoxesForSelection(
+            TextSelection(baseOffset: caret - 1, extentOffset: caret),
+          )
+          .single
+          .toRect();
+      return (
+        render.caretRect(
+          caret,
+          decoration.caretAffinity,
+          decoration.typingStyle,
+        ),
+        letter,
+      );
+    }
+
+    testWidgets('the caret stands beside large text, not below it', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      bar(tester).text.setFontSize(72);
+      await tester.pump();
+      await type(tester, 'Big');
+      await tester.pumpAndSettle();
+
+      final (caret, letter) = caretAndLetter(tester);
+      expect(caret.top, moreOrLessEquals(letter.top, epsilon: 0.5));
+      expect(caret.bottom, moreOrLessEquals(letter.bottom, epsilon: 0.5));
+      expect(caret.bottom, lessThanOrEqualTo(paragraph(tester).size.height));
+    });
+
+    testWidgets('the caret takes a new size as soon as it is chosen', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'small');
+      await tester.pumpAndSettle();
+      final (before, letter) = caretAndLetter(tester);
+
+      bar(tester).text.setFontSize(36);
+      await tester.pump();
+      final (after, _) = caretAndLetter(tester);
+
+      // Taller, as 36 point text is, and standing on the same line.
+      expect(after.height, greaterThan(before.height * 2.5));
+      expect(
+        after.bottom,
+        moreOrLessEquals(
+          letter.bottom + (after.height - before.height) * 0.2,
+          epsilon: after.height * 0.15,
+        ),
+      );
+    });
+
+    testWidgets('a formula takes the size of the text it is written in', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      bar(tester).text.setFontSize(20);
+      await tester.pump();
+      await type(tester, 'area ');
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await type(tester, 'x');
+
+      final formula = blocksOf(tester).single.runs.last;
+      expect(formula.isMath, isTrue);
+      expect(formula.marks.size, 20);
+      // Its source is typed at the size of the text around it too.
+      final source = tester.widget<RichText>(
+        find
+            .descendant(
+              of: find.byType(TextBoxEditor),
+              matching: find.byType(RichText),
+            )
+            .first,
+      );
+      final sourceSpan = (source.text as TextSpan).children!.last as TextSpan;
+      final sourceStyle = (sourceSpan.children![1] as TextSpan).style!;
+      expect(sourceStyle.fontSize, 20 * RichTextStyles.unitsPerPoint);
+
+      // Finished, it is typeset at that size, and typing goes on at it.
+      await press(tester, LogicalKeyboardKey.enter);
+      await type(tester, ' more');
+      final runs = blocksOf(tester).single.runs;
+      expect(runs.last.text, ' more');
+      expect(runs.last.marks.size, 20);
     });
 
     testWidgets('text is black by default, on the white paper', (tester) async {

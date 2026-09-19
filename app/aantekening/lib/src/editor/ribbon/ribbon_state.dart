@@ -2,8 +2,6 @@
 /// arrangement, which are saved between sessions.
 library;
 
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -30,9 +28,8 @@ class RibbonController extends Notifier<RibbonState> {
   static const String _collapsedKey = 'ribbon.collapsed';
 
   @override
-  RibbonState build() => RibbonState(
-    collapsed: ref.watch(preferencesProvider).value?[_collapsedKey] == true,
-  );
+  RibbonState build() =>
+      RibbonState(collapsed: ref.preference(_collapsedKey) == true);
 
   /// Brings [tab] forward, as a tool's shortcut does. A collapsed ribbon
   /// stays collapsed.
@@ -53,11 +50,8 @@ class RibbonController extends Notifier<RibbonState> {
     _saveCollapsed();
   }
 
-  void _saveCollapsed() {
-    final preferences = ref.read(preferencesProvider).value;
-    if (preferences == null) return;
-    unawaited(preferences.set(_collapsedKey, state.collapsed ? true : null));
-  }
+  void _saveCollapsed() =>
+      ref.savePreference(_collapsedKey, state.collapsed ? true : null);
 }
 
 final ribbonProvider = NotifierProvider<RibbonController, RibbonState>(

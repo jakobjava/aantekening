@@ -6,17 +6,22 @@ import 'dart:math' as math;
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
-import 'package:flutter/foundation.dart';
+import 'package:aantekening_spell/aantekening_spell.dart' show WordSpan;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
-import '../media_views.dart';
+import '../../command_menu.dart';
+import '../../spelling/proofreader.dart';
 import 'block_paragraph.dart';
 import 'block_view.dart';
+import 'block_widgets.dart';
+import 'formula_source.dart';
+import 'list_numbering.dart';
 import 'math_templates.dart';
+import 'rich_clipboard.dart';
 import 'text_box_controller.dart';
+import 'text_boundaries.dart';
 import 'text_styles.dart';
 
 /// Called with a text box's new contents. [recordUndo] is true when the change
@@ -43,6 +48,7 @@ class TextBoxEditor extends StatefulWidget {
     required this.element,
     required this.isEditing,
     super.key,
+    this.selected = false,
     this.controller,
     this.interactive = true,
     this.startInFormula = false,
@@ -51,6 +57,7 @@ class TextBoxEditor extends StatefulWidget {
     this.onSizeChanged,
     this.onExit,
     this.highlight,
+    this.proofreader,
     this.onMatchPlaced,
   });
 
@@ -58,6 +65,11 @@ class TextBoxEditor extends StatefulWidget {
 
   /// Whether this box has the caret.
   final bool isEditing;
+
+  /// Whether the box is picked on the page. Its band shows while it is, so
+  /// it stays in view as the box is dragged about, whatever the pointer
+  /// passes over.
+  final bool selected;
 
   /// Receives this box's formatting state and forwards toolbar commands to it
   /// while it is being edited.
@@ -85,6 +97,9 @@ class TextBoxEditor extends StatefulWidget {
 
   /// Words to mark wherever they occur in the box, as a search found them.
   final SearchTerms? highlight;
+
+  /// What marks the words spelled wrongly, if spelling is checked.
+  final Proofreader? proofreader;
 
   /// Told where the first word [highlight] marks lies, in the box's own page
   /// units, once it has been laid out: for the page to bring it into view.
@@ -115,14 +130,17 @@ class TextBoxEditor extends StatefulWidget {
   /// Only the text is searched, not formulas: they are shown typeset, where
   /// a word of their source cannot be pointed to.
   static List<TextMatch> matchesIn(TextBlock block, SearchTerms terms) =>
-      terms.matchesIn(
-        <String>[
-          // As many spaces as the formula is long, so offsets stay the model's
-          // and words either side of it stay apart.
-          for (final run in block.runs)
-            run.isMath ? ' ' * run.text.length : run.text,
-        ].join(),
-      );
+      terms.matchesIn(textOf(block));
+
+  /// [block]'s text with each formula — and, unless [code] is set, each
+  /// stretch of code — written as as many spaces as it is long, so offsets
+  /// stay the model's and the words either side of it stay apart.
+  static String textOf(TextBlock block, {bool code = true}) => <String>[
+    for (final run in block.runs)
+      run.isMath || (!code && run.marks.code)
+          ? ' ' * run.text.length
+          : run.text,
+  ].join();
 
   /// Whether [blocks] hold nothing worth keeping: no text, no formula and no
   /// embed. An empty box is removed when editing ends.
@@ -156,23 +174,6 @@ class _Hit {
   final bool checkbox;
 }
 
-/// Rich text copied from a text box, kept so that pasting it back keeps its
-/// formatting, formulas and embeds. The system clipboard carries only the
-/// plain text, which is what other applications receive.
-abstract final class _RichClipboard {
-  static String? _plain;
-  static List<TextBlock>? _fragment;
-
-  static void store(String plain, List<TextBlock> fragment) {
-    _plain = plain;
-    _fragment = fragment;
-  }
-
-  /// The rich fragment matching [plain], if it was copied from here.
-  static List<TextBlock>? match(String plain) =>
-      plain == _plain ? _fragment : null;
-}
-
 class TextBoxEditorState extends State<TextBoxEditor>
     implements DeltaTextInputClient, TextEditorCommands {
   static const Duration _blinkInterval = Duration(milliseconds: 530);
@@ -184,22 +185,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
   RichSelection _selection = const RichSelection.collapsed(RichPosition.zero);
   TextAffinity _affinity = TextAffinity.downstream;
 
-  /// The formula being edited. Its run in [_blocks] holds the source in
-  /// [_syntax]; what is reported to the page holds LaTeX ([_stored]).
+  /// The formula being edited. Its run in [_blocks] holds its source, in
+  /// [FormulaSource.syntax]; what is reported to the page holds LaTeX
+  /// ([_stored]).
   _OpenFormula? _formula;
-
-  /// The syntax the open formula's source is in.
-  MathMode _syntax = MathMode.linear;
-
-  /// The formula as stored when it was opened, and the source it was shown
-  /// as. While the source is as it was, the stored LaTeX is kept exactly
-  /// rather than rewritten the way the translation would spell it.
-  String? _openedLatex;
-  String _openedSource = '';
-
-  /// The Simple source translated last, with the translation: it is needed
-  /// both to store the formula and to preview it.
-  (String, MathTranslation)? _translation;
+  final FormulaSource _source = FormulaSource();
 
   /// What the preview was last told about the formula being edited.
   FormulaSession? _session;
@@ -257,6 +247,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     _lastEmitted = widget.element.blocks;
     _selection = RichSelection.collapsed(RichTextEditing.endOf(_blocks));
     _focusNode.addListener(_onFocusChanged);
+    widget.proofreader?.addListener(_onProofread);
     if (widget.isEditing) _beginEditing();
   }
 
@@ -264,6 +255,10 @@ class TextBoxEditorState extends State<TextBoxEditor>
   void didUpdateWidget(TextBoxEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     final old = oldWidget;
+    if (old.proofreader != widget.proofreader) {
+      old.proofreader?.removeListener(_onProofread);
+      widget.proofreader?.addListener(_onProofread);
+    }
     if (!identical(widget.element.blocks, _lastEmitted)) {
       // Changed from outside — undo, redo, or another view of the page. The
       // caret stays as close to where it was as the new text allows.
@@ -294,6 +289,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
   @override
   void dispose() {
+    widget.proofreader?.removeListener(_onProofread);
     _followSyntax(null);
     widget.controller?.detach(this);
     _closeConnection();
@@ -304,6 +300,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
     _caretVisible.dispose();
     super.dispose();
   }
+
+  /// Verdicts on the spelling of words in the box have come in.
+  void _onProofread() => setState(() {});
 
   static List<TextBlock> _nonEmpty(List<TextBlock> blocks) =>
       blocks.isEmpty ? const <TextBlock>[TextBlock()] : blocks;
@@ -483,10 +482,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       if (i > 0) _paragraphBreak();
       final line = lines[i];
       if (line.isEmpty) continue;
-      final start = _selection.start;
-      final marks =
-          _pendingMarks ??
-          RichTextEditing.marksAt(_blocks[start.block], start.offset);
+      final marks = _typingMarks();
       final pending = _pendingMarks;
       _commit(
         RichTextEditing.insertText(_blocks, _selection, line, marks: marks),
@@ -579,7 +575,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
       );
       return;
     }
-    final target = word ? _wordLeft(view.text, v) : _graphemeLeft(view.text, v);
+    final target = word
+        ? TextBoundaries.wordBefore(view.text, v)
+        : TextBoundaries.characterBefore(view.text, v);
     _commit(
       RichTextEditing.deleteRange(
         _blocks,
@@ -627,8 +625,8 @@ class TextBoxEditorState extends State<TextBoxEditor>
       return;
     }
     final target = word
-        ? _wordRight(view.text, v)
-        : _graphemeRight(view.text, v);
+        ? TextBoundaries.wordAfter(view.text, v)
+        : TextBoundaries.characterAfter(view.text, v);
     _commit(
       RichTextEditing.deleteRange(
         _blocks,
@@ -642,7 +640,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
   /// The syntax formulas are typed in, as the person has chosen it.
   MathMode get _preferredSyntax =>
-      widget.controller?.formulaSyntax.value ?? _syntax;
+      widget.controller?.formulaSyntax.value ?? _source.syntax;
 
   /// Follows [controller]'s syntax setting, translating the open formula
   /// whenever it changes; null to stop following.
@@ -672,18 +670,17 @@ class TextBoxEditorState extends State<TextBoxEditor>
   /// Shows the open formula in [syntax], translated. What is stored stays
   /// exactly as it was until something is typed.
   void _switchSyntax(MathMode syntax) {
-    if (syntax == _syntax) return;
+    if (syntax == _source.syntax) return;
     final formula = _formula;
     if (formula == null || !_isMathRun(_blocks, formula)) {
-      _syntax = syntax;
+      _source.syntax = syntax;
       return;
     }
     final run = _blocks[formula.block].runs[formula.run];
-    final latex = _latexFor(run.text);
-    _syntax = syntax;
-    final source = _sourceIn(syntax, latex);
-    _openedLatex = latex;
-    _openedSource = source;
+    final latex = _source.latexFor(run.text);
+    _source.syntax = syntax;
+    final source = FormulaSource.sourceIn(syntax, latex);
+    _source.opened(latex, source);
     _blocks = RichTextEditing.replaceRun(
       _blocks,
       formula.block,
@@ -703,39 +700,19 @@ class TextBoxEditorState extends State<TextBoxEditor>
     _reportFormula();
   }
 
-  /// [latex] as it is typed in [syntax].
-  static String _sourceIn(MathMode syntax, String latex) =>
-      syntax == MathMode.latex ? latex : LinearMath.fromLatex(latex);
-
-  MathTranslation _translate(String source) {
-    final last = _translation;
-    if (last != null && last.$1 == source) return last.$2;
-    final translation = LinearMath.translate(source);
-    _translation = (source, translation);
-    return translation;
-  }
-
-  /// The LaTeX the open formula is stored as while its source is [source].
-  String _latexFor(String source) {
-    final opened = _openedLatex;
-    if (opened != null && source == _openedSource) return opened;
-    if (_syntax == MathMode.latex || source.trim().isEmpty) return source;
-    return _translate(source).latex;
-  }
-
   /// [blocks] as they are stored, with the open formula's source as LaTeX.
   List<TextBlock> _stored(List<TextBlock> blocks) {
     final formula = _formula;
     if (formula == null || !_isMathRun(blocks, formula)) return blocks;
     final run = blocks[formula.block].runs[formula.run];
-    if (run.math == MathMode.latex && _syntax == MathMode.latex) {
+    if (run.math == MathMode.latex && _source.syntax == MathMode.latex) {
       return blocks;
     }
     return RichTextEditing.replaceRun(
       blocks,
       formula.block,
       formula.run,
-      TextRun.math(_latexFor(run.text), MathMode.latex, run.marks),
+      TextRun.math(_source.latexFor(run.text), MathMode.latex, run.marks),
     );
   }
 
@@ -746,36 +723,31 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (formula == null) return;
     if (!_isMathRun(_blocks, formula)) {
       _formula = null;
-      _openedLatex = null;
+      _source.closed();
       return;
     }
     final run = _blocks[formula.block].runs[formula.run];
-    final latex = run.math == MathMode.linear
-        ? LinearMath.toLatex(run.text)
-        : run.text;
-    final source = latex == _openedLatex
-        ? _openedSource
-        : _sourceIn(_syntax, latex);
+    final source = _source.sourceOf(LinearMath.latexFor(run.math!, run.text));
     _blocks = RichTextEditing.replaceRun(
       _blocks,
       formula.block,
       formula.run,
-      TextRun.math(source, _syntax, run.marks),
+      TextRun.math(source, _source.syntax, run.marks),
     );
   }
 
   /// Starts a new, empty formula at the caret.
   void _startFormula() {
-    _syntax = _preferredSyntax;
+    _source.syntax = _preferredSyntax;
     final (edit, :block, :run) = RichTextEditing.insertMath(
       _blocks,
       _selection,
-      _syntax,
+      _source.syntax,
+      marks: _typingMarks(),
     );
     final start = RichTextEditing.runSpans(edit.blocks[block])[run].start;
     _formula = (block: block, run: run);
-    _openedLatex = null;
-    _openedSource = '';
+    _source.closed();
     _commit((
       blocks: edit.blocks,
       selection: RichSelection.collapsed(RichPosition(block, start)),
@@ -788,21 +760,20 @@ class TextBoxEditorState extends State<TextBoxEditor>
   /// caret at its end or start.
   void _openFormula(_OpenFormula formula, {bool atEnd = true}) {
     if (!_isMathRun(_blocks, formula)) return;
-    _syntax = _preferredSyntax;
+    _source.syntax = _preferredSyntax;
     final run = _blocks[formula.block].runs[formula.run];
     // Formulas are stored as LaTeX; one from an older page may still be in
     // Simple syntax.
     final legacy = run.math == MathMode.linear;
-    final latex = legacy ? LinearMath.toLatex(run.text) : run.text;
-    final source = _sourceIn(_syntax, latex);
-    _openedLatex = latex;
-    _openedSource = source;
+    final latex = LinearMath.latexFor(run.math!, run.text);
+    final source = FormulaSource.sourceIn(_source.syntax, latex);
+    _source.opened(latex, source);
     _formula = formula;
     _blocks = RichTextEditing.replaceRun(
       _blocks,
       formula.block,
       formula.run,
-      TextRun.math(source, _syntax, run.marks),
+      TextRun.math(source, _source.syntax, run.marks),
     );
     if (legacy) _emitStored(record: false);
     final span = _formulaSpan(formula)!;
@@ -831,11 +802,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
       return;
     }
     final source = _blocks[formula.block].runs[formula.run].text;
-    final diagnostics = _syntax == MathMode.linear && source.trim().isNotEmpty
-        ? _translate(source).diagnostics
-        : const <MathDiagnostic>[];
+    final diagnostics = _source.diagnostics(source);
     final session = FormulaSession(
-      latex: _latexFor(source),
+      latex: _source.latexFor(source),
       error: diagnostics.isEmpty ? null : diagnostics.first.message,
     );
     if (session == _session) return;
@@ -881,10 +850,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final span = _formulaSpan(formula);
     final run = span == null ? null : _blocks[formula.block].runs[formula.run];
     final source = run?.text ?? '';
-    final latex = _latexFor(source);
+    final latex = _source.latexFor(source);
     _formula = null;
-    _openedLatex = null;
-    _openedSource = '';
+    _source.closed();
     _connection?.updateConfig(_inputConfiguration());
     _reportFormula();
     if (span == null || run == null) return;
@@ -1002,8 +970,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
       return;
     }
     final target = forward
-        ? (word ? _wordRight(source, local) : _graphemeRight(source, local))
-        : (word ? _wordLeft(source, local) : _graphemeLeft(source, local));
+        ? (word
+              ? TextBoundaries.wordAfter(source, local)
+              : TextBoundaries.characterAfter(source, local))
+        : (word
+              ? TextBoundaries.wordBefore(source, local)
+              : TextBoundaries.characterBefore(source, local));
     final from = math.min(local, target);
     final to = math.max(local, target);
     _commit((
@@ -1061,10 +1033,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final has = kind.isSetIn;
 
     if (_selection.isCollapsed) {
-      final caret = _selection.extent;
-      final current =
-          _pendingMarks ??
-          RichTextEditing.marksAt(_blocks[caret.block], caret.offset);
+      final current = _typingMarks();
       setState(() => _pendingMarks = kind.setIn(current, on: !has(current)));
       _publishState();
       return;
@@ -1078,6 +1047,14 @@ class TextBoxEditorState extends State<TextBoxEditor>
       ),
       selection: _selection,
     ), _EditKind.other);
+  }
+
+  /// The formatting what is typed next takes: what was chosen for it with
+  /// nothing selected, or that of the text it is typed into.
+  TextMarks _typingMarks() {
+    final start = _selection.start;
+    return _pendingMarks ??
+        RichTextEditing.marksAt(_blocks[start.block], start.offset);
   }
 
   /// Applies [change] to the selection's formatting, to the formula being
@@ -1099,11 +1076,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       return;
     }
     if (_selection.isCollapsed) {
-      final caret = _selection.extent;
-      final current =
-          _pendingMarks ??
-          RichTextEditing.marksAt(_blocks[caret.block], caret.offset);
-      setState(() => _pendingMarks = change(current));
+      setState(() => _pendingMarks = change(_typingMarks()));
       _publishState();
       return;
     }
@@ -1196,7 +1169,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
     // Symbols come with a space either side to keep them apart from their
     // neighbours; none is needed against a bracket or another space.
-    var text = template.inSyntax(_syntax);
+    var text = template.inSyntax(_source.syntax);
     if (text.startsWith(' ') &&
         (from == 0 || ' ([{'.contains(source[from - 1]))) {
       text = text.substring(1);
@@ -1254,7 +1227,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (formula != null) {
       sample = _blocks[formula.block].runs[formula.run].marks;
     } else if (_selection.isCollapsed) {
-      sample = _pendingMarks ?? RichTextEditing.marksAt(block, caret.offset);
+      sample = _typingMarks();
     } else {
       // A mixed selection shows the formatting where it starts.
       final start = _selection.start;
@@ -1310,7 +1283,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
     final fragment = RichTextEditing.slice(_blocks, _selection);
     final plain = RichTextEditing.plainTextOf(fragment);
-    _RichClipboard.store(plain, fragment);
+    RichClipboard.store(plain, fragment);
     await Clipboard.setData(ClipboardData(text: plain));
     if (cut && mounted) _deleteSelection();
   }
@@ -1324,7 +1297,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       _replaceInFormula(text.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' '));
       return;
     }
-    final fragment = _RichClipboard.match(text);
+    final fragment = RichClipboard.match(text);
     if (fragment != null) {
       _commit(
         RichTextEditing.insertFragment(_blocks, _selection, fragment),
@@ -1622,10 +1595,14 @@ class TextBoxEditorState extends State<TextBoxEditor>
           _openFormula((block: caret.block, run: formulaBefore.index));
           return;
         }
-        var to = word ? _wordLeft(view.text, v) : _graphemeLeft(view.text, v);
+        var to = word
+            ? TextBoundaries.wordBefore(view.text, v)
+            : TextBoundaries.characterBefore(view.text, v);
         // The room beside the formula being edited is not text to stop in.
         while (to > 0 && view.toModel(to) == caret.offset) {
-          to = word ? _wordLeft(view.text, to) : _graphemeLeft(view.text, to);
+          to = word
+              ? TextBoundaries.wordBefore(view.text, to)
+              : TextBoundaries.characterBefore(view.text, to);
         }
         target = RichPosition(caret.block, view.toModel(to));
       }
@@ -1647,9 +1624,13 @@ class TextBoxEditorState extends State<TextBoxEditor>
           ), atEnd: false);
           return;
         }
-        var to = word ? _wordRight(view.text, v) : _graphemeRight(view.text, v);
+        var to = word
+            ? TextBoundaries.wordAfter(view.text, v)
+            : TextBoundaries.characterAfter(view.text, v);
         while (to < view.text.length && view.toModel(to) == caret.offset) {
-          to = word ? _wordRight(view.text, to) : _graphemeRight(view.text, to);
+          to = word
+              ? TextBoundaries.wordAfter(view.text, to)
+              : TextBoundaries.characterAfter(view.text, to);
         }
         target = RichPosition(caret.block, view.toModel(to));
       }
@@ -1750,56 +1731,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
     _select(RichSelection(extend ? _selection.base : target, target));
   }
 
-  static int _graphemeLeft(String text, int offset) {
-    if (offset <= 0) return 0;
-    final range = CharacterRange.at(text, offset);
-    return range.moveBack() ? range.stringBeforeLength : 0;
-  }
-
-  static int _graphemeRight(String text, int offset) {
-    if (offset >= text.length) return text.length;
-    final range = CharacterRange.at(text, offset);
-    return range.moveNext()
-        ? text.length - range.stringAfterLength
-        : text.length;
-  }
-
-  static bool _isWordChar(int unit) =>
-      (unit >= 0x30 && unit <= 0x39) ||
-      (unit >= 0x41 && unit <= 0x5A) ||
-      (unit >= 0x61 && unit <= 0x7A) ||
-      unit == 0x5F ||
-      (unit >= 0xC0 && unit != 0xD7 && unit != 0xF7 && unit != 0xFFFC);
-
-  static bool _isSpace(int unit) =>
-      unit == 0x20 || unit == 0x09 || unit == 0xA0 || unit == 0x0A;
-
-  static int _wordLeft(String text, int offset) {
-    var i = offset;
-    while (i > 0 && _isSpace(text.codeUnitAt(i - 1))) {
-      i--;
-    }
-    if (i == 0) return 0;
-    if (!_isWordChar(text.codeUnitAt(i - 1))) return i - 1;
-    while (i > 0 && _isWordChar(text.codeUnitAt(i - 1))) {
-      i--;
-    }
-    return i;
-  }
-
-  static int _wordRight(String text, int offset) {
-    var i = offset;
-    while (i < text.length && _isSpace(text.codeUnitAt(i))) {
-      i++;
-    }
-    if (i == text.length) return i;
-    if (!_isWordChar(text.codeUnitAt(i))) return i + 1;
-    while (i < text.length && _isWordChar(text.codeUnitAt(i))) {
-      i++;
-    }
-    return i;
-  }
-
   // ----------------------------------------------------------------- layout
 
   RenderBlockParagraph? _paragraph(int index) {
@@ -1818,7 +1749,24 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final paragraph = _paragraph(position.block);
     if (paragraph == null || _blocks[position.block].isEmbed) return null;
     final view = _viewFor(position.block);
-    return paragraph.caretRect(view.toView(position.offset), _affinity);
+    return paragraph.caretRect(
+      view.toView(position.offset),
+      _affinity,
+      _typingStyle(position.block),
+    );
+  }
+
+  /// The style text typed next into block [index] will have, where it was
+  /// chosen with nothing selected: the caret there is drawn at its size.
+  TextStyle? _typingStyle(int index) {
+    final pending = _pendingMarks;
+    if (pending == null || _formula != null) return null;
+    final blockStyle = RichTextStyles.blockStyle(
+      _blocks[index].kind,
+      RichTextStyles.base(context),
+    );
+    final marks = RichTextStyles.runStyle(pending);
+    return marks == null ? blockStyle : blockStyle.merge(marks);
   }
 
   Rect? _caretRectGlobal(RichPosition position) {
@@ -1895,6 +1843,92 @@ class TextBoxEditorState extends State<TextBoxEditor>
     return _Hit(RichPosition(best, view.toModel(position.offset)));
   }
 
+  // -------------------------------------------------------------- spelling
+
+  /// Offers what can be done about the word spelled wrongly at [global], if
+  /// one is there: the spellings the checker suggests, adding the word to
+  /// the dictionary, or leaving it be.
+  Future<void> _offerCorrections(Offset global) async {
+    final proofreader = widget.proofreader;
+    if (proofreader == null) return;
+    // A formula being edited is finished first, as a click elsewhere
+    // finishes it, and the text laid out again with it typeset, so the
+    // words are found, and replaced, in the text as it is kept.
+    if (_formula != null) {
+      finishFormula();
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
+    final hit = _hitTest(global);
+    if (hit == null) return;
+    final at = hit.position;
+    final index = at.block;
+    final text = TextBoxEditor.textOf(_blocks[index], code: false);
+    final word = proofreader
+        .misspellingsIn(text)
+        .where((word) => word.start <= at.offset && at.offset <= word.end)
+        .firstOrNull;
+    if (word == null) return;
+    final spelled = text.substring(word.start, word.end);
+    final suggestions = await proofreader.suggest(spelled);
+    if (!mounted) return;
+    await showCommandMenu(context, global, <List<MenuCommand>>[
+      if (suggestions.isEmpty)
+        const <MenuCommand>[MenuCommand('No suggestions', null, null)]
+      else
+        <MenuCommand>[
+          for (final suggestion in suggestions)
+            MenuCommand(
+              suggestion,
+              null,
+              () => _replaceWord(index, word, spelled, suggestion),
+            ),
+        ],
+      <MenuCommand>[
+        MenuCommand(
+          'Add to dictionary',
+          Icons.library_add_outlined,
+          () => unawaited(proofreader.addWord(spelled)),
+        ),
+        MenuCommand(
+          'Ignore',
+          Icons.visibility_off_outlined,
+          () => proofreader.ignore(spelled),
+        ),
+      ],
+    ]);
+  }
+
+  /// Puts [replacement] in place of [word] in block [index], unless the
+  /// text has changed so that [spelled] is no longer there.
+  void _replaceWord(
+    int index,
+    WordSpan word,
+    String spelled,
+    String replacement,
+  ) {
+    if (index >= _blocks.length) return;
+    final block = _blocks[index];
+    final text = TextBoxEditor.textOf(block, code: false);
+    if (word.end > text.length ||
+        text.substring(word.start, word.end) != spelled) {
+      return;
+    }
+    if (!widget.isEditing) widget.onStartEditing?.call();
+    _commit(
+      RichTextEditing.insertText(
+        _blocks,
+        RichSelection(
+          RichPosition(index, word.start),
+          RichPosition(index, word.end),
+        ),
+        replacement,
+        marks: RichTextEditing.marksAt(block, word.start + 1),
+      ),
+      _EditKind.other,
+    );
+  }
+
   // --------------------------------------------------------------- pointer
 
   void _onPointerDown(PointerDownEvent event) {
@@ -1906,6 +1940,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
         _dragPointer = null;
         return;
       }
+    }
+    if (event.kind == PointerDeviceKind.mouse &&
+        event.buttons & kSecondaryMouseButton != 0) {
+      unawaited(_offerCorrections(event.position));
+      return;
     }
     if (event.kind == PointerDeviceKind.mouse &&
         event.buttons & kPrimaryMouseButton == 0) {
@@ -2027,8 +2066,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
       if (position.offset >= span.start && position.offset <= span.end) {
         final source = _blocks[formula.block].runs[formula.run].text;
         final local = position.offset - span.start;
-        final from = _wordLeft(source, _wordRight(source, local));
-        final to = _wordRight(source, from);
+        final from = TextBoundaries.wordBefore(
+          source,
+          TextBoundaries.wordAfter(source, local),
+        );
+        final to = TextBoundaries.wordAfter(source, from);
         _select(
           RichSelection(
             RichPosition(formula.block, span.start + from),
@@ -2051,8 +2093,8 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
     final view = _viewFor(position.block);
     final v = view.toView(position.offset);
-    final end = _wordRight(view.text, v);
-    final start = _wordLeft(view.text, end);
+    final end = TextBoundaries.wordAfter(view.text, v);
+    final start = TextBoundaries.wordBefore(view.text, end);
     _select(
       RichSelection(
         RichPosition(position.block, view.toModel(start)),
@@ -2393,12 +2435,31 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
   }
 
+  /// Where the words spelled wrongly are in block [index], laid out as
+  /// [view]: none in code, and not the word being typed.
+  List<TextRange> _misspellingsIn(int index, BlockView view) {
+    final proofreader = widget.proofreader;
+    final block = _blocks[index];
+    if (proofreader == null || block.kind == TextBlockKind.code) {
+      return const <TextRange>[];
+    }
+    final caret = _selection.extent;
+    return <TextRange>[
+      for (final word in proofreader.misspellingsIn(
+        TextBoxEditor.textOf(block, code: false),
+        caret: widget.isEditing && caret.block == index ? caret.offset : null,
+      ))
+        TextRange(start: view.toView(word.start), end: view.toView(word.end)),
+    ];
+  }
+
   BlockDecoration _decorationFor(int index, BlockView view, bool focused) {
     final matches = _matchesIn(index, view);
+    final misspellings = _misspellingsIn(index, view);
     if (!widget.isEditing) {
-      return matches.isEmpty
+      return matches.isEmpty && misspellings.isEmpty
           ? BlockDecoration.none
-          : BlockDecoration(matches: matches);
+          : BlockDecoration(matches: matches, misspellings: misspellings);
     }
     final start = _selection.start;
     final end = _selection.end;
@@ -2428,9 +2489,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
           ? view.toView(caret.offset)
           : null,
       caretAffinity: _affinity,
+      typingStyle: _typingStyle(index),
       composing: caret.block == index ? _composing : null,
       formula: formulaRange,
       matches: matches,
+      misspellings: misspellings,
     );
   }
 
@@ -2451,9 +2514,10 @@ class TextBoxEditorState extends State<TextBoxEditor>
       formulaOutline: RichTextStyles.formulaOutline,
       composingColor: RichTextStyles.ink,
       matchColor: RichTextStyles.searchMatch,
+      misspellingColor: RichTextStyles.misspelling,
     );
 
-    final ordinals = _ordinals();
+    final ordinals = ListNumbering.ordinals(_blocks);
     final rows = <Widget>[];
     for (var i = 0; i < _blocks.length; i++) {
       rows.add(
@@ -2475,7 +2539,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (!empty) _hadContent = true;
     final showChrome = empty
         ? widget.isEditing && _hadContent
-        : widget.isEditing || _hovering;
+        : widget.isEditing || widget.selected || _hovering;
     final content = Stack(
       children: <Widget>[
         Padding(
@@ -2495,15 +2559,28 @@ class TextBoxEditorState extends State<TextBoxEditor>
           left: 0,
           right: 0,
           height: TextBoxEditor.grabBand,
-          child: _GrabBand(visible: showChrome, active: widget.isEditing),
+          child: GrabBand(
+            height: TextBoxEditor.grabBand,
+            visible: showChrome,
+            active: widget.isEditing || widget.selected,
+          ),
         ),
       ],
     );
 
     return MouseRegion(
       cursor: widget.interactive ? SystemMouseCursors.text : MouseCursor.defer,
-      onEnter: (_) => setState(() => _hovering = true),
-      onExit: (_) => setState(() => _hovering = false),
+      // Only a pointer hovering with no button held counts: one dragging
+      // another box across this one is not pointing at it.
+      onEnter: (event) {
+        if (event.buttons == 0) setState(() => _hovering = true);
+      },
+      onHover: (_) {
+        if (!_hovering) setState(() => _hovering = true);
+      },
+      onExit: (_) {
+        if (_hovering) setState(() => _hovering = false);
+      },
       child: Focus(
         focusNode: _focusNode,
         onKeyEvent: _onKeyEvent,
@@ -2529,7 +2606,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
               maxWidth: autoWidth ? TextBoxEditor.maxAutoWidth : null,
               minHeight: 0,
               maxHeight: double.infinity,
-              child: _SizeReporter(onSize: _reportSize, child: content),
+              child: SizeReporter(onSize: _reportSize, child: content),
             ),
           ),
         ),
@@ -2551,27 +2628,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (widthChanged || (size.height - frame.height).abs() >= 0.5) {
       widget.onSizeChanged?.call(size);
     }
-  }
-
-  /// Numbers for numbered lists, restarting per list and per nesting level.
-  List<int> _ordinals() {
-    final ordinals = List<int>.filled(_blocks.length, 0);
-    final counters = <int>[];
-    for (var i = 0; i < _blocks.length; i++) {
-      final block = _blocks[i];
-      final level = block.indent;
-      if (block.kind == TextBlockKind.numbered && !block.isEmbed) {
-        while (counters.length <= level) {
-          counters.add(0);
-        }
-        counters.length = level + 1;
-        counters[level]++;
-        ordinals[i] = counters[level];
-      } else if (counters.length > level) {
-        counters.length = level;
-      }
-    }
-    return ordinals;
   }
 
   Widget _buildBlock(
@@ -2599,7 +2655,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
         key: _rowKeys[index],
         child: Padding(
           padding: EdgeInsets.only(left: indent, top: 2, bottom: 4),
-          child: _EmbedBlock(
+          child: EmbedBlock(
             embed: block.embed!,
             selected: selected,
             caretSide:
@@ -2637,7 +2693,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       ),
     );
 
-    final marker = _marker(block, blockStyle, scheme, ordinal);
+    final marker = blockMarker(block, blockStyle, scheme, ordinal);
     Widget row = Row(
       mainAxisSize: autoWidth ? MainAxisSize.min : MainAxisSize.max,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2677,322 +2733,5 @@ class TextBoxEditorState extends State<TextBoxEditor>
       key: _rowKeys[index],
       child: Padding(padding: const EdgeInsets.only(bottom: 2), child: row),
     );
-  }
-
-  Widget? _marker(
-    TextBlock block,
-    TextStyle style,
-    ColorScheme scheme,
-    int ordinal,
-  ) {
-    final muted = style.copyWith(color: scheme.onSurfaceVariant);
-    switch (block.kind) {
-      case TextBlockKind.bulleted:
-        return _Bullet(
-          level: block.indent,
-          color: scheme.onSurfaceVariant,
-          fontSize: style.fontSize ?? RichTextStyles.bodySize,
-          lineHeight:
-              (style.fontSize ?? RichTextStyles.bodySize) *
-              (style.height ?? 1.4),
-        );
-      case TextBlockKind.numbered:
-        return Text(
-          '${_ordinalLabel(ordinal, block.indent)}.',
-          style: muted,
-          textScaler: TextScaler.noScaling,
-        );
-      case TextBlockKind.todo:
-        final size = (style.fontSize ?? RichTextStyles.bodySize) * 1.1;
-        final lineHeight =
-            (style.fontSize ?? RichTextStyles.bodySize) * (style.height ?? 1.4);
-        return Padding(
-          padding: EdgeInsets.only(top: math.max(0, (lineHeight - size) / 2)),
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: Icon(
-              block.checked
-                  ? Icons.check_box_rounded
-                  : Icons.check_box_outline_blank_rounded,
-              size: size,
-              color: block.checked ? scheme.primary : scheme.onSurfaceVariant,
-            ),
-          ),
-        );
-      case TextBlockKind.paragraph:
-      case TextBlockKind.heading1:
-      case TextBlockKind.heading2:
-      case TextBlockKind.heading3:
-      case TextBlockKind.code:
-      case TextBlockKind.quote:
-        return null;
-    }
-  }
-
-  /// 1, 2, 3 at the top level; a, b, c beneath; i, ii, iii beneath that.
-  static String _ordinalLabel(int n, int level) {
-    switch (level % 3) {
-      case 1:
-        var value = n;
-        final letters = StringBuffer();
-        while (value > 0) {
-          value--;
-          letters.write(String.fromCharCode(0x61 + value % 26));
-          value ~/= 26;
-        }
-        return letters.toString().split('').reversed.join();
-      case 2:
-        const numerals = <(int, String)>[
-          (1000, 'm'),
-          (900, 'cm'),
-          (500, 'd'),
-          (400, 'cd'),
-          (100, 'c'),
-          (90, 'xc'),
-          (50, 'l'),
-          (40, 'xl'),
-          (10, 'x'),
-          (9, 'ix'),
-          (5, 'v'),
-          (4, 'iv'),
-          (1, 'i'),
-        ];
-        var value = n;
-        final out = StringBuffer();
-        for (final (amount, symbol) in numerals) {
-          while (value >= amount) {
-            out.write(symbol);
-            value -= amount;
-          }
-        }
-        return out.toString();
-      default:
-        return '$n';
-    }
-  }
-}
-
-/// A list bullet, drawn rather than typed so it looks the same whatever fonts
-/// are installed: a disc, then a circle, then a square as lists nest.
-class _Bullet extends StatelessWidget {
-  const _Bullet({
-    required this.level,
-    required this.color,
-    required this.fontSize,
-    required this.lineHeight,
-  });
-
-  final int level;
-  final Color color;
-  final double fontSize;
-  final double lineHeight;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    height: lineHeight,
-    child: CustomPaint(
-      painter: _BulletPainter(
-        level: level,
-        color: color,
-        size: fontSize * 0.34,
-      ),
-    ),
-  );
-}
-
-class _BulletPainter extends CustomPainter {
-  const _BulletPainter({
-    required this.level,
-    required this.color,
-    required this.size,
-  });
-
-  final int level;
-  final Color color;
-  final double size;
-
-  @override
-  void paint(Canvas canvas, Size area) {
-    final center = Offset(size, area.height / 2);
-    final paint = Paint()..color = color;
-    switch (level % 3) {
-      case 0:
-        canvas.drawCircle(center, size / 2, paint);
-      case 1:
-        canvas.drawCircle(
-          center,
-          size / 2 - 0.5,
-          paint
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.1,
-        );
-      default:
-        canvas.drawRect(
-          Rect.fromCenter(
-            center: center,
-            width: size * 0.85,
-            height: size * 0.85,
-          ),
-          paint,
-        );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_BulletPainter old) =>
-      old.level != level || old.color != color || old.size != size;
-}
-
-/// The strip along the top of a text box that moves it when dragged.
-class _GrabBand extends StatelessWidget {
-  const _GrabBand({required this.visible, required this.active});
-
-  final bool visible;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    // Drawn on the paper, so in the paper's colours rather than the theme's.
-    return MouseRegion(
-      cursor: SystemMouseCursors.move,
-      child: SizedBox(
-        height: TextBoxEditor.grabBand,
-        child: visible
-            ? DecoratedBox(
-                decoration: BoxDecoration(
-                  color: active
-                      ? RichTextStyles.boxBandActive
-                      : RichTextStyles.boxBand,
-                ),
-                child: Center(
-                  child: Container(
-                    width: 28,
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: RichTextStyles.boxGrip,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-              )
-            : null,
-      ),
-    );
-  }
-}
-
-/// A picture or PDF page on its own line inside a text box.
-class _EmbedBlock extends StatelessWidget {
-  const _EmbedBlock({
-    required this.embed,
-    required this.selected,
-    required this.caretSide,
-    required this.caretVisible,
-    required this.caretColor,
-    required this.caretWidth,
-  });
-
-  final BlockEmbed embed;
-  final bool selected;
-
-  /// 0 or 1 when the caret sits before or after the object.
-  final int? caretSide;
-  final ValueListenable<bool> caretVisible;
-  final Color caretColor;
-  final double caretWidth;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = math.min(embed.width, constraints.maxWidth);
-        final height = width / embed.aspectRatio;
-        final side = caretSide;
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: SizedBox(
-            width: width,
-            height: height,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                Positioned.fill(
-                  child: switch (embed.kind) {
-                    EmbedKind.image => AssetImageView(assetId: embed.assetId),
-                    EmbedKind.pdfPage => PdfPageView(
-                      assetId: embed.assetId,
-                      pageIndex: embed.pageIndex,
-                    ),
-                  },
-                ),
-                if (selected)
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: scheme.primary.withValues(alpha: 0.18),
-                        border: Border.all(color: scheme.primary, width: 2),
-                      ),
-                    ),
-                  ),
-                if (side != null)
-                  Positioned(
-                    left: side == 0 ? -caretWidth - 1 : null,
-                    right: side == 1 ? -caretWidth - 1 : null,
-                    top: 0,
-                    bottom: 0,
-                    child: ValueListenableBuilder<bool>(
-                      valueListenable: caretVisible,
-                      builder: (context, visible, _) => Container(
-                        width: caretWidth,
-                        color: visible ? caretColor : Colors.transparent,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Reports its child's laid-out size after each layout that changes it.
-class _SizeReporter extends SingleChildRenderObjectWidget {
-  const _SizeReporter({required this.onSize, required super.child});
-
-  final ValueChanged<Size> onSize;
-
-  @override
-  _RenderSizeReporter createRenderObject(BuildContext context) =>
-      _RenderSizeReporter(onSize);
-
-  @override
-  void updateRenderObject(
-    BuildContext context,
-    _RenderSizeReporter renderObject,
-  ) {
-    renderObject.onSize = onSize;
-  }
-}
-
-class _RenderSizeReporter extends RenderProxyBox {
-  _RenderSizeReporter(this.onSize);
-
-  ValueChanged<Size> onSize;
-  Size? _last;
-
-  @override
-  void performLayout() {
-    super.performLayout();
-    final measured = size;
-    if (_last == measured) return;
-    _last = measured;
-    // Reported after the frame: resizing the box is a state change, which
-    // must not happen in the middle of layout.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (attached) onSize(measured);
-    });
   }
 }

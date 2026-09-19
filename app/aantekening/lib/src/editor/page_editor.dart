@@ -14,12 +14,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import '../input_trace.dart';
 import '../search/search_panel.dart';
+import '../spelling/proofreader.dart';
+import '../spelling/spelling.dart';
 import 'element_views.dart';
 import 'media_import.dart';
 import 'page_title.dart';
 import 'ribbon/ribbon.dart';
 import 'text/box_formatting.dart';
+import 'text/cheat_sheet.dart';
 import 'text/formula_preview.dart';
 import 'text/math_syntax.dart';
 import 'text/math_templates.dart';
@@ -107,6 +111,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   );
 
   Timer? _autosave;
+  late final VoidCallback _stopTracingView;
 
   /// The text box with the caret, if any.
   String? _editingId;
@@ -131,6 +136,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     super.initState();
     _libraryRevision = ref.read(libraryRevisionProvider.notifier);
     _controller.addListener(_onCanvasChanged);
+    _stopTracingView = traceViewOf(_controller);
     _textController.formula.addListener(_onFormulaChanged);
     _textController.formulaAnchor.addListener(_placeFormulaPanel);
     // The syntax formulas are typed in is the person's preference, which a
@@ -166,6 +172,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   void dispose() {
     _autosave?.cancel();
     _controller.removeListener(_onCanvasChanged);
+    _stopTracingView();
     _disposed = true;
     final pageId = widget.pageId;
     if (pageId != null && _ready && _controller.isDirty) {
@@ -234,7 +241,6 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// scrolling among them — so it rebuilds nothing itself: the canvas and
   /// the ribbon's buttons each listen for what they show.
   void _onCanvasChanged() {
-    if (traceInput) _traceView();
     final tool = _controller.tool;
     if (tool.draws) _lastInkTool = tool;
     _syncBoxFormatting();
@@ -264,24 +270,6 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     if (pageId == null || !_ready) return;
     _autosave?.cancel();
     unawaited(_persist(pageId, _controller.document));
-  }
-
-  CanvasViewport? _tracedView;
-
-  /// Prints each change of view, how far it moved and what moved it.
-  void _traceView() {
-    final view = _controller.viewport;
-    final before = _tracedView;
-    _tracedView = view;
-    if (before == null || before == view) return;
-    final moved = view.toScreen(before.origin);
-    traceLine(
-      'view origin=(${view.origin.dx.toStringAsFixed(1)}, '
-      '${view.origin.dy.toStringAsFixed(1)}) '
-      'zoom=${view.zoom.toStringAsFixed(4)} '
-      'moved=(${moved.dx.toStringAsFixed(1)}, ${moved.dy.toStringAsFixed(1)}) '
-      'by ${traceCaller()}',
-    );
   }
 
   /// Writes [document] to disk.
@@ -403,6 +391,16 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
   bool _claimsPointer(NoteElement element, Offset page) =>
       element is TextElement && !TextBoxEditor.isInGrabBand(element, page);
+
+  /// A selected text box is picked up by its band even under another box.
+  bool _grips(NoteElement element, Offset page) =>
+      element is TextElement &&
+      element.frame.containsPoint(
+        page.dx,
+        page.dy,
+        slop: CanvasController.hitSlop,
+      ) &&
+      TextBoxEditor.isInGrabBand(element, page);
 
   void _onElementDoubleTap(NoteElement element) {
     if (element is MathElement) _convertLegacyFormula(element);
@@ -749,11 +747,28 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       (_, syntax) => _textController.formulaSyntax.value = syntax,
     );
     final highlight = ref.watch(searchHighlightProvider);
+    _proofreader = ref.watch(proofreaderProvider);
 
     return Column(
       children: <Widget>[
         Ribbon(commands: _ribbonCommands, enabled: _ready),
-        Expanded(child: (widget.around ?? _alone)(context, _page(highlight))),
+        Expanded(
+          child: (widget.around ?? _alone)(
+            context,
+            // A row even while the cheat sheet is closed, so opening it
+            // leaves the page, and the formula being typed on it, as it is.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(child: _page(highlight)),
+                if (ref.watch(cheatSheetProvider)) ...<Widget>[
+                  const VerticalDivider(width: 1),
+                  CheatSheet(onInsert: _ready ? _insertMath : null),
+                ],
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -806,6 +821,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       child: InfiniteCanvas(
         controller: _controller,
         claimsPointer: _claimsPointer,
+        grips: _grips,
         onEmptyTap: _onEmptyTap,
         onCanvasPress: _onCanvasPress,
         onElementDoubleTap: _onElementDoubleTap,
@@ -885,6 +901,9 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   final Map<String, (_ElementBuild, Widget)> _elementWidgets =
       <String, (_ElementBuild, Widget)>{};
 
+  /// What marks the words spelled wrongly in the text boxes, if anything.
+  Proofreader? _proofreader;
+
   Widget? _buildElement(
     NoteElement element,
     SearchTerms? highlight,
@@ -895,9 +914,11 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     final built = (
       element: element,
       isEditing: isEditing,
+      selected: _controller.selection.contains(id),
       startsInFormula: isEditing && _editingStartsInFormula,
       interactive: _controller.tool == CanvasTool.select,
       highlight: element is TextElement ? highlight : null,
+      proofreader: element is TextElement ? _proofreader : null,
       placesMatch: id == firstMatch,
     );
     final cached = _elementWidgets[id];
@@ -919,10 +940,12 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     return TextBoxEditor(
       element: element,
       isEditing: built.isEditing,
+      selected: built.selected,
       controller: _textController,
       interactive: built.interactive,
       startInFormula: built.startsInFormula,
       highlight: built.highlight,
+      proofreader: built.proofreader,
       onMatchPlaced: built.placesMatch
           ? (local) => _revealMatch(element, local)
           : null,
@@ -940,9 +963,11 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 typedef _ElementBuild = ({
   NoteElement element,
   bool isEditing,
+  bool selected,
   bool startsInFormula,
   bool interactive,
   SearchTerms? highlight,
+  Proofreader? proofreader,
   bool placesMatch,
 });
 

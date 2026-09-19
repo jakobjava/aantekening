@@ -5,8 +5,8 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
-import 'lexer.dart';
 import 'linear_math.dart';
+import 'renderer_latex.dart';
 
 /// Renders a formula written in [mode].
 ///
@@ -20,7 +20,6 @@ class MathView extends StatelessWidget {
     super.key,
     this.displayStyle = true,
     this.textStyle,
-    this.onDiagnostics,
   });
 
   /// Renders the formula held by [element].
@@ -44,33 +43,14 @@ class MathView extends StatelessWidget {
 
   final TextStyle? textStyle;
 
-  /// Called with any problems found while translating linear input, so an
-  /// editor can mark them up without re-parsing.
-  final ValueChanged<List<MathDiagnostic>>? onDiagnostics;
-
   @override
   Widget build(BuildContext context) {
     if (source.trim().isEmpty) {
       return _Placeholder(style: textStyle);
     }
 
-    final String latex;
-    if (mode == MathMode.linear) {
-      final translation = LinearMath.translate(source);
-      latex = translation.latex;
-      final report = onDiagnostics;
-      if (report != null) {
-        // Deferred so that reporting never mutates state during a build.
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => report(translation.diagnostics),
-        );
-      }
-    } else {
-      latex = source;
-    }
-
     return Math.tex(
-      latex,
+      RendererLatex.of(LinearMath.latexFor(mode, source)),
       mathStyle: displayStyle ? MathStyle.display : MathStyle.text,
       textStyle: textStyle ?? DefaultTextStyle.of(context).style,
       // A formula that TeX itself rejects still has to show something, or the

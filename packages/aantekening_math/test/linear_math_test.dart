@@ -192,6 +192,53 @@ void main() {
     });
   });
 
+  group('Dirac notation', () {
+    test('writes bras and kets', () {
+      expectLatex('ket(psi)', r'\ket{\psi}');
+      expectLatex('bra(phi)', r'\bra{\phi}');
+      expectLatex('ket(0) + ket(1)', r'\ket{0} + \ket{1}');
+    });
+
+    test('writes a bra-ket of one, two or three parts', () {
+      expectLatex('braket(A)', r'\braket{A}');
+      expectLatex('braket(phi, psi)', r'\braket{\phi | \psi}');
+      expectLatex(
+        'braket(phi, hat(H), psi)',
+        r'\braket{\phi | \hat{H} | \psi}',
+      );
+    });
+
+    test('keeps a bra-ket part in brackets whole', () {
+      expectLatex('ket((a + b)/2)', r'\ket{\frac{a + b}{2}}');
+    });
+
+    test('complains of a bra-ket of more than three parts', () {
+      final translation = LinearMath.translate('braket(a, b, c, d)');
+      expect(translation.diagnostics.single.message, contains('braket'));
+    });
+
+    test('writes a daggered operator', () {
+      expectLatex('A^dagger', r'A^\dagger');
+    });
+  });
+
+  group('more words', () {
+    test('writes the number sets', () {
+      expectLatex('x in RR', r'x \in \mathbb{R}');
+      expectLatex('NN subset ZZ', r'\mathbb{N} \subset \mathbb{Z}');
+    });
+
+    test('writes named operators upright', () {
+      expectLatex('tr(A B)', r'\operatorname{tr} \left( A B \right)');
+      expectLatex('Var(X)', r'\operatorname{Var} \left( X \right)');
+    });
+
+    test('writes a double arrow and modulo', () {
+      expectLatex('a <-> b', r'a \leftrightarrow b');
+      expectLatex('a mod n', r'a \bmod n');
+    });
+  });
+
   group('mode handling', () {
     test('passes LaTeX sources through untouched', () {
       const source = r'\oint_C \vec{F} \cdot d\vec{r}';
@@ -200,17 +247,6 @@ void main() {
 
     test('translates linear sources', () {
       expect(LinearMath.latexFor(MathMode.linear, '1/2'), r'\frac{1}{2}');
-    });
-
-    test('resolves the mode stored on an element', () {
-      final element = MathElement(
-        id: 'm',
-        frame: const Frame(x: 0, y: 0, width: 10, height: 10),
-        createdAt: 0,
-        updatedAt: 0,
-        source: 'sqrt(2)',
-      );
-      expect(LinearMath.latexForElement(element), r'\sqrt{2}');
     });
   });
 }

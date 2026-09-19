@@ -2,11 +2,14 @@
 library;
 
 import '../util/json_read.dart';
+import 'hierarchy.dart';
 
 /// Shared fields for every node in the organisational tree.
 ///
-/// Deletion is soft: [deletedAt] moves a node to the recycle bin without
-/// touching its children, which keeps deleting a large notebook O(1).
+/// Deletion is soft: [deletedAt] moves a node to the recycle bin. What is in
+/// a deleted notebook is hidden with it, untouched; the subsections of a
+/// deleted section and the subpages of a deleted page are marked deleted at
+/// the same time, so that they are restored with it.
 abstract class TreeNode {
   const TreeNode({
     required this.id,
@@ -116,7 +119,13 @@ class Section extends TreeNode {
   /// The enclosing section, or null for a section directly under the notebook.
   final String? parentId;
 
-  bool get isTopLevel => parentId == null;
+  /// [sections], of one notebook, in their tree.
+  static Hierarchy<Section> hierarchy(Iterable<Section> sections) =>
+      Hierarchy<Section>.of(
+        sections,
+        idOf: (section) => section.id,
+        parentOf: (section) => section.parentId,
+      );
 
   Section copyWith({
     String? title,
@@ -189,6 +198,14 @@ class PageRef extends TreeNode {
 
   /// The parent page, for OneNote-style subpages, or null for a top-level page.
   final String? parentId;
+
+  /// [pages], of one section, in their tree of subpages.
+  static Hierarchy<PageRef> hierarchy(Iterable<PageRef> pages) =>
+      Hierarchy<PageRef>.of(
+        pages,
+        idOf: (page) => page.id,
+        parentOf: (page) => page.parentId,
+      );
 
   /// First line or so of the page's text, shown in the page list.
   final String preview;

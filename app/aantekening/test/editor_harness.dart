@@ -16,6 +16,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 
 /// The page editor over an in-memory workspace, filling a 1200×800 window.
@@ -25,6 +26,7 @@ Future<void> openEditor(
   String pageId, {
   Preferences? preferences,
   Size size = const Size(1200, 800),
+  List<Override> overrides = const <Override>[],
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -36,6 +38,7 @@ Future<void> openEditor(
         preferencesProvider.overrideWith(
           (ref) async => preferences ?? Preferences.inMemory(),
         ),
+        ...overrides,
       ],
       child: MaterialApp(
         theme: AppTheme.light(),

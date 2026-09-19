@@ -16,6 +16,19 @@ class MathTemplate {
     String? preview,
   }) : preview = preview ?? latex;
 
+  /// A piece written whole, such as a symbol, with a space either side to
+  /// keep it apart from its neighbours, and the caret after it.
+  factory MathTemplate.spaced(
+    String name, {
+    required String simple,
+    required String latex,
+  }) => MathTemplate(
+    name,
+    simple: ' $simple ',
+    latex: ' $latex ',
+    preview: latex,
+  );
+
   /// Where the caret goes once the template is in.
   static const String caret = '‸';
 
@@ -46,9 +59,6 @@ class MathGallery {
   final List<MathTemplate> templates;
   final int columns;
 }
-
-MathTemplate _symbol(String name, String simple, String latex) =>
-    MathTemplate(name, simple: ' $simple ', latex: ' $latex ', preview: latex);
 
 /// Everything the ribbon's Math tab offers.
 abstract final class MathGalleries {
@@ -272,6 +282,36 @@ abstract final class MathGalleries {
         latex: r'\langle ‸, \rangle',
         preview: r'\langle a, b \rangle',
       ),
+      MathTemplate(
+        'Ket',
+        simple: 'ket(‸)',
+        latex: r'\ket{‸}',
+        preview: r'\ket{\psi}',
+      ),
+      MathTemplate(
+        'Bra',
+        simple: 'bra(‸)',
+        latex: r'\bra{‸}',
+        preview: r'\bra{\phi}',
+      ),
+      MathTemplate(
+        'Bra-ket',
+        simple: 'braket(‸, )',
+        latex: r'\braket{‸ | }',
+        preview: r'\braket{\phi | \psi}',
+      ),
+      MathTemplate(
+        'Matrix element',
+        simple: 'braket(‸, , )',
+        latex: r'\braket{‸ | | }',
+        preview: r'\braket{\phi | A | \psi}',
+      ),
+      MathTemplate(
+        'Expectation value',
+        simple: 'braket(‸)',
+        latex: r'\braket{‸}',
+        preview: r'\braket{A}',
+      ),
     ],
   );
 
@@ -423,7 +463,7 @@ abstract final class MathGalleries {
     <MathTemplate>[
       for (final entry in greekLetters.entries)
         if (entry.value.startsWith(r'\') && !entry.key.startsWith('var'))
-          _symbol(entry.key, entry.key, entry.value),
+          MathTemplate.spaced(entry.key, simple: entry.key, latex: entry.value),
     ],
     columns: 8,
   );
@@ -432,22 +472,30 @@ abstract final class MathGalleries {
     'Operators',
     r'\pm',
     <MathTemplate>[
-      _symbol('Plus or minus', '+-', r'\pm'),
-      _symbol('Minus or plus', '-+', r'\mp'),
-      _symbol('Times', 'times', r'\times'),
-      _symbol('Divided by', 'div', r'\div'),
-      _symbol('Dot', '*', r'\cdot'),
-      _symbol('Composition', 'circ', r'\circ'),
-      _symbol('Direct sum', 'oplus', r'\oplus'),
-      _symbol('Tensor product', 'otimes', r'\otimes'),
-      _symbol('Union', 'cup', r'\cup'),
-      _symbol('Intersection', 'cap', r'\cap'),
-      _symbol('Set difference', 'setminus', r'\setminus'),
-      _symbol('And', 'wedge', r'\wedge'),
-      _symbol('Or', 'vee', r'\vee'),
-      _symbol('Not', 'neg', r'\neg'),
-      _symbol('Nabla', 'nabla', r'\nabla'),
-      _symbol('Partial', 'partial', r'\partial'),
+      MathTemplate.spaced('Plus or minus', simple: '+-', latex: r'\pm'),
+      MathTemplate.spaced('Minus or plus', simple: '-+', latex: r'\mp'),
+      MathTemplate.spaced('Times', simple: 'times', latex: r'\times'),
+      MathTemplate.spaced('Divided by', simple: 'div', latex: r'\div'),
+      MathTemplate.spaced('Dot', simple: '*', latex: r'\cdot'),
+      MathTemplate.spaced('Composition', simple: 'circ', latex: r'\circ'),
+      MathTemplate.spaced('Direct sum', simple: 'oplus', latex: r'\oplus'),
+      MathTemplate.spaced(
+        'Tensor product',
+        simple: 'otimes',
+        latex: r'\otimes',
+      ),
+      MathTemplate.spaced('Union', simple: 'cup', latex: r'\cup'),
+      MathTemplate.spaced('Intersection', simple: 'cap', latex: r'\cap'),
+      MathTemplate.spaced(
+        'Set difference',
+        simple: 'setminus',
+        latex: r'\setminus',
+      ),
+      MathTemplate.spaced('And', simple: 'wedge', latex: r'\wedge'),
+      MathTemplate.spaced('Or', simple: 'vee', latex: r'\vee'),
+      MathTemplate.spaced('Not', simple: 'neg', latex: r'\neg'),
+      MathTemplate.spaced('Nabla', simple: 'nabla', latex: r'\nabla'),
+      MathTemplate.spaced('Partial', simple: 'partial', latex: r'\partial'),
     ],
     columns: 8,
   );
@@ -456,23 +504,31 @@ abstract final class MathGalleries {
     'Relations',
     r'\leq',
     <MathTemplate>[
-      _symbol('Not equal', '!=', r'\neq'),
-      _symbol('Less or equal', '<=', r'\leq'),
-      _symbol('Greater or equal', '>=', r'\geq'),
-      _symbol('Approximately', '~~', r'\approx'),
-      _symbol('Identical', 'equiv', r'\equiv'),
-      _symbol('Similar', 'sim', r'\sim'),
-      _symbol('Congruent', 'cong', r'\cong'),
-      _symbol('Proportional', 'propto', r'\propto'),
-      _symbol('Much less', 'll', r'\ll'),
-      _symbol('Much greater', 'gg', r'\gg'),
-      _symbol('Element of', 'in', r'\in'),
-      _symbol('Not an element of', 'notin', r'\notin'),
-      _symbol('Subset', 'subset', r'\subset'),
-      _symbol('Subset or equal', 'subseteq', r'\subseteq'),
-      _symbol('Superset', 'supset', r'\supset'),
-      _symbol('Perpendicular', 'perp', r'\perp'),
-      _symbol('Parallel', 'parallel', r'\parallel'),
+      MathTemplate.spaced('Not equal', simple: '!=', latex: r'\neq'),
+      MathTemplate.spaced('Less or equal', simple: '<=', latex: r'\leq'),
+      MathTemplate.spaced('Greater or equal', simple: '>=', latex: r'\geq'),
+      MathTemplate.spaced('Approximately', simple: '~~', latex: r'\approx'),
+      MathTemplate.spaced('Identical', simple: 'equiv', latex: r'\equiv'),
+      MathTemplate.spaced('Similar', simple: 'sim', latex: r'\sim'),
+      MathTemplate.spaced('Congruent', simple: 'cong', latex: r'\cong'),
+      MathTemplate.spaced('Proportional', simple: 'propto', latex: r'\propto'),
+      MathTemplate.spaced('Much less', simple: 'll', latex: r'\ll'),
+      MathTemplate.spaced('Much greater', simple: 'gg', latex: r'\gg'),
+      MathTemplate.spaced('Element of', simple: 'in', latex: r'\in'),
+      MathTemplate.spaced(
+        'Not an element of',
+        simple: 'notin',
+        latex: r'\notin',
+      ),
+      MathTemplate.spaced('Subset', simple: 'subset', latex: r'\subset'),
+      MathTemplate.spaced(
+        'Subset or equal',
+        simple: 'subseteq',
+        latex: r'\subseteq',
+      ),
+      MathTemplate.spaced('Superset', simple: 'supset', latex: r'\supset'),
+      MathTemplate.spaced('Perpendicular', simple: 'perp', latex: r'\perp'),
+      MathTemplate.spaced('Parallel', simple: 'parallel', latex: r'\parallel'),
     ],
     columns: 8,
   );
@@ -481,38 +537,50 @@ abstract final class MathGalleries {
     'Arrows',
     r'\to',
     <MathTemplate>[
-      _symbol('To', '->', r'\to'),
-      _symbol('From', '<-', r'\leftarrow'),
-      _symbol('Maps to', 'mapsto', r'\mapsto'),
-      _symbol('Therefore', '=>', r'\Rightarrow'),
-      _symbol('Implies', '==>', r'\implies'),
-      _symbol('Is implied by', '<==', r'\impliedby'),
-      _symbol('If and only if', '<=>', r'\iff'),
+      MathTemplate.spaced('To', simple: '->', latex: r'\to'),
+      MathTemplate.spaced('From', simple: '<-', latex: r'\leftarrow'),
+      MathTemplate.spaced('Maps to', simple: 'mapsto', latex: r'\mapsto'),
+      MathTemplate.spaced('Therefore', simple: '=>', latex: r'\Rightarrow'),
+      MathTemplate.spaced('Implies', simple: '==>', latex: r'\implies'),
+      MathTemplate.spaced('Is implied by', simple: '<==', latex: r'\impliedby'),
+      MathTemplate.spaced('If and only if', simple: '<=>', latex: r'\iff'),
     ],
     columns: 7,
   );
 
-  static final MathGallery other = MathGallery(
-    'Other',
-    r'\infty',
-    <MathTemplate>[
-      _symbol('Infinity', 'infty', r'\infty'),
-      _symbol('For all', 'forall', r'\forall'),
-      _symbol('There exists', 'exists', r'\exists'),
-      _symbol('Empty set', 'emptyset', r'\emptyset'),
-      _symbol('Real numbers', 'mathbb(R)', r'\mathbb{R}'),
-      _symbol('Natural numbers', 'mathbb(N)', r'\mathbb{N}'),
-      _symbol('Integers', 'mathbb(Z)', r'\mathbb{Z}'),
-      _symbol('Rationals', 'mathbb(Q)', r'\mathbb{Q}'),
-      _symbol('Complex numbers', 'mathbb(C)', r'\mathbb{C}'),
-      _symbol('Reduced Planck constant', 'hbar', r'\hbar'),
-      _symbol('Script l', 'ell', r'\ell'),
-      _symbol('Degree', '^circ', r'^\circ'),
-      _symbol('Dots', '...', r'\ldots'),
-      _symbol('Centred dots', 'cdots', r'\cdots'),
-      _symbol('Therefore', 'therefore', r'\therefore'),
-      _symbol('Because', 'because', r'\because'),
-    ],
-    columns: 8,
-  );
+  static final MathGallery
+  other = MathGallery('Other', r'\infty', <MathTemplate>[
+    MathTemplate.spaced('Infinity', simple: 'infty', latex: r'\infty'),
+    MathTemplate.spaced('For all', simple: 'forall', latex: r'\forall'),
+    MathTemplate.spaced('There exists', simple: 'exists', latex: r'\exists'),
+    MathTemplate.spaced('Empty set', simple: 'emptyset', latex: r'\emptyset'),
+    MathTemplate.spaced(
+      'Real numbers',
+      simple: 'mathbb(R)',
+      latex: r'\mathbb{R}',
+    ),
+    MathTemplate.spaced(
+      'Natural numbers',
+      simple: 'mathbb(N)',
+      latex: r'\mathbb{N}',
+    ),
+    MathTemplate.spaced('Integers', simple: 'mathbb(Z)', latex: r'\mathbb{Z}'),
+    MathTemplate.spaced('Rationals', simple: 'mathbb(Q)', latex: r'\mathbb{Q}'),
+    MathTemplate.spaced(
+      'Complex numbers',
+      simple: 'mathbb(C)',
+      latex: r'\mathbb{C}',
+    ),
+    MathTemplate.spaced(
+      'Reduced Planck constant',
+      simple: 'hbar',
+      latex: r'\hbar',
+    ),
+    MathTemplate.spaced('Script l', simple: 'ell', latex: r'\ell'),
+    MathTemplate.spaced('Degree', simple: '^circ', latex: r'^\circ'),
+    MathTemplate.spaced('Dots', simple: '...', latex: r'\ldots'),
+    MathTemplate.spaced('Centred dots', simple: 'cdots', latex: r'\cdots'),
+    MathTemplate.spaced('Therefore', simple: 'therefore', latex: r'\therefore'),
+    MathTemplate.spaced('Because', simple: 'because', latex: r'\because'),
+  ], columns: 8);
 }

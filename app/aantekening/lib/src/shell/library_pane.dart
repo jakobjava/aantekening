@@ -5,16 +5,18 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../command_menu.dart';
 import '../providers.dart';
 import '../theme.dart';
 import 'library_actions.dart';
 import 'library_menu.dart';
+import 'tree_rows.dart';
 
-/// Lists notebooks and, beneath the selected one, its section tree.
+/// Lists notebooks and, beneath the selected one, its tree of sections.
 ///
-/// Sections nest arbitrarily, so the tree is assembled in one pass from the
-/// flat list the store returns rather than by querying level by level. Every
-/// row has a menu on a right-click, or on a long press.
+/// Lines join each row to the rows beneath it, and a click on a line, or on
+/// a row's chevron, collapses what lies beneath. Every row has a menu on a
+/// right-click, or on a long press.
 class LibraryPane extends ConsumerWidget {
   const LibraryPane({super.key});
 
@@ -22,7 +24,6 @@ class LibraryPane extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final notebooks = ref.watch(notebooksProvider);
-    final selectedNotebook = ref.watch(selectedNotebookProvider);
 
     // A Material ancestor, not a plain coloured box: ListTile paints its
     // selection tint and ink onto the nearest Material, and a ColoredBox in
@@ -51,19 +52,16 @@ class LibraryPane extends ConsumerWidget {
                 error: (error, _) => PaneMessage('$error', error: true),
                 data: (books) => books.isEmpty
                     ? const PaneMessage('No notebooks yet')
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 4,
+                    : TreeLines(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 4,
+                          ),
+                          itemCount: books.length,
+                          itemBuilder: (context, index) =>
+                              _NotebookRows(notebook: books[index]),
                         ),
-                        itemCount: books.length,
-                        itemBuilder: (context, index) {
-                          final notebook = books[index];
-                          return _NotebookTile(
-                            notebook: notebook,
-                            expanded: notebook.id == selectedNotebook,
-                          );
-                        },
                       ),
               ),
             ),
@@ -74,61 +72,72 @@ class LibraryPane extends ConsumerWidget {
   }
 }
 
-class _NotebookTile extends ConsumerWidget {
-  const _NotebookTile({required this.notebook, required this.expanded});
+/// A notebook's row and, while it is open and expanded, its sections'.
+class _NotebookRows extends ConsumerWidget {
+  const _NotebookRows({required this.notebook});
 
   final Notebook notebook;
-  final bool expanded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final actions = ref.read(libraryActionsProvider);
+    final selected = ref.watch(
+      selectedNotebookProvider.select((id) => id == notebook.id),
+    );
+    final expanded =
+        selected &&
+        !ref.watch(
+          collapsedRowsProvider.select((ids) => ids.contains(notebook.id)),
+        );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        LibraryTile(
-          node: notebook,
-          child: ListTile(
-            selected: expanded,
-            selectedTileColor: scheme.primary.withValues(alpha: 0.10),
-            leading: Icon(
-              expanded ? Icons.menu_book_rounded : Icons.book_outlined,
-              size: 18,
-              color: notebook.color != null ? Color(notebook.color!) : null,
+        TreeRow(
+          place: TreePlace(id: notebook.id, expanded: expanded),
+          // Only the open notebook shows its sections, so expanding another
+          // opens it.
+          onToggle: (id) => selected
+              ? ref.read(collapsedRowsProvider.notifier).toggle(id)
+              : actions.openNotebook(id),
+          child: LibraryTile(
+            node: notebook,
+            child: ListTile(
+              selected: selected,
+              selectedTileColor: scheme.primary.withValues(alpha: 0.10),
+              contentPadding: TreeRow.tilePadding,
+              leading: Icon(
+                expanded ? Icons.menu_book_rounded : Icons.book_outlined,
+                size: 18,
+                color: notebook.color != null ? Color(notebook.color!) : null,
+              ),
+              title: Text(
+                notebook.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              onTap: () => actions.openNotebook(notebook.id),
             ),
-            title: Text(
-              notebook.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-            onTap: () =>
-                ref.read(libraryActionsProvider).openNotebook(notebook.id),
           ),
         ),
-        if (expanded) _SectionTree(notebookId: notebook.id),
+        if (expanded) _SectionRows(notebookId: notebook.id),
       ],
     );
   }
 }
 
-/// One node of the assembled section hierarchy.
-class _SectionNode {
-  _SectionNode(this.section);
-
-  final Section section;
-  final List<_SectionNode> children = <_SectionNode>[];
-}
-
-class _SectionTree extends ConsumerWidget {
-  const _SectionTree({required this.notebookId});
+class _SectionRows extends ConsumerWidget {
+  const _SectionRows({required this.notebookId});
 
   final String notebookId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sections = ref.watch(sectionsProvider(notebookId));
+    final sections = ref.watch(sectionTreeProvider(notebookId));
+    final collapsed = ref.watch(collapsedRowsProvider);
+    final selected = ref.watch(selectedSectionProvider);
 
     return sections.when(
       loading: () => const Padding(
@@ -136,133 +145,103 @@ class _SectionTree extends ConsumerWidget {
         child: LinearProgressIndicator(minHeight: 2),
       ),
       error: (error, _) => PaneMessage('$error', error: true),
-      data: (flat) {
-        final roots = _buildSectionTree(flat);
-        final parents = <String, String?>{
-          for (final section in flat) section.id: section.parentId,
-        };
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (final node in roots)
-              ..._renderNode(context, ref, node, parents, depth: 0),
-            Padding(
-              padding: const EdgeInsets.only(left: 24, top: 2, bottom: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () =>
-                      createNamedSection(context, ref, notebookId: notebookId),
-                  icon: const Icon(Icons.add, size: 15),
-                  label: const Text('Section'),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
+      data: (tree) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (final (item: section, :place) in treeRows(
+            tree,
+            collapsed,
+            root: notebookId,
+          ))
+            TreeRow(
+              place: place,
+              onToggle: ref.read(collapsedRowsProvider.notifier).toggle,
+              child: _SectionTile(
+                section: section,
+                selected: section.id == selected,
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(
+              start: TreeRow.indent * 2,
+              top: 2,
+              bottom: 6,
+            ),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: () =>
+                    createNamedSection(context, ref, notebookId: notebookId),
+                icon: const Icon(Icons.add, size: 15),
+                label: const Text('Section'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: const TextStyle(fontSize: 12),
                 ),
               ),
             ),
-          ],
-        );
-      },
-    );
-  }
-
-  List<Widget> _renderNode(
-    BuildContext context,
-    WidgetRef ref,
-    _SectionNode node,
-    Map<String, String?> parents, {
-    required int depth,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final section = node.section;
-    final selected = ref.watch(selectedSectionProvider) == section.id;
-
-    return <Widget>[
-      Padding(
-        padding: EdgeInsets.only(left: 16.0 + depth * 14),
-        child: LibraryTile(
-          node: section,
-          parents: parents,
-          child: ListTile(
-            selected: selected,
-            selectedTileColor: scheme.primary.withValues(alpha: 0.10),
-            leading: Icon(
-              node.children.isEmpty
-                  ? Icons.article_outlined
-                  : Icons.folder_outlined,
-              size: 16,
-              color: section.color != null
-                  ? Color(section.color!)
-                  : scheme.onSurfaceVariant,
-            ),
-            title: Text(
-              section.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13),
-            ),
-            trailing: IconButton(
-              icon: const Icon(Icons.add, size: 14),
-              tooltip: 'New subsection',
-              onPressed: () => createNamedSection(
-                context,
-                ref,
-                notebookId: notebookId,
-                parentId: section.id,
-              ),
-            ),
-            onTap: () => ref
-                .read(libraryActionsProvider)
-                .openSection(notebookId, section.id),
           ),
-        ),
+        ],
       ),
-      for (final child in node.children)
-        ..._renderNode(context, ref, child, parents, depth: depth + 1),
-    ];
+    );
   }
 }
 
-/// Assembles a flat section list into a hierarchy.
-///
-/// Orphans — a section whose parent is filtered out or missing — are promoted
-/// to the top level rather than dropped, so a section can never become
-/// unreachable from the interface.
-List<_SectionNode> _buildSectionTree(List<Section> sections) {
-  final nodes = <String, _SectionNode>{
-    for (final section in sections) section.id: _SectionNode(section),
-  };
-  final roots = <_SectionNode>[];
+class _SectionTile extends ConsumerWidget {
+  const _SectionTile({required this.section, required this.selected});
 
-  for (final section in sections) {
-    final node = nodes[section.id]!;
-    final parent = section.parentId == null ? null : nodes[section.parentId];
-    if (parent == null) {
-      roots.add(node);
-    } else {
-      parent.children.add(node);
-    }
+  final Section section;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return LibraryTile(
+      node: section,
+      child: ListTile(
+        selected: selected,
+        selectedTileColor: scheme.primary.withValues(alpha: 0.10),
+        contentPadding: TreeRow.tilePadding,
+        // Every section holds pages, and may hold sections, as a folder
+        // does; the open one shows its pages beside it.
+        leading: Icon(
+          selected ? Icons.folder_open_outlined : Icons.folder_outlined,
+          size: 16,
+          color: section.color != null
+              ? Color(section.color!)
+              : scheme.onSurfaceVariant,
+        ),
+        title: Text(
+          section.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13),
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.add, size: 14),
+          tooltip: 'New subsection',
+          onPressed: () => createNamedSection(
+            context,
+            ref,
+            notebookId: section.notebookId,
+            parentId: section.id,
+          ),
+        ),
+        onTap: () => ref
+            .read(libraryActionsProvider)
+            .openSection(section.notebookId, section.id),
+      ),
+    );
   }
-  return roots;
 }
 
 /// A row for a notebook, section or page: its menu on a right-click or a
 /// long press, and faded while it is cut, waiting to be pasted elsewhere.
 class LibraryTile extends ConsumerWidget {
-  const LibraryTile({
-    required this.node,
-    required this.child,
-    this.parents = const {},
-    super.key,
-  });
+  const LibraryTile({required this.node, required this.child, super.key});
 
   final TreeNode node;
-
-  /// The parents of the nodes of [node]'s kind nearby; see
-  /// [LibraryActions.canPaste].
-  final Map<String, String?> parents;
   final Widget child;
 
   @override
@@ -273,20 +252,10 @@ class LibraryTile extends ConsumerWidget {
       ),
     );
     return GestureDetector(
-      onSecondaryTapUp: (details) => showLibraryMenu(
-        context,
-        ref,
-        node,
-        details.globalPosition,
-        parents: parents,
-      ),
-      onLongPressStart: (details) => showLibraryMenu(
-        context,
-        ref,
-        node,
-        details.globalPosition,
-        parents: parents,
-      ),
+      onSecondaryTapUp: (details) =>
+          showLibraryMenu(context, ref, node, details.globalPosition),
+      onLongPressStart: (details) =>
+          showLibraryMenu(context, ref, node, details.globalPosition),
       child: Opacity(opacity: cut ? 0.45 : 1, child: child),
     );
   }

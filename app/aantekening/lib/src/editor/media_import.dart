@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
 /// What the user is inserting.
@@ -135,7 +136,7 @@ abstract final class MediaImport {
     final mimeType = AssetStore.mimeTypeForPath(file.path);
     if (mimeType == 'application/pdf') return _importPdf(store, file);
     if (mimeType.startsWith('image/') && mimeType != 'image/svg+xml') {
-      return <ImportedMedia>[await _importImage(store, file)];
+      return <ImportedMedia>[await _importImage(store, file, mimeType)];
     }
     throw UnsupportedError('Cannot import ${file.path}: not a picture or PDF');
   }
@@ -143,9 +144,15 @@ abstract final class MediaImport {
   static Future<ImportedMedia> _importImage(
     AantekeningStore store,
     File file,
+    String mimeType,
   ) async {
+    // Read once, for the store and for the picture's size.
     final bytes = await file.readAsBytes();
-    final asset = await store.assets.importFile(file);
+    final asset = await store.assets.importBytes(
+      bytes,
+      mimeType: mimeType,
+      originalName: p.basename(file.path),
+    );
 
     // Only the header is read to learn the size; the picture is decoded when
     // it is drawn, at the size it is drawn.

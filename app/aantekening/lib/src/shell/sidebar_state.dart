@@ -2,8 +2,6 @@
 /// where its buttons are — all remembered between sessions.
 library;
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -85,9 +83,8 @@ class SidebarController extends Notifier<SidebarState> {
 
   @override
   SidebarState build() {
-    final preferences = ref.watch(preferencesProvider).value;
-    final open = preferences?[_openKey];
-    final widths = preferences?[_widthsKey];
+    final open = ref.preference(_openKey);
+    final widths = ref.preference(_widthsKey);
     return SidebarState(
       open: open == _none
           ? null
@@ -111,7 +108,7 @@ class SidebarController extends Notifier<SidebarState> {
   void _open(SidebarTab? tab) {
     if (state.open == tab) return;
     state = SidebarState(open: tab, widths: state.widths);
-    _save(_openKey, tab?.name ?? _none);
+    ref.savePreference(_openKey, tab?.name ?? _none);
   }
 
   /// Makes [column] [width] wide, within its limits. Kept to itself until
@@ -125,14 +122,9 @@ class SidebarController extends Notifier<SidebarState> {
     );
   }
 
-  void saveWidths() => _save(_widthsKey, <String, Object?>{
+  void saveWidths() => ref.savePreference(_widthsKey, <String, Object?>{
     for (final entry in state.widths.entries) entry.key.name: entry.value,
   });
-
-  void _save(String key, Object? value) {
-    final preferences = ref.read(preferencesProvider).value;
-    if (preferences != null) unawaited(preferences.set(key, value));
-  }
 }
 
 final sidebarProvider = NotifierProvider<SidebarController, SidebarState>(

@@ -209,10 +209,6 @@ class TextRun {
   TextRun copyWith({String? text, TextMarks? marks}) =>
       TextRun._(text ?? this.text, marks ?? this.marks, math);
 
-  /// A copy of this formula in another syntax. The source is kept verbatim;
-  /// see [MathMode] for why the two are never translated into each other.
-  TextRun withMathMode(MathMode mode) => TextRun._(text, marks, mode);
-
   Map<String, Object?> toJson() => <String, Object?>{
     'text': text,
     if (!marks.isEmpty) 'marks': marks.toJson(),

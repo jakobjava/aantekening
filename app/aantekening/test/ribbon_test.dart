@@ -1,15 +1,20 @@
 import 'dart:io';
 
 import 'package:aantekening/src/editor/ribbon/ribbon.dart';
+import 'package:aantekening/src/editor/ribbon/ribbon_items.dart'
+    show mathGalleryOf;
 import 'package:aantekening/src/editor/ribbon/ribbon_layout.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon_state.dart';
+import 'package:aantekening/src/editor/text/math_templates.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:aantekening_math/aantekening_math.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_math_fork/tex.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -92,6 +97,26 @@ void main() {
     if (assets.existsSync()) assets.deleteSync(recursive: true);
   });
 
+  test('every structure and symbol on the Math tab typesets', () {
+    void expectTypesets(String latex, String what) => expect(
+      () =>
+          TexParser(RendererLatex.of(latex), const TexParserSettings()).parse(),
+      returnsNormally,
+      reason: '$what: $latex',
+    );
+
+    for (final gallery in RibbonItem.values.map(mathGalleryOf).nonNulls) {
+      expectTypesets(gallery.icon, gallery.name);
+      for (final template in gallery.templates) {
+        expectTypesets(template.preview, template.name);
+        expectTypesets(
+          template.latex.replaceAll(MathTemplate.caret, 'x'),
+          template.name,
+        );
+      }
+    }
+  });
+
   testWidgets('opens on Home, its sections named beneath them', (tester) async {
     await openEditor(tester, store, pageId);
 
@@ -112,6 +137,8 @@ void main() {
   testWidgets('every tab lays out, even in a narrow window', (tester) async {
     await openEditor(tester, store, pageId, size: const Size(420, 700));
     for (final tab in RibbonTab.values) {
+      // The tabs scroll sideways where they do not fit.
+      await tester.ensureVisible(find.text(tab.label));
       await tester.tap(find.text(tab.label));
       await tester.pumpAndSettle();
       expect(_ribbon(tester).tab, tab);

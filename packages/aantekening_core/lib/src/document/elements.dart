@@ -59,6 +59,10 @@ sealed class NoteElement {
   /// The box used for culling and hit-testing.
   Aabb get bounds => frame.rotatedBounds;
 
+  /// The box around every one of [elements], or [Aabb.empty] for none.
+  static Aabb boundsOf(Iterable<NoteElement> elements) =>
+      Aabb.around(elements.map((element) => element.bounds));
+
   /// Appends this element's searchable text to [out].
   ///
   /// Called while building the full-text index, so it avoids returning

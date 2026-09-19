@@ -12,7 +12,9 @@ import 'package:aantekening/src/shell/home_shell.dart';
 import 'package:aantekening/src/shell/library_pane.dart';
 import 'package:aantekening/src/shell/page_list_pane.dart';
 import 'package:aantekening/src/shell/sidebar.dart';
+import 'package:aantekening/src/shell/library_actions.dart';
 import 'package:aantekening/src/shell/sidebar_state.dart';
+import 'package:aantekening/src/shell/tree_rows.dart';
 import 'package:aantekening/src/theme.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
@@ -618,26 +620,107 @@ void main() {
     });
   });
 
-  group('page ordering', () {
-    test('places each subpage under its parent', () {
-      final ordered = orderPagesWithSubpages(<PageRef>[
-        page('child', 'Child', parentId: 'parent'),
-        page('parent', 'Parent'),
-        page('other', 'Other'),
-      ]);
+  group('trees', () {
+    List<({String title, TreePlace place})> rowsOf(
+      List<PageRef> pages, {
+      Set<String> collapsed = const <String>{},
+    }) => <({String title, TreePlace place})>[
+      for (final (:item, :place) in treeRows(
+        PageRef.hierarchy(pages),
+        collapsed,
+      ))
+        (title: item.title, place: place),
+    ];
 
-      expect(
-        ordered.map((e) => (e.page.title, e.depth)).toList(),
-        <(String, int)>[('Parent', 0), ('Child', 1), ('Other', 0)],
-      );
+    final pages = <PageRef>[
+      page('child', 'Child', parentId: 'parent'),
+      page('parent', 'Parent'),
+      page('grandchild', 'Grandchild', parentId: 'child'),
+      page('sibling', 'Sibling', parentId: 'parent'),
+      page('other', 'Other'),
+    ];
+
+    test('places each row under its parent, with the lines beside it', () {
+      final rows = rowsOf(pages);
+
+      expect(rows.map((row) => row.title), <String>[
+        'Parent',
+        'Child',
+        'Grandchild',
+        'Sibling',
+        'Other',
+      ]);
+      expect(rows.map((row) => row.place.expanded), <bool?>[
+        true,
+        true,
+        null,
+        null,
+        null,
+      ]);
+      // The parent's line goes on past the child's subtree to the sibling,
+      // and ends there.
+      expect(rows[2].place.ancestors, <TreeAncestor>[
+        (id: 'parent', continues: true),
+        (id: 'child', continues: false),
+      ]);
+      expect(rows[3].place.ancestors, <TreeAncestor>[
+        (id: 'parent', continues: false),
+      ]);
+      expect(rows[4].place.ancestors, isEmpty);
     });
 
-    test('promotes a page whose parent is missing', () {
-      final ordered = orderPagesWithSubpages(<PageRef>[
-        page('orphan', 'Orphan', parentId: 'gone'),
-      ]);
+    test('leaves out what lies beneath a collapsed row', () {
+      final rows = rowsOf(pages, collapsed: <String>{'child'});
 
-      expect(ordered.single.depth, 0, reason: 'no page may become unreachable');
+      expect(rows.map((row) => row.title), <String>[
+        'Parent',
+        'Child',
+        'Sibling',
+        'Other',
+      ]);
+      expect(rows[1].place.expanded, isFalse);
+    });
+
+    testWidgets('a section collapses by its line, and opens out again', (
+      tester,
+    ) async {
+      final preferences = Preferences.inMemory();
+      final notebook = await store.library.createNotebook(title: 'Physics');
+      final mechanics = await store.library.createSection(
+        notebookId: notebook.id,
+        title: 'Mechanics',
+      );
+      final waves = await store.library.createSection(
+        notebookId: notebook.id,
+        parentId: mechanics.id,
+        title: 'Waves',
+      );
+      useSurface(tester, wideWindow);
+      await tester.pumpWidget(shellWith(store, preferences: preferences));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Physics'));
+      await tester.pumpAndSettle();
+      expect(find.text('Waves'), findsOneWidget);
+
+      // Waves is the second level down: the second line beside it comes
+      // down from Mechanics.
+      final row = tester.getRect(
+        find.ancestor(of: find.text('Waves'), matching: find.byType(TreeRow)),
+      );
+      await tester.tapAt(
+        Offset(row.left + TreeRow.indent * 1.5, row.center.dy),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Waves'), findsNothing);
+      expect(preferences['library.collapsed'], <String>[mechanics.id]);
+
+      // Opening it from elsewhere, as search does, shows it again.
+      ProviderScope.containerOf(tester.element(find.byType(HomeShell)))
+          .read(libraryActionsProvider)
+          .openSection(notebook.id, waves.id);
+      await tester.pumpAndSettle();
+      expect(find.text('Waves'), findsOneWidget);
+      expect(preferences['library.collapsed'], isNull);
     });
   });
 

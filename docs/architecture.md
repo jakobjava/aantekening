@@ -2,19 +2,19 @@
 
 ## Shape of the system
 
-`aantekening` is a pub workspace: one Flutter application over five Dart
+`aantekening` is a pub workspace: one Flutter application over six Dart
 packages. Dependencies point in one direction only.
 
 ```
-             app/aantekening            Flutter app: shell, panes, editor
-                     │
-     ┌───────────┬───┴────┬──────────────┐
-     ▼           ▼        ▼              ▼
- _canvas     _store    _math          _ai        feature packages
-     │           │        │              │
-     └───────────┴────┬───┴──────────────┘
-                      ▼
-                   _core                 pure Dart: model + page format
+                 app/aantekening             Flutter app: shell, panes, editor
+                         │
+     ┌───────────┬───────┼────────┬──────────┐
+     ▼           ▼       ▼        ▼          ▼
+ _canvas     _store    _math     _ai      _spell   feature packages
+     │           │       │        │
+     └───────────┴───┬───┴────────┘
+                     ▼
+                  _core                     pure Dart: model + page format
 ```
 
 * **`aantekening_core`** — pure Dart, no Flutter. The page document, the element
@@ -28,6 +28,9 @@ packages. Dependencies point in one direction only.
   painted layers. Knows nothing about maths or PDFs.
 * **`aantekening_math`** — linear-input parsing and LaTeX rendering.
 * **`aantekening_ai`** — interfaces to language models running locally.
+* **`aantekening_spell`** — pure Dart: Hunspell's checking and suggesting,
+  ported, and a checker that runs it in an isolate of its own (ADR 12). It
+  depends on nothing else here.
 * **`app/aantekening`** — the window, navigation, and the wiring between them.
 
 The reason for the split is not tidiness. `_core` having no Flutter dependency
@@ -69,7 +72,8 @@ will not be a breaking change. See `docs/roadmap.md`.
 ## Platforms
 
 Linux, Windows and Android share all Dart code. The only platform-specific
-pieces are the workspace directory (`path_provider`), and the SQLite and
+pieces are the workspace directory and the directory for the preferences
+and spelling dictionaries (`path_provider`), and the SQLite and
 PDFium libraries, which `package:sqlite3` and `pdfrx` fetch prebuilt for each
 platform as the app is built — SQLite with FTS5. Nothing in the codebase
 branches on platform, except the trackpad scaling Linux needs (see
@@ -80,4 +84,8 @@ branches on platform, except the trackpad scaling Linux needs (see
 Each package carries its own suite; there is no mocking of SQLite — the store
 tests run against a real in-memory database, including FTS5. The maths package
 additionally parses every expression it generates with the actual TeX renderer,
-so a translation that merely looks plausible cannot pass.
+so a translation that merely looks plausible cannot pass; the app does the same
+for every structure and symbol on the Math tab and every example on the cheat
+sheet. The spell checker was held to libhunspell's own verdicts on a large word
+list in each language, and its tests keep small dictionaries whose verdicts are
+Hunspell's.

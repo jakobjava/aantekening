@@ -39,34 +39,27 @@ class PageRepository {
 
   // -------------------------------------------------------------- page lookup
 
-  /// Lists the pages of [sectionId], or the subpages of [parentId] when given.
+  /// Lists the pages of [sectionId] — only the top-level ones with
+  /// [topLevelOnly] — or the subpages of [parentId] when given.
   Future<List<PageRef>> listPages(
     String sectionId, {
     String? parentId,
     bool topLevelOnly = false,
     bool includeDeleted = false,
   }) async {
-    final deletedClause = includeDeleted ? '' : 'AND deleted_at IS NULL ';
-    final ResultSet rows;
-    if (parentId != null) {
-      rows = _db.select(
-        'SELECT * FROM pages WHERE section_id = ? AND parent_id = ? '
-        '$deletedClause ORDER BY position, id',
-        <Object?>[sectionId, parentId],
-      );
-    } else if (topLevelOnly) {
-      rows = _db.select(
-        'SELECT * FROM pages WHERE section_id = ? AND parent_id IS NULL '
-        '$deletedClause ORDER BY position, id',
-        <Object?>[sectionId],
-      );
-    } else {
-      rows = _db.select(
-        'SELECT * FROM pages WHERE section_id = ? '
-        '$deletedClause ORDER BY position, id',
-        <Object?>[sectionId],
-      );
-    }
+    final conditions = <String>[
+      'section_id = ?',
+      if (parentId != null)
+        'parent_id = ?'
+      else if (topLevelOnly)
+        'parent_id IS NULL',
+      if (!includeDeleted) 'deleted_at IS NULL',
+    ];
+    final rows = _db.select(
+      'SELECT * FROM pages WHERE ${conditions.join(' AND ')} '
+      'ORDER BY position, id',
+      <Object?>[sectionId, ?parentId],
+    );
     return <PageRef>[for (final row in rows) _pageRef(row)];
   }
 
@@ -83,20 +76,6 @@ class PageRepository {
       'WHERE p.deleted_at IS NULL AND s.deleted_at IS NULL '
       'AND n.deleted_at IS NULL '
       'ORDER BY p.position, p.id',
-    );
-    return <PageRef>[for (final row in rows) _pageRef(row)];
-  }
-
-  /// The most recently edited pages across the whole workspace.
-  Future<List<PageRef>> recentPages({int limit = 20}) async {
-    final rows = _db.select(
-      // Timestamps are millisecond-granular, so two pages saved in the same
-      // tick would otherwise come back in arbitrary order and the list would
-      // reshuffle between reads. Identifiers are ULIDs, so `id DESC` is a
-      // stable tiebreak that still reads as newest-first.
-      'SELECT * FROM pages WHERE deleted_at IS NULL '
-      'ORDER BY updated_at DESC, id DESC LIMIT ?',
-      <Object?>[limit],
     );
     return <PageRef>[for (final row in rows) _pageRef(row)];
   }
@@ -120,21 +99,7 @@ class PageRepository {
       parentId: parentId,
     );
     _db.transaction(() {
-      _db.run(
-        'INSERT INTO pages '
-        '(id, section_id, parent_id, title, position, preview, revision, '
-        ' color, created_at, updated_at, deleted_at) '
-        "VALUES (?, ?, ?, ?, ?, '', 0, NULL, ?, ?, NULL)",
-        <Object?>[
-          page.id,
-          page.sectionId,
-          page.parentId,
-          page.title,
-          page.position,
-          page.createdAt,
-          page.updatedAt,
-        ],
-      );
+      _insert(page);
       _writeBody(page.id, PageDocument.empty(id: page.id));
       _reindex(page.id, page.title, '');
     });
@@ -406,6 +371,25 @@ class PageRepository {
 
   // ------------------------------------------------------------------ helpers
 
+  void _insert(PageRef page) => _db.run(
+    'INSERT INTO pages '
+    '(id, section_id, parent_id, title, position, preview, revision, '
+    ' color, created_at, updated_at, deleted_at) '
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
+    <Object?>[
+      page.id,
+      page.sectionId,
+      page.parentId,
+      page.title,
+      page.position,
+      page.preview,
+      page.revision,
+      page.color,
+      page.createdAt,
+      page.updatedAt,
+    ],
+  );
+
   void _writeBody(String pageId, PageDocument document) {
     final bytes = utf8.encode(document.encode());
     final compress = bytes.length >= BodyEncoding.compressionThreshold;
@@ -465,26 +449,9 @@ class PageRepository {
     return rows.isEmpty ? null : _pageRef(rows.first);
   }
 
-  /// [pageId] and the pages beneath it, parents before their subpages: every
-  /// one, only the live ones with [live], or only those deleted at
-  /// [deletedAt] — deleted along with it.
-  List<String> _subtree(String pageId, {bool live = false, int? deletedAt}) {
-    final condition = live
-        ? 'WHERE p.deleted_at IS NULL'
-        : deletedAt != null
-        ? 'WHERE p.deleted_at = ?'
-        : '';
-    final rows = _db.select(
-      'WITH RECURSIVE subtree(id, depth) AS ('
-      '  SELECT ?, 0'
-      '  UNION ALL'
-      '  SELECT p.id, s.depth + 1 FROM pages p '
-      '  JOIN subtree s ON p.parent_id = s.id $condition'
-      ') SELECT id FROM subtree ORDER BY depth',
-      <Object?>[pageId, ?deletedAt],
-    );
-    return <String>[for (final row in rows) str(row, 'id')];
-  }
+  /// [pageId] and the pages beneath it; see [AantekeningDatabase.subtree].
+  List<String> _subtree(String pageId, {bool live = false, int? deletedAt}) =>
+      _db.subtree('pages', pageId, live: live, deletedAt: deletedAt);
 
   /// Where a page goes among the pages of [sectionId] under [parentId]: after
   /// the page [after], before whichever came next, or else at the end.
@@ -536,24 +503,7 @@ class PageRepository {
       createdAt: source.createdAt,
       updatedAt: _now,
     );
-    _db.run(
-      'INSERT INTO pages '
-      '(id, section_id, parent_id, title, position, preview, revision, '
-      ' color, created_at, updated_at, deleted_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
-      <Object?>[
-        copy.id,
-        copy.sectionId,
-        copy.parentId,
-        copy.title,
-        copy.position,
-        copy.preview,
-        copy.revision,
-        copy.color,
-        copy.createdAt,
-        copy.updatedAt,
-      ],
-    );
+    _insert(copy);
     final document = _readDocument(source.id);
     final body = PageDocument(
       id: copy.id,
@@ -581,20 +531,11 @@ class PageRepository {
     return copy;
   }
 
-  double _nextPagePosition(String sectionId, String? parentId) {
-    final rows = parentId == null
-        ? _db.select(
-            'SELECT MAX(position) AS m FROM pages '
-            'WHERE section_id = ? AND parent_id IS NULL',
-            <Object?>[sectionId],
-          )
-        : _db.select(
-            'SELECT MAX(position) AS m FROM pages WHERE parent_id = ?',
-            <Object?>[parentId],
-          );
-    final max = rows.first['m'];
-    return max == null ? 0 : FractionalIndex.after((max as num).toDouble());
-  }
+  double _nextPagePosition(String sectionId, String? parentId) =>
+      _db.nextPosition('pages', 'section_id = ? AND parent_id IS ?', <Object?>[
+        sectionId,
+        parentId,
+      ]);
 
   static String _buildPreview(String text) {
     final collapsed = text.replaceAll(RegExp(r'\s+'), ' ').trim();
