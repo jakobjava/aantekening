@@ -40,7 +40,7 @@ void main() {
     List<NoteElement> Function(String assetId) elements,
   ) => tester.runAsync(() async {
     final asset = await store.assets.importBytes(
-      Uint8List.fromList(<int>[1, 2, 3]),
+      pngBytes,
       mimeType: 'image/png',
     );
     await store.pages.saveDocument(

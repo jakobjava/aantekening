@@ -1509,7 +1509,7 @@ void main() {
 
     Future<void> savePicture(WidgetTester tester) => tester.runAsync(() async {
       final asset = await store.assets.importBytes(
-        Uint8List.fromList(<int>[1, 2, 3]),
+        pngBytes,
         mimeType: 'image/png',
       );
       picture = BlockEmbed(
