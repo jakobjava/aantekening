@@ -1,4 +1,6 @@
+import 'package:aantekening_core/aantekening_core.dart' show MathMode;
 import 'package:aantekening_math/aantekening_math.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/tex.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -38,6 +40,7 @@ void main() {
     'floor(x) + ceil(y)',
     'x_1 + x_2 + ldots + x_n',
     'lim_(n->oo) (1+1/n)^n',
+    'highlight(x^2) + highlight(#A8E6B0, 1/2)',
   ];
 
   group('every example the cheat sheet shows parses', () {
@@ -106,5 +109,79 @@ void main() {
         reason: '"$partial" produced: $latex',
       );
     }
+  });
+
+  testWidgets('a highlight is painted in its colour', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Center(
+          child: MathView(
+            source: r'a + \colorbox{#FFEF9D}{$b^2$}',
+            mode: MathMode.latex,
+          ),
+        ),
+      ),
+    );
+    final painted = tester
+        .widgetList<Container>(find.byType(Container))
+        .map((box) => box.decoration)
+        .whereType<BoxDecoration>()
+        .map((decoration) => decoration.color);
+    expect(painted, contains(const Color(0xFFFFEF9D)));
+  });
+
+  group('a highlighted part keeps its size', () {
+    Future<Size> sizeOf(
+      WidgetTester tester,
+      String latex, {
+      required bool display,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: MathView(
+              source: latex,
+              mode: MathMode.latex,
+              displayStyle: display,
+              textStyle: const TextStyle(fontSize: 20),
+            ),
+          ),
+        ),
+      );
+      return tester.getSize(find.byType(MathView));
+    }
+
+    testWidgets('a fraction on a line of its own', (tester) async {
+      final plain = await sizeOf(tester, r'\frac{a}{b}', display: true);
+      final marked = await sizeOf(
+        tester,
+        r'\colorbox{#FFEF9D}{$\frac{a}{b}$}',
+        display: true,
+      );
+      // As tall, and a little room either side for the highlight.
+      expect(marked.height, greaterThanOrEqualTo(plain.height));
+      expect(marked.width, greaterThan(plain.width));
+    });
+
+    testWidgets('an exponent', (tester) async {
+      final plain = await sizeOf(tester, 'x^{2}', display: false);
+      final marked = await sizeOf(
+        tester,
+        r'x^{\colorbox{#FFEF9D}{$2$}}',
+        display: false,
+      );
+      final full = await sizeOf(
+        tester,
+        r'x \colorbox{#FFEF9D}{$2$}',
+        display: false,
+      );
+      expect(
+        marked.height,
+        lessThan(full.height),
+        reason: 'set as small as an exponent, not at full size',
+      );
+      expect(marked.width, lessThan(full.width));
+      expect(plain.width, lessThan(marked.width));
+    });
   });
 }

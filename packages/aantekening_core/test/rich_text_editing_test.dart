@@ -437,6 +437,36 @@ void main() {
       );
     });
 
+    test('a test of every run can take in the formulas too', () {
+      final blocks = <TextBlock>[
+        const TextBlock(
+          runs: <TextRun>[
+            TextRun('a ', TextMarks(bold: true)),
+            TextRun.math('x', MathMode.latex),
+          ],
+        ),
+      ];
+      bool marked(TextRun run) => run.isMath || run.marks.bold;
+      expect(
+        RichTextEditing.everyRun(blocks, range(0, 0, 0, 3), marked),
+        isTrue,
+      );
+      expect(
+        RichTextEditing.everyRun(
+          blocks,
+          range(0, 0, 0, 3),
+          (run) => run.marks.bold,
+        ),
+        isFalse,
+        reason: 'the formula is not bold',
+      );
+      expect(
+        RichTextEditing.everyRun(blocks, range(0, 2, 0, 2), marked),
+        isFalse,
+        reason: 'an empty range holds nothing',
+      );
+    });
+
     test('a block kind toggles back to a paragraph', () {
       var blocks = <TextBlock>[p('a'), p('b')];
       blocks = RichTextEditing.toggleBlockKind(
@@ -516,7 +546,7 @@ void main() {
   });
 
   group('Markdown shortcuts', () {
-    test('a dash and a space start a bulleted list', () {
+    test('a dash and a space start a list marked with dashes', () {
       final typed = RichTextEditing.insertText(
         <TextBlock>[p('-')],
         at(0, 1),
@@ -527,7 +557,38 @@ void main() {
         typed.selection.extent,
       );
       expect(show(edit!.blocks), <String>['bulleted:']);
+      expect(edit.blocks.single.bullet, BulletStyle.dash);
       expect(edit.selection, at(0, 0));
+    });
+
+    test('a star and a space start a list marked with bullets', () {
+      final edit = RichTextEditing.applyMarkdownShortcut(<TextBlock>[
+        p('* '),
+      ], const RichPosition(0, 2));
+      expect(edit!.blocks.single.kind, TextBlockKind.bulleted);
+      expect(edit.blocks.single.bullet, BulletStyle.disc);
+    });
+
+    test('Enter carries the mark on to the next item', () {
+      final started = RichTextEditing.applyMarkdownShortcut(<TextBlock>[
+        p('- '),
+      ], const RichPosition(0, 2))!;
+      final typed = RichTextEditing.insertText(
+        started.blocks,
+        started.selection,
+        'one',
+      );
+      final split = RichTextEditing.insertParagraphBreak(
+        typed.blocks,
+        typed.selection,
+      );
+      expect(split.blocks.last.kind, TextBlockKind.bulleted);
+      expect(split.blocks.last.bullet, BulletStyle.dash);
+      expect(
+        TextBlock.fromJson(split.blocks.last.toJson()).bullet,
+        BulletStyle.dash,
+        reason: 'the mark is kept on disk',
+      );
     });
 
     test('hashes make headings', () {

@@ -268,6 +268,51 @@ class CanvasController extends ChangeNotifier {
     return best;
   }
 
+  /// The topmost part of the background at a page-space point: what a
+  /// right-click there can take out of the background again.
+  NoteElement? backgroundAt(Offset page) {
+    NoteElement? best;
+    for (final id in _index.query(Aabb(page.dx, page.dy, page.dx, page.dy))) {
+      final element = _byId[id];
+      if (element == null ||
+          !element.locked ||
+          !element.frame.containsPoint(page.dx, page.dy)) {
+        continue;
+      }
+      if (best == null || element.z >= best.z) best = element;
+    }
+    return best;
+  }
+
+  /// Makes the element [id] part of the page's background, beneath the rest
+  /// of it, or takes it out of the background again.
+  ///
+  /// A background is drawn beneath all ink and cannot be picked, so it is
+  /// let go of from the selection. With [recordUndo] false the change is
+  /// part of the undo step before it — the picture being taken out of a text
+  /// box, say.
+  void setBackground(
+    String id, {
+    required bool background,
+    bool recordUndo = true,
+  }) {
+    final element = _byId[id];
+    if (element == null || element.locked == background) return;
+    var lowest = element.z;
+    for (final other in _document.elements) {
+      if (other.z < lowest) lowest = other.z;
+    }
+    _selection.remove(id);
+    _apply(
+      _document.withElementReplaced(
+        background
+            ? element.withLocked(true).withZ(lowest - 1)
+            : element.withLocked(false),
+      ),
+      recordUndo: recordUndo,
+    );
+  }
+
   /// Selects [id], replacing the selection unless [additive] is set.
   void select(String id, {bool additive = false}) {
     if (!additive) _selection.clear();

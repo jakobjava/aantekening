@@ -8,6 +8,7 @@
 library;
 
 export 'src/ast.dart';
+export 'src/highlight_source.dart';
 export 'src/latex_reader.dart';
 export 'src/lexer.dart' show MathDiagnostic, MathLexer, Token, TokenType;
 export 'src/linear_math.dart';

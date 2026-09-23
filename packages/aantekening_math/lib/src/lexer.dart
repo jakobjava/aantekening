@@ -33,6 +33,9 @@ enum TokenType {
 
   /// LaTeX quoted in backticks, passed through untouched.
   raw,
+
+  /// A colour, `#` and six hexadecimal digits: `#A8E6B0`.
+  color,
   end,
 }
 
@@ -115,6 +118,15 @@ class MathLexer {
       }
       if (char == '"') return _text();
       if (char == '`') return _raw();
+      if (char == '#') {
+        final color = _color();
+        if (color != null) return color;
+        _offset++;
+        diagnostics.add(
+          MathDiagnostic(start, 'A colour is "#" and six hex digits: #A8E6B0'),
+        );
+        continue;
+      }
       if (char == r'\') return _command();
       if (_isLetter(char)) return _word();
       if (char.codeUnitAt(0) > 0x7F) return _unicode();
@@ -177,6 +189,22 @@ class MathLexer {
     return Token(
       type: TokenType.text,
       lexeme: buffer.toString(),
+      offset: start,
+    );
+  }
+
+  /// A colour at the `#` here, or null where six hexadecimal digits do not
+  /// follow it.
+  Token? _color() {
+    final start = _offset;
+    final end = start + 7;
+    if (end > source.length) return null;
+    final digits = source.substring(start + 1, end);
+    if (!RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(digits)) return null;
+    _offset = end;
+    return Token(
+      type: TokenType.color,
+      lexeme: source.substring(start, end),
       offset: start,
     );
   }

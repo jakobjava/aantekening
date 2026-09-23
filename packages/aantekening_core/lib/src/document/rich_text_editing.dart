@@ -491,13 +491,18 @@ abstract final class RichTextEditing {
     // and leaves an ordinary line above it, rather than a heading-styled blank.
     final atStart = position.offset == 0 && block.length > 0;
     final first = atStart
-        ? TextBlock(indent: block.indent, kind: continuation)
+        ? TextBlock(
+            indent: block.indent,
+            kind: continuation,
+            bullet: block.bullet,
+          )
         : _withRuns(block, left);
     final second = atStart
         ? block
         : TextBlock(
             kind: continuation,
             indent: block.indent,
+            bullet: block.bullet,
             runs: normalizeRuns(right),
           );
 
@@ -807,10 +812,22 @@ abstract final class RichTextEditing {
     List<TextBlock> blocks,
     RichSelection range,
     bool Function(TextMarks marks) test,
-  ) {
+  ) => everyRun(blocks, range, (run) => test(run.marks), formulas: false);
+
+  /// Whether every run in [range] — the text in it, and unless [formulas] is
+  /// false the formulas — satisfies [test].
+  ///
+  /// A range holding none of those does not count, so toggling over it
+  /// switches the formatting on.
+  static bool everyRun(
+    List<TextBlock> blocks,
+    RichSelection range,
+    bool Function(TextRun run) test, {
+    bool formulas = true,
+  }) {
     final start = clamp(blocks, range.start);
     final end = clamp(blocks, range.end);
-    var sawText = false;
+    var saw = false;
     for (var i = start.block; i <= end.block; i++) {
       final block = blocks[i];
       if (block.isEmbed) continue;
@@ -820,14 +837,14 @@ abstract final class RichTextEditing {
       for (final run in block.runs) {
         final runEnd = position + run.text.length;
         final overlaps = runEnd > from && position < to;
-        if (overlaps && !run.isMath) {
-          sawText = true;
-          if (!test(run.marks)) return false;
+        if (overlaps && (formulas || !run.isMath)) {
+          saw = true;
+          if (!test(run)) return false;
         }
         position = runEnd;
       }
     }
-    return sawText;
+    return saw;
   }
 
   /// Sets every block touched by [range] to [kind], or back to a paragraph
@@ -872,6 +889,16 @@ abstract final class RichTextEditing {
     ];
   }
 
+  /// Puts [embed] on block [index] in place of the object there, as resizing
+  /// a picture does.
+  static List<TextBlock> replaceEmbed(
+    List<TextBlock> blocks,
+    int index,
+    BlockEmbed embed,
+  ) => _replaceRange(blocks, index, index + 1, <TextBlock>[
+    TextBlock.embedded(embed, indent: blocks[index].indent),
+  ]);
+
   /// Ticks or unticks the to-do in block [index].
   static List<TextBlock> toggleChecked(List<TextBlock> blocks, int index) =>
       _replaceRange(blocks, index, index + 1, <TextBlock>[
@@ -881,19 +908,20 @@ abstract final class RichTextEditing {
   // --------------------------------------------------------------- shortcuts
 
   /// Markdown-style prefixes that turn a paragraph into another kind when
-  /// followed by a space.
-  static const Map<String, TextBlockKind> markdownPrefixes =
-      <String, TextBlockKind>{
-        '-': TextBlockKind.bulleted,
-        '*': TextBlockKind.bulleted,
-        '1.': TextBlockKind.numbered,
-        '[]': TextBlockKind.todo,
-        '[ ]': TextBlockKind.todo,
-        '#': TextBlockKind.heading1,
-        '##': TextBlockKind.heading2,
-        '###': TextBlockKind.heading3,
-        '>': TextBlockKind.quote,
-      };
+  /// followed by a space, each with the mark its items take where it starts
+  /// a bulleted list: a dash keeps its dash, as it does in Word.
+  static const Map<String, ({TextBlockKind kind, BulletStyle bullet})>
+  markdownPrefixes = <String, ({TextBlockKind kind, BulletStyle bullet})>{
+    '-': (kind: TextBlockKind.bulleted, bullet: BulletStyle.dash),
+    '*': (kind: TextBlockKind.bulleted, bullet: BulletStyle.disc),
+    '1.': (kind: TextBlockKind.numbered, bullet: BulletStyle.disc),
+    '[]': (kind: TextBlockKind.todo, bullet: BulletStyle.disc),
+    '[ ]': (kind: TextBlockKind.todo, bullet: BulletStyle.disc),
+    '#': (kind: TextBlockKind.heading1, bullet: BulletStyle.disc),
+    '##': (kind: TextBlockKind.heading2, bullet: BulletStyle.disc),
+    '###': (kind: TextBlockKind.heading3, bullet: BulletStyle.disc),
+    '>': (kind: TextBlockKind.quote, bullet: BulletStyle.disc),
+  };
 
   /// Converts a paragraph that begins with a Markdown prefix and a space into
   /// the matching kind, when the caret sits right after that space.
@@ -911,13 +939,18 @@ abstract final class RichTextEditing {
     if (caret.offset < 2 || text[caret.offset - 1] != ' ') return null;
 
     final prefix = text.substring(0, caret.offset - 1);
-    final kind = markdownPrefixes[prefix];
-    if (kind == null) return null;
+    final started = markdownPrefixes[prefix];
+    if (started == null) return null;
 
     final (_, rest) = splitRuns(block.runs, caret.offset);
     return (
       blocks: _replaceRange(blocks, caret.block, caret.block + 1, <TextBlock>[
-        TextBlock(kind: kind, indent: block.indent, runs: normalizeRuns(rest)),
+        TextBlock(
+          kind: started.kind,
+          indent: block.indent,
+          bullet: started.bullet,
+          runs: normalizeRuns(rest),
+        ),
       ]),
       selection: RichSelection.collapsed(RichPosition(caret.block, 0)),
     );

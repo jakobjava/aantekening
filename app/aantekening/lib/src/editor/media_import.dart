@@ -14,70 +14,6 @@ import 'package:pdfrx/pdfrx.dart';
 /// What the user is inserting.
 enum MediaKind { image, pdf }
 
-/// One picture or PDF page, stored and measured, ready to be placed.
-class ImportedMedia {
-  const ImportedMedia({
-    required this.kind,
-    required this.assetId,
-    required this.width,
-    required this.height,
-    this.pageIndex = 0,
-    this.text,
-  });
-
-  final EmbedKind kind;
-  final String assetId;
-  final int pageIndex;
-
-  /// Natural size in page units.
-  final double width;
-  final double height;
-
-  /// A PDF page's text layer, for search.
-  final String? text;
-
-  /// This item placed inside a text box.
-  BlockEmbed toEmbed() => BlockEmbed(
-    kind: kind,
-    assetId: assetId,
-    pageIndex: pageIndex,
-    width: width,
-    height: height,
-    text: text,
-  );
-
-  /// This item placed on the canvas by itself, with its top-left at [at] and
-  /// no wider than [maxWidth].
-  NoteElement toElement(ui.Offset at, {double maxWidth = double.infinity}) {
-    final scale = math.min(1.0, maxWidth / width);
-    final frame = Frame(
-      x: at.dx,
-      y: at.dy,
-      width: width * scale,
-      height: height * scale,
-    );
-    final now = DateTime.now().millisecondsSinceEpoch;
-    return switch (kind) {
-      EmbedKind.image => ImageElement(
-        id: Ulid.generate(),
-        frame: frame,
-        createdAt: now,
-        updatedAt: now,
-        assetId: assetId,
-      ),
-      EmbedKind.pdfPage => PdfElement(
-        id: Ulid.generate(),
-        frame: frame,
-        createdAt: now,
-        updatedAt: now,
-        assetId: assetId,
-        pageIndex: pageIndex,
-        extractedText: text,
-      ),
-    };
-  }
-}
-
 /// Asks for files and imports them into the workspace's asset store.
 abstract final class MediaImport {
   /// Page units per PDF point: PDF pages are measured at 72 per inch, the page
@@ -108,11 +44,13 @@ abstract final class MediaImport {
     uniformTypeIdentifiers: <String>['com.adobe.pdf'],
   );
 
-  /// Lets the user choose files of [kind] and imports them.
+  /// Lets the user choose files of [kind] and imports them, each picture
+  /// and PDF page stored and measured, as it would sit in a text box; on
+  /// the page by itself it is [EmbedOnPage.toElement].
   ///
   /// Returns an empty list if the user cancels. A PDF yields one item per
   /// page, in order.
-  static Future<List<ImportedMedia>> pickAndImport(
+  static Future<List<BlockEmbed>> pickAndImport(
     AantekeningStore store,
     MediaKind kind,
   ) async {
@@ -121,7 +59,7 @@ abstract final class MediaImport {
         if (kind == MediaKind.image) _images else _pdfs,
       ],
     );
-    final imported = <ImportedMedia>[];
+    final imported = <BlockEmbed>[];
     for (final file in files) {
       imported.addAll(await importFile(store, File(file.path)));
     }
@@ -129,19 +67,19 @@ abstract final class MediaImport {
   }
 
   /// Imports one file, deciding from its type whether it is a picture or a PDF.
-  static Future<List<ImportedMedia>> importFile(
+  static Future<List<BlockEmbed>> importFile(
     AantekeningStore store,
     File file,
   ) async {
     final mimeType = AssetStore.mimeTypeForPath(file.path);
     if (mimeType == 'application/pdf') return _importPdf(store, file);
     if (mimeType.startsWith('image/') && mimeType != 'image/svg+xml') {
-      return <ImportedMedia>[await _importImage(store, file, mimeType)];
+      return <BlockEmbed>[await _importImage(store, file, mimeType)];
     }
     throw UnsupportedError('Cannot import ${file.path}: not a picture or PDF');
   }
 
-  static Future<ImportedMedia> _importImage(
+  static Future<BlockEmbed> _importImage(
     AantekeningStore store,
     File file,
     String mimeType,
@@ -164,7 +102,7 @@ abstract final class MediaImport {
     buffer.dispose();
 
     final scale = math.min(1.0, maxImageWidth / math.max(width, 1));
-    return ImportedMedia(
+    return BlockEmbed(
       kind: EmbedKind.image,
       assetId: asset.id,
       width: width * scale,
@@ -172,7 +110,7 @@ abstract final class MediaImport {
     );
   }
 
-  static Future<List<ImportedMedia>> _importPdf(
+  static Future<List<BlockEmbed>> _importPdf(
     AantekeningStore store,
     File file,
   ) async {
@@ -180,9 +118,9 @@ abstract final class MediaImport {
     await pdfrxFlutterInitialize();
     final document = await PdfDocument.openFile(file.path);
     try {
-      return <ImportedMedia>[
+      return <BlockEmbed>[
         for (var i = 0; i < document.pages.length; i++)
-          ImportedMedia(
+          BlockEmbed(
             kind: EmbedKind.pdfPage,
             assetId: asset.id,
             pageIndex: i,

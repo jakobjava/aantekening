@@ -1,5 +1,6 @@
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
+import 'package:flutter_math_fork/tex.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Asserts that [input] translates to [latex] with no diagnostics.
@@ -189,6 +190,212 @@ void main() {
       final translation = LinearMath.translate('');
       expect(translation.diagnostics, isEmpty);
       expect(translation.latex, r'\square');
+    });
+  });
+
+  group('highlights', () {
+    test('mark part of a formula in the highlighter\'s yellow', () {
+      expectLatex('a + highlight(b^2)', r'a + \colorbox{#FFEF9D}{$b^2$}');
+      expectLatex('highlight x', r'\colorbox{#FFEF9D}{$x$}');
+    });
+
+    test('take a colour of their own', () {
+      expectLatex('highlight(#a8e6b0, a, b)', r'\colorbox{#A8E6B0}{$a, b$}');
+    });
+
+    test('complain of a colour that is not one', () {
+      final translation = LinearMath.translate('highlight(#12, x)');
+      expect(translation.diagnostics, isNotEmpty);
+    });
+  });
+
+  group('highlights in the source', () {
+    test('wrap a part in either syntax, saying where it now starts', () {
+      final linear = HighlightSource.wrap(
+        'b^2',
+        MathMode.linear,
+        HighlightNode.defaultColor,
+      );
+      expect(linear.text, 'highlight(b^2)');
+      expect(linear.text.substring(linear.body, linear.body + 3), 'b^2');
+
+      final coloured = HighlightSource.wrap('b', MathMode.linear, 0xA8E6B0);
+      expect(coloured.text, 'highlight(#A8E6B0, b)');
+      expect(coloured.text[coloured.body], 'b');
+
+      final latex = HighlightSource.wrap('b^2', MathMode.latex, 0xA8E6B0);
+      expect(latex.text, r'\colorbox{#A8E6B0}{$b^2$}');
+      expect(latex.text.substring(latex.body, latex.body + 3), 'b^2');
+    });
+
+    test('find the innermost highlight round a selection', () {
+      const source = 'a + highlight(b + highlight(#A8E6B0, (c)) + d)';
+      final inner = HighlightSource.around(
+        source,
+        source.indexOf('(c)'),
+        source.indexOf('(c)') + 3,
+        MathMode.linear,
+      )!;
+      expect(source.substring(inner.bodyStart, inner.bodyEnd), '(c)');
+      expect(inner.color, 0xA8E6B0);
+
+      final outer = HighlightSource.around(
+        source,
+        source.indexOf('b'),
+        source.indexOf('b') + 1,
+        MathMode.linear,
+      )!;
+      expect(outer.start, 4);
+      expect(outer.end, source.length);
+      expect(outer.color, HighlightNode.defaultColor);
+
+      expect(HighlightSource.around(source, 0, 1, MathMode.linear), isNull);
+      // A caret just after one, where arrowing into the formula leaves it.
+      expect(
+        HighlightSource.around(
+          source,
+          source.length,
+          source.length,
+          MathMode.linear,
+        ),
+        outer,
+      );
+    });
+
+    test('find a highlight selected whole, and one in LaTeX', () {
+      const linear = 'highlight(x)';
+      expect(
+        HighlightSource.around(linear, 0, linear.length, MathMode.linear),
+        isNotNull,
+      );
+
+      const latex = r'a + \colorbox{#FFEF9D}{$\frac{b}{c}$}';
+      final b = latex.indexOf('{b}') + 1;
+      final span = HighlightSource.around(latex, b, b, MathMode.latex)!;
+      expect(latex.substring(span.bodyStart, span.bodyEnd), r'\frac{b}{c}');
+      expect(span.end, latex.length);
+    });
+
+    group('fit a selection to a whole part', () {
+      /// What a selection of [selected], the first place it occurs in
+      /// [source], is fitted to.
+      String? fitted(
+        String source,
+        String selected, {
+        MathMode syntax = MathMode.linear,
+      }) {
+        final at = source.indexOf(selected);
+        final fit = HighlightSource.fit(
+          source,
+          at,
+          at + selected.length,
+          syntax,
+        );
+        return fit == null ? null : source.substring(fit.start, fit.end);
+      }
+
+      test('letting go of an operator left hanging', () {
+        expect(fitted('a + b^2 = c', '2 ='), '2');
+        expect(fitted('a + b^2 = c', 'b^'), 'b');
+        expect(fitted('a + b^2 = c', ' + b^2'), 'b^2');
+      });
+
+      test('taking whole words and both brackets', () {
+        expect(fitted('alpha + 1', 'lph'), 'alpha');
+        expect(fitted('sqrt(x + 1) + y', '(x +'), 'sqrt(x + 1)');
+        expect(fitted('a + highlight(b) + c', 'b) + c'), 'highlight(b) + c');
+        expect(
+          fitted(r'\frac{a}{b} + c', 'a}{b', syntax: MathMode.latex),
+          r'\frac{a}{b}',
+        );
+      });
+
+      test('keeping what reads already', () {
+        expect(fitted('a + b^2 = c', 'b^2'), 'b^2');
+        expect(fitted('a + b = c', '='), '=');
+      });
+
+      test('leaving nothing where only a joint is selected', () {
+        expect(fitted('x^2', '^'), isNull);
+        expect(fitted('a +   b', '   '), isNull);
+      });
+
+      test('never leaving an empty box', () {
+        const source = 'a/b + sqrt(x^2 + 1) = c_i';
+        for (var from = 0; from < source.length; from++) {
+          for (var to = from + 1; to <= source.length; to++) {
+            final fit = HighlightSource.fit(source, from, to, MathMode.linear);
+            if (fit == null) continue;
+            final marked = source.replaceRange(
+              fit.start,
+              fit.end,
+              HighlightSource.wrap(
+                source.substring(fit.start, fit.end),
+                MathMode.linear,
+                HighlightNode.defaultColor,
+              ).text,
+            );
+            final translation = LinearMath.translate(marked);
+            expect(
+              translation.diagnostics,
+              isEmpty,
+              reason: '"${source.substring(from, to)}" gave $marked',
+            );
+            expect(translation.latex, isNot(contains(r'\square')));
+          }
+        }
+      });
+
+      test('never leaving LaTeX the typesetter cannot read', () {
+        const source = r'\frac{a}{b} + \sqrt{x^2 + 1} = c_i';
+        for (var from = 0; from < source.length; from++) {
+          for (var to = from + 1; to <= source.length; to++) {
+            final fit = HighlightSource.fit(source, from, to, MathMode.latex);
+            if (fit == null) continue;
+            final marked = source.replaceRange(
+              fit.start,
+              fit.end,
+              HighlightSource.wrap(
+                source.substring(fit.start, fit.end),
+                MathMode.latex,
+                HighlightNode.defaultColor,
+              ).text,
+            );
+            expect(
+              () => TexParser(
+                RendererLatex.of(marked),
+                const TexParserSettings(),
+              ).parse(),
+              returnsNormally,
+              reason: '"${source.substring(from, to)}" gave $marked',
+            );
+          }
+        }
+      });
+    });
+
+    test('come off, all of them, leaving what they marked', () {
+      expect(
+        HighlightSource.unwrapAll(
+          'highlight(a + highlight(#A8E6B0, b)) + highlight(c)',
+          MathMode.linear,
+        ),
+        'a + b + c',
+      );
+      expect(
+        HighlightSource.unwrapAll(
+          r'\colorbox{#FFEF9D}{$x^{\colorbox{#A8E6B0}{$2$}}$}',
+          MathMode.latex,
+        ),
+        'x^{2}',
+      );
+    });
+
+    test('pass over a highlight left unclosed', () {
+      expect(
+        HighlightSource.all('highlight(x + (y)', MathMode.linear),
+        isEmpty,
+      );
     });
   });
 

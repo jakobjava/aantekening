@@ -77,7 +77,9 @@ and spelling dictionaries (`path_provider`), and the SQLite and
 PDFium libraries, which `package:sqlite3` and `pdfrx` fetch prebuilt for each
 platform as the app is built — SQLite with FTS5. Nothing in the codebase
 branches on platform, except the trackpad scaling Linux needs (see
-`trackpadPanScale`) and the Linux window's title bar.
+`trackpadPanScale`), the aiming of scrolling and trackpad gestures at the
+pointer that GTK's reporting needs (see `TrackpadAim`, applied by the app's
+binding before an event is routed) and the Linux window's title bar.
 
 ## Testing
 

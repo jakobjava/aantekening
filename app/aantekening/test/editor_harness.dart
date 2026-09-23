@@ -189,3 +189,35 @@ Future<void> startTextBox(WidgetTester tester) async {
   await tester.tapAt(const Offset(300, 300), kind: PointerDeviceKind.mouse);
   await tester.pumpAndSettle();
 }
+
+/// Stands in for the system clipboard, holding text as the platform would,
+/// for the rest of the test.
+void mockClipboard(WidgetTester tester) {
+  String? held;
+  final messenger = tester.binding.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+    switch (call.method) {
+      case 'Clipboard.setData':
+        held = (call.arguments as Map<Object?, Object?>)['text'] as String?;
+        return null;
+      case 'Clipboard.getData':
+        return held == null ? null : <String, Object?>{'text': held};
+      case 'Clipboard.hasStrings':
+        return <String, Object?>{'value': held?.isNotEmpty ?? false};
+    }
+    return null;
+  });
+  addTearDown(
+    () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+  );
+}
+
+/// Right-clicks at [position], as a mouse does.
+Future<void> rightClick(WidgetTester tester, Offset position) async {
+  await tester.tapAt(
+    position,
+    kind: PointerDeviceKind.mouse,
+    buttons: kSecondaryMouseButton,
+  );
+  await tester.pumpAndSettle();
+}

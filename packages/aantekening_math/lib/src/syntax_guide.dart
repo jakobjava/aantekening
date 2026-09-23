@@ -136,6 +136,8 @@ abstract final class SimpleSyntaxGuide {
         SyntaxExample('boldsymbol(F)', 'Bold'),
         SyntaxExample('mathcal(L)', 'Script'),
         SyntaxExample('mathbb(E)', 'Blackboard bold'),
+        SyntaxExample('highlight(E = m c^2)', 'Highlighted'),
+        SyntaxExample('highlight(#A8E6B0, x)', 'Highlighted in a colour'),
       ]),
       const SyntaxTopic('Matrices and cases', <SyntaxExample>[
         SyntaxExample('mat(1, 2; 3, 4)', 'Matrix: `,` between, `;` down'),

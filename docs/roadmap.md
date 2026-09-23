@@ -11,10 +11,13 @@ or long-press menu, and a finger dragged across a text box selects text rather
 than scrolling the page. Two fingers pan and zoom anywhere.
 
 ### Pasting and dropping files
-Pictures and PDFs come in through the insert buttons. Pasting a screenshot
-from the clipboard and dropping files onto the page both need a clipboard or
-drag-and-drop plugin; the importer they would call (`MediaImport.importFile`)
-already exists.
+Pictures and PDFs come in through the insert buttons, and anything on a page —
+pictures and PDF pages included — is copied and pasted within the app (ADR
+14). Pasting a screenshot copied in another application, and dropping files
+onto the page, both need a clipboard or drag-and-drop plugin, since Flutter's
+own clipboard carries only text; the importer they would call
+(`MediaImport.importFile`) already exists. On a touch screen the right-click
+menu is not yet opened by a long press.
 
 ### Formulas edited as typeset maths
 A formula being edited shows its source, with the typeset result previewed

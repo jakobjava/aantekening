@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../command_menu.dart';
 import '../providers.dart';
 import '../input_trace.dart';
 import '../search/search_panel.dart';
@@ -20,7 +21,9 @@ import '../spelling/proofreader.dart';
 import '../spelling/spelling.dart';
 import 'element_views.dart';
 import 'media_import.dart';
+import 'note_clipboard.dart';
 import 'page_title.dart';
+import 'ribbon/mini_toolbar.dart';
 import 'ribbon/ribbon.dart';
 import 'text/box_formatting.dart';
 import 'text/cheat_sheet.dart';
@@ -109,6 +112,15 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     onMathInsert: _insertMath,
     saving: _saving,
   );
+
+  /// The Home tab's text formatting, over every right-click menu on the
+  /// page.
+  late final Widget _menuToolbar = MiniToolbar(commands: _ribbonCommands);
+
+  /// What was pasted from last, and how many times, so each paste of the
+  /// same things lands a step further on from the last.
+  List<NoteElement>? _pasted;
+  int _pasteCount = 0;
 
   Timer? _autosave;
   late final VoidCallback _stopTracingView;
@@ -253,6 +265,14 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       _editingId = null;
       if (mounted) setState(() {});
     }
+    // Anything else picked on the page — by a drag across the paper, say —
+    // ends typing in the box.
+    final selection = _controller.selection;
+    if (editingId != null &&
+        selection.isNotEmpty &&
+        !(selection.length == 1 && selection.contains(editingId))) {
+      _stopEditing();
+    }
 
     // Until the page has been read, the canvas still holds the one before.
     final pageId = widget.pageId;
@@ -355,28 +375,44 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// is typed, whose first line starts there. It widens with its text, as a
   /// new OneNote container does.
   String _createTextBox(Offset page) {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final id = Ulid.generate();
+    final box = _newTextBox(page);
     _controller.addElement(
-      TextElement(
-        id: id,
-        frame: Frame(
-          x: page.dx - TextBoxEditor.padding.left,
-          y: page.dy - TextBoxEditor.grabBand - 10,
-          width: TextBoxEditor.newBoxSize.width,
-          height: TextBoxEditor.newBoxSize.height,
-        ),
-        createdAt: now,
-        updatedAt: now,
-        blocks: const <TextBlock>[TextBlock()],
-        autoWidth: true,
-      ),
+      box,
       // The box is recorded in history and saved with its first edit; an
       // empty box that is abandoned leaves no trace.
       recordUndo: false,
       markDirty: false,
     );
-    return id;
+    return box.id;
+  }
+
+  /// Where a new box's text starts from its top-left corner: where the
+  /// click that placed its caret was.
+  static final Offset _textOrigin = Offset(
+    TextBoxEditor.padding.left,
+    TextBoxEditor.grabBand + 10,
+  );
+
+  /// A text box whose first line starts at [page], holding [blocks], that
+  /// widens with its text.
+  static TextElement _newTextBox(
+    Offset page, {
+    List<TextBlock> blocks = const <TextBlock>[TextBlock()],
+  }) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return TextElement(
+      id: Ulid.generate(),
+      frame: Frame(
+        x: page.dx - _textOrigin.dx,
+        y: page.dy - _textOrigin.dy,
+        width: TextBoxEditor.newBoxSize.width,
+        height: TextBoxEditor.newBoxSize.height,
+      ),
+      createdAt: now,
+      updatedAt: now,
+      blocks: blocks,
+      autoWidth: true,
+    );
   }
 
   void _onEmptyTap(Offset page) {
@@ -385,6 +421,11 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   }
 
   void _onCanvasPress(NoteElement? hit) {
+    // Paper pressed with the select tool is not yet known to leave the box: a
+    // click there places a caret, and a drag picks what it passes over, each
+    // ending the typing as it happens. Ending it on the press left the ribbon
+    // with nothing to format, greyed, for as long as the button was down.
+    if (hit == null && _controller.tool == CanvasTool.select) return;
     if (hit?.id != _editingId) _stopEditing();
     _canvasFocus.requestFocus();
   }
@@ -578,7 +619,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   Future<void> _insertMedia(MediaKind kind) async {
     final store = _store;
     if (store == null) return;
-    final List<ImportedMedia> items;
+    final List<BlockEmbed> items;
     try {
       items = await MediaImport.pickAndImport(store, kind);
     } on Object catch (error) {
@@ -596,9 +637,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     final atBareCaret =
         editing is TextElement && TextBoxEditor.isEmpty(editing.blocks);
     if (_textController.isActive && !atBareCaret) {
-      _textController.insertEmbeds(<BlockEmbed>[
-        for (final item in items) item.toEmbed(),
-      ]);
+      _textController.insertEmbeds(items);
       return;
     }
 
@@ -609,17 +648,25 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       y = editing.frame.y + TextBoxEditor.grabBand;
       _stopEditing();
     }
+    final now = DateTime.now().millisecondsSinceEpoch;
     final elements = <NoteElement>[];
     for (final item in items) {
+      // No wider than the paper, keeping its proportions.
       final itemWidth = math.min(item.width, width);
+      final itemHeight = itemWidth / item.aspectRatio;
       final element = item.toElement(
-        editing != null && atBareCaret
-            ? Offset(editing.frame.x + TextBoxEditor.padding.left, y)
-            : Offset(center.dx - itemWidth / 2, y),
-        maxWidth: width,
+        frame: Frame(
+          x: editing != null && atBareCaret
+              ? editing.frame.x + TextBoxEditor.padding.left
+              : center.dx - itemWidth / 2,
+          y: y,
+          width: itemWidth,
+          height: itemHeight,
+        ),
+        now: now,
       );
       elements.add(element);
-      y += element.frame.height + 24;
+      y += itemHeight + 24;
     }
     _controller
       ..setTool(CanvasTool.select)
@@ -631,6 +678,205 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     if (!mounted) return;
     ScaffoldMessenger.maybeOf(context)
         ?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  // -------------------------------------------------------- copy and paste
+
+  /// Copies the things picked on the page, or cuts them. Text being edited
+  /// is copied by its box.
+  Future<void> _copySelection({bool cut = false}) async {
+    if (_editingId != null) return;
+    final selected = _controller.selectedElements;
+    if (selected.isEmpty) return;
+    await NoteClipboard.copy(ElementsClip(selected));
+    if (cut && mounted) _controller.deleteSelection();
+  }
+
+  /// Pastes what was copied — as it was, or as its text only — onto the
+  /// page: things from the page as copies of them, text in a new box. With
+  /// [at], a place on the page, that is where it goes; else copies go a step
+  /// on from what they copy, and a box into the middle of the view.
+  Future<void> _paste({Offset? at, bool textOnly = false}) async {
+    if (_editingId != null || !_ready) return;
+    final clip = textOnly
+        ? await NoteClipboard.readText()
+        : await NoteClipboard.read();
+    if (clip == null || !mounted) return;
+    switch (clip) {
+      case ElementsClip(:final elements):
+        _pasteElements(elements, at: at);
+      case TextClip(:final blocks):
+        _pasteBox(blocks, at: at);
+      case PlainClip(:final plain):
+        _pasteBox(<TextBlock>[
+          for (final line in plain.replaceAll('\r\n', '\n').split('\n'))
+            TextBlock.plain(line),
+        ], at: at);
+    }
+  }
+
+  /// Copies of [elements] on the page, at [at] or a step on from them.
+  void _pasteElements(List<NoteElement> elements, {Offset? at}) {
+    final Vec2 offset;
+    if (at != null) {
+      final bounds = NoteElement.boundsOf(elements);
+      offset = Vec2(at.dx - bounds.left, at.dy - bounds.top);
+    } else {
+      _pasteCount = identical(elements, _pasted) ? _pasteCount + 1 : 1;
+      _pasted = elements;
+      offset = Vec2(24.0 * _pasteCount, 24.0 * _pasteCount);
+    }
+    final copies = NoteElement.copiesOf(
+      elements,
+      now: DateTime.now().millisecondsSinceEpoch,
+      offset: offset,
+    );
+    _controller
+      ..setTool(CanvasTool.select)
+      ..addElements(copies)
+      ..selectAll(copies.map((element) => element.id));
+  }
+
+  /// Things from the page that the box being edited passed on rather than
+  /// take into its text: pasted at its caret, in place of the box, where it
+  /// is a bare caret on the paper, else a step on from what they copy.
+  void _pasteFromBox(List<NoteElement> elements) {
+    final id = _editingId;
+    final box = id == null ? null : _controller.document.elementById(id);
+    if (box is! TextElement || !TextBoxEditor.isEmpty(box.blocks)) {
+      _pasteElements(elements);
+      return;
+    }
+    // The empty box goes as the typing ends.
+    _stopEditing();
+    _pasteElements(
+      elements,
+      at: Offset(box.frame.x, box.frame.y) + _textOrigin,
+    );
+  }
+
+  /// A new box holding [blocks], at [at] or in the middle of the view.
+  void _pasteBox(List<TextBlock> blocks, {Offset? at}) {
+    final box = _newTextBox(at ?? _controller.viewCenter, blocks: blocks);
+    _controller
+      ..setTool(CanvasTool.select)
+      ..addElement(box)
+      ..select(box.id);
+  }
+
+  /// Takes the picture or PDF page on block [block] of the box [boxId] out
+  /// of it, to lie where it is, [local] in the box's own units, as part of
+  /// the page's background. A box left empty goes with it.
+  void _embedToBackground(String boxId, int block, Rect local) {
+    final box = _controller.document.elementById(boxId);
+    if (box is! TextElement || block >= box.blocks.length) return;
+    final embed = box.blocks[block].embed;
+    if (embed == null) return;
+    final center = box.frame.localToPage.apply(
+      local.center.dx,
+      local.center.dy,
+    );
+    final picture = embed.toElement(
+      frame: Frame(
+        x: center.x - local.width / 2,
+        y: center.y - local.height / 2,
+        width: local.width,
+        height: local.height,
+        rotation: box.frame.rotation,
+      ),
+      now: DateTime.now().millisecondsSinceEpoch,
+    );
+    final rest = RichTextEditing.deleteEmbed(box.blocks, block).blocks;
+    if (TextBoxEditor.isEmpty(rest)) {
+      if (_editingId == boxId) _stopEditing();
+      _controller.removeElements(<String>{boxId});
+    } else {
+      _controller.replaceElement(box.copyWith(blocks: rest));
+    }
+    // One undo step for all of it.
+    _controller
+      ..addElement(picture, recordUndo: false)
+      ..setBackground(picture.id, background: true, recordUndo: false);
+  }
+
+  /// The menu a right-click on the page opens, at [page], [global] on
+  /// screen: the Home tab's text formatting, cutting, copying and pasting,
+  /// setting a picture or PDF page as the background or taking it out, and
+  /// deleting.
+  ///
+  /// What was right-clicked is picked first, so the menu acts on it: a box
+  /// by its band, too, as a box.
+  Future<void> _onContextMenu(Offset page, Offset global) async {
+    final hit = _controller.hitTest(page);
+    final background = hit == null ? _controller.backgroundAt(page) : null;
+    if (hit == null) {
+      _stopEditing();
+      _controller.clearSelection();
+    } else if (hit.id == _editingId ||
+        !_controller.selection.contains(hit.id)) {
+      _stopEditing();
+      _controller.select(hit.id);
+    }
+    final selected = _controller.selectedElements;
+    final picture = selected.length == 1 && selected.single.asEmbed != null
+        ? selected.single
+        : null;
+    final canPaste = await NoteClipboard.read() != null;
+    if (!mounted) return;
+    final some = selected.isNotEmpty;
+    await showCommandMenu(
+      context,
+      global,
+      header: _menuToolbar,
+      <List<MenuCommand>>[
+        <MenuCommand>[
+          MenuCommand(
+            'Cut',
+            Icons.content_cut_rounded,
+            some ? () => unawaited(_copySelection(cut: true)) : null,
+          ),
+          MenuCommand(
+            'Copy',
+            Icons.content_copy_rounded,
+            some ? () => unawaited(_copySelection()) : null,
+          ),
+          MenuCommand(
+            'Paste',
+            Icons.content_paste_rounded,
+            canPaste ? () => unawaited(_paste(at: page)) : null,
+          ),
+          MenuCommand(
+            'Paste Text Only',
+            Icons.content_paste_go_rounded,
+            canPaste ? () => unawaited(_paste(at: page, textOnly: true)) : null,
+          ),
+        ],
+        <MenuCommand>[
+          if (picture != null)
+            MenuCommand(
+              'Set Picture As Background',
+              Icons.wallpaper_rounded,
+              () => _controller.setBackground(picture.id, background: true),
+            ),
+          if (background != null)
+            MenuCommand(
+              'Set Picture As Background',
+              Icons.wallpaper_rounded,
+              () => _controller.setBackground(background.id, background: false),
+              checked: true,
+            ),
+        ],
+        <MenuCommand>[
+          if (some)
+            MenuCommand(
+              'Delete',
+              Icons.delete_outline_rounded,
+              _deleteSelection,
+              destructive: true,
+            ),
+        ],
+      ],
+    );
   }
 
   // ------------------------------------------------------------- shortcuts
@@ -685,11 +931,20 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     const SingleActivator(LogicalKeyboardKey.digit0, control: true): () =>
         _controller.resetZoom(_controller.viewSize),
     const SingleActivator(LogicalKeyboardKey.keyS, control: true): _saveNow,
-    const SingleActivator(LogicalKeyboardKey.keyA, control: true): () {
-      _controller
-        ..setTool(CanvasTool.select)
-        ..selectEverything();
-    },
+    const SingleActivator(LogicalKeyboardKey.keyC, control: true): () =>
+        unawaited(_copySelection()),
+    const SingleActivator(LogicalKeyboardKey.keyX, control: true): () =>
+        unawaited(_copySelection(cut: true)),
+    const SingleActivator(LogicalKeyboardKey.keyV, control: true): () =>
+        unawaited(_paste()),
+    const SingleActivator(
+      LogicalKeyboardKey.keyV,
+      control: true,
+      shift: true,
+    ): () =>
+        unawaited(_paste(textOnly: true)),
+    const SingleActivator(LogicalKeyboardKey.keyA, control: true):
+        _selectEverything,
     for (final (key, direction)
         in _arrows) ...<ShortcutActivator, VoidCallback>{
       SingleActivator(key): () => _nudge(direction),
@@ -716,6 +971,23 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     // reaches the page while it has lost focus must not delete it.
     if (_editingId != null) return;
     _controller.deleteSelection();
+  }
+
+  /// Selects everything on the page. Reached from a text box only where it
+  /// had nothing left to select, whose caret goes as the page takes over.
+  void _selectEverything() {
+    final editing = _editingId != null;
+    _stopEditing();
+    _controller.setTool(CanvasTool.select);
+    if (!editing) {
+      _controller.selectEverything();
+      return;
+    }
+    // A box left with nothing in it is removed after this frame; selecting
+    // once it has gone keeps the handles from flashing round the caret.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _controller.selectEverything();
+    });
   }
 
   /// Takes up [tool], from the ribbon.
@@ -818,29 +1090,34 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     child: Focus(
       focusNode: _canvasFocus,
       autofocus: true,
-      child: InfiniteCanvas(
-        controller: _controller,
-        claimsPointer: _claimsPointer,
-        grips: _grips,
-        onEmptyTap: _onEmptyTap,
-        onCanvasPress: _onCanvasPress,
-        onElementDoubleTap: _onElementDoubleTap,
-        elementBuilder: (context, element) =>
-            _buildElement(element, highlight, _firstMatchIn(highlight)),
-        header: CanvasHeader(
-          frame: PageTitle.frame,
-          child: Listener(
-            // Going to the title ends typing in a text box.
-            onPointerDown: (_) => _stopEditing(refocusCanvas: false),
-            child: PageTitle(
-              key: ValueKey<String>(pageId),
-              pageId: pageId,
-              highlight: highlight,
-              onFinished: _canvasFocus.requestFocus,
+      child: CommandMenuHeader(
+        header: _menuToolbar,
+        child: InfiniteCanvas(
+          controller: _controller,
+          claimsPointer: _claimsPointer,
+          grips: _grips,
+          onEmptyTap: _onEmptyTap,
+          onCanvasPress: _onCanvasPress,
+          onElementDoubleTap: _onElementDoubleTap,
+          onContextMenu: (page, global) =>
+              unawaited(_onContextMenu(page, global)),
+          elementBuilder: (context, element) =>
+              _buildElement(element, highlight, _firstMatchIn(highlight)),
+          header: CanvasHeader(
+            frame: PageTitle.frame,
+            child: Listener(
+              // Going to the title ends typing in a text box.
+              onPointerDown: (_) => _stopEditing(refocusCanvas: false),
+              child: PageTitle(
+                key: ValueKey<String>(pageId),
+                pageId: pageId,
+                highlight: highlight,
+                onFinished: _canvasFocus.requestFocus,
+              ),
             ),
           ),
+          trackpadPanScale: _trackpadPanScale,
         ),
-        trackpadPanScale: _trackpadPanScale,
       ),
     ),
   );
@@ -954,6 +1231,9 @@ class _PageEditorState extends ConsumerState<PageEditor> {
           _onTextChanged(id, blocks, recordUndo: recordUndo),
       onSizeChanged: (size) => _onTextSizeChanged(id, size),
       onExit: _stopEditing,
+      onPasteElements: _pasteFromBox,
+      onEmbedToBackground: (block, local) =>
+          _embedToBackground(id, block, local),
     );
   }
 }

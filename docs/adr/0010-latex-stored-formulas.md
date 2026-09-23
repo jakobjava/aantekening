@@ -52,6 +52,28 @@ when the box was resized, and on a dark theme it was black on near-black.
   places a structure leaves to fill in.
 * The Simple syntax gained matrices (`mat`, `bmat`, `vmat`, `matrix`), column
   vectors (`vec(1, 2, 3)`), `cases`, `set`, factorials and primes.
+* **A formula's highlight is part of its LaTeX.** Selecting part of the
+  source and using the highlighter wraps it in the syntax's own construct —
+  `highlight(…)`, or `highlight(#A8E6B0, …)` in another colour, in Simple
+  syntax; `\colorbox{#FFEF9D}{$…$}` in LaTeX, which is how it is stored —
+  and with the caret anywhere in one, pressing again takes it off. With
+  nothing selected it marks the whole formula, as highlighting a formula
+  from the text around it does, so a highlight made either way can be taken
+  off either way; there is no second kind kept on the run. A selection is
+  whatever the pointer passed over, so it is fitted to a whole part of the
+  formula first (`HighlightSource.fit`): widened to whole words, both
+  brackets of a pair with their function, and whole highlights, with an
+  operator left hanging let go, and checked to read on its own and to leave
+  the rest reading as before — marked as it was, half a formula left empty
+  boxes behind. The colour is the highlight as it looks on the white paper,
+  since LaTeX's colours are opaque. The source being typed shows what each
+  highlight marks on its colour, inside the formula's box, with the
+  selection drawn over it; the typeset formula and its preview show it too.
+  Two things about the typesetter are put right on the way to the screen
+  (`MathView.typesetHighlights`): it paints a colour box only where the box
+  has a border, so a highlight is given one in its own colour, and TeX sets
+  the `$…$` inside a box in text style, so that style is left out and the
+  marked part keeps the size it has around it.
 
 ## Consequences
 

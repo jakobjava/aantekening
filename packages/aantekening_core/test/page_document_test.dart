@@ -381,4 +381,41 @@ void main() {
       expect(stroke.hitTest(25, 40, 4), isFalse);
     });
   });
+
+  group('copies to paste', () {
+    test('are new things, moved, keeping what they hold', () {
+      final original = _text('a', 'hello', x: 10, y: 20);
+      final copy =
+          NoteElement.copiesOf(
+                <NoteElement>[original],
+                now: _now + 5,
+                offset: const Vec2(24, 24),
+              ).single
+              as TextElement;
+
+      expect(copy.id, isNot(original.id));
+      expect(copy.frame.x, 34);
+      expect(copy.frame.y, 44);
+      expect(copy.createdAt, _now + 5);
+      expect(copy.blocks, original.blocks);
+    });
+
+    test('keep a group to the members copied with it', () {
+      final member = _text('member', 'in');
+      final group = GroupElement(
+        id: 'group',
+        frame: const Frame(x: 0, y: 0, width: 10, height: 10),
+        createdAt: _now,
+        updatedAt: _now,
+        childIds: const <String>['member', 'left behind'],
+      );
+      final copies = NoteElement.copiesOf(<NoteElement>[
+        member,
+        group,
+      ], now: _now);
+
+      final copiedGroup = copies.whereType<GroupElement>().single;
+      expect(copiedGroup.childIds, <String>[copies.first.id]);
+    });
+  });
 }

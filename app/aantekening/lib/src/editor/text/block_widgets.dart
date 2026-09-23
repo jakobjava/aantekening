@@ -4,6 +4,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -27,6 +28,7 @@ Widget? blockMarker(
     case TextBlockKind.bulleted:
       return _Bullet(
         level: block.indent,
+        style: block.bullet,
         color: scheme.onSurfaceVariant,
         fontSize: fontSize,
         lineHeight: lineHeight,
@@ -63,16 +65,19 @@ Widget? blockMarker(
 }
 
 /// A list bullet, drawn rather than typed so it looks the same whatever fonts
-/// are installed: a disc, then a circle, then a square as lists nest.
+/// are installed: a disc, then a circle, then a square as lists nest, or a
+/// dash at every level for a list started with one.
 class _Bullet extends StatelessWidget {
   const _Bullet({
     required this.level,
+    required this.style,
     required this.color,
     required this.fontSize,
     required this.lineHeight,
   });
 
   final int level;
+  final BulletStyle style;
   final Color color;
   final double fontSize;
   final double lineHeight;
@@ -83,6 +88,7 @@ class _Bullet extends StatelessWidget {
     child: CustomPaint(
       painter: _BulletPainter(
         level: level,
+        style: style,
         color: color,
         size: fontSize * 0.34,
       ),
@@ -93,11 +99,13 @@ class _Bullet extends StatelessWidget {
 class _BulletPainter extends CustomPainter {
   const _BulletPainter({
     required this.level,
+    required this.style,
     required this.color,
     required this.size,
   });
 
   final int level;
+  final BulletStyle style;
   final Color color;
   final double size;
 
@@ -105,6 +113,17 @@ class _BulletPainter extends CustomPainter {
   void paint(Canvas canvas, Size area) {
     final center = Offset(size, area.height / 2);
     final paint = Paint()..color = color;
+    if (style == BulletStyle.dash) {
+      canvas.drawRect(
+        Rect.fromCenter(
+          center: center,
+          width: size * 1.4,
+          height: math.max(1, size * 0.2),
+        ),
+        paint,
+      );
+      return;
+    }
     switch (level % 3) {
       case 0:
         canvas.drawCircle(center, size / 2, paint);
@@ -130,7 +149,10 @@ class _BulletPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BulletPainter old) =>
-      old.level != level || old.color != color || old.size != size;
+      old.level != level ||
+      old.style != style ||
+      old.color != color ||
+      old.size != size;
 }
 
 /// The strip along the top of a text box that moves it when dragged.
@@ -180,6 +202,69 @@ class GrabBand extends StatelessWidget {
   }
 }
 
+/// A corner of an object in a text box, which resizes it when dragged.
+///
+/// An object keeps its proportions, as a picture on the page does, so every
+/// corner sets the width and the height follows.
+enum EmbedCorner {
+  topLeft(-1, -1),
+  topRight(1, -1),
+  bottomLeft(-1, 1),
+  bottomRight(1, 1);
+
+  const EmbedCorner(this.x, this.y);
+
+  /// Which way this corner lies from the middle of the object: -1 towards the
+  /// left or the top, 1 towards the right or the bottom.
+  final int x;
+  final int y;
+
+  /// Where the handle's centre sits on an object of [size].
+  Offset centerIn(Size size) =>
+      Offset(x < 0 ? 0 : size.width, y < 0 ? 0 : size.height);
+
+  MouseCursor get cursor => x == y
+      ? SystemMouseCursors.resizeUpLeftDownRight
+      : SystemMouseCursors.resizeUpRightDownLeft;
+
+  /// How much wider the object becomes as this corner is dragged by [drag]:
+  /// away from the object's middle widens it, and both directions count, so a
+  /// corner dragged along its diagonal follows the pointer.
+  double widening(Offset drag, double aspectRatio) =>
+      (drag.dx * x + drag.dy * aspectRatio * y) / 2;
+}
+
+/// Where the handles of an object in a text box are, shared by the object
+/// that draws them and the editor that takes hold of them.
+///
+/// They are the page's own handles, in the page's sizes: drawn in screen
+/// pixels, so they stay the same size however far the page is zoomed, and
+/// grabbed from the same distance.
+abstract final class EmbedHandles {
+  static const double size = SelectionHandles.size;
+  static const double reach = SelectionHandles.mouseReach;
+
+  /// Line width of the outline round a picked object and of the ring round
+  /// each of its handles.
+  static const double stroke = 1.5;
+
+  /// The corner a press at [local] takes hold of on an object of [object],
+  /// or null where it takes hold of none. [pixel] is a screen pixel in the
+  /// object's own units.
+  static EmbedCorner? at(Size object, Offset local, {required double pixel}) {
+    EmbedCorner? found;
+    var nearest = reach * pixel;
+    for (final corner in EmbedCorner.values) {
+      final distance = (corner.centerIn(object) - local).distance;
+      if (distance <= nearest) {
+        nearest = distance;
+        found = corner;
+      }
+    }
+    return found;
+  }
+}
+
 /// A picture or PDF page on its own line inside a text box.
 class EmbedBlock extends StatelessWidget {
   const EmbedBlock({
@@ -189,10 +274,18 @@ class EmbedBlock extends StatelessWidget {
     required this.caretVisible,
     required this.caretColor,
     required this.caretWidth,
+    this.objectKey,
     super.key,
   });
 
   final BlockEmbed embed;
+
+  /// Keys the object itself, whose size is what it is drawn at, so the text
+  /// box can find where its corners are.
+  final Key? objectKey;
+
+  /// Whether the object is picked, drawn framed and with the handles that
+  /// resize it.
   final bool selected;
 
   /// 0 or 1 when the caret sits before or after the object.
@@ -204,6 +297,9 @@ class EmbedBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // A picked object's frame and handles are drawn in screen pixels, as the
+    // page draws them round an element, so zooming does not change them.
+    final pixel = selected ? 1 / CanvasScope.zoomOf(context) : 1.0;
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = math.min(embed.width, constraints.maxWidth);
@@ -212,6 +308,7 @@ class EmbedBlock extends StatelessWidget {
         return Align(
           alignment: Alignment.centerLeft,
           child: SizedBox(
+            key: objectKey,
             width: width,
             height: height,
             child: Stack(
@@ -226,15 +323,26 @@ class EmbedBlock extends StatelessWidget {
                     ),
                   },
                 ),
-                if (selected)
+                if (selected) ...<Widget>[
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: scheme.primary.withValues(alpha: 0.18),
-                        border: Border.all(color: scheme.primary, width: 2),
+                        border: Border.all(
+                          color: scheme.primary,
+                          width: EmbedHandles.stroke * pixel,
+                        ),
                       ),
                     ),
                   ),
+                  for (final corner in EmbedCorner.values)
+                    _CornerHandle(
+                      corner: corner,
+                      object: Size(width, height),
+                      color: scheme.primary,
+                      pixel: pixel,
+                    ),
+                ],
                 if (side != null)
                   Positioned(
                     left: side == 0 ? -caretWidth - 1 : null,
@@ -254,6 +362,49 @@ class EmbedBlock extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The grab point at one corner of a selected object. The press that drags it
+/// is handled by the text box, which owns the object's size.
+class _CornerHandle extends StatelessWidget {
+  const _CornerHandle({
+    required this.corner,
+    required this.object,
+    required this.color,
+    required this.pixel,
+  });
+
+  final EmbedCorner corner;
+  final Size object;
+  final Color color;
+
+  /// A screen pixel in the object's own units.
+  final double pixel;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = EmbedHandles.size * pixel;
+    final center = corner.centerIn(object);
+    return Positioned(
+      left: center.dx - size / 2,
+      top: center.dy - size / 2,
+      child: MouseRegion(
+        cursor: corner.cursor,
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: color,
+            border: Border.all(
+              color: const Color(0xFFFFFFFF),
+              width: EmbedHandles.stroke * pixel,
+            ),
+            borderRadius: BorderRadius.circular(1.5 * pixel),
+          ),
+        ),
+      ),
     );
   }
 }

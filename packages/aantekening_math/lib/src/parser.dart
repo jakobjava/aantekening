@@ -380,6 +380,26 @@ class MathParser {
           );
         }
         return BraketNode(kind, parts);
+
+      case SymbolRole.highlightConstruct:
+        // `highlight(x)` in the highlighter's yellow, `highlight(#A8E6B0, x)`
+        // in another colour.
+        if (!_matched(TokenType.leftParen)) {
+          return HighlightNode(_parseConstructArgument(token));
+        }
+        var color = HighlightNode.defaultColor;
+        if (_check(TokenType.color)) {
+          color = int.parse(_advance().lexeme.substring(1), radix: 16);
+          if (!_matched(TokenType.comma)) {
+            diagnostics.add(
+              MathDiagnostic(_current.offset, 'Missing "," after the colour'),
+            );
+          }
+        }
+        return HighlightNode(
+          _parseListUntil(TokenType.rightParen, ')'),
+          color: color,
+        );
     }
   }
 

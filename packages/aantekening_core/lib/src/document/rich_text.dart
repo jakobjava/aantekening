@@ -26,6 +26,13 @@ enum TextBlockKind {
   quote,
 }
 
+/// The mark before the items of a bulleted list.
+///
+/// Typing `* ` starts a list of discs, `- ` one of dashes, as Word and OneNote
+/// do. The mark stays the same however deeply the list nests, except for
+/// discs, which turn into circles and then squares as lists nest.
+enum BulletStyle { disc, dash }
+
 /// Inline formatting applied to a [TextRun].
 ///
 /// Marks serialise only the fields that differ from the default, which keeps
@@ -108,7 +115,8 @@ class TextMarks {
   TextMarks withSize(double? size) => _with(size: () => size);
 
   /// Only the marks a formula can carry: colour and size. Formulas are
-  /// typeset by their own rules, so bold or underline mean nothing to them.
+  /// typeset by their own rules, so bold or underline mean nothing to them,
+  /// and a highlight on one is part of its LaTeX, whole or in part.
   TextMarks get forFormula => TextMarks(color: color, size: size);
 
   TextMarks _with({
@@ -336,6 +344,7 @@ class TextBlock {
     this.runs = const <TextRun>[],
     this.indent = 0,
     this.checked = false,
+    this.bullet = BulletStyle.disc,
     this.embed,
   });
 
@@ -349,7 +358,8 @@ class TextBlock {
   const TextBlock.embedded(BlockEmbed this.embed, {this.indent = 0})
     : kind = TextBlockKind.paragraph,
       runs = const <TextRun>[],
-      checked = false;
+      checked = false,
+      bullet = BulletStyle.disc;
 
   final TextBlockKind kind;
   final List<TextRun> runs;
@@ -359,6 +369,9 @@ class TextBlock {
 
   /// Completion state, meaningful only for [TextBlockKind.todo].
   final bool checked;
+
+  /// The mark before the item, meaningful only for [TextBlockKind.bulleted].
+  final BulletStyle bullet;
 
   /// The object this block shows instead of text, if any. An embed block has
   /// no runs.
@@ -387,11 +400,13 @@ class TextBlock {
     List<TextRun>? runs,
     int? indent,
     bool? checked,
+    BulletStyle? bullet,
   }) => TextBlock(
     kind: kind ?? this.kind,
     runs: runs ?? this.runs,
     indent: indent ?? this.indent,
     checked: checked ?? this.checked,
+    bullet: bullet ?? this.bullet,
     embed: embed,
   );
 
@@ -408,6 +423,7 @@ class TextBlock {
       'runs': <Object?>[for (final run in runs) run.toJson()],
       if (indent != 0) 'indent': indent,
       if (checked) 'checked': true,
+      if (bullet != BulletStyle.disc) 'bullet': bullet.name,
     };
   }
 
@@ -431,6 +447,7 @@ class TextBlock {
       ],
       indent: readInt(json, 'indent'),
       checked: readBool(json, 'checked'),
+      bullet: readEnum(json, 'bullet', BulletStyle.values, BulletStyle.disc),
     );
   }
 
@@ -440,6 +457,7 @@ class TextBlock {
         other.kind != kind ||
         other.indent != indent ||
         other.checked != checked ||
+        other.bullet != bullet ||
         other.embed != embed ||
         other.runs.length != runs.length) {
       return false;
@@ -452,7 +470,7 @@ class TextBlock {
 
   @override
   int get hashCode =>
-      Object.hash(kind, indent, checked, embed, Object.hashAll(runs));
+      Object.hash(kind, indent, checked, bullet, embed, Object.hashAll(runs));
 
   @override
   String toString() => embed != null

@@ -62,6 +62,7 @@ class InfiniteCanvas extends StatefulWidget {
     this.onEmptyTap,
     this.onCanvasPress,
     this.onElementDoubleTap,
+    this.onContextMenu,
     this.header,
     this.trackpadPanScale = 1,
   });
@@ -90,6 +91,11 @@ class InfiniteCanvas extends StatefulWidget {
 
   /// Invoked when an element is double-tapped.
   final void Function(NoteElement element)? onElementDoubleTap;
+
+  /// Invoked for a right-click on the page, with where it was in page units
+  /// and on screen, for the host to offer a menu; not where an element's own
+  /// widget takes the press ([claimsPointer]), which offers its own.
+  final void Function(Offset page, Offset global)? onContextMenu;
 
   /// Drawn on the page beneath its elements: the page's title, say.
   final CanvasHeader? header;
@@ -282,6 +288,10 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     _stopFling();
     if (event.kind == PointerDeviceKind.mouse) {
       _mousePosition = event.localPosition;
+      if (event.buttons & kSecondaryMouseButton != 0) {
+        _contextMenu(event);
+        return;
+      }
     }
     if (event.kind == PointerDeviceKind.touch) {
       _touches[event.pointer] = event.localPosition;
@@ -604,6 +614,16 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   ).containsPoint(page.dx, page.dy);
 
   void _pressed(NoteElement? hit) => widget.onCanvasPress?.call(hit);
+
+  /// A right-click: the host's menu, unless an element's widget answers it.
+  void _contextMenu(PointerDownEvent event) {
+    final page = _controller.viewport.toPage(event.localPosition);
+    final hit = _controller.hitTest(page);
+    if (hit != null && (widget.claimsPointer?.call(hit, page) ?? false)) {
+      return;
+    }
+    widget.onContextMenu?.call(page, event.position);
+  }
 
   // --------------------------------------------------------------- transform
 
@@ -984,7 +1004,15 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
         _size = constraints.biggest;
         final controller = _controller..viewSize = _size;
         final viewport = controller.viewport;
-        final elements = controller.visibleElements(_size);
+        final visible = controller.visibleElements(_size);
+        final backgrounds = <NoteElement>[
+          for (final element in visible)
+            if (element.locked) element,
+        ];
+        final elements = <NoteElement>[
+          for (final element in visible)
+            if (!element.locked) element,
+        ];
         final ink = <InkElement>[
           for (final element in elements)
             if (element is InkElement) element,
@@ -1024,6 +1052,21 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
                       ),
                     ),
                   ),
+                  // The pictures and PDF pages set as the background, beneath
+                  // all ink, and never pressed.
+                  if (backgrounds.isNotEmpty)
+                    IgnorePointer(
+                      child: CanvasScope(
+                        zoom: viewport.zoom,
+                        child: _ElementLayer(
+                          elements: backgrounds,
+                          viewport: viewport,
+                          builder: widget.elementBuilder,
+                          header: null,
+                          headerInteractive: false,
+                        ),
+                      ),
+                    ),
                   IgnorePointer(
                     child: RepaintBoundary(
                       child: CustomPaint(

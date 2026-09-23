@@ -70,8 +70,15 @@ stays instant.
   and German are downloaded when first chosen, and any Hunspell dictionary
   (as LibreOffice uses) can be added from its `.aff` and `.dic` files.
 * **Pictures and PDFs** — insert them onto the canvas to annotate, or into a
-  text box as a printout. PDF pages are rendered sharply at any zoom and their
-  text is searchable.
+  text box as a printout, and resize them there by their corners. PDF pages
+  are rendered sharply at any zoom and their text is searchable. Right-click
+  one and **Set Picture As Background** to write over it: it goes beneath
+  all ink and out of the way of clicks, until you right-click it to set it
+  free again.
+* **Right-click menus and copying** — right-click anything for the Home
+  tab's text formatting, cut, copy, paste and paste text only, as in
+  OneNote. Anything on a page copies and pastes — text, formulas, pictures,
+  PDF pages, whole boxes, handwriting — with Ctrl+C, Ctrl+X and Ctrl+V too.
 * **Search** — SQLite FTS5 across every page, ranked, with highlighted
   snippets. The best match opens as you type, with the words found marked on
   the page and the view on the first of them; Enter steps through the other

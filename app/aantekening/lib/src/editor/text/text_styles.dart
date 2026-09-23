@@ -190,6 +190,16 @@ abstract final class RichTextStyles {
   /// The default highlight: yellow.
   static const int highlightYellow = 0x66FFD60A;
 
+  /// [argb], a translucent colour, as it looks on the white paper, as 24-bit
+  /// RGB: how a highlight inside a formula is kept, since LaTeX's colours
+  /// are opaque.
+  static int onPaper(int argb) {
+    final alpha = (argb >>> 24) / 255;
+    int channel(int shift) =>
+        (255 - (255 - ((argb >> shift) & 0xFF)) * alpha).round();
+    return channel(16) << 16 | channel(8) << 8 | channel(0);
+  }
+
   /// A plain span for a block's runs, formulas shown as their source. Used by
   /// table cells, which are not yet edited in place.
   static TextSpan plainSpanFor(TextBlock block, TextStyle base) => TextSpan(

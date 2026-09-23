@@ -27,6 +27,11 @@ rotation is radians clockwise about the frame's centre. Ink has no
 rotation of its own: turning or scaling handwriting rewrites its samples, and
 its frame is the box around its strokes.
 
+`locked: true` makes an element part of the page's background — a picture or
+PDF page set as the background to write over. It is drawn beneath all ink
+and everything else, in `z` order among the other backgrounds, and cannot be
+picked, moved or erased until it is taken out of the background again.
+
 | `type` | Payload |
 | --- | --- |
 | `text` | `blocks`: see [Rich text](#rich-text) below |
@@ -65,6 +70,7 @@ A text box's `blocks` are its paragraphs, in order. A block is either text:
                           // numbered, todo, code, quote
   "indent": 1,            // nesting depth, omitted when 0
   "checked": true,        // to-dos only, omitted when false
+  "bullet": "dash",       // bulleted lists only, omitted for the default disc
   "runs": [
     { "text": "area " },
     { "text": "\\pi r^2", "math": "latex" }, // a formula
@@ -94,15 +100,23 @@ display style.
 `marks` holds only the formatting that is set: `bold`, `italic`,
 `underline`, `strikethrough`, `code`, `color`, `highlight`, `link`, and `size`
 (in points; 11 is the body size). A formula's marks carry only `color` and
-`size`.
+`size`: it is typeset by its own rules, so bold or underline mean nothing to
+it. A highlight on a formula, whole or in part, is in its LaTeX, as
+`\colorbox{#FFEF9D}{$…$}`, in the highlight's colour as it looks on the white
+paper.
+
+A bulleted block's `bullet` is the mark before its items: `disc`, the default,
+which nests as a disc, then a circle, then a square, or `dash`, which stays a
+dash at every level. Typing `* ` starts a list of discs and `- ` one of dashes,
+as Word does.
 
 A text box with `"autoWidth": true` widens to fit its longest line, up to a
 limit, as a new OneNote container does; resizing it by hand clears the flag.
 
 **Embeds** are pictures (`"kind": "image"`) and PDF pages (`"pdfPage"`, with
 a zero-based `page`) from the asset store. `width` and `height` are the
-preferred size in page units; a box narrower than that shows the object scaled
-down to fit. `text` is indexed for search — a PDF page's text layer, or a
+preferred size in page units, as the handles at its corners set them; a box
+narrower than that shows the object scaled down to fit. `text` is indexed for search — a PDF page's text layer, or a
 picture's description.
 
 ## Compatibility rules

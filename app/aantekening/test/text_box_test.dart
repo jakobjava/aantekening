@@ -3,7 +3,9 @@ import 'dart:math' as math;
 
 import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/text/block_paragraph.dart';
+import 'package:aantekening/src/editor/text/block_view.dart';
 import 'package:aantekening/src/editor/text/block_widgets.dart';
+import 'package:aantekening/src/editor/media_views.dart';
 import 'package:aantekening/src/editor/text/cheat_sheet.dart';
 import 'package:aantekening/src/editor/text/formula_preview.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
@@ -18,6 +20,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'editor_harness.dart';
+
+List<NoteElement> selectedOnCanvas(WidgetTester tester) =>
+    (tester
+                .widget<CustomPaint>(
+                  find.byWidgetPredicate(
+                    (w) => w is CustomPaint && w.painter is SelectionPainter,
+                  ),
+                )
+                .painter!
+            as SelectionPainter)
+        .selected;
 
 void main() {
   late AantekeningStore store;
@@ -425,6 +438,283 @@ void main() {
       expect(caret.right, lessThan(box.right));
     });
 
+    testWidgets('the box round a formula is only on the lines it is on', (
+      tester,
+    ) async {
+      // However narrow the box, the room laid out either side of the source
+      // may wrap onto a line of its own; nothing is drawn there.
+      const block = TextBlock(
+        runs: <TextRun>[
+          TextRun('one two three'),
+          TextRun.math('alpha+beta', MathMode.latex),
+        ],
+      );
+      final view = BlockView(block, openRun: 1);
+      final layout = view.runAt(1);
+
+      for (var width = 40.0; width <= 240; width += 3) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Center(
+              child: SizedBox(
+                width: width,
+                child: Builder(
+                  builder: (context) => BlockParagraph(
+                    decoration: BlockDecoration(
+                      formula: TextRange(
+                        start: layout.outerStart,
+                        end: layout.outerEnd,
+                      ),
+                    ),
+                    paint: const BlockPaint(
+                      caretColor: Color(0xFF000000),
+                      selectionColor: Color(0xFF000000),
+                      formulaColor: RichTextStyles.formulaFill,
+                      composingColor: Color(0xFF000000),
+                      matchColor: Color(0xFF000000),
+                      misspellingColor: Color(0xFF000000),
+                    ),
+                    caretVisible: ValueNotifier<bool>(true),
+                    child: RichText(
+                      text: view.span(base: RichTextStyles.base(context)),
+                      textScaler: TextScaler.noScaling,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final paragraph = tester.renderObject<RenderBlockParagraph>(
+          find.byType(BlockParagraph),
+        );
+        final source = paragraph.rangeRects(
+          layout.outerStart + 1,
+          layout.outerEnd - 1,
+        );
+        for (final box in paragraph.formulaRects(
+          layout.outerStart,
+          layout.outerEnd,
+        )) {
+          expect(
+            source.any(
+              (rect) => rect.top < box.bottom && rect.bottom > box.top,
+            ),
+            isTrue,
+            reason:
+                'a box at ${box.top} with no formula on its line, '
+                'in a box $width wide',
+          );
+        }
+      }
+    });
+
+    testWidgets('the caret stays inside the box round the formula', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'x');
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await tester.pumpAndSettle();
+
+      final paragraph = tester.renderObject<RenderBlockParagraph>(
+        find.byType(BlockParagraph),
+      );
+      final formula = paragraph.decoration.formula!;
+      final box = paragraph.formulaRects(formula.start, formula.end).single;
+      final caret = paragraph.caretRect(
+        paragraph.decoration.caret!,
+        paragraph.decoration.caretAffinity,
+        paragraph.decoration.typingStyle,
+      );
+      expect(
+        caret.top,
+        lessThan(box.top),
+        reason:
+            'the caret in an empty formula is as tall as the room it '
+            'stands in, the box a little less',
+      );
+      final drawn = paragraph.drawnCaret!;
+      expect(drawn.top, greaterThanOrEqualTo(box.top));
+      expect(drawn.bottom, lessThanOrEqualTo(box.bottom));
+    });
+
+    group('highlighting part of one', () {
+      Future<void> typeAndSelect(WidgetTester tester) async {
+        await openEditor(tester, store, pageId);
+        await startTextBox(tester);
+        await press(tester, LogicalKeyboardKey.equal, alt: true);
+        await type(tester, 'a + b^2');
+        for (var i = 0; i < 3; i++) {
+          await press(tester, LogicalKeyboardKey.arrowLeft, shift: true);
+        }
+        await tester.pumpAndSettle();
+      }
+
+      /// The formula, last on its line, as it is stored.
+      String stored(WidgetTester tester) =>
+          blocksOf(tester).single.runs.last.text;
+
+      Iterable<String> previewed(WidgetTester tester) => tester
+          .widgetList<MathView>(
+            find.descendant(
+              of: find.byType(FormulaPreview),
+              matching: find.byType(MathView),
+            ),
+          )
+          .map((view) => view.source);
+
+      testWidgets('marks what is selected, and only that', (tester) async {
+        await typeAndSelect(tester);
+        await press(
+          tester,
+          LogicalKeyboardKey.keyH,
+          control: true,
+          shift: true,
+        );
+        await tester.pumpAndSettle();
+
+        expect(typedLine(tester), 'a + highlight(b^2)');
+        expect(stored(tester), r'a + \colorbox{#FFEF9D}{$b^2$}');
+        expect(
+          previewed(tester),
+          contains(r'a + \colorbox{#FFEF9D}{$b^2$}'),
+          reason: 'the preview shows the highlight',
+        );
+        expect(inFormula(tester), isTrue);
+        expect(
+          blocksOf(tester).single.runs.single.marks.highlight,
+          isNull,
+          reason: 'not the whole formula',
+        );
+        // In the source being typed, what it marks is on its colour too,
+        // drawn in the formula's box.
+        final paragraph = tester.renderObject<RenderBlockParagraph>(
+          find.byType(BlockParagraph),
+        );
+        final mark = paragraph.decoration.formulaMarks.single;
+        expect(
+          paragraph.paragraph.text.toPlainText().substring(
+            mark.range.start,
+            mark.range.end,
+          ),
+          'b^2',
+        );
+        expect(
+          mark.color,
+          const Color(0xFF000000 | HighlightNode.defaultColor),
+        );
+
+        // Pressed again, with what it marks still selected, it comes off.
+        await press(
+          tester,
+          LogicalKeyboardKey.keyH,
+          control: true,
+          shift: true,
+        );
+        await tester.pumpAndSettle();
+        expect(typedLine(tester), 'a + b^2');
+      });
+
+      testWidgets('takes the colour chosen, and changes it', (tester) async {
+        await typeAndSelect(tester);
+        final text = tester.widget<Ribbon>(find.byType(Ribbon)).commands.text;
+        const green = 0xFF34A853;
+        text.setHighlight(RichTextStyles.highlightFor(green));
+        await tester.pumpAndSettle();
+        final onPaper = RichTextStyles.onPaper(
+          RichTextStyles.highlightFor(green),
+        );
+        expect(
+          typedLine(tester),
+          'a + highlight(${HighlightNode.hex(onPaper)}, b^2)',
+        );
+
+        text.setHighlight(RichTextStyles.highlightYellow);
+        await tester.pumpAndSettle();
+        expect(typedLine(tester), 'a + highlight(b^2)');
+
+        text.setHighlight(null);
+        await tester.pumpAndSettle();
+        expect(typedLine(tester), 'a + b^2');
+      });
+
+      testWidgets('marks a whole part, never half of one', (tester) async {
+        await openEditor(tester, store, pageId);
+        await startTextBox(tester);
+        await press(tester, LogicalKeyboardKey.equal, alt: true);
+        await type(tester, 'a + b^2 = c');
+        // "2 =", which alone would leave "=" with nothing on its left.
+        for (var i = 0; i < 2; i++) {
+          await press(tester, LogicalKeyboardKey.arrowLeft);
+        }
+        for (var i = 0; i < 3; i++) {
+          await press(tester, LogicalKeyboardKey.arrowLeft, shift: true);
+        }
+        await press(
+          tester,
+          LogicalKeyboardKey.keyH,
+          control: true,
+          shift: true,
+        );
+        await tester.pumpAndSettle();
+
+        expect(typedLine(tester), 'a + b^highlight(2) = c');
+        expect(stored(tester), isNot(contains(r'\square')));
+      });
+
+      testWidgets('one highlighted from the text comes off inside it', (
+        tester,
+      ) async {
+        await savePage(tester, const <TextRun>[
+          TextRun('so '),
+          TextRun.math('x^2', MathMode.latex),
+        ]);
+        await openEditor(tester, store, pageId);
+        final box = tester.getRect(find.byType(TextBoxEditor));
+        await tester.tapAt(
+          Offset(box.left + 8, box.top + TextBoxEditor.grabBand + 10),
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        await press(tester, LogicalKeyboardKey.keyA, control: true);
+        await press(
+          tester,
+          LogicalKeyboardKey.keyH,
+          control: true,
+          shift: true,
+        );
+        await tester.pumpAndSettle();
+        expect(stored(tester), r'\colorbox{#FFEF9D}{$x^2$}');
+
+        // Into the formula, where the highlight is part of its source.
+        await press(tester, LogicalKeyboardKey.end);
+        await press(tester, LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(inFormula(tester), isTrue);
+        expect(typedLine(tester), 'so highlight(x^2)');
+
+        await press(
+          tester,
+          LogicalKeyboardKey.keyH,
+          control: true,
+          shift: true,
+        );
+        await tester.pumpAndSettle();
+        expect(typedLine(tester), 'so x^2');
+      });
+
+      test("the highlighter's yellow is the formulas' own", () {
+        expect(
+          RichTextStyles.onPaper(RichTextStyles.highlightYellow),
+          HighlightNode.defaultColor,
+        );
+      });
+    });
+
     testWidgets("Shift+Left at a formula's start selects the text before", (
       tester,
     ) async {
@@ -591,6 +881,24 @@ void main() {
     expect(textOf(tester), 'words');
   });
 
+  testWidgets('a dash and a space start a list marked with dashes', (
+    tester,
+  ) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await type(tester, '- milk');
+    await press(tester, LogicalKeyboardKey.enter);
+    await type(tester, 'bread');
+    await tester.pumpAndSettle();
+
+    final blocks = blocksOf(tester);
+    expect(blocks.map((block) => block.plainText), <String>['milk', 'bread']);
+    for (final block in blocks) {
+      expect(block.kind, TextBlockKind.bulleted);
+      expect(block.bullet, BulletStyle.dash);
+    }
+  });
+
   testWidgets('what was typed is saved to the page', (tester) async {
     await openEditor(tester, store, pageId);
     await startTextBox(tester);
@@ -605,18 +913,6 @@ void main() {
   });
 
   group('OneNote-style caret', () {
-    List<NoteElement> selectedOnCanvas(WidgetTester tester) =>
-        (tester
-                    .widget<CustomPaint>(
-                      find.byWidgetPredicate(
-                        (w) =>
-                            w is CustomPaint && w.painter is SelectionPainter,
-                      ),
-                    )
-                    .painter!
-                as SelectionPainter)
-            .selected;
-
     testWidgets('a click leaves only a caret until something is typed', (
       tester,
     ) async {
@@ -931,6 +1227,39 @@ void main() {
       expect(runs.last.marks.size, 20);
     });
 
+    testWidgets('a formula is highlighted with the words, in its LaTeX', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'area ');
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await type(tester, 'x');
+      await press(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      final box = tester.getRect(find.byType(TextBoxEditor));
+      await tester.tapAt(
+        Offset(box.left + 8, box.top + TextBoxEditor.grabBand + 10),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.keyA, control: true);
+      await press(tester, LogicalKeyboardKey.keyH, control: true, shift: true);
+      await tester.pumpAndSettle();
+
+      final runs = blocksOf(tester).single.runs;
+      expect(runs.first.marks.highlight, RichTextStyles.highlightYellow);
+      expect(runs.last.isMath, isTrue);
+      expect(runs.last.text, r'\colorbox{#FFEF9D}{$x$}');
+      expect(runs.last.marks.highlight, isNull, reason: 'one place for it');
+
+      // Pressing again takes it off the formula as well as off the text.
+      await press(tester, LogicalKeyboardKey.keyH, control: true, shift: true);
+      await tester.pumpAndSettle();
+      expect(blocksOf(tester).single.runs.last.text, 'x');
+      expect(blocksOf(tester).single.runs.first.marks.highlight, isNull);
+    });
+
     testWidgets('text is black by default, on the white paper', (tester) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
@@ -979,6 +1308,326 @@ void main() {
 
     expect(textBox(tester).isEditing, isTrue);
     expect(textOf(tester), 'turned!');
+  });
+
+  group('selecting', () {
+    testWidgets('Ctrl+A takes the box first, then the whole page', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'some words');
+
+      await press(tester, LogicalKeyboardKey.keyA, control: true);
+      await tester.pumpAndSettle();
+      final paragraph = tester.renderObject<RenderBlockParagraph>(
+        find.byType(BlockParagraph),
+      );
+      expect(
+        paragraph.decoration.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 10),
+      );
+
+      // Again, with nothing left to select, the page takes it.
+      await press(tester, LogicalKeyboardKey.keyA, control: true);
+      await tester.pumpAndSettle();
+      expect(selectedOnCanvas(tester).single.id, textBox(tester).element.id);
+      expect(textBox(tester).isEditing, isFalse);
+    });
+
+    testWidgets('Ctrl+A at a bare caret selects everything on the page', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'written');
+      await press(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      // A second box, only a caret, which has nothing to select.
+      await tester.tapAt(const Offset(700, 500), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+
+      await press(tester, LogicalKeyboardKey.keyA, control: true);
+      await tester.pumpAndSettle();
+
+      expect(selectedOnCanvas(tester), hasLength(1));
+      expect(find.byType(TextBoxEditor), findsOneWidget);
+    });
+
+    testWidgets('Ctrl+A never picks the bare caret it leaves', (tester) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'written');
+      await press(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      final written = textBox(tester).element.id;
+      await tester.tapAt(const Offset(700, 500), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      // Frame by frame, the handles only ever go round what stays.
+      for (var frame = 0; frame < 4; frame++) {
+        await tester.pump();
+        expect(
+          selectedOnCanvas(tester).map((element) => element.id),
+          everyElement(written),
+          reason: 'frame $frame',
+        );
+      }
+      expect(selectedOnCanvas(tester), hasLength(1));
+    });
+
+    testWidgets('the band picks a box being typed in, for Delete to remove', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'all of this');
+      expect(textBox(tester).isEditing, isTrue);
+
+      final box = tester.getRect(find.byType(TextBoxEditor));
+      await tester.tapAt(
+        Offset(box.center.dx, box.top + TextBoxEditor.grabBand / 2),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+
+      expect(textBox(tester).isEditing, isFalse);
+      expect(textBox(tester).selected, isTrue);
+      final paragraph = tester.renderObject<RenderBlockParagraph>(
+        find.byType(BlockParagraph),
+      );
+      expect(
+        paragraph.decoration.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 11),
+      );
+      expect(paragraph.decoration.caret, isNull);
+
+      await press(tester, LogicalKeyboardKey.delete);
+      await tester.pumpAndSettle();
+      expect(find.byType(TextBoxEditor), findsNothing);
+    });
+
+    testWidgets('pressing the paper keeps the ribbon until the click is done', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'first');
+      bool formattable() =>
+          tester.widget<Ribbon>(find.byType(Ribbon)).commands.text.hasTarget;
+      expect(formattable(), isTrue);
+
+      final mouse = await tester.startGesture(
+        const Offset(700, 550),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(formattable(), isTrue, reason: 'the button is still down');
+
+      await mouse.up();
+      await tester.pumpAndSettle();
+      expect(formattable(), isTrue, reason: 'a new caret, to type at');
+      final boxes = tester.widgetList<TextBoxEditor>(
+        find.byType(TextBoxEditor),
+      );
+      expect(boxes.where((box) => box.isEditing), hasLength(1));
+      expect(
+        boxes.singleWhere((box) => box.isEditing).element.blocks,
+        const <TextBlock>[TextBlock()],
+        reason: 'the new, empty box has the caret',
+      );
+    });
+
+    testWidgets('dragging across other boxes picks them and ends typing', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'other');
+      await press(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      final other = tester.getRect(find.byType(TextBoxEditor));
+      await tester.tapAt(const Offset(700, 550), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      await type(tester, 'typing');
+      await tester.pumpAndSettle();
+
+      final mouse = await tester.startGesture(
+        other.topLeft - const Offset(20, 20),
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.moveTo(other.center);
+      await tester.pump();
+      await mouse.moveTo(other.bottomRight + const Offset(20, 20));
+      await tester.pump();
+      await mouse.up();
+      await tester.pumpAndSettle();
+
+      final boxes = tester.widgetList<TextBoxEditor>(
+        find.byType(TextBoxEditor),
+      );
+      expect(boxes.where((box) => box.isEditing), isEmpty);
+      expect(selectedOnCanvas(tester).map((element) => element.id), <String>[
+        boxes.first.element.id,
+      ]);
+    });
+
+    testWidgets('a box picked by its band shows its contents selected', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'all of this');
+      await press(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      final box = tester.getRect(find.byType(TextBoxEditor));
+      await tester.tapAt(
+        Offset(box.center.dx, box.top + TextBoxEditor.grabBand / 2),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+
+      expect(textBox(tester).selected, isTrue);
+      expect(textBox(tester).isEditing, isFalse);
+      final paragraph = tester.renderObject<RenderBlockParagraph>(
+        find.byType(BlockParagraph),
+      );
+      expect(
+        paragraph.decoration.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 11),
+      );
+    });
+  });
+
+  group('objects in the text', () {
+    late BlockEmbed picture;
+
+    Future<void> savePicture(WidgetTester tester) => tester.runAsync(() async {
+      final asset = await store.assets.importBytes(
+        Uint8List.fromList(<int>[1, 2, 3]),
+        mimeType: 'image/png',
+      );
+      picture = BlockEmbed(
+        kind: EmbedKind.image,
+        assetId: asset.id,
+        width: 120,
+        height: 60,
+      );
+      await store.pages.saveDocument(
+        pageId,
+        PageDocument(
+          id: pageId,
+          elements: <NoteElement>[
+            TextElement(
+              id: 'box',
+              frame: const Frame(x: 100, y: 100, width: 300, height: 120),
+              createdAt: 0,
+              updatedAt: 0,
+              blocks: <TextBlock>[TextBlock.embedded(picture)],
+            ),
+          ],
+        ),
+      );
+    });
+
+    BlockEmbed embedOf(WidgetTester tester) => blocksOf(tester).single.embed!;
+
+    testWidgets('clicking a picture picks it', (tester) async {
+      await savePicture(tester);
+      await openEditor(tester, store, pageId);
+
+      await tester.tapAt(
+        tester.getCenter(find.byType(AssetImageView)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<EmbedBlock>(find.byType(EmbedBlock)).selected,
+        isTrue,
+      );
+    });
+
+    testWidgets('its handles stay the same size on screen at any zoom', (
+      tester,
+    ) async {
+      await savePicture(tester);
+      await openEditor(tester, store, pageId);
+      await tester.tapAt(
+        tester.getCenter(find.byType(AssetImageView)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      final handle = find.descendant(
+        of: find.byType(EmbedBlock),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is MouseRegion &&
+              widget.cursor == SystemMouseCursors.resizeUpLeftDownRight,
+        ),
+      );
+
+      Future<void> expectScreenSized() async {
+        for (final rect
+            in tester
+                .widgetList(handle)
+                .map((_) => tester.getRect(handle.first))) {
+          expect(rect.width, closeTo(SelectionHandles.size, 0.01));
+        }
+      }
+
+      await expectScreenSized();
+      final before = tester.getRect(find.byType(AssetImageView)).width;
+      for (var i = 0; i < 3; i++) {
+        await press(tester, LogicalKeyboardKey.equal, control: true);
+      }
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(find.byType(AssetImageView)).width,
+        greaterThan(before * 1.5),
+        reason: 'the page was zoomed in',
+      );
+      await expectScreenSized();
+    });
+
+    testWidgets('a corner of a picked picture resizes it', (tester) async {
+      await savePicture(tester);
+      await openEditor(tester, store, pageId);
+      await tester.tapAt(
+        tester.getCenter(find.byType(AssetImageView)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+
+      final object = tester.getRect(find.byType(AssetImageView));
+      final gesture = await tester.startGesture(
+        object.bottomRight,
+        kind: PointerDeviceKind.mouse,
+      );
+      for (var i = 0; i < 4; i++) {
+        await gesture.moveBy(const Offset(10, 5));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      final resized = embedOf(tester);
+      expect(resized.width, greaterThan(150));
+      expect(resized.aspectRatio, closeTo(picture.aspectRatio, 0.001));
+      expect(
+        tester.getRect(find.byType(AssetImageView)).width,
+        closeTo(resized.width, 1),
+      );
+      // One undo step for the whole drag.
+      await press(tester, LogicalKeyboardKey.keyZ, control: true);
+      await tester.pumpAndSettle();
+      expect(embedOf(tester).width, picture.width);
+    });
   });
 
   group('a turned box', () {

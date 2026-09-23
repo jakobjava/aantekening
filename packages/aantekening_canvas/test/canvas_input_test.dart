@@ -34,6 +34,7 @@ Widget _host(
   double trackpadPanScale = 1,
   Offset offset = Offset.zero,
   CanvasHeader? header,
+  void Function(Offset page, Offset global)? onContextMenu,
 }) => MaterialApp(
   home: Scaffold(
     body: Padding(
@@ -45,6 +46,7 @@ Widget _host(
         onEmptyTap: onEmptyTap,
         onCanvasPress: onCanvasPress,
         header: header,
+        onContextMenu: onContextMenu,
         trackpadPanScale: trackpadPanScale,
         elementBuilder: (context, element) =>
             const ColoredBox(color: Colors.blue),
@@ -54,6 +56,76 @@ Widget _host(
 );
 
 void main() {
+  group('the background', () {
+    CanvasController withPicture() => CanvasController()
+      ..loadDocument(
+        PageDocument.empty(id: 'p')
+            .withElementAdded(_textBox('first', x: 20, y: 20))
+            .withElementAdded(_image('picture', x: 10, y: 10)),
+      );
+
+    test('takes a picture beneath the rest, out of reach, and back', () {
+      final controller = withPicture()..select('picture');
+      controller.setBackground('picture', background: true);
+
+      final picture = controller.document.elementById('picture')!;
+      expect(picture.locked, isTrue);
+      expect(picture.z, lessThan(controller.document.elementById('first')!.z));
+      expect(controller.selection, isEmpty);
+      expect(controller.hitTest(const Offset(150, 100)), isNull);
+      expect(controller.backgroundAt(const Offset(150, 100))?.id, 'picture');
+
+      controller.selectEverything();
+      expect(controller.selection, <String>{'first'});
+
+      controller.setBackground('picture', background: false);
+      expect(controller.hitTest(const Offset(150, 100))?.id, 'picture');
+      controller.undo();
+      expect(controller.document.elementById('picture')!.locked, isTrue);
+    });
+
+    testWidgets('a right-click reports where it was, and picks nothing', (
+      tester,
+    ) async {
+      final controller = withPicture();
+      final reported = <Offset>[];
+      await tester.pumpWidget(
+        _host(controller, onContextMenu: (page, global) => reported.add(page)),
+      );
+      await tester.tapAt(
+        controller.viewport.toScreen(const Offset(150, 100)),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pump();
+
+      expect(reported.single.dx, closeTo(150, 0.01));
+      expect(reported.single.dy, closeTo(100, 0.01));
+      expect(controller.selection, isEmpty);
+    });
+
+    testWidgets('a right-click on what claims presses is left to it', (
+      tester,
+    ) async {
+      final controller = withPicture();
+      final reported = <Offset>[];
+      await tester.pumpWidget(
+        _host(
+          controller,
+          claimsPointer: (element, page) => true,
+          onContextMenu: (page, global) => reported.add(page),
+        ),
+      );
+      await tester.tapAt(
+        controller.viewport.toScreen(const Offset(150, 100)),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pump();
+      expect(reported, isEmpty);
+    });
+  });
+
   group('SelectionHandles', () {
     test('a text box resizes sideways only', () {
       final behavior = SelectionHandles.behaviorOf(_textBox('t'));

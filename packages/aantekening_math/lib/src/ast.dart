@@ -415,3 +415,39 @@ final class BraketNode extends MathNode {
       ..write('}');
   }
 }
+
+/// A part of a formula marked with a highlighter.
+///
+/// Stored as LaTeX's own `\colorbox{#FFEF9D}{$…$}` and written
+/// `highlight(…)` in the linear syntax, or `highlight(#A8E6B0, …)` in a
+/// colour other than the highlighter's yellow.
+final class HighlightNode extends MathNode {
+  const HighlightNode(this.body, {this.color = defaultColor});
+
+  /// The yellow of the text highlighter as it looks on the white paper.
+  static const int defaultColor = 0xFFEF9D;
+
+  final MathNode body;
+
+  /// The colour behind [body], as 24-bit RGB: LaTeX colours are opaque, so
+  /// a translucent highlight is stored as it looks on the paper.
+  final int color;
+
+  /// [color] as both syntaxes write it: `#FFEF9D`.
+  static String hex(int color) =>
+      '#${(color & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+
+  /// The LaTeX highlighting [body], itself LaTeX, in [color].
+  static String latexOf(String body, int color) =>
+      '\\colorbox{${hex(color)}}{\$$body\$}';
+
+  /// The linear syntax highlighting [body], itself in that syntax, in
+  /// [color].
+  static String linearOf(String body, int color) => color == defaultColor
+      ? 'highlight($body)'
+      : 'highlight(${hex(color)}, $body)';
+
+  @override
+  void writeLatex(StringBuffer out) =>
+      out.write(latexOf(body.toLatex(), color));
+}

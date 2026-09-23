@@ -32,7 +32,16 @@ a typeset preview beneath it (ADR 10).
 
 Pictures and PDF pages inside a box are blocks of their own (`TextBlock.embed`)
 referring to the asset store, exactly as free-standing image and PDF elements
-do.
+do. A click picks one, and the handles at its corners resize it — the page's
+own handles, the same size on screen at any zoom, on a block rather than an
+element, since the object's place is the text's to decide.
+
+The band picks a box up whole, as a box: typing in it ends, and the picked
+box draws everything in it selected, as OneNote does with a container, for
+Delete to remove or a drag to move. Ctrl+A in a box with nothing left to
+select hands the key on to the page. Pressing the paper does not end typing
+until the press is known to be a click, which places a new caret, or a drag,
+which ends it once it picks anything.
 
 ## Consequences
 

@@ -19,6 +19,7 @@ class BlockDecoration {
     this.typingStyle,
     this.composing,
     this.formula,
+    this.formulaMarks = const <({TextRange range, Color color})>[],
     this.matches = const <TextRange>[],
     this.misspellings = const <TextRange>[],
   });
@@ -46,6 +47,10 @@ class BlockDecoration {
   /// drawn in a tinted, outlined box.
   final TextRange? formula;
 
+  /// What the highlights in the source of the formula being edited mark,
+  /// each drawn on its colour inside the formula's box.
+  final List<({TextRange range, Color color})> formulaMarks;
+
   /// Words a search found, marked behind the text.
   final List<TextRange> matches;
 
@@ -61,6 +66,7 @@ class BlockDecoration {
       other.typingStyle == typingStyle &&
       other.composing == composing &&
       other.formula == formula &&
+      listEquals(other.formulaMarks, formulaMarks) &&
       listEquals(other.matches, matches) &&
       listEquals(other.misspellings, misspellings);
 
@@ -72,6 +78,7 @@ class BlockDecoration {
     typingStyle,
     composing,
     formula,
+    Object.hashAll(formulaMarks),
     Object.hashAll(matches),
     Object.hashAll(misspellings),
   );
@@ -393,13 +400,7 @@ class RenderBlockParagraph extends RenderProxyBox {
   /// [BlockPaint.caretWidth] converted from screen pixels to local units.
   double get _caretWidth => _blockPaint.caretWidth * _pixel;
 
-  /// A screen pixel in local units, which differ from pixels as the page is
-  /// zoomed.
-  double get _pixel {
-    if (!attached) return 1;
-    final scale = getTransformTo(null).getMaxScaleOnAxis();
-    return scale > 0 ? 1 / scale : 1;
-  }
+  double get _pixel => screenPixelIn(this);
 
   /// Draws a wavy line beneath each word spelled wrongly, the same size on
   /// screen at any zoom, as word processors draw it.
@@ -449,24 +450,26 @@ class RenderBlockParagraph extends RenderProxyBox {
       box.toRect(),
   ];
 
-  /// The box drawn round the formula laid out over [start]..[end], one
-  /// rectangle for each line it is on.
+  /// The box drawn round the formula laid out over [start]..[end] — the room
+  /// either side of its source included — one rectangle for each line it is
+  /// on.
   ///
   /// The layout reports a separate rectangle for each stretch of the line
   /// laid out in one style, which drawn as they are would be a row of boxes.
+  /// The room at one end may wrap onto a line of its own in a narrow box;
+  /// that line is left out, rather than drawn as a sliver of box beside text
+  /// the formula is not on.
   List<Rect> formulaRects(int start, int end) {
-    final lines = <Rect>[];
-    for (final rect in rangeRects(start, end)) {
-      final line = lines.indexWhere(
-        (other) =>
-            math.min(other.bottom, rect.bottom) -
-                math.max(other.top, rect.top) >
-            math.min(other.height, rect.height) / 2,
-      );
-      if (line < 0) {
-        lines.add(rect);
-      } else {
-        lines[line] = lines[line].expandToInclude(rect);
+    final source = _lines(rangeRects(start + 1, end - 1));
+    // An empty formula is nothing but the room to type in.
+    final lines = source.isEmpty ? _lines(rangeRects(start, end)) : source;
+    if (source.isNotEmpty) {
+      for (final room in <Rect>[
+        ...rangeRects(start, start + 1),
+        ...rangeRects(end - 1, end),
+      ]) {
+        final line = _lineOf(lines, room);
+        if (line >= 0) lines[line] = lines[line].expandToInclude(room);
       }
     }
     return <Rect>[
@@ -475,26 +478,111 @@ class RenderBlockParagraph extends RenderProxyBox {
     ];
   }
 
+  /// [rects] gathered into one rectangle for each line they lie on.
+  static List<Rect> _lines(List<Rect> rects) {
+    final lines = <Rect>[];
+    for (final rect in rects) {
+      final line = _lineOf(lines, rect);
+      if (line < 0) {
+        lines.add(rect);
+      } else {
+        lines[line] = lines[line].expandToInclude(rect);
+      }
+    }
+    return lines;
+  }
+
+  /// Which of [lines] [rect] lies on — the one it overlaps by more than half
+  /// its height — or -1 for none of them.
+  static int _lineOf(List<Rect> lines, Rect rect) => lines.indexWhere(
+    (other) =>
+        math.min(other.bottom, rect.bottom) - math.max(other.top, rect.top) >
+        math.min(other.height, rect.height) / 2,
+  );
+
+  /// Where the caret is drawn, or null where none is: [caretRect] for the
+  /// caret the decoration names, kept within the box round the formula being
+  /// edited while it stands in that.
+  Rect? get drawnCaret {
+    final caret = _decoration.caret;
+    if (caret == null) return null;
+    final rect = caretRect(
+      caret,
+      _decoration.caretAffinity,
+      _decoration.typingStyle,
+    );
+    final formula = _decoration.formula;
+    if (formula == null || caret < formula.start || caret > formula.end) {
+      return rect;
+    }
+    return _inside(formulaRects(formula.start, formula.end), rect);
+  }
+
+  /// The rectangles covering laid-out range [start]..[end], those in the
+  /// formula being edited kept within the box round it, as the caret is.
+  List<Rect> _rectsIn(int start, int end) {
+    final formula = _decoration.formula;
+    if (formula == null || end <= formula.start || start >= formula.end) {
+      return rangeRects(start, end);
+    }
+    final boxes = formulaRects(formula.start, formula.end);
+    final from = math.max(start, formula.start);
+    final to = math.min(end, formula.end);
+    return <Rect>[
+      if (start < from) ...rangeRects(start, from),
+      for (final rect in rangeRects(from, to)) _inside(boxes, rect),
+      if (to < end) ...rangeRects(to, end),
+    ];
+  }
+
+  /// [caret] kept within whichever of [boxes] it stands on, so the caret in a
+  /// formula never reaches past the box drawn round it.
+  static Rect _inside(List<Rect> boxes, Rect caret) {
+    for (final box in boxes) {
+      if (caret.bottom <= box.top || caret.top >= box.bottom) continue;
+      return Rect.fromLTRB(
+        caret.left,
+        math.max(caret.top, box.top),
+        caret.right,
+        math.min(caret.bottom, box.bottom),
+      );
+    }
+    return caret;
+  }
+
   @override
   void paint(PaintingContext context, Offset offset) {
     final canvas = context.canvas;
     final formula = _decoration.formula;
+    final boxes = formula == null
+        ? const <RRect>[]
+        : <RRect>[
+            for (final rect in formulaRects(formula.start, formula.end))
+              RRect.fromRectAndRadius(
+                rect.shift(offset),
+                const Radius.circular(3),
+              ),
+          ];
     if (formula != null) {
       final fill = Paint()..color = _blockPaint.formulaColor;
-      final outline = _blockPaint.formulaOutline;
-      final stroke = outline == null
-          ? null
-          : (Paint()
-              ..color = outline
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = _caretWidth * 0.7);
-      for (final rect in formulaRects(formula.start, formula.end)) {
-        final box = RRect.fromRectAndRadius(
-          rect.shift(offset),
-          const Radius.circular(3),
-        );
+      for (final box in boxes) {
         canvas.drawRRect(box, fill);
-        if (stroke != null) canvas.drawRRect(box, stroke);
+      }
+      for (final mark in _decoration.formulaMarks) {
+        final paint = Paint()..color = mark.color;
+        for (final rect in _rectsIn(mark.range.start, mark.range.end)) {
+          canvas.drawRect(rect.shift(offset), paint);
+        }
+      }
+      final outline = _blockPaint.formulaOutline;
+      if (outline != null) {
+        final stroke = Paint()
+          ..color = outline
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _caretWidth * 0.7;
+        for (final box in boxes) {
+          canvas.drawRRect(box, stroke);
+        }
       }
     }
 
@@ -507,15 +595,16 @@ class RenderBlockParagraph extends RenderProxyBox {
       }
     }
 
+    super.paint(context, offset);
+
+    // Over the text, translucent, so it shows on highlighted text too.
     final selection = _decoration.selection;
     if (selection != null && !selection.isCollapsed) {
       final paint = Paint()..color = _blockPaint.selectionColor;
-      for (final rect in rangeRects(selection.start, selection.end)) {
+      for (final rect in _rectsIn(selection.start, selection.end)) {
         canvas.drawRect(rect.shift(offset), paint);
       }
     }
-
-    super.paint(context, offset);
 
     if (_decoration.misspellings.isNotEmpty) {
       _paintMisspellings(canvas, offset);
@@ -536,18 +625,26 @@ class RenderBlockParagraph extends RenderProxyBox {
       }
     }
 
-    final caret = _decoration.caret;
+    final caret = drawnCaret;
     if (caret != null && _caretVisible.value) {
       canvas.drawRect(
-        caretRect(
-          caret,
-          _decoration.caretAffinity,
-          _decoration.typingStyle,
-        ).shift(offset),
+        caret.shift(offset),
         Paint()..color = _blockPaint.caretColor,
       );
     }
   }
+}
+
+/// A screen pixel in [object]'s own units, which differ from pixels as the
+/// page is zoomed.
+///
+/// What is drawn on the paper to work with rather than to keep — a caret, the
+/// handles round a picture — is sized in screen pixels through this, so it
+/// stays the same size however far the page is zoomed.
+double screenPixelIn(RenderObject object) {
+  if (!object.attached) return 1;
+  final scale = object.getTransformTo(null).getMaxScaleOnAxis();
+  return scale > 0 ? 1 / scale : 1;
 }
 
 /// How far text in a style reaches above and below its baseline, as the

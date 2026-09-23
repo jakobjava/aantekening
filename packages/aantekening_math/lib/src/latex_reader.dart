@@ -345,6 +345,8 @@ class LatexReader {
         ]);
       case 'operatorname':
         return SymbolNode('\\operatorname{${_bracedText()}}');
+      case 'colorbox':
+        return _highlight(start);
       case 'left':
         final left = _delimiter();
         final items = _sequence(stops.inRight());
@@ -382,6 +384,24 @@ class LatexReader {
       );
     }
     return SymbolNode(command);
+  }
+
+  /// `\colorbox{#FFEF9D}{$…$}`, the way a highlight is stored, read as one;
+  /// a colour box in any other form is kept as the LaTeX it is.
+  MathNode _highlight(int start) {
+    final color = _bracedText();
+    final body = _bracedText();
+    final hex = RegExp(r'^#([0-9A-Fa-f]{6})$').firstMatch(color.trim());
+    if (hex == null ||
+        body.length < 2 ||
+        !body.startsWith(r'$') ||
+        !body.endsWith(r'$')) {
+      return RawNode(source.substring(start, _i));
+    }
+    return HighlightNode(
+      LatexReader(body.substring(1, body.length - 1)).read(),
+      color: int.parse(hex.group(1)!, radix: 16),
+    );
   }
 
   /// [text] divided at each bar outside braces: the parts of a bra-ket.

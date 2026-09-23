@@ -13,13 +13,13 @@ import 'package:flutter/services.dart';
 
 import '../../command_menu.dart';
 import '../../spelling/proofreader.dart';
+import '../note_clipboard.dart';
 import 'block_paragraph.dart';
 import 'block_view.dart';
 import 'block_widgets.dart';
 import 'formula_source.dart';
 import 'list_numbering.dart';
 import 'math_templates.dart';
-import 'rich_clipboard.dart';
 import 'text_box_controller.dart';
 import 'text_boundaries.dart';
 import 'text_styles.dart';
@@ -59,6 +59,8 @@ class TextBoxEditor extends StatefulWidget {
     this.highlight,
     this.proofreader,
     this.onMatchPlaced,
+    this.onPasteElements,
+    this.onEmbedToBackground,
   });
 
   final TextElement element;
@@ -104,6 +106,15 @@ class TextBoxEditor extends StatefulWidget {
   /// Told where the first word [highlight] marks lies, in the box's own page
   /// units, once it has been laid out: for the page to bring it into view.
   final ValueChanged<Rect>? onMatchPlaced;
+
+  /// Asks the host to put things copied from the page onto the page
+  /// instead of into the text: a drawing, which cannot go into text, or
+  /// anything pasted at a bare caret, which is where it goes.
+  final ValueChanged<List<NoteElement>>? onPasteElements;
+
+  /// Asks the host to make the picture or PDF page on block [block] part of
+  /// the page's background, where it is: [local], in the box's own units.
+  final void Function(int block, Rect local)? onEmbedToBackground;
 
   /// Height of the band along the top edge that moves the box when dragged.
   static const double grabBand = 12;
@@ -156,14 +167,19 @@ class TextBoxEditor extends StatefulWidget {
 
 /// Which kind of change an edit was, so consecutive edits of the same kind can
 /// share one undo step.
-enum _EditKind { typing, deleting, other }
+enum _EditKind { typing, deleting, resizing, other }
 
 /// The formula being edited: a run in a block.
 typedef _OpenFormula = ({int block, int run});
 
 /// What a pointer press landed on.
 class _Hit {
-  const _Hit(this.position, {this.formula, this.checkbox = false});
+  const _Hit(
+    this.position, {
+    this.formula,
+    this.checkbox = false,
+    this.embed = false,
+  });
 
   final RichPosition position;
 
@@ -172,6 +188,10 @@ class _Hit {
 
   /// Whether the press was on a to-do's checkbox.
   final bool checkbox;
+
+  /// Whether the press was on a picture or PDF page itself, rather than
+  /// beside it on its line.
+  final bool embed;
 }
 
 class TextBoxEditorState extends State<TextBoxEditor>
@@ -179,6 +199,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
   static const Duration _blinkInterval = Duration(milliseconds: 530);
   static const Duration _undoGroupPause = Duration(milliseconds: 1500);
   static const Duration _multiClickWindow = Duration(milliseconds: 450);
+
+  /// The smallest an object in the text may be resized to, in page units.
+  static const double _minEmbedWidth = 24;
 
   late List<TextBlock> _blocks;
   List<TextBlock>? _lastEmitted;
@@ -218,13 +241,18 @@ class TextBoxEditorState extends State<TextBoxEditor>
   TextRange _composing = TextRange.empty;
 
   final List<GlobalKey> _rowKeys = <GlobalKey>[];
-  final List<GlobalKey> _paragraphKeys = <GlobalKey>[];
+  final List<GlobalKey> _contentKeys = <GlobalKey>[];
 
   _EditKind? _lastEditKind;
   DateTime _lastEditTime = DateTime.fromMillisecondsSinceEpoch(0);
   bool _undoBreak = true;
 
   int? _dragPointer;
+
+  /// The object being resized by one of its corners: which block it is on,
+  /// which corner is held, where the drag began and how wide it was then.
+  ({int block, EmbedCorner corner, Offset from, double width})? _resize;
+
   int _touchCount = 0;
   DateTime _lastPress = DateTime.fromMillisecondsSinceEpoch(0);
   Offset _lastPressPosition = Offset.zero;
@@ -926,9 +954,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
   void _replaceInFormula(String text, {int? caretAt}) {
     final formula = _formula!;
     final span = _formulaSpan(formula)!;
-    final source = _blocks[formula.block].runs[formula.run].text;
-    final from = (_selection.start.offset - span.start).clamp(0, source.length);
-    final to = (_selection.end.offset - span.start).clamp(from, source.length);
+    final (:source, :from, :to) = _sourceSelection(formula);
     final updated = source.replaceRange(from, to, text);
     _commit((
       blocks: RichTextEditing.replaceRunText(
@@ -945,6 +971,145 @@ class TextBoxEditorState extends State<TextBoxEditor>
       ),
     ), text.isEmpty ? _EditKind.deleting : _EditKind.typing);
   }
+
+  /// The source of [formula], and where the selection starts and ends in it.
+  ({String source, int from, int to}) _sourceSelection(_OpenFormula formula) {
+    final span = _formulaSpan(formula)!;
+    final source = _blocks[formula.block].runs[formula.run].text;
+    final from = (_selection.start.offset - span.start).clamp(0, source.length);
+    final to = (_selection.end.offset - span.start).clamp(from, source.length);
+    return (source: source, from: from, to: to);
+  }
+
+  /// The highlight in the formula being edited that the selection lies in,
+  /// if it lies in one.
+  HighlightSpan? _highlightAtSelection(_OpenFormula formula) {
+    final (:source, :from, :to) = _sourceSelection(formula);
+    return HighlightSource.around(source, from, to, _source.syntax);
+  }
+
+  /// Highlights the part of the formula's source that is selected — or,
+  /// with nothing selected, the whole formula — in [color] as the
+  /// highlighter is chosen, as the syntax's own construct, so the typeset
+  /// formula and its preview show it. Where the selection lies in a
+  /// highlight already, a colour recolours that one, and [toggle], or
+  /// [color] null, takes it off.
+  ///
+  /// The selection is fitted to a whole part of the formula first
+  /// ([HighlightSource.fit]), so marking it never leaves the formula broken,
+  /// and any highlight inside it gives way, so it is marked evenly.
+  void _highlightInFormula(int? color, {bool toggle = false}) {
+    final formula = _formula!;
+    final (:source, :from, :to) = _sourceSelection(formula);
+    final syntax = _source.syntax;
+    final existing = HighlightSource.around(source, from, to, syntax);
+    final ({int start, int end}) part;
+    final String body;
+    if (existing != null) {
+      part = (start: existing.start, end: existing.end);
+      body = source.substring(existing.bodyStart, existing.bodyEnd);
+    } else {
+      final fitted = color == null
+          ? null
+          : HighlightSource.fit(
+              source,
+              from == to ? 0 : from,
+              from == to ? source.length : to,
+              syntax,
+            );
+      if (fitted == null) return;
+      part = fitted;
+      body = HighlightSource.unwrapAll(
+        source.substring(fitted.start, fitted.end),
+        syntax,
+      );
+    }
+
+    final wrapped = color == null || (toggle && existing != null)
+        ? (text: body, body: 0)
+        : HighlightSource.wrap(body, syntax, RichTextStyles.onPaper(color));
+    // What is marked stays selected, so pressing again takes it off.
+    final marked = _formulaSpan(formula)!.start + part.start + wrapped.body;
+    _commit((
+      blocks: RichTextEditing.replaceRunText(
+        _blocks,
+        formula.block,
+        formula.run,
+        source.replaceRange(part.start, part.end, wrapped.text),
+      ),
+      selection: RichSelection(
+        RichPosition(formula.block, marked),
+        RichPosition(formula.block, marked + body.length),
+      ),
+    ), _EditKind.other);
+  }
+
+  /// Highlights what is selected in the text in [color], or with null takes
+  /// the highlight off it: the words by their marks, and each formula whole
+  /// by the highlight in its LaTeX — the one that shows, and can be taken
+  /// off, in the formula's source.
+  void _highlightSelection(int? color) {
+    final blocks = List<TextBlock>.of(
+      RichTextEditing.applyMarks(
+        _blocks,
+        _selection,
+        (marks) => marks.withHighlight(color),
+      ),
+    );
+    final start = _selection.start;
+    final end = _selection.end;
+    var base = _selection.base;
+    var extent = _selection.extent;
+    for (var i = start.block; i <= end.block; i++) {
+      final block = blocks[i];
+      if (block.isEmbed) continue;
+      final from = i == start.block ? start.offset : 0;
+      final to = i == end.block ? end.offset : block.length;
+      final spans = RichTextEditing.runSpans(block);
+      final runs = List<TextRun>.of(block.runs);
+      // How much longer the formulas changed so far have grown.
+      var grown = 0;
+      for (var j = 0; j < runs.length; j++) {
+        final run = runs[j];
+        if (!run.isMath || spans[j].start < from || spans[j].end > to) {
+          continue;
+        }
+        final plain = HighlightSource.unwrapAll(run.text, MathMode.latex);
+        final latex = color == null
+            ? plain
+            : HighlightSource.wrap(
+                plain,
+                MathMode.latex,
+                RichTextStyles.onPaper(color),
+              ).text;
+        runs[j] = run.copyWith(text: latex);
+        // What follows the formula moves along with its end.
+        final after = spans[j].end + grown;
+        final by = latex.length - run.text.length;
+        RichPosition moved(RichPosition p) => p.block == i && p.offset >= after
+            ? RichPosition(i, p.offset + by)
+            : p;
+        base = moved(base);
+        extent = moved(extent);
+        grown += by;
+      }
+      blocks[i] = block.copyWith(runs: runs);
+    }
+    _commit((
+      blocks: blocks,
+      selection: RichSelection(base, extent),
+    ), _EditKind.other);
+  }
+
+  /// Whether all that is selected in the text is highlighted: every word,
+  /// and every formula whole.
+  bool _selectionHighlighted() => RichTextEditing.everyRun(
+    _blocks,
+    _selection,
+    (run) => run.isMath
+        ? HighlightSource.whole(run.text, MathMode.latex) != null
+        : run.marks.highlight != null,
+  );
 
   void _deleteInFormula({required bool forward, bool word = false}) {
     final formula = _formula!;
@@ -1029,13 +1194,25 @@ class TextBoxEditorState extends State<TextBoxEditor>
   @override
   void toggleMark(MarkKind kind) {
     _focusNode.requestFocus();
-    if (_formula != null) return;
+    if (_formula != null) {
+      // In a formula only a highlight means anything.
+      if (kind == MarkKind.highlight) {
+        _highlightInFormula(RichTextStyles.highlightYellow, toggle: true);
+      }
+      return;
+    }
     final has = kind.isSetIn;
 
     if (_selection.isCollapsed) {
       final current = _typingMarks();
       setState(() => _pendingMarks = kind.setIn(current, on: !has(current)));
       _publishState();
+      return;
+    }
+    if (kind == MarkKind.highlight) {
+      _highlightSelection(
+        _selectionHighlighted() ? null : RichTextStyles.highlightYellow,
+      );
       return;
     }
     final on = !RichTextEditing.everyMark(_blocks, _selection, has);
@@ -1094,9 +1271,20 @@ class TextBoxEditorState extends State<TextBoxEditor>
   void setTextColor(int? color) =>
       _changeMarks((marks) => marks.withColor(color));
 
+  /// Highlights the selection, or with nothing selected what is typed next.
+  /// In the formula being edited it is the part of its source selected, or
+  /// the highlight the selection lies in, or the whole formula.
   @override
-  void setHighlight(int? color) =>
+  void setHighlight(int? color) {
+    _focusNode.requestFocus();
+    if (_formula != null) {
+      _highlightInFormula(color);
+    } else if (!_selection.isCollapsed) {
+      _highlightSelection(color);
+    } else {
       _changeMarks((marks) => marks.withHighlight(color));
+    }
+  }
 
   @override
   void toggleBlockKind(TextBlockKind kind) {
@@ -1237,15 +1425,20 @@ class TextBoxEditorState extends State<TextBoxEditor>
         math.min(start.offset + 1, first.length),
       );
     }
-    if (_selection.isCollapsed) {
-      marks = MarkKinds.of(sample);
-    } else {
-      marks = <MarkKind>{
-        for (final kind in MarkKind.values)
-          if (RichTextEditing.everyMark(_blocks, _selection, kind.isSetIn))
-            kind,
-      };
-    }
+    final highlighted = formula != null
+        ? _highlightAtSelection(formula) != null
+        : _selection.isCollapsed
+        ? sample.highlight != null
+        : _selectionHighlighted();
+    marks = <MarkKind>{
+      for (final kind in MarkKind.values)
+        if (kind != MarkKind.highlight &&
+            (_selection.isCollapsed
+                ? kind.isSetIn(sample)
+                : RichTextEditing.everyMark(_blocks, _selection, kind.isSetIn)))
+          kind,
+      if (highlighted) MarkKind.highlight,
+    };
 
     controller.report(
       this,
@@ -1267,45 +1460,50 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final formula = _formula;
     if (formula != null) {
       // Part of a formula's source is copied as the text it is.
-      final span = _formulaSpan(formula)!;
-      final source = _blocks[formula.block].runs[formula.run].text;
-      final from = (_selection.start.offset - span.start).clamp(
-        0,
-        source.length,
-      );
-      final to = (_selection.end.offset - span.start).clamp(
-        from,
-        source.length,
-      );
-      await Clipboard.setData(ClipboardData(text: source.substring(from, to)));
+      final (:source, :from, :to) = _sourceSelection(formula);
+      await NoteClipboard.copy(PlainClip(source.substring(from, to)));
       if (cut && mounted && _formula != null) _replaceInFormula('');
       return;
     }
     final fragment = RichTextEditing.slice(_blocks, _selection);
-    final plain = RichTextEditing.plainTextOf(fragment);
-    RichClipboard.store(plain, fragment);
-    await Clipboard.setData(ClipboardData(text: plain));
+    await NoteClipboard.copy(
+      TextClip(RichTextEditing.plainTextOf(fragment), fragment),
+    );
     if (cut && mounted) _deleteSelection();
   }
 
-  Future<void> _paste() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text;
-    if (text == null || text.isEmpty || !mounted) return;
+  /// Pastes what was copied — as it was, or as its text only — over the
+  /// selection. Things copied from the page go into the text where they can
+  /// — text boxes as their text, pictures and PDF pages as objects in it —
+  /// and onto the page where they cannot, or where there is no text yet to
+  /// put them in: at a bare caret on the paper.
+  Future<void> _paste({bool textOnly = false}) async {
+    final clip = textOnly
+        ? await NoteClipboard.readText()
+        : await NoteClipboard.read();
+    if (clip == null || !mounted) return;
     if (_formula != null) {
       _undoBreak = true;
-      _replaceInFormula(text.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' '));
+      _replaceInFormula(clip.plain.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' '));
       return;
     }
-    final fragment = RichClipboard.match(text);
-    if (fragment != null) {
+    final blocks = switch (clip) {
+      PlainClip() => null,
+      TextClip(:final blocks) => blocks,
+      // At a bare caret, things from the page are pasted as themselves.
+      ElementsClip() when TextBoxEditor.isEmpty(_blocks) => null,
+      ElementsClip(:final asBlocks) => asBlocks,
+    };
+    if (blocks != null) {
       _commit(
-        RichTextEditing.insertFragment(_blocks, _selection, fragment),
+        RichTextEditing.insertFragment(_blocks, _selection, blocks),
         _EditKind.other,
       );
+    } else if (clip is ElementsClip) {
+      widget.onPasteElements?.call(clip.elements);
     } else {
       _undoBreak = true;
-      _insertText(text);
+      _insertText(clip.plain);
     }
   }
 
@@ -1471,8 +1669,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
     switch (key) {
       case LogicalKeyboardKey.keyA:
-        _selectAll();
-        return handled;
+        // With nothing left to select in the box, the page takes Ctrl+A and
+        // selects everything on it.
+        return _selectAll() ? handled : null;
       case LogicalKeyboardKey.keyC:
         unawaited(_copy());
         return handled;
@@ -1480,7 +1679,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
         unawaited(_copy(cut: true));
         return handled;
       case LogicalKeyboardKey.keyV:
-        unawaited(_paste());
+        unawaited(_paste(textOnly: shift));
         return handled;
       case LogicalKeyboardKey.keyB:
         toggleMark(MarkKind.bold);
@@ -1527,20 +1726,28 @@ class TextBoxEditorState extends State<TextBoxEditor>
     return null;
   }
 
-  void _selectAll() {
+  /// Selects everything in the box, or in the formula being edited.
+  ///
+  /// Returns false where there was nothing to select — an empty box, or one
+  /// already selected whole — so that the caret blinking in a box with
+  /// nothing in it does not swallow Ctrl+A.
+  bool _selectAll() {
     final formula = _formula;
-    if (formula != null) {
-      final span = _formulaSpan(formula)!;
-      _select(
-        RichSelection(
-          RichPosition(formula.block, span.start),
-          RichPosition(formula.block, span.end),
-        ),
-      );
-      return;
-    }
-    _select(RichSelection(RichPosition.zero, RichTextEditing.endOf(_blocks)));
+    final span = formula == null ? null : _formulaSpan(formula)!;
+    final whole = span == null
+        ? _wholeBox
+        : RichSelection(
+            RichPosition(formula!.block, span.start),
+            RichPosition(formula.block, span.end),
+          );
+    if (whole.isCollapsed || whole == _selection) return false;
+    _select(whole);
+    return true;
   }
+
+  /// Everything in the box, from its first block to the end of its last.
+  RichSelection get _wholeBox =>
+      RichSelection(RichPosition.zero, RichTextEditing.endOf(_blocks));
 
   // ------------------------------------------------------------- movement
 
@@ -1734,9 +1941,16 @@ class TextBoxEditorState extends State<TextBoxEditor>
   // ----------------------------------------------------------------- layout
 
   RenderBlockParagraph? _paragraph(int index) {
-    if (index >= _paragraphKeys.length) return null;
-    final object = _paragraphKeys[index].currentContext?.findRenderObject();
+    if (index >= _contentKeys.length) return null;
+    final object = _contentKeys[index].currentContext?.findRenderObject();
     return object is RenderBlockParagraph && object.hasSize ? object : null;
+  }
+
+  /// The picture or PDF page drawn on block [index], as it is laid out.
+  RenderBox? _object(int index) {
+    if (index >= _contentKeys.length || !_blocks[index].isEmbed) return null;
+    final object = _contentKeys[index].currentContext?.findRenderObject();
+    return object is RenderBox && object.hasSize ? object : null;
   }
 
   RenderBox? _row(int index) {
@@ -1808,6 +2022,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final block = _blocks[best];
     if (block.isEmbed) {
       final row = _row(best)!;
+      final object = _object(best);
+      if (object != null &&
+          (Offset.zero & object.size).contains(object.globalToLocal(global))) {
+        return _Hit(RichPosition(best, 1), embed: true);
+      }
       final local = row.globalToLocal(global);
       return _Hit(RichPosition(best, local.dx < row.size.width / 2 ? 0 : 1));
     }
@@ -1845,58 +2064,141 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
   // -------------------------------------------------------------- spelling
 
-  /// Offers what can be done about the word spelled wrongly at [global], if
-  /// one is there: the spellings the checker suggests, adding the word to
-  /// the dictionary, or leaving it be.
-  Future<void> _offerCorrections(Offset global) async {
-    final proofreader = widget.proofreader;
-    if (proofreader == null) return;
+  /// The menu a right-click at [global] opens: what can be done about a
+  /// word spelled wrongly there, cutting, copying and pasting, and for a
+  /// picture or PDF page, setting it as the page's background.
+  ///
+  /// A right-click outside the selection first places the caret there, or
+  /// picks the object there, as a click would, so the menu acts on what was
+  /// clicked.
+  Future<void> _showMenu(Offset global) async {
     // A formula being edited is finished first, as a click elsewhere
     // finishes it, and the text laid out again with it typeset, so the
-    // words are found, and replaced, in the text as it is kept.
-    if (_formula != null) {
+    // words are found, and replaced, in the text as it is kept. A click in
+    // its source leaves it open, to copy from.
+    final open = _formula;
+    final inFormula = open != null && _hitInOpenFormula(global, open) != null;
+    if (open != null && !inFormula) {
       finishFormula();
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted) return;
     }
-    final hit = _hitTest(global);
-    if (hit == null) return;
-    final at = hit.position;
-    final index = at.block;
-    final text = TextBoxEditor.textOf(_blocks[index], code: false);
+    final hit = inFormula ? null : _hitTest(global);
+    if (hit != null && !hit.checkbox && !_selects(hit.position)) {
+      if (!widget.isEditing) widget.onStartEditing?.call();
+      _focusNode.requestFocus();
+      final block = hit.position.block;
+      _select(
+        hit.embed
+            ? RichSelection(RichPosition(block, 0), RichPosition(block, 1))
+            : RichSelection.collapsed(hit.position),
+      );
+    }
+
+    final misspelled = hit == null ? null : _misspelledAt(hit.position);
+    final suggestions = misspelled == null
+        ? const <String>[]
+        : await widget.proofreader!.suggest(misspelled.spelled);
+    final canPaste = await NoteClipboard.read() != null;
+    if (!mounted) return;
+    final selected = !_selection.isCollapsed;
+    final picture = hit != null && hit.embed ? hit.position.block : null;
+    await showCommandMenu(context, global, <List<MenuCommand>>[
+      if (misspelled case (:final index, :final word, :final spelled)) ...[
+        if (suggestions.isEmpty)
+          const <MenuCommand>[MenuCommand('No suggestions', null, null)]
+        else
+          <MenuCommand>[
+            for (final suggestion in suggestions)
+              MenuCommand(
+                suggestion,
+                null,
+                () => _replaceWord(index, word, spelled, suggestion),
+              ),
+          ],
+        <MenuCommand>[
+          MenuCommand(
+            'Add to dictionary',
+            Icons.library_add_outlined,
+            () => unawaited(widget.proofreader!.addWord(spelled)),
+          ),
+          MenuCommand(
+            'Ignore',
+            Icons.visibility_off_outlined,
+            () => widget.proofreader!.ignore(spelled),
+          ),
+        ],
+      ],
+      <MenuCommand>[
+        MenuCommand(
+          'Cut',
+          Icons.content_cut_rounded,
+          selected ? () => unawaited(_copy(cut: true)) : null,
+        ),
+        MenuCommand(
+          'Copy',
+          Icons.content_copy_rounded,
+          selected ? () => unawaited(_copy()) : null,
+        ),
+        MenuCommand(
+          'Paste',
+          Icons.content_paste_rounded,
+          canPaste ? () => unawaited(_paste()) : null,
+        ),
+        MenuCommand(
+          'Paste Text Only',
+          Icons.content_paste_go_rounded,
+          canPaste ? () => unawaited(_paste(textOnly: true)) : null,
+        ),
+      ],
+      if (picture != null && widget.onEmbedToBackground != null)
+        <MenuCommand>[
+          MenuCommand(
+            'Set Picture As Background',
+            Icons.wallpaper_rounded,
+            () => _embedToBackground(picture),
+          ),
+        ],
+    ]);
+  }
+
+  /// Whether the selection takes in [position].
+  bool _selects(RichPosition position) =>
+      !_selection.isCollapsed &&
+      _selection.start <= position &&
+      position <= _selection.end;
+
+  /// The word spelled wrongly at [at], if spelling is checked and one is.
+  ({int index, WordSpan word, String spelled})? _misspelledAt(RichPosition at) {
+    final proofreader = widget.proofreader;
+    if (proofreader == null || _blocks[at.block].isEmbed) return null;
+    final text = TextBoxEditor.textOf(_blocks[at.block], code: false);
     final word = proofreader
         .misspellingsIn(text)
         .where((word) => word.start <= at.offset && at.offset <= word.end)
         .firstOrNull;
-    if (word == null) return;
-    final spelled = text.substring(word.start, word.end);
-    final suggestions = await proofreader.suggest(spelled);
-    if (!mounted) return;
-    await showCommandMenu(context, global, <List<MenuCommand>>[
-      if (suggestions.isEmpty)
-        const <MenuCommand>[MenuCommand('No suggestions', null, null)]
-      else
-        <MenuCommand>[
-          for (final suggestion in suggestions)
-            MenuCommand(
-              suggestion,
-              null,
-              () => _replaceWord(index, word, spelled, suggestion),
-            ),
-        ],
-      <MenuCommand>[
-        MenuCommand(
-          'Add to dictionary',
-          Icons.library_add_outlined,
-          () => unawaited(proofreader.addWord(spelled)),
-        ),
-        MenuCommand(
-          'Ignore',
-          Icons.visibility_off_outlined,
-          () => proofreader.ignore(spelled),
-        ),
-      ],
-    ]);
+    return word == null
+        ? null
+        : (
+            index: at.block,
+            word: word,
+            spelled: text.substring(word.start, word.end),
+          );
+  }
+
+  /// Asks the host to make the object on block [block] part of the page's
+  /// background, where it is drawn now.
+  void _embedToBackground(int block) {
+    final object = _object(block);
+    final box = context.findRenderObject();
+    if (object == null || box is! RenderBox) return;
+    widget.onEmbedToBackground?.call(
+      block,
+      MatrixUtils.transformRect(
+        object.getTransformTo(box),
+        Offset.zero & object.size,
+      ),
+    );
   }
 
   /// Puts [replacement] in place of [word] in block [index], unless the
@@ -1943,7 +2245,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
     if (event.kind == PointerDeviceKind.mouse &&
         event.buttons & kSecondaryMouseButton != 0) {
-      unawaited(_offerCorrections(event.position));
+      unawaited(_showMenu(event.position));
       return;
     }
     if (event.kind == PointerDeviceKind.mouse &&
@@ -1952,7 +2254,16 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
     final box = context.findRenderObject();
     if (box is! RenderBox) return;
-    if (box.globalToLocal(event.position).dy < TextBoxEditor.grabBand) return;
+    if (box.globalToLocal(event.position).dy < TextBoxEditor.grabBand) {
+      // The band picks the box up whole, as a box rather than the text in
+      // it, so typing in it ends: the page shows it picked, everything in it
+      // selected, and Delete takes the box away. A box emptied of its text
+      // is left as it is, to be moved, since leaving it removes it.
+      if (widget.isEditing && !TextBoxEditor.isEmpty(_blocks)) {
+        widget.onExit?.call();
+      }
+      return;
+    }
 
     final hit = _hitTest(event.position);
     if (hit == null) return;
@@ -1962,6 +2273,22 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
     if (!widget.isEditing) widget.onStartEditing?.call();
     _focusNode.requestFocus();
+
+    // A corner of a picture or PDF page resizes it rather than moving the
+    // caret. The object is picked as the drag starts, so its handles stay in
+    // view while it is dragged.
+    final corner = _cornerAt(hit.position.block, event.position);
+    if (corner != null) {
+      final index = hit.position.block;
+      _select(RichSelection(RichPosition(index, 0), RichPosition(index, 1)));
+      _resize = (
+        block: index,
+        corner: corner,
+        from: event.position,
+        width: _object(index)!.size.width,
+      );
+      return;
+    }
 
     final now = DateTime.now();
     final isRepeat =
@@ -2020,6 +2347,16 @@ class TextBoxEditorState extends State<TextBoxEditor>
             }
           }
           _openFormula(target);
+          return;
+        }
+        // A click on a picture or PDF page picks it, as it does on the page.
+        if (hit.embed && !HardwareKeyboard.instance.isShiftPressed) {
+          _select(
+            RichSelection(
+              RichPosition(hit.position.block, 0),
+              RichPosition(hit.position.block, 1),
+            ),
+          );
           return;
         }
         // A click beside the formula being edited finishes it.
@@ -2103,7 +2440,57 @@ class TextBoxEditorState extends State<TextBoxEditor>
     );
   }
 
+  /// The corner of the object on block [index] that a press at [global]
+  /// takes hold of, or null where the press takes hold of none: a handle is
+  /// only there while the object is picked.
+  EmbedCorner? _cornerAt(int index, Offset global) {
+    final object = _embedSelected(index) ? _object(index) : null;
+    return object == null
+        ? null
+        : EmbedHandles.at(
+            object.size,
+            object.globalToLocal(global),
+            pixel: screenPixelIn(object),
+          );
+  }
+
+  /// Resizes the object being dragged so that its corner follows the pointer.
+  void _resizeEmbed(Offset to) {
+    final resize = _resize;
+    final embed = resize == null ? null : _blocks[resize.block].embed;
+    final object = resize == null ? null : _object(resize.block);
+    if (resize == null || embed == null || object == null) return;
+    // Measured in the box's own units, so a resize follows the pointer at any
+    // zoom and however the box is turned.
+    final drag = object.globalToLocal(to) - object.globalToLocal(resize.from);
+    final row = _row(resize.block);
+    final indent = _blocks[resize.block].indent * RichTextStyles.indentStep;
+    // A picture never grows wider than the box holding it; one that sizes
+    // itself to its content can grow until the box is as wide as it goes.
+    final widest = widget.element.autoWidth
+        ? TextBoxEditor.maxAutoWidth
+        : math.max(_minEmbedWidth, (row?.size.width ?? 0) - indent);
+    final width =
+        (resize.width + resize.corner.widening(drag, embed.aspectRatio)).clamp(
+          _minEmbedWidth,
+          widest,
+        );
+    if ((width - embed.width).abs() < 0.5) return;
+    _commit((
+      blocks: RichTextEditing.replaceEmbed(
+        _blocks,
+        resize.block,
+        embed.copyWith(width: width, height: width / embed.aspectRatio),
+      ),
+      selection: _selection,
+    ), _EditKind.resizing);
+  }
+
   void _onPointerMove(PointerMoveEvent event) {
+    if (_resize != null) {
+      _resizeEmbed(event.position);
+      return;
+    }
     if (event.pointer != _dragPointer || _clickCount != 1) return;
     final formula = _formula;
     if (formula != null) {
@@ -2132,6 +2519,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       _touchCount--;
     }
     if (event.pointer == _dragPointer) _dragPointer = null;
+    _resize = null;
   }
 
   // ------------------------------------------------------------------ caret
@@ -2391,7 +2779,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
   void _ensureKeys() {
     while (_rowKeys.length < _blocks.length) {
       _rowKeys.add(GlobalKey());
-      _paragraphKeys.add(GlobalKey());
+      _contentKeys.add(GlobalKey());
     }
   }
 
@@ -2453,13 +2841,32 @@ class TextBoxEditorState extends State<TextBoxEditor>
     ];
   }
 
+  /// Whether the object on block [index] is shown picked, with the handles
+  /// that resize it: selected in the text, or in a box picked whole.
+  bool _embedSelected(int index) =>
+      _blocks[index].isEmbed &&
+      (widget.isEditing
+          ? !_selection.isCollapsed &&
+                _selection.start <= RichPosition(index, 0) &&
+                _selection.end >= RichPosition(index, 1)
+          : widget.selected);
+
   BlockDecoration _decorationFor(int index, BlockView view, bool focused) {
     final matches = _matchesIn(index, view);
     final misspellings = _misspellingsIn(index, view);
     if (!widget.isEditing) {
-      return matches.isEmpty && misspellings.isEmpty
+      // A box picked on the page — by its band, say — shows everything in it
+      // selected, as OneNote does with a container.
+      final whole = widget.selected && view.text.isNotEmpty
+          ? TextSelection(baseOffset: 0, extentOffset: view.text.length)
+          : null;
+      return whole == null && matches.isEmpty && misspellings.isEmpty
           ? BlockDecoration.none
-          : BlockDecoration(matches: matches, misspellings: misspellings);
+          : BlockDecoration(
+              selection: whole,
+              matches: matches,
+              misspellings: misspellings,
+            );
     }
     final start = _selection.start;
     final end = _selection.end;
@@ -2478,9 +2885,24 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final caret = _selection.extent;
     final formula = _formula;
     TextRange? formulaRange;
+    var formulaMarks = const <({TextRange range, Color color})>[];
     if (formula != null && formula.block == index) {
       final layout = view.runAt(formula.run);
       formulaRange = TextRange(start: layout.outerStart, end: layout.outerEnd);
+      // The source is laid out character for character from its start.
+      formulaMarks = <({TextRange range, Color color})>[
+        for (final mark in HighlightSource.all(
+          _blocks[index].runs[formula.run].text,
+          _source.syntax,
+        ))
+          (
+            range: TextRange(
+              start: layout.viewStart + mark.bodyStart,
+              end: layout.viewStart + mark.bodyEnd,
+            ),
+            color: Color(0xFF000000 | mark.color),
+          ),
+      ];
     }
 
     return BlockDecoration(
@@ -2492,6 +2914,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       typingStyle: _typingStyle(index),
       composing: caret.block == index ? _composing : null,
       formula: formulaRange,
+      formulaMarks: formulaMarks,
       matches: matches,
       misspellings: misspellings,
     );
@@ -2643,13 +3066,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final indent = block.indent * RichTextStyles.indentStep;
 
     if (block.isEmbed) {
-      final start = _selection.start;
-      final end = _selection.end;
-      final selected =
-          widget.isEditing &&
-          !_selection.isCollapsed &&
-          start <= RichPosition(index, 0) &&
-          end >= RichPosition(index, 1);
       final caret = _selection.extent;
       return KeyedSubtree(
         key: _rowKeys[index],
@@ -2657,7 +3073,8 @@ class TextBoxEditorState extends State<TextBoxEditor>
           padding: EdgeInsets.only(left: indent, top: 2, bottom: 4),
           child: EmbedBlock(
             embed: block.embed!,
-            selected: selected,
+            objectKey: _contentKeys[index],
+            selected: _embedSelected(index),
             caretSide:
                 widget.isEditing &&
                     focused &&
@@ -2676,7 +3093,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final view = _viewFor(index);
     final blockStyle = RichTextStyles.blockStyle(block.kind, base);
     final paragraph = BlockParagraph(
-      key: _paragraphKeys[index],
+      key: _contentKeys[index],
       decoration: _decorationFor(index, view, focused),
       paint: paint,
       caretVisible: _caretVisible,

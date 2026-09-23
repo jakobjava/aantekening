@@ -33,6 +33,10 @@ enum SymbolRole {
 
   /// Dirac notation: `bra(psi)`, `ket(psi)`, `braket(phi, psi)`.
   braketConstruct,
+
+  /// A highlighter's mark behind its argument: `highlight(x)`, or
+  /// `highlight(#A8E6B0, x)` in a colour of its own.
+  highlightConstruct,
 }
 
 /// A word the parser knows about.
@@ -401,6 +405,7 @@ final Map<String, MathSymbol> mathSymbols = <String, MathSymbol>{
     entry.key: MathSymbol(entry.value, SymbolRole.matrixConstruct),
   for (final kind in BraketKind.values)
     kind.name: MathSymbol(kind.command, SymbolRole.braketConstruct),
+  'highlight': const MathSymbol(r'\colorbox', SymbolRole.highlightConstruct),
 };
 
 /// Every word the parser knows, longest first.

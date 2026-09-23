@@ -164,6 +164,9 @@ abstract final class LinearWriter {
     BraketNode(:final kind, :final parts) => <_Piece>[
       _Piece('${kind.name}(${parts.map(write).join(', ')})', apart: true),
     ],
+    HighlightNode(:final body, :final color) => <_Piece>[
+      _Piece(HighlightNode.linearOf(write(body), color), apart: true),
+    ],
   };
 
   static List<_Piece> _sequence(List<MathNode> children) {
@@ -255,7 +258,8 @@ abstract final class LinearWriter {
     MatrixNode() ||
     RawNode() ||
     ApplicationNode() ||
-    BraketNode() => true,
+    BraketNode() ||
+    HighlightNode() => true,
     SequenceNode(:final children) =>
       children.length == 1 && _isAtom(children.single),
     _ => false,

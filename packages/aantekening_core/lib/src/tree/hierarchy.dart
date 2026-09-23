@@ -81,9 +81,7 @@ class Hierarchy<T> {
   /// with its id, how deeply it is nested, and whether it is the last of its
   /// siblings. What lies beneath an item whose id [expanded] says no to is
   /// left out.
-  Iterable<HierarchyEntry<T>> walk({
-    bool Function(String id)? expanded,
-  }) sync* {
+  Iterable<HierarchyEntry<T>> walk({bool Function(String id)? expanded}) sync* {
     Iterable<HierarchyEntry<T>> visit(String? parent, int depth) sync* {
       final ids = _children[parent] ?? const <String>[];
       for (final (index, id) in ids.indexed) {

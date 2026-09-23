@@ -8,6 +8,7 @@ library;
 
 import '../util/geometry.dart';
 import '../util/json_read.dart';
+import '../util/ulid.dart';
 import 'ink.dart';
 import 'rich_text.dart';
 
@@ -44,7 +45,9 @@ sealed class NoteElement {
   /// Paint order; higher values are drawn on top.
   final int z;
 
-  /// Whether the element is protected from selection and editing.
+  /// Whether the element is part of the page's background: drawn beneath
+  /// all ink and everything else, and never picked, moved or erased — a
+  /// picture or a PDF page set as the background to write over.
   final bool locked;
 
   /// Creation time in milliseconds since the Unix epoch.
@@ -75,8 +78,15 @@ sealed class NoteElement {
   /// Returns a copy at paint order [z].
   NoteElement withZ(int z);
 
+  /// Returns a copy that is, or is not, part of the background ([locked]).
+  NoteElement withLocked(bool locked);
+
   /// Returns a copy stamped as modified at [timestamp].
   NoteElement touch(int timestamp);
+
+  /// This element as an object in a text box — a picture or a PDF page —
+  /// or null for anything that cannot sit in text.
+  BlockEmbed? get asEmbed => null;
 
   /// Identifiers of binary attachments this element depends on.
   ///
@@ -95,6 +105,33 @@ sealed class NoteElement {
     'createdAt': createdAt,
     'updatedAt': updatedAt,
   };
+
+  /// Copies of [elements] to paste: each with an identifier of its own,
+  /// moved by [offset] and made at [now], a group keeping those of its
+  /// members copied with it.
+  static List<NoteElement> copiesOf(
+    List<NoteElement> elements, {
+    required int now,
+    Vec2 offset = const Vec2(0, 0),
+  }) {
+    final ids = <String, String>{
+      for (final element in elements) element.id: Ulid.generate(),
+    };
+    return <NoteElement>[
+      for (final element in elements)
+        ?NoteElement.fromJson(<String, Object?>{
+          ...element.toJson(),
+          'id': ids[element.id],
+          'frame': element.frame.translate(offset.x, offset.y).toJson(),
+          'createdAt': now,
+          'updatedAt': now,
+          if (element is GroupElement)
+            'childIds': <String>[
+              for (final child in element.childIds) ?ids[child],
+            ],
+        }),
+    ];
+  }
 
   /// Decodes any element, dispatching on its `type` field.
   ///
@@ -192,6 +229,9 @@ final class TextElement extends NoteElement {
 
   @override
   TextElement withZ(int z) => copyWith(z: z);
+
+  @override
+  TextElement withLocked(bool locked) => copyWith(locked: locked);
 
   @override
   TextElement touch(int timestamp) => copyWith(updatedAt: timestamp);
@@ -343,6 +383,9 @@ final class InkElement extends NoteElement {
   InkElement withZ(int z) => copyWith(z: z);
 
   @override
+  InkElement withLocked(bool locked) => copyWith(locked: locked);
+
+  @override
   InkElement touch(int timestamp) => copyWith(updatedAt: timestamp);
 
   @override
@@ -393,6 +436,15 @@ final class ImageElement extends NoteElement {
   String get type => 'image';
 
   @override
+  BlockEmbed get asEmbed => BlockEmbed(
+    kind: EmbedKind.image,
+    assetId: assetId,
+    width: frame.width,
+    height: frame.height,
+    text: altText,
+  );
+
+  @override
   Iterable<String> get assetIds => <String>[assetId];
 
   @override
@@ -427,6 +479,9 @@ final class ImageElement extends NoteElement {
 
   @override
   ImageElement withZ(int z) => copyWith(z: z);
+
+  @override
+  ImageElement withLocked(bool locked) => copyWith(locked: locked);
 
   @override
   ImageElement touch(int timestamp) => copyWith(updatedAt: timestamp);
@@ -484,6 +539,16 @@ final class PdfElement extends NoteElement {
   String get type => 'pdf';
 
   @override
+  BlockEmbed get asEmbed => BlockEmbed(
+    kind: EmbedKind.pdfPage,
+    assetId: assetId,
+    pageIndex: pageIndex,
+    width: frame.width,
+    height: frame.height,
+    text: extractedText,
+  );
+
+  @override
   Iterable<String> get assetIds => <String>[assetId];
 
   @override
@@ -514,6 +579,9 @@ final class PdfElement extends NoteElement {
 
   @override
   PdfElement withZ(int z) => copyWith(z: z);
+
+  @override
+  PdfElement withLocked(bool locked) => copyWith(locked: locked);
 
   @override
   PdfElement touch(int timestamp) => copyWith(updatedAt: timestamp);
@@ -600,6 +668,9 @@ final class MathElement extends NoteElement {
 
   @override
   MathElement withZ(int z) => copyWith(z: z);
+
+  @override
+  MathElement withLocked(bool locked) => copyWith(locked: locked);
 
   @override
   MathElement touch(int timestamp) => copyWith(updatedAt: timestamp);
@@ -694,6 +765,9 @@ final class TableElement extends NoteElement {
   TableElement withZ(int z) => copyWith(z: z);
 
   @override
+  TableElement withLocked(bool locked) => copyWith(locked: locked);
+
+  @override
   TableElement touch(int timestamp) => copyWith(updatedAt: timestamp);
 
   @override
@@ -785,6 +859,9 @@ final class GroupElement extends NoteElement {
   GroupElement withZ(int z) => copyWith(z: z);
 
   @override
+  GroupElement withLocked(bool locked) => copyWith(locked: locked);
+
+  @override
   GroupElement touch(int timestamp) => copyWith(updatedAt: timestamp);
 
   @override
@@ -804,4 +881,30 @@ final class GroupElement extends NoteElement {
     locked: readBool(json, 'locked'),
     label: readStringOrNull(json, 'label'),
   );
+}
+
+/// Pictures and PDF pages sit on the page by themselves or in a text box, as
+/// objects in its text; these are the one's terms for the other.
+extension EmbedOnPage on BlockEmbed {
+  /// This object on the page by itself, in [frame], made at [now].
+  NoteElement toElement({required Frame frame, required int now}) =>
+      switch (kind) {
+        EmbedKind.image => ImageElement(
+          id: Ulid.generate(),
+          frame: frame,
+          createdAt: now,
+          updatedAt: now,
+          assetId: assetId,
+          altText: text,
+        ),
+        EmbedKind.pdfPage => PdfElement(
+          id: Ulid.generate(),
+          frame: frame,
+          createdAt: now,
+          updatedAt: now,
+          assetId: assetId,
+          pageIndex: pageIndex,
+          extractedText: text,
+        ),
+      };
 }

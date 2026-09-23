@@ -41,6 +41,8 @@ const List<String> _simpleExamples = <String>[
   'U^dagger U = mathbb(1)',
   'tr(rho) = 1',
   'a mod n <-> b',
+  'E = highlight(m c^2)',
+  'highlight(#A8E6B0, 1/2) x^highlight(2)',
 ];
 
 void main() {
@@ -80,6 +82,9 @@ void main() {
       r'\braket{\phi|\psi}': 'braket(phi, psi)',
       r'\braket{\phi | \hat{H} | \psi}': 'braket(phi, hat(H), psi)',
       r'\braket{\|x\|}': 'braket(norm(x))',
+      r'a + \colorbox{#FFEF9D}{$b^2$}': 'a + highlight(b^2)',
+      r'\colorbox{#A8E6B0}{$\frac{1}{2}$}': 'highlight(#A8E6B0, 1/2)',
+      r'\colorbox{yellow}{if}': r'`\colorbox{yellow}{if}`',
       r'A^\dagger': 'A^dagger',
       r'a \leftrightarrow b': 'a <-> b',
       r'a^*': 'a^`*`',
