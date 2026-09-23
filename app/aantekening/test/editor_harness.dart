@@ -38,6 +38,7 @@ Future<void> openEditor(
         preferencesProvider.overrideWith(
           (ref) async => preferences ?? Preferences.inMemory(),
         ),
+        _readAssetsAtOnce,
         ...overrides,
       ],
       child: MaterialApp(
@@ -48,6 +49,20 @@ Future<void> openEditor(
   );
   await tester.pumpAndSettle();
 }
+
+/// Reads pictures from the store at once. A read left waiting on the test's
+/// fake clock keeps its file open, and Windows will not delete an open file
+/// when the test clears its folder away.
+final Override _readAssetsAtOnce = assetBytesProvider.overrideWith((
+  ref,
+  assetId,
+) async {
+  final store = await ref.watch(storeProvider.future);
+  final asset = await store.assets.find(assetId);
+  if (asset == null) return null;
+  final file = store.assets.fileFor(asset);
+  return file.existsSync() ? file.readAsBytesSync() : null;
+});
 
 /// Whether the caret is in a formula, as the ribbon shows it.
 bool inFormula(WidgetTester tester) =>
