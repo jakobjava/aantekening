@@ -7,6 +7,7 @@ import 'package:aantekening/src/editor/text/block_view.dart';
 import 'package:aantekening/src/editor/text/block_widgets.dart';
 import 'package:aantekening/src/editor/media_views.dart';
 import 'package:aantekening/src/editor/text/cheat_sheet.dart';
+import 'package:aantekening/src/editor/text/table_view.dart';
 import 'package:aantekening/src/editor/text/formula_preview.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/editor/text/text_styles.dart';
@@ -16,6 +17,7 @@ import 'package:aantekening_math/aantekening_math.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -108,6 +110,26 @@ void main() {
     expect(blocks, hasLength(2));
     expect(blocks[1].kind, TextBlockKind.bulleted);
     expect(blocks[1].plainText, 'first');
+  });
+
+  testWidgets('Arrow Up and Down move to the paragraph above and below', (
+    tester,
+  ) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await type(tester, 'abc');
+    await press(tester, LogicalKeyboardKey.enter);
+    await type(tester, 'de');
+
+    await press(tester, LogicalKeyboardKey.arrowUp);
+    await type(tester, 'X');
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    await type(tester, 'Y');
+
+    expect(blocksOf(tester).map((block) => block.plainText), <String>[
+      'abXc',
+      'deY',
+    ]);
   });
 
   testWidgets('Ctrl+B makes the following text bold', (tester) async {
@@ -1736,6 +1758,311 @@ void main() {
       expect(frame.height, greaterThan(100));
       expect(frame.corners.first.x, closeTo(corner.x, 0.01));
       expect(frame.corners.first.y, closeTo(corner.y, 0.01));
+    });
+  });
+
+  group('tables', () {
+    /// The box's blocks, a line of a cell written after `row,column:`.
+    List<String> cellsOf(WidgetTester tester) => <String>[
+      for (final block in blocksOf(tester))
+        switch (block.cell) {
+          null => block.plainText,
+          final cell => '${cell.row},${cell.column}:${block.plainText}',
+        },
+    ];
+
+    /// Types a table of [rows], Tab between cells and Enter between rows.
+    Future<void> typeTable(WidgetTester tester, List<List<String>> rows) async {
+      for (var r = 0; r < rows.length; r++) {
+        if (r > 0) await press(tester, LogicalKeyboardKey.enter);
+        for (var c = 0; c < rows[r].length; c++) {
+          if (c > 0) await press(tester, LogicalKeyboardKey.tab);
+          await type(tester, rows[r][c]);
+        }
+      }
+      await tester.pumpAndSettle();
+    }
+
+    RenderTextTable tableOf(WidgetTester tester) =>
+        tester.renderObject<RenderTextTable>(find.byType(TextTableView));
+
+    /// Where the right-hand line of [column] is on screen, half way down.
+    Offset edgeOf(WidgetTester tester, int column) {
+      final table = tableOf(tester);
+      return table.localToGlobal(
+        Offset(table.columnEdges[column], table.size.height / 2),
+      );
+    }
+
+    testWidgets('Tab after a word starts one, and Tab and Enter grow it', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+
+      await typeTable(tester, <List<String>>[
+        <String>['Name', 'Age', 'Town'],
+        <String>['Ann', '30', 'Oslo'],
+      ]);
+      expect(cellsOf(tester), <String>[
+        '0,0:Name',
+        '0,1:Age',
+        '0,2:Town',
+        '1,0:Ann',
+        '1,1:30',
+        '1,2:Oslo',
+      ]);
+      expect(find.byType(TextTableView), findsOneWidget);
+
+      // Enter at the end of a row adds another; Enter in its empty first
+      // cell leaves the table, for the text after it.
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(cellsOf(tester), hasLength(9));
+      await press(tester, LogicalKeyboardKey.enter);
+      await type(tester, 'after');
+      expect(cellsOf(tester).sublist(5), <String>['1,2:Oslo', 'after']);
+    });
+
+    testWidgets('Enter in another cell starts a line of that cell', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await typeTable(tester, <List<String>>[
+        <String>['a', 'b'],
+      ]);
+      await press(tester, LogicalKeyboardKey.tab, shift: true);
+      await press(tester, LogicalKeyboardKey.enter);
+      await type(tester, 'more');
+
+      expect(cellsOf(tester), <String>['0,0:a', '0,0:more', '0,1:b']);
+    });
+
+    testWidgets('the arrows go up and down its rows, and in and out of it', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'top');
+      await press(tester, LogicalKeyboardKey.enter);
+      await typeTable(tester, <List<String>>[
+        <String>['a', 'b'],
+        <String>['c', 'd'],
+      ]);
+
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      await type(tester, '1');
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      await type(tester, '2');
+      expect(cellsOf(tester), <String>[
+        'top2',
+        '0,0:a',
+        '0,1:b1',
+        '1,0:c',
+        '1,1:d',
+      ]);
+
+      // From the text above, down into the cell beneath the caret.
+      await press(tester, LogicalKeyboardKey.home);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      await type(tester, '3');
+      expect(cellsOf(tester)[1], '0,0:3a');
+    });
+
+    testWidgets('a click goes into the cell clicked', (tester) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await typeTable(tester, <List<String>>[
+        <String>['first', 'second'],
+        <String>['third', 'fourth'],
+      ]);
+
+      // Below the short text of a cell, still in its row.
+      final table = tableOf(tester);
+      final inCell = table.localToGlobal(
+        Offset(table.columnStart(1) + 4, table.size.height - 3),
+      );
+      await tester.tapAt(inCell, kind: PointerDeviceKind.mouse);
+      await tester.pump(const Duration(milliseconds: 500));
+      await type(tester, '!');
+      expect(cellsOf(tester)[3], '1,1:fourth!');
+    });
+
+    testWidgets('columns fit their text, and share a narrow box', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await typeTable(tester, <List<String>>[
+        <String>['a', 'b'],
+      ]);
+      // Short text leaves a column about an inch wide, room to type in.
+      expect(tableOf(tester).columnWidth(0), RenderTextTable.fittedWidth);
+      expect(tableOf(tester).columnWidth(1), RenderTextTable.fittedWidth);
+
+      await type(tester, ' ${'long words ' * 40}');
+      await tester.pumpAndSettle();
+      final table = tableOf(tester);
+      expect(
+        table.size.width,
+        lessThanOrEqualTo(
+          TextBoxEditor.maxAutoWidth - TextBoxEditor.padding.horizontal,
+        ),
+      );
+      expect(table.columnWidth(0), lessThan(table.columnWidth(1)));
+    });
+
+    testWidgets('dragging a column line sets its width; a double click fits '
+        'it again', (tester) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await typeTable(tester, <List<String>>[
+        <String>['Name', 'Age'],
+      ]);
+      final before = tableOf(tester).columnWidth(0);
+
+      // The mouse that clicked the page is still over it; it moves onto the
+      // line.
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.moveTo(edgeOf(tester, 0));
+      await tester.pump();
+      expect(
+        RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+        SystemMouseCursors.resizeColumn,
+      );
+      await gesture.down(edgeOf(tester, 0));
+      await gesture.moveBy(const Offset(40, 0));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      final width = blocksOf(tester).first.cell!.width!;
+      expect(width, closeTo(before + 40, 0.5));
+      expect(blocksOf(tester)[1].cell!.width, isNull);
+      expect(tableOf(tester).columnWidth(0), closeTo(width, 0.5));
+
+      await tester.pump(const Duration(seconds: 1));
+      await gesture.down(edgeOf(tester, 0));
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.down(edgeOf(tester, 0));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(blocksOf(tester).first.cell!.width, isNull);
+    });
+
+    testWidgets('Backspace in an empty column takes it away again', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await typeTable(tester, <List<String>>[
+        <String>['a', 'b'],
+      ]);
+      await press(tester, LogicalKeyboardKey.tab);
+      expect(cellsOf(tester), hasLength(3));
+
+      await press(tester, LogicalKeyboardKey.backspace);
+      expect(cellsOf(tester), <String>['0,0:a', '0,1:b']);
+      await type(tester, '!');
+      expect(
+        cellsOf(tester).last,
+        '0,1:b!',
+        reason: 'caret in the cell before',
+      );
+    });
+
+    testWidgets('a drag from cell to cell selects the cells, which Delete '
+        'takes away as it does text', (tester) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await typeTable(tester, <List<String>>[
+        <String>['a', 'b', 'c'],
+        <String>['d', 'e', 'f'],
+      ]);
+      final paragraphs = find.byType(BlockParagraph);
+
+      await tester.pump(const Duration(seconds: 1));
+      final drag = await tester.startGesture(
+        tester.getCenter(paragraphs.at(1)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await drag.moveTo(tester.getCenter(paragraphs.at(5)));
+      await drag.up();
+      await tester.pump();
+      expect(tableOf(tester).selected, <int>{1, 2, 4, 5});
+      expect(
+        tester
+            .renderObject<RenderBlockParagraph>(paragraphs.at(1))
+            .decoration
+            .selection,
+        isNull,
+        reason: 'the cell is drawn selected, not its text',
+      );
+
+      // Two columns top to bottom: they go.
+      await press(tester, LogicalKeyboardKey.delete);
+      expect(cellsOf(tester), <String>['0,0:a', '1,0:d']);
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('typing over selected cells empties them and types in the '
+        'first', (tester) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await typeTable(tester, <List<String>>[
+        <String>['a', 'b', 'c'],
+        <String>['d', 'e', 'f'],
+      ]);
+      // From the end of e up into b: the two cells of a column, which
+      // typing empties rather than taking away.
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      await press(tester, LogicalKeyboardKey.arrowUp, shift: true);
+      await type(tester, 'x');
+
+      expect(cellsOf(tester), <String>[
+        '0,0:a',
+        '0,1:x',
+        '0,2:c',
+        '1,0:d',
+        '1,1:',
+        '1,2:f',
+      ]);
+    });
+
+    testWidgets('its menu adds rows and columns and removes them', (
+      tester,
+    ) async {
+      mockClipboard(tester);
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await typeTable(tester, <List<String>>[
+        <String>['a', 'b'],
+      ]);
+      final cell = tester.getCenter(find.byType(BlockParagraph).first);
+
+      await rightClick(tester, cell);
+      await tester.tap(find.text('Insert Row Below'));
+      await tester.pumpAndSettle();
+      await rightClick(tester, cell);
+      await tester.tap(find.text('Insert Column Left'));
+      await tester.pumpAndSettle();
+      expect(cellsOf(tester), <String>[
+        '0,0:',
+        '0,1:a',
+        '0,2:b',
+        '1,0:',
+        '1,1:',
+        '1,2:',
+      ]);
+
+      await rightClick(
+        tester,
+        tester.getCenter(find.byType(BlockParagraph).first),
+      );
+      await tester.tap(find.text('Delete Table'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextTableView), findsNothing);
     });
   });
 }

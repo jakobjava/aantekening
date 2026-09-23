@@ -15,6 +15,7 @@ import '../settings/ai_panel.dart';
 import 'library_pane.dart';
 import 'page_list_pane.dart';
 import 'sidebar_state.dart';
+import 'tabs.dart';
 
 /// A strip of buttons, each opening a panel beside it — the notebooks and
 /// pages, search, the graph, the local AI — with [page] taking the rest of
@@ -53,6 +54,9 @@ class _SidebarState extends ConsumerState<Sidebar> {
       }
     });
     final open = ref.watch(sidebarProvider.select((state) => state.open));
+    // Each tab has a panel of its own, as it left it: a search typed in one
+    // tab is not in the next.
+    final tab = ref.watch(tabsProvider.select((tabs) => tabs.current.id));
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -63,7 +67,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
         final panel = open == null
             ? null
             : _Panel(
-                key: ValueKey<SidebarTab>(open),
+                key: ValueKey<(int, SidebarTab)>((tab, open)),
                 tab: open,
                 maxWidth: math.max(0, room),
               );

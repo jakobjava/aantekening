@@ -52,6 +52,9 @@ abstract final class RichTextStyles {
   /// The line beneath a page's title.
   static const Color titleRule = Color(0xFFD5D9E0);
 
+  /// The lines round a table's cells.
+  static const Color tableRule = Color(0xFFB4BAC4);
+
   /// Behind words a search found: amber, so it is not taken for a yellow
   /// highlight someone made.
   static const Color searchMatch = Color(0x99FFB020);
@@ -201,7 +204,8 @@ abstract final class RichTextStyles {
   }
 
   /// A plain span for a block's runs, formulas shown as their source. Used by
-  /// table cells, which are not yet edited in place.
+  /// the free-standing tables of earlier builds, which are shown but not
+  /// edited; tables are made in text boxes now.
   static TextSpan plainSpanFor(TextBlock block, TextStyle base) => TextSpan(
     style: blockStyle(block.kind, base),
     children: <InlineSpan>[

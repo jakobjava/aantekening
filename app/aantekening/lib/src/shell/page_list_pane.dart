@@ -1,8 +1,11 @@
 /// The page list for the selected section.
 library;
 
+import 'dart:async';
+
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
@@ -149,7 +152,10 @@ class _PageTile extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
               ),
-        onTap: () => ref.read(selectedPageProvider.notifier).select(page.id),
+        // Ctrl+click opens the page in a new tab, as in a browser.
+        onTap: () => HardwareKeyboard.instance.isControlPressed
+            ? unawaited(ref.read(libraryActionsProvider).openInNewTab(page))
+            : ref.read(selectedPageProvider.notifier).select(page.id),
       ),
     );
   }

@@ -22,6 +22,7 @@ import 'list_numbering.dart';
 import 'math_templates.dart';
 import 'text_box_controller.dart';
 import 'text_boundaries.dart';
+import 'table_view.dart';
 import 'text_styles.dart';
 
 /// Called with a text box's new contents. [recordUndo] is true when the change
@@ -153,11 +154,12 @@ class TextBoxEditor extends StatefulWidget {
           : run.text,
   ].join();
 
-  /// Whether [blocks] hold nothing worth keeping: no text, no formula and no
-  /// embed. An empty box is removed when editing ends.
+  /// Whether [blocks] hold nothing worth keeping: no text, no formula, no
+  /// embed and no table. An empty box is removed when editing ends.
   static bool isEmpty(List<TextBlock> blocks) => blocks.every(
     (block) =>
         !block.isEmbed &&
+        !block.inTable &&
         block.runs.every((run) => !run.isMath && run.text.trim().isEmpty),
   );
 
@@ -253,6 +255,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
   /// which corner is held, where the drag began and how wide it was then.
   ({int block, EmbedCorner corner, Offset from, double width})? _resize;
 
+  /// The table column being resized by its right-hand line: the block the
+  /// table starts on, the column, where the drag began and how wide the
+  /// column was then.
+  ({int table, int column, Offset from, double width})? _columnResize;
+
   int _touchCount = 0;
   DateTime _lastPress = DateTime.fromMillisecondsSinceEpoch(0);
   Offset _lastPressPosition = Offset.zero;
@@ -271,7 +278,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
   @override
   void initState() {
     super.initState();
-    _blocks = _nonEmpty(widget.element.blocks);
+    _blocks = _wellFormed(widget.element.blocks);
     _lastEmitted = widget.element.blocks;
     _selection = RichSelection.collapsed(RichTextEditing.endOf(_blocks));
     _focusNode.addListener(_onFocusChanged);
@@ -290,7 +297,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (!identical(widget.element.blocks, _lastEmitted)) {
       // Changed from outside — undo, redo, or another view of the page. The
       // caret stays as close to where it was as the new text allows.
-      _blocks = _nonEmpty(widget.element.blocks);
+      _blocks = _wellFormed(widget.element.blocks);
       _lastEmitted = widget.element.blocks;
       _showOpenFormulaAsSource();
       _selection = RichSelection(
@@ -332,8 +339,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
   /// Verdicts on the spelling of words in the box have come in.
   void _onProofread() => setState(() {});
 
-  static List<TextBlock> _nonEmpty(List<TextBlock> blocks) =>
-      blocks.isEmpty ? const <TextBlock>[TextBlock()] : blocks;
+  /// [blocks] as the box shows them: at least one line, and every table a
+  /// whole grid.
+  static List<TextBlock> _wellFormed(List<TextBlock> blocks) => blocks.isEmpty
+      ? const <TextBlock>[TextBlock()]
+      : TextTables.normalize(blocks);
 
   void _beginEditing() {
     widget.controller?.attach(this);
@@ -402,7 +412,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     _undoBreak = false;
 
     setState(() {
-      _blocks = _nonEmpty(edit.blocks);
+      _blocks = _wellFormed(edit.blocks);
       _selection = RichSelection(
         RichTextEditing.clamp(_blocks, edit.selection.base),
         RichTextEditing.clamp(_blocks, edit.selection.extent),
@@ -538,9 +548,25 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
   void _paragraphBreak() {
     _commit(
-      RichTextEditing.insertParagraphBreak(_blocks, _selection),
+      TableEditing.insertBreak(_blocks, _selection) ??
+          RichTextEditing.insertParagraphBreak(_blocks, _selection),
       _EditKind.other,
     );
+  }
+
+  /// Tab: on to another cell of a table, or a table started after a word,
+  /// or else the list indented — and Shift+Tab back.
+  void _tab({required bool backward}) {
+    final edit =
+        TableEditing.moveToCell(_blocks, _selection, backward: backward) ??
+        (backward ? null : TableEditing.startTable(_blocks, _selection));
+    if (edit == null) {
+      indent(backward ? -1 : 1);
+    } else if (identical(edit.blocks, _blocks)) {
+      _select(edit.selection);
+    } else {
+      _commit(edit, _EditKind.other);
+    }
   }
 
   void _deleteSelection() {
@@ -558,8 +584,10 @@ class TextBoxEditorState extends State<TextBoxEditor>
       );
       return;
     }
+    // Selected cells go as selected text does: rows and columns taken in
+    // whole go with them.
     _commit(
-      RichTextEditing.deleteRange(_blocks, _selection),
+      RichTextEditing.deleteRange(_blocks, _selection, closeUp: true),
       _EditKind.deleting,
     );
   }
@@ -577,7 +605,8 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final block = _blocks[caret.block];
     if (caret.offset == 0) {
       _commit(
-        RichTextEditing.deleteBackwardAtBlockStart(_blocks, caret.block),
+        TableEditing.deleteBackward(_blocks, caret.block) ??
+            RichTextEditing.deleteBackwardAtBlockStart(_blocks, caret.block),
         _EditKind.deleting,
       );
       return;
@@ -905,7 +934,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       if (emit) {
         _commit((blocks: blocks, selection: selection), _EditKind.other);
       } else {
-        _blocks = _nonEmpty(blocks);
+        _blocks = _wellFormed(blocks);
         _selection = selection;
       }
       return;
@@ -933,12 +962,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
           )
         : RichSelection(map(caretOverride.base), map(caretOverride.extent));
     if (!mounted) {
-      _blocks = _nonEmpty(blocks);
+      _blocks = _wellFormed(blocks);
       _selection = selection;
       return;
     }
     setState(() {
-      _blocks = _nonEmpty(blocks);
+      _blocks = _wellFormed(blocks);
       _selection = RichSelection(
         RichTextEditing.clamp(_blocks, selection.base),
         RichTextEditing.clamp(_blocks, selection.extent),
@@ -1056,15 +1085,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
         (marks) => marks.withHighlight(color),
       ),
     );
-    final start = _selection.start;
-    final end = _selection.end;
     var base = _selection.base;
     var extent = _selection.extent;
-    for (var i = start.block; i <= end.block; i++) {
+    for (final (block: i, :from, :to, cell: _) in _covering.values) {
       final block = blocks[i];
       if (block.isEmbed) continue;
-      final from = i == start.block ? start.offset : 0;
-      final to = i == end.block ? end.offset : block.length;
       final spans = RichTextEditing.runSpans(block);
       final runs = List<TextRun>.of(block.runs);
       // How much longer the formulas changed so far have grown.
@@ -1622,11 +1647,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
       return handled;
     }
 
-    if (key == LogicalKeyboardKey.tab) {
+    // Ctrl+Tab goes on to the window, to change tabs.
+    if (key == LogicalKeyboardKey.tab && !control) {
       if (_formula != null) {
         _moveToSlot(forward: !shift);
       } else {
-        indent(shift ? -1 : 1);
+        _tab(backward: shift);
       }
       return handled;
     }
@@ -1864,15 +1890,19 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (rect == null) return caret;
     final goalX = _goalX ??= rect.center.dx;
 
-    // First try another line of the same block.
+    // First try another line of the same block: a whole line up or down
+    // from the middle of the caret's, which is drawn shorter than the line.
     final paragraph = _paragraph(caret.block);
     if (paragraph != null) {
       final localRect = _caretRectLocal(caret);
       if (localRect != null) {
-        final y = direction < 0 ? localRect.top - 1 : localRect.bottom + 1;
+        final view = _viewFor(caret.block);
+        final line = paragraph.paragraph.getFullHeightForCaret(
+          TextPosition(offset: view.toView(caret.offset)),
+        );
+        final y = localRect.center.dy + direction * line;
         if (y >= 0 && y < paragraph.size.height) {
           final local = paragraph.globalToLocal(Offset(goalX, 0));
-          final view = _viewFor(caret.block);
           final position = paragraph.paragraph.getPositionForOffset(
             Offset(local.dx, y),
           );
@@ -1882,10 +1912,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
 
     // Then the nearest line of the neighbouring block.
-    final next = caret.block + direction;
-    if (next < 0) return RichPosition(caret.block, 0);
-    if (next >= _blocks.length) {
-      return RichPosition(caret.block, _blocks[caret.block].length);
+    final next = _lineBeside(caret.block, direction, goalX);
+    if (next == null) {
+      return RichPosition(
+        caret.block,
+        direction < 0 ? 0 : _blocks[caret.block].length,
+      );
     }
     final block = _blocks[next];
     if (block.isEmbed) return RichPosition(next, direction < 0 ? 1 : 0);
@@ -1895,6 +1927,39 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final y = direction < 0 ? target.size.height - 1 : 1.0;
     final position = target.paragraph.getPositionForOffset(Offset(local.dx, y));
     return RichPosition(next, _viewFor(next).toModel(position.offset));
+  }
+
+  /// The line the caret moves to from block [index], going up for a
+  /// negative [direction] and down otherwise, past its first or last line:
+  /// the next line of its cell, or the cell above or below it, or from
+  /// outside a table into the cell of its nearest row under [goalX].
+  int? _lineBeside(int index, int direction, double goalX) {
+    final table = TextTables.tableAt(_blocks, index);
+    if (table == null) {
+      final next = index + direction;
+      if (next < 0 || next >= _blocks.length) return null;
+      final entered = TextTables.tableAt(_blocks, next);
+      final box = entered == null ? null : _tableBox(entered);
+      if (entered == null || box == null) return next;
+      final cell = TextTables.cellIn(
+        _blocks,
+        entered,
+        direction < 0 ? entered.rows - 1 : 0,
+        box.columnAt(box.globalToLocal(Offset(goalX, 0)).dx),
+      )!;
+      return direction < 0 ? cell.end - 1 : cell.start;
+    }
+    final lines = TextTables.cellAt(_blocks, index);
+    final within = index + direction;
+    if (within >= lines.start && within < lines.end) return within;
+    final cell = _blocks[index].cell!;
+    final row = cell.row + direction;
+    if (row < 0) return table.start > 0 ? table.start - 1 : null;
+    if (row >= table.rows) {
+      return table.end < _blocks.length ? table.end : null;
+    }
+    final target = TextTables.cellIn(_blocks, table, row, cell.column)!;
+    return direction < 0 ? target.end - 1 : target.start;
   }
 
   void _moveToLineEdge({
@@ -1999,23 +2064,52 @@ class TextBoxEditorState extends State<TextBoxEditor>
     return MatrixUtils.transformRect(paragraph.getTransformTo(null), local);
   }
 
+  /// The laid-out grid of [table].
+  RenderTextTable? _tableBox(TextTable table) {
+    RenderObject? object = _row(table.start);
+    while (object != null && object is! RenderTextTable) {
+      object = object.parent;
+    }
+    return object is RenderTextTable ? object : null;
+  }
+
+  /// The lines a point at [global] can land on: those of the table cell it
+  /// is in, or every line of the box.
+  CellSpan _linesUnder(Offset global) {
+    for (final table in TextTables.tablesIn(_blocks)) {
+      final box = _tableBox(table);
+      final cell = box?.cellAt(box.globalToLocal(global));
+      if (cell != null) {
+        return TextTables.cellIn(_blocks, table, cell.row, cell.column)!;
+      }
+    }
+    return (start: 0, end: _blocks.length);
+  }
+
   /// Finds the text position under a global point.
   _Hit? _hitTest(Offset global) {
-    // The block whose row is vertically closest to the point.
+    // The line closest to the point: the nearest above or below it, and of
+    // those — the cells of a table's row lie side by side — the nearest
+    // across.
+    final lines = _linesUnder(global);
     var best = -1;
-    var bestDistance = double.infinity;
-    for (var i = 0; i < _blocks.length; i++) {
+    var bestDistance = (double.infinity, double.infinity);
+    double outside(double at, double length) =>
+        at < 0 ? -at : (at > length ? at - length : 0.0);
+    for (var i = lines.start; i < lines.end; i++) {
       final row = _row(i);
       if (row == null) continue;
       final local = row.globalToLocal(global);
-      final distance = local.dy < 0
-          ? -local.dy
-          : (local.dy > row.size.height ? local.dy - row.size.height : 0.0);
-      if (distance < bestDistance) {
+      final distance = (
+        outside(local.dy, row.size.height),
+        outside(local.dx, row.size.width),
+      );
+      if (distance.$1 < bestDistance.$1 ||
+          (distance.$1 == bestDistance.$1 && distance.$2 < bestDistance.$2)) {
         best = i;
         bestDistance = distance;
       }
-      if (distance == 0) break;
+      if (distance == (0.0, 0.0)) break;
     }
     if (best < 0) return null;
 
@@ -2103,6 +2197,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (!mounted) return;
     final selected = !_selection.isCollapsed;
     final picture = hit != null && hit.embed ? hit.position.block : null;
+    final table = hit == null
+        ? null
+        : TextTables.tableAt(_blocks, hit.position.block);
     await showCommandMenu(context, global, <List<MenuCommand>>[
       if (misspelled case (:final index, :final word, :final spelled)) ...[
         if (suggestions.isEmpty)
@@ -2151,6 +2248,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
           canPaste ? () => unawaited(_paste(textOnly: true)) : null,
         ),
       ],
+      if (table != null) ..._tableCommands(table, hit!.position.block),
       if (picture != null && widget.onEmbedToBackground != null)
         <MenuCommand>[
           MenuCommand(
@@ -2160,6 +2258,95 @@ class TextBoxEditorState extends State<TextBoxEditor>
           ),
         ],
     ]);
+  }
+
+  /// What can be done to [table] from the cell block [index] is in: adding
+  /// rows and columns beside it, removing its row, its column or the whole
+  /// table, and fitting dragged columns to their text again.
+  List<List<MenuCommand>> _tableCommands(TextTable table, int index) {
+    final cell = _blocks[index].cell!;
+    void edit(RichEdit Function(List<TextBlock> blocks) change) {
+      _focusNode.requestFocus();
+      _commit(change(_blocks), _EditKind.other);
+    }
+
+    final dragged = TextTables.widthsOf(
+      _blocks,
+      table,
+    ).any((width) => width != null);
+    return <List<MenuCommand>>[
+      <MenuCommand>[
+        MenuCommand(
+          'Insert Row Above',
+          Icons.table_rows_outlined,
+          () => edit((b) => TableEditing.insertRow(b, table, cell.row)),
+        ),
+        MenuCommand(
+          'Insert Row Below',
+          null,
+          () => edit((b) => TableEditing.insertRow(b, table, cell.row + 1)),
+        ),
+        MenuCommand(
+          'Insert Column Left',
+          Icons.view_column_outlined,
+          () => edit(
+            (b) => TableEditing.insertColumn(
+              b,
+              table,
+              cell.column,
+              caretRow: cell.row,
+            ),
+          ),
+        ),
+        MenuCommand(
+          'Insert Column Right',
+          null,
+          () => edit(
+            (b) => TableEditing.insertColumn(
+              b,
+              table,
+              cell.column + 1,
+              caretRow: cell.row,
+            ),
+          ),
+        ),
+      ],
+      <MenuCommand>[
+        MenuCommand(
+          'Delete Row',
+          Icons.delete_outline_rounded,
+          () => edit((b) => TableEditing.deleteRow(b, table, cell.row)),
+        ),
+        MenuCommand(
+          'Delete Column',
+          null,
+          () => edit(
+            (b) => TableEditing.deleteColumn(
+              b,
+              table,
+              cell.column,
+              caretRow: cell.row,
+            ),
+          ),
+        ),
+        MenuCommand(
+          'Delete Table',
+          Icons.grid_off_rounded,
+          () => edit((b) => TableEditing.deleteTable(b, table)),
+        ),
+        if (dragged)
+          MenuCommand(
+            'Fit Columns to Text',
+            Icons.fit_screen_outlined,
+            () => edit(
+              (b) => (
+                blocks: TableEditing.fitColumns(b, table),
+                selection: _selection,
+              ),
+            ),
+          ),
+      ],
+    ];
   }
 
   /// Whether the selection takes in [position].
@@ -2265,6 +2452,33 @@ class TextBoxEditorState extends State<TextBoxEditor>
       return;
     }
 
+    // A column's right-hand line resizes the column, and a double-click on
+    // it fits the column to its text again.
+    final edge = _columnEdgeAt(event.position);
+    if (edge != null) {
+      if (!widget.isEditing) widget.onStartEditing?.call();
+      _focusNode.requestFocus();
+      if (_countClick(event) == 2) {
+        _commit((
+          blocks: TableEditing.setColumnWidth(
+            _blocks,
+            edge.table,
+            edge.column,
+            null,
+          ),
+          selection: _selection,
+        ), _EditKind.other);
+        return;
+      }
+      _columnResize = (
+        table: edge.table.start,
+        column: edge.column,
+        from: event.position,
+        width: edge.box.columnWidth(edge.column),
+      );
+      return;
+    }
+
     final hit = _hitTest(event.position);
     if (hit == null) return;
     if (hit.checkbox) {
@@ -2290,13 +2504,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       return;
     }
 
-    final now = DateTime.now();
-    final isRepeat =
-        now.difference(_lastPress) < _multiClickWindow &&
-        (event.position - _lastPressPosition).distance < 6;
-    _clickCount = isRepeat ? (_clickCount % 3) + 1 : 1;
-    _lastPress = now;
-    _lastPressPosition = event.position;
+    _countClick(event);
     _dragPointer = event.pointer;
 
     // A click in the source of the formula being edited places the caret in
@@ -2369,6 +2577,58 @@ class TextBoxEditorState extends State<TextBoxEditor>
           ),
         );
     }
+  }
+
+  /// Counts [event] as the first, second or third click in a row, where it
+  /// comes soon enough after the one before and near enough to it.
+  int _countClick(PointerDownEvent event) {
+    final now = DateTime.now();
+    final isRepeat =
+        now.difference(_lastPress) < _multiClickWindow &&
+        (event.position - _lastPressPosition).distance < 6;
+    _clickCount = isRepeat ? (_clickCount % 3) + 1 : 1;
+    _lastPress = now;
+    _lastPressPosition = event.position;
+    return _clickCount;
+  }
+
+  /// The table column whose right-hand line is under [global], if any.
+  ({TextTable table, int column, RenderTextTable box})? _columnEdgeAt(
+    Offset global,
+  ) {
+    for (final table in TextTables.tablesIn(_blocks)) {
+      final box = _tableBox(table);
+      final column = box?.edgeAt(box.globalToLocal(global));
+      if (column != null) return (table: table, column: column, box: box!);
+    }
+    return null;
+  }
+
+  /// Resizes the column being dragged so that its line follows the pointer,
+  /// no further than the box it is in allows, as a picture is resized.
+  void _resizeColumn(Offset to) {
+    final resize = _columnResize;
+    final table = resize == null
+        ? null
+        : TextTables.tableAt(_blocks, resize.table);
+    final box = table == null ? null : _tableBox(table);
+    if (resize == null || table == null || box == null) return;
+    final drag = box.globalToLocal(to).dx - box.globalToLocal(resize.from).dx;
+    final widest =
+        (widget.element.autoWidth
+            ? TextBoxEditor.maxAutoWidth
+            : widget.element.frame.width) -
+        TextBoxEditor.padding.horizontal -
+        (box.size.width - box.columnWidth(resize.column));
+    final width = math.max(
+      TableEditing.minColumnWidth,
+      math.min(resize.width + drag, widest),
+    );
+    if ((width - box.columnWidth(resize.column)).abs() < 0.5) return;
+    _commit((
+      blocks: TableEditing.setColumnWidth(_blocks, table, resize.column, width),
+      selection: _selection,
+    ), _EditKind.resizing);
   }
 
   RichPosition? _hitInOpenFormula(Offset global, _OpenFormula formula) {
@@ -2491,6 +2751,10 @@ class TextBoxEditorState extends State<TextBoxEditor>
       _resizeEmbed(event.position);
       return;
     }
+    if (_columnResize != null) {
+      _resizeColumn(event.position);
+      return;
+    }
     if (event.pointer != _dragPointer || _clickCount != 1) return;
     final formula = _formula;
     if (formula != null) {
@@ -2520,6 +2784,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
     if (event.pointer == _dragPointer) _dragPointer = null;
     _resize = null;
+    _columnResize = null;
   }
 
   // ------------------------------------------------------------------ caret
@@ -2843,13 +3108,38 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
   /// Whether the object on block [index] is shown picked, with the handles
   /// that resize it: selected in the text, or in a box picked whole.
-  bool _embedSelected(int index) =>
-      _blocks[index].isEmbed &&
-      (widget.isEditing
-          ? !_selection.isCollapsed &&
-                _selection.start <= RichPosition(index, 0) &&
-                _selection.end >= RichPosition(index, 1)
-          : widget.selected);
+  bool _embedSelected(int index) {
+    if (!_blocks[index].isEmbed) return false;
+    if (!widget.isEditing) return widget.selected;
+    final part = _covering[index];
+    return part != null && part.from == 0 && part.to == 1;
+  }
+
+  /// Whether the table cell block [index] is a line of is selected whole,
+  /// and drawn selected as a cell: in a selection from cell to cell, or in
+  /// a box picked whole.
+  bool _cellSelected(int index) =>
+      _blocks[index].inTable &&
+      (widget.isEditing ? _covering[index]?.cell ?? false : widget.selected);
+
+  /// What the selection takes in of each block it touches (see
+  /// [RichTextEditing.coveredBy]), worked out again only once the text or the
+  /// selection has changed.
+  Map<int, Covered> get _covering {
+    if (!identical(_coveredBlocks, _blocks) || _coveredFor != _selection) {
+      _coveredBlocks = _blocks;
+      _coveredFor = _selection;
+      _covered = <int, Covered>{
+        for (final part in RichTextEditing.coveredBy(_blocks, _selection))
+          part.block: part,
+      };
+    }
+    return _covered;
+  }
+
+  List<TextBlock>? _coveredBlocks;
+  RichSelection? _coveredFor;
+  Map<int, Covered> _covered = const <int, Covered>{};
 
   BlockDecoration _decorationFor(int index, BlockView view, bool focused) {
     final matches = _matchesIn(index, view);
@@ -2857,7 +3147,8 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (!widget.isEditing) {
       // A box picked on the page — by its band, say — shows everything in it
       // selected, as OneNote does with a container.
-      final whole = widget.selected && view.text.isNotEmpty
+      final whole =
+          widget.selected && view.text.isNotEmpty && !_cellSelected(index)
           ? TextSelection(baseOffset: 0, extentOffset: view.text.length)
           : null;
       return whole == null && matches.isEmpty && misspellings.isEmpty
@@ -2868,15 +3159,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
               misspellings: misspellings,
             );
     }
-    final start = _selection.start;
-    final end = _selection.end;
-
+    // A cell taken in whole is drawn selected as a cell, not as its text.
     TextSelection? selection;
-    if (!_selection.isCollapsed && index >= start.block && index <= end.block) {
-      final from = index == start.block ? view.toView(start.offset) : 0;
-      final to = index == end.block
-          ? view.toView(end.offset)
-          : view.text.length;
+    final part = _covering[index];
+    if (part != null && !part.cell) {
+      final from = view.toView(part.from);
+      final to = view.toView(part.to);
       if (to > from) {
         selection = TextSelection(baseOffset: from, extentOffset: to);
       }
@@ -2942,10 +3230,18 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
     final ordinals = ListNumbering.ordinals(_blocks);
     final rows = <Widget>[];
-    for (var i = 0; i < _blocks.length; i++) {
-      rows.add(
-        _buildBlock(i, base, scheme, paint, ordinals[i], focused, autoWidth),
-      );
+    var i = 0;
+    while (i < _blocks.length) {
+      final table = TextTables.tableAt(_blocks, i);
+      if (table == null) {
+        rows.add(
+          _buildBlock(i, base, scheme, paint, ordinals[i], focused, autoWidth),
+        );
+        i++;
+      } else {
+        rows.add(_buildTable(table, base, scheme, paint, ordinals, focused));
+        i = table.end;
+      }
     }
     if (_formula != null && widget.isEditing) {
       WidgetsBinding.instance.addPostFrameCallback(
@@ -3051,6 +3347,61 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (widthChanged || (size.height - frame.height).abs() >= 0.5) {
       widget.onSizeChanged?.call(size);
     }
+  }
+
+  /// [table], each of its cells a column of its lines.
+  Widget _buildTable(
+    TextTable table,
+    TextStyle base,
+    ColorScheme scheme,
+    BlockPaint paint,
+    List<int> ordinals,
+    bool focused,
+  ) {
+    final cells = <Widget>[];
+    var i = table.start;
+    while (i < table.end) {
+      final cell = TextTables.cellAt(_blocks, i);
+      cells.add(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (var line = cell.start; line < cell.end; line++)
+              _buildBlock(
+                line,
+                base,
+                scheme,
+                paint,
+                ordinals[line],
+                focused,
+                false,
+              ),
+          ],
+        ),
+      );
+      i = cell.end;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 6),
+      // Only as wide as its columns, in a box of any width.
+      child: Align(
+        alignment: AlignmentDirectional.topStart,
+        widthFactor: 1,
+        child: TextTableView(
+          columns: table.columns,
+          widths: TextTables.widthsOf(_blocks, table),
+          lineColor: RichTextStyles.tableRule,
+          selected: <int>{
+            for (var i = table.start; i < table.end; i++)
+              if (_cellSelected(i))
+                _blocks[i].cell!.row * table.columns + _blocks[i].cell!.column,
+          },
+          selectionColor: paint.selectionColor,
+          children: cells,
+        ),
+      ),
+    );
   }
 
   Widget _buildBlock(

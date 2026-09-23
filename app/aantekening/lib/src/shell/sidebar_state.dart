@@ -1,5 +1,6 @@
-/// The sidebar's state: which panel is open, how wide its columns are, and
-/// where its buttons are — all remembered between sessions.
+/// The sidebar's state: which panel is open in the tab showing, how wide
+/// its columns are, and where its buttons are — all remembered between
+/// sessions.
 library;
 
 import 'package:flutter/material.dart';
@@ -8,54 +9,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../arrangement/arrangement.dart';
 import '../arrangement/arrangement_controller.dart';
 import '../preferences.dart';
+import 'sidebar_panels.dart';
+import 'tabs.dart';
 
-/// A column of a panel, as wide as it was last dragged to be.
-enum SidebarColumn {
-  notebooks(248, 160, 480),
-  pages(268, 160, 520),
-  search(320, 240, 640),
-  graph(440, 260, 1600),
-  assistant(340, 280, 640);
-
-  const SidebarColumn(this.initialWidth, this.minWidth, this.maxWidth);
-
-  final double initialWidth;
-  final double minWidth;
-  final double maxWidth;
-}
-
-/// A button on the sidebar, and the panel it opens beside it.
-enum SidebarTab {
-  notebooks('Notebooks', Icons.menu_book_outlined, <SidebarColumn>[
-    SidebarColumn.notebooks,
-    SidebarColumn.pages,
-  ]),
-  search('Search', Icons.search_rounded, <SidebarColumn>[SidebarColumn.search]),
-  graph('Graph', Icons.hub_outlined, <SidebarColumn>[SidebarColumn.graph]),
-  assistant('Local AI', Icons.auto_awesome_outlined, <SidebarColumn>[
-    SidebarColumn.assistant,
-  ]);
-
-  const SidebarTab(this.label, this.icon, this.columns);
-
-  final String label;
-  final IconData icon;
-
-  /// The panel's columns, left to right.
-  final List<SidebarColumn> columns;
-}
-
-/// Where the sidebar's buttons go: down from its top, or up from its
-/// bottom.
-enum SidebarGroup implements ArrangementGroup<SidebarTab> {
-  top(<SidebarTab>[SidebarTab.notebooks, SidebarTab.search, SidebarTab.graph]),
-  bottom(<SidebarTab>[SidebarTab.assistant]);
-
-  const SidebarGroup(this.defaults);
-
-  @override
-  final List<SidebarTab> defaults;
-}
+export 'sidebar_panels.dart';
 
 @immutable
 class SidebarState {
@@ -64,31 +21,25 @@ class SidebarState {
     this.widths = const <SidebarColumn, double>{},
   });
 
-  /// The panel showing, or null while none is.
+  /// The panel showing beside the tab showing, or null while none is.
   final SidebarTab? open;
 
-  /// The widths the columns have been dragged to.
+  /// The widths the columns have been dragged to, the same in every tab.
   final Map<SidebarColumn, double> widths;
 
   double widthOf(SidebarColumn column) => widths[column] ?? column.initialWidth;
 }
 
+/// The sidebar of the tab showing: each tab has its own panel open, or
+/// none, and the tabs share how wide the panels' columns are.
 class SidebarController extends Notifier<SidebarState> {
-  static const String _openKey = 'sidebar.open';
   static const String _widthsKey = 'sidebar.widths';
-
-  /// Saved for a sidebar closed on purpose, rather than nothing, which opens
-  /// the notebooks as on the first run.
-  static const String _none = 'none';
 
   @override
   SidebarState build() {
-    final open = ref.preference(_openKey);
     final widths = ref.preference(_widthsKey);
     return SidebarState(
-      open: open == _none
-          ? null
-          : SidebarTab.values.asNameMap()[open] ?? SidebarTab.notebooks,
+      open: ref.watch(tabsProvider.select((tabs) => tabs.current.panel)),
       widths: <SidebarColumn, double>{
         if (widths is Map)
           for (final column in SidebarColumn.values)
@@ -105,11 +56,9 @@ class SidebarController extends Notifier<SidebarState> {
 
   void close() => _open(null);
 
-  void _open(SidebarTab? tab) {
-    if (state.open == tab) return;
-    state = SidebarState(open: tab, widths: state.widths);
-    ref.savePreference(_openKey, tab?.name ?? _none);
-  }
+  void _open(SidebarTab? tab) => ref
+      .read(tabsProvider.notifier)
+      .updateCurrent((current) => current.showing(tab));
 
   /// Makes [column] [width] wide, within its limits. Kept to itself until
   /// [saveWidths], so dragging a column does not write on every frame.

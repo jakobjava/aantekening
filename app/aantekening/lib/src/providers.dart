@@ -11,6 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'shell/tabs.dart';
+
 /// Where the workspace lives on disk.
 ///
 /// A single directory holds the database and the attachment store, so the whole
@@ -47,22 +49,30 @@ final libraryRevisionProvider = NotifierProvider<LibraryRevision, int>(
   LibraryRevision.new,
 );
 
-/// A nullable selection held in the navigation panes.
-class SelectionId extends Notifier<String?> {
-  @override
-  String? build() => null;
+/// The notebook, section or page the tab showing has chosen in its
+/// sidebar, or null for none.
+class TabSelection extends Notifier<String?> {
+  TabSelection(this._choice);
 
-  void select(String? id) => state = id;
+  final TabChoice _choice;
+
+  @override
+  String? build() =>
+      ref.watch(tabsProvider.select((tabs) => tabs.current.chosen(_choice)));
+
+  void select(String? id) => ref
+      .read(tabsProvider.notifier)
+      .updateCurrent((tab) => tab.choosing(_choice, id));
 }
 
-final selectedNotebookProvider = NotifierProvider<SelectionId, String?>(
-  SelectionId.new,
+final selectedNotebookProvider = NotifierProvider<TabSelection, String?>(
+  () => TabSelection(TabChoice.notebook),
 );
-final selectedSectionProvider = NotifierProvider<SelectionId, String?>(
-  SelectionId.new,
+final selectedSectionProvider = NotifierProvider<TabSelection, String?>(
+  () => TabSelection(TabChoice.section),
 );
-final selectedPageProvider = NotifierProvider<SelectionId, String?>(
-  SelectionId.new,
+final selectedPageProvider = NotifierProvider<TabSelection, String?>(
+  () => TabSelection(TabChoice.page),
 );
 
 /// Every notebook, in display order.
@@ -112,12 +122,15 @@ final pageProvider = FutureProvider.family<PageRef?, String>((
   return store.pages.findPage(pageId);
 });
 
-/// The current search text.
+/// What the tab showing is searching for.
 class SearchQuery extends Notifier<String> {
   @override
-  String build() => '';
+  String build() =>
+      ref.watch(tabsProvider.select((tabs) => tabs.current.search));
 
-  void set(String value) => state = value;
+  void set(String value) => ref
+      .read(tabsProvider.notifier)
+      .updateCurrent((tab) => tab.search == value ? tab : tab.searching(value));
 }
 
 final searchQueryProvider = NotifierProvider<SearchQuery, String>(

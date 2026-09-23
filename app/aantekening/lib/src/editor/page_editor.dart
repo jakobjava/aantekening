@@ -22,6 +22,7 @@ import '../spelling/spelling.dart';
 import 'element_views.dart';
 import 'media_import.dart';
 import 'note_clipboard.dart';
+import 'page_minimap.dart';
 import 'page_title.dart';
 import 'ribbon/mini_toolbar.dart';
 import 'ribbon/ribbon.dart';
@@ -128,6 +129,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// The text box with the caret, if any.
   String? _editingId;
 
+  /// Where each page opened this session was last seen from, so going back
+  /// to it — in another tab, say — finds it as it was left.
+  final Map<String, CanvasViewport> _views = <String, CanvasViewport>{};
+
   /// Whether the box being edited should open straight into a formula.
   bool _editingStartsInFormula = false;
 
@@ -171,8 +176,11 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     // saved to it before the next page is read.
     _autosave?.cancel();
     final leaving = old.pageId;
-    if (leaving != null && _ready && _controller.isDirty) {
-      unawaited(_persist(leaving, _controller.document));
+    if (leaving != null && _ready) {
+      _views[leaving] = _controller.viewport;
+      if (_controller.isDirty) {
+        unawaited(_persist(leaving, _controller.document));
+      }
     }
     _ready = false;
     _editingId = null;
@@ -226,6 +234,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       // from before pages had a top-left corner, moved onto the page.
       final document = MathStorage.withLatexFormulas(page).withContentOnPage();
       _controller.loadDocument(document);
+      if (_views[pageId] case final view?) _controller.viewport = view;
       if (!identical(document, page)) unawaited(_persist(pageId, document));
       setState(() {
         _loading = false;
@@ -1052,38 +1061,86 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     return Column(
       children: <Widget>[
         if (_error != null) _ErrorBanner(error: _error!),
-        if (_ready)
-          Expanded(
-            child: Stack(
-              children: <Widget>[
-                Positioned.fill(child: _canvas(pageId, highlight)),
-                // The formula being edited is typed in its text box and shown
-                // typeset beneath, at a size that does not change with zoom.
-                Positioned.fill(
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: _formulaPlaced,
-                    builder: (context, placed, _) => !placed
-                        ? const SizedBox.shrink()
-                        : ValueListenableBuilder<FormulaSession?>(
-                            valueListenable: _textController.formula,
-                            builder: (context, session, _) => session == null
-                                ? const SizedBox.shrink()
-                                : CustomSingleChildLayout(
-                                    delegate: _BelowFormula(_formulaOnScreen),
-                                    child: FormulaPreview(
-                                      session: session,
-                                      onDone: _textController.finishFormula,
-                                    ),
-                                  ),
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        if (_ready) Expanded(child: _scrolled(_pageArea(pageId, highlight))),
       ],
     );
   }
+
+  /// [page] with a scrollbar beneath it and another, or the page drawn
+  /// small, down its right-hand side.
+  Widget _scrolled(Widget page) {
+    final scheme = Theme.of(context).colorScheme;
+    final minimap = ref.watch(minimapProvider);
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(child: page),
+              if (minimap) ...<Widget>[
+                const VerticalDivider(width: 1),
+                SizedBox(
+                  width: PageMinimap.width,
+                  child: PageMinimap(controller: _controller),
+                ),
+              ] else
+                PageScrollbar(controller: _controller, axis: Axis.vertical),
+            ],
+          ),
+        ),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: PageScrollbar(
+                controller: _controller,
+                axis: Axis.horizontal,
+              ),
+            ),
+            // The corner where the bars meet.
+            SizedBox.square(
+              dimension: PageScrollbar.thickness,
+              child: ColoredBox(color: scheme.surfaceContainerLow),
+            ),
+            if (minimap)
+              SizedBox(
+                width: PageMinimap.width + 1 - PageScrollbar.thickness,
+                height: PageScrollbar.thickness,
+                child: ColoredBox(color: scheme.surfaceContainerLow),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// The page, and over it the preview of the formula being typed.
+  Widget _pageArea(String pageId, SearchTerms? highlight) => Stack(
+    children: <Widget>[
+      Positioned.fill(child: _canvas(pageId, highlight)),
+      // The formula being edited is typed in its text box and shown
+      // typeset beneath, at a size that does not change with zoom.
+      Positioned.fill(
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _formulaPlaced,
+          builder: (context, placed, _) => !placed
+              ? const SizedBox.shrink()
+              : ValueListenableBuilder<FormulaSession?>(
+                  valueListenable: _textController.formula,
+                  builder: (context, session, _) => session == null
+                      ? const SizedBox.shrink()
+                      : CustomSingleChildLayout(
+                          delegate: _BelowFormula(_formulaOnScreen),
+                          child: FormulaPreview(
+                            session: session,
+                            onDone: _textController.finishFormula,
+                          ),
+                        ),
+                ),
+        ),
+      ),
+    ],
+  );
 
   Widget _canvas(String pageId, SearchTerms? highlight) => CallbackShortcuts(
     bindings: _shortcuts,

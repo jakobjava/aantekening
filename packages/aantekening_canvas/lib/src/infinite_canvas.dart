@@ -1155,6 +1155,78 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   };
 }
 
+/// A page drawn as the canvas draws it, seen from [viewport], only to be
+/// looked at: nothing on it can be pressed, picked or typed in. A map of the
+/// page, say, drawn small.
+///
+/// What each element looks like comes from [elementBuilder], as on the
+/// canvas; ink and pictures set as the background are drawn as there.
+class CanvasPreview extends StatelessWidget {
+  const CanvasPreview({
+    required this.controller,
+    required this.viewport,
+    this.elementBuilder,
+    super.key,
+  });
+
+  /// The page, as the canvas has it.
+  final CanvasController controller;
+
+  final CanvasViewport viewport;
+  final CanvasElementBuilder? elementBuilder;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final visible = controller.elementsIn(
+        viewport.visibleBounds(constraints.biggest),
+      );
+      final ink = <InkElement>[
+        for (final element in visible)
+          if (element is InkElement && !element.locked) element,
+      ];
+      Widget layer(bool locked) => _ElementLayer(
+        elements: <NoteElement>[
+          for (final element in visible)
+            if (element.locked == locked) element,
+        ],
+        viewport: viewport,
+        builder: elementBuilder,
+        header: null,
+        headerInteractive: false,
+      );
+      return IgnorePointer(
+        child: ClipRect(
+          child: CanvasScope(
+            zoom: viewport.zoom,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                layer(true),
+                CustomPaint(
+                  painter: InkPainter(
+                    elements: ink,
+                    viewport: viewport,
+                    layer: InkLayer.beneath,
+                  ),
+                ),
+                layer(false),
+                CustomPaint(
+                  painter: InkPainter(
+                    elements: ink,
+                    viewport: viewport,
+                    layer: InkLayer.above,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 /// Positions element widgets over the canvas, with the header beneath them.
 ///
 /// Each element is placed at its on-screen rectangle and scaled from page

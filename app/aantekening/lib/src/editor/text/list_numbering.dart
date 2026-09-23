@@ -5,13 +5,20 @@ import 'package:aantekening_core/aantekening_core.dart';
 
 abstract final class ListNumbering {
   /// The number of each block of [blocks] in its numbered list, counting
-  /// afresh for each list and each level of nesting; 0 for a block in none.
+  /// afresh for each list, each level of nesting and each table cell; 0 for
+  /// a block in none.
   static List<int> ordinals(List<TextBlock> blocks) {
     final ordinals = List<int>.filled(blocks.length, 0);
     final counters = <int>[];
     for (var i = 0; i < blocks.length; i++) {
       final block = blocks[i];
       final level = block.indent;
+      final cell = block.cell;
+      final previous = i > 0 ? blocks[i - 1].cell : null;
+      if (cell != previous &&
+          (cell == null || previous == null || !cell.sameCell(previous))) {
+        counters.clear();
+      }
       if (block.kind == TextBlockKind.numbered && !block.isEmbed) {
         while (counters.length <= level) {
           counters.add(0);

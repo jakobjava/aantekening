@@ -24,6 +24,12 @@ stays instant.
   across the top of the window, each in named sections. It stays put while
   you work; a tool's shortcut brings its tab forward, and any button can be
   dragged to another place, section or tab.
+* **Tabs** — beneath the ribbon, as in a browser: open a page in a new tab
+  from its menu, with a middle-click or with Ctrl+click, and have as many
+  open as you like. Each tab has a sidebar of its own — its notebook, section
+  and page, its open panel and its search — and the sidebar acts on the tab
+  showing alone. Drag tabs to reorder them; the window remembers them, and
+  going back to a tab finds its page where you left it.
 * **Sidebar** — a strip of buttons down the left opens panels beside the page:
   the notebooks and pages, search, a graph of the workspace, and the local AI.
   A panel's button closes it again, its columns are widened by dragging their
@@ -35,8 +41,10 @@ stays instant.
   at its top-left corner and runs on to the right and down.
 * **Infinite canvas** — scroll and zoom with a mouse wheel, a trackpad
   (two-finger scroll with momentum, pinch) or two fingers on a touchscreen; no
-  separate pan tool. Undo and redo, with viewport culling so paint cost tracks
-  what is visible.
+  separate pan tool. Scrollbars down the side and along the foot of the page,
+  or **View → Page preview** for the whole page drawn small down its side, as
+  code editors show a file: click or drag on it to go there. Undo and redo,
+  with viewport culling so paint cost tracks what is visible.
 * **Selection** — one tool moves, resizes and rotates anything on the page —
   text boxes, pictures, PDF pages, handwriting — alone or as a group. A corner
   resizes in proportion; a side, dragged anywhere along it, stretches in that
@@ -50,6 +58,17 @@ stays instant.
   colour, bold/italic/underline/strike, Markdown shortcuts, and pictures and
   PDF pages on lines of their own. Resizing a box changes its width, never its
   font.
+* **Tables** — as in OneNote: type a word and press Tab, and it becomes the
+  first cell of a table with the caret in the next. Tab in the last cell of
+  the first row adds a column; Enter at the end of a row adds a row, and
+  Enter in the empty row leaves the table; Backspace in an empty column or
+  row takes it away again. Drag from one cell into another to select the
+  cells between, and Delete takes them away as it does text: the rows and
+  columns selected whole go, the rest are emptied. Columns fit their text, an
+  inch wide at least while there is room; drag a column's line to size it,
+  double-click the line to fit it again, and right-click a cell to add or
+  remove rows and columns. Cells hold anything a paragraph can: formulas,
+  lists, pictures.
 * **Colours** — one palette for pens, text and highlights, plus a picker for
   any other colour.
 * **Mathematics** — written inside the text box, in the flow of a sentence.
@@ -148,7 +167,7 @@ Commands are on the ribbon: text formatting on **Home**, pictures, PDFs and
 formulas on **Insert**, the pens, their colours and widths on **Draw**,
 structures and symbols for formulas and the cheat sheet on **Math** (shown
 while a formula is open), spelling and its languages on **Review**, and zoom
-on **View**. Formatting with a text box selected (rather than being typed
+and the page preview on **View**. Formatting with a text box selected (rather than being typed
 in) formats all of it. To rearrange the ribbon, drag a button to where you want
 it; hold it over another tab's name to open that tab. **View → Reset ribbon**
 puts everything back.
@@ -164,7 +183,10 @@ puts everything back.
 | Ctrl+. / Ctrl+/ / Ctrl+1 | Bullets, numbering, to-do (Ctrl+Enter ticks it) |
 | Ctrl+Alt+1–3, Ctrl+Shift+N | Headings, normal text |
 | `- `, `1. `, `[] `, `# `, `> ` | Markdown shortcuts at the start of a line |
-| Tab / Shift+Tab | Indent / outdent |
+| Tab / Shift+Tab | Indent / outdent; after a word, start a table; in a table, the next / previous cell |
+| Enter (in a table) | At the end of a row, add a row; in an empty row, leave the table |
+| Ctrl+T / Ctrl+W | Open a new tab / close the tab showing |
+| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab (also Ctrl+Page Down / Page Up) |
 | V or T, P, H, E | Type-and-select, pen, highlighter, eraser (outside a text box); shows the Home or Draw tab |
 | Ctrl+F1 | Collapse or show the ribbon |
 | Ctrl+A, arrow keys | Select everything; nudge the selection (Shift: further) |

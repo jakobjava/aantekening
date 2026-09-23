@@ -14,6 +14,8 @@ import 'package:aantekening/src/shell/page_list_pane.dart';
 import 'package:aantekening/src/shell/sidebar.dart';
 import 'package:aantekening/src/shell/library_actions.dart';
 import 'package:aantekening/src/shell/sidebar_state.dart';
+import 'package:aantekening/src/shell/tab_strip.dart';
+import 'package:aantekening/src/shell/tabs.dart';
 import 'package:aantekening/src/shell/tree_rows.dart';
 import 'package:aantekening/src/theme.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
@@ -73,6 +75,11 @@ Finder get titleField => find.descendant(
   of: find.byType(PageTitle),
   matching: find.byType(EditableText),
 );
+
+/// What [finder] finds in the sidebar, leaving out the tabs, which show
+/// the names of what they have open too.
+Finder inPanes(Finder finder) =>
+    find.descendant(of: find.byType(Sidebar), matching: finder);
 
 /// Right-clicks [target].
 Future<void> rightClick(WidgetTester tester, Finder target) async {
@@ -145,16 +152,18 @@ void main() {
       expect(find.text('Select a page, or create one'), findsOneWidget);
     });
 
-    testWidgets('has the ribbon across it, over the sidebar and the page', (
-      tester,
-    ) async {
+    testWidgets('has the ribbon across it, over the tabs, the sidebar and '
+        'the page', (tester) async {
       await openPage(tester);
 
       final ribbon = tester.getRect(find.byType(Ribbon));
       expect(ribbon.left, 0);
       expect(ribbon.width, wideWindow.width);
-      expect(tester.getTopLeft(find.byType(Sidebar)).dy, ribbon.bottom);
-      expect(tester.getTopLeft(find.byType(LibraryPane)).dy, ribbon.bottom);
+      final tabs = tester.getRect(find.byType(TabStrip));
+      expect(tabs.top, ribbon.bottom);
+      expect(tabs.width, wideWindow.width);
+      expect(tester.getTopLeft(find.byType(Sidebar)).dy, tabs.bottom);
+      expect(tester.getTopLeft(find.byType(LibraryPane)).dy, tabs.bottom);
       expect(find.text('Search all notes'), findsNothing, reason: 'no bar');
     });
 
@@ -236,7 +245,7 @@ void main() {
         tester.getTopLeft(find.byType(InfiniteCanvas)).dx,
         lessThan(pageLeft - 400),
       );
-      expect(preferences['sidebar.open'], 'none');
+      expect(preferences['tabs'], <Object?>[containsPair('panel', 'none')]);
     });
 
     testWidgets('columns are made wider by their edges, and remembered', (
@@ -461,7 +470,7 @@ void main() {
       final title = tester.widget<EditableText>(titleField);
       expect(title.controller.text, isEmpty);
       expect(title.focusNode.hasFocus, isTrue);
-      expect(find.text('Untitled page'), findsOneWidget);
+      expect(inPanes(find.text('Untitled page')), findsOneWidget);
     });
   });
 
@@ -719,8 +728,216 @@ void main() {
           .read(libraryActionsProvider)
           .openSection(notebook.id, waves.id);
       await tester.pumpAndSettle();
-      expect(find.text('Waves'), findsOneWidget);
+      expect(inPanes(find.text('Waves')), findsOneWidget);
       expect(preferences['library.collapsed'], isNull);
+    });
+  });
+
+  group('tabs', () {
+    ProviderContainer containerOf(WidgetTester tester) =>
+        ProviderScope.containerOf(tester.element(find.byType(HomeShell)));
+
+    TabsState tabsOf(WidgetTester tester) =>
+        containerOf(tester).read(tabsProvider);
+
+    /// [text] on the page showing.
+    Finder onPage(String text) => find.descendant(
+      of: find.byType(InfiniteCanvas),
+      matching: find.text(text, findRichText: true),
+    );
+
+    Finder tabNamed(String title) =>
+        find.descendant(of: find.byType(TabStrip), matching: find.text(title));
+
+    Future<void> pressWithControl(
+      WidgetTester tester,
+      LogicalKeyboardKey key, {
+      bool shift = false,
+    }) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(key);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+    }
+
+    /// A second page beside the one [openPage] made, opened in a new tab
+    /// from its menu.
+    Future<PageRef> openSecondInNewTab(
+      WidgetTester tester,
+      PageRef first,
+    ) async {
+      final second = await store.pages.createPage(
+        sectionId: first.sectionId,
+        title: 'Lecture 2',
+      );
+      await store.pages.saveDocument(
+        second.id,
+        withText(second.id, 'Energy is conserved'),
+      );
+      containerOf(tester).read(libraryRevisionProvider.notifier).bump();
+      await tester.pumpAndSettle();
+      await rightClick(
+        tester,
+        find.descendant(
+          of: find.byType(PageListPane),
+          matching: find.text('Lecture 2'),
+        ),
+      );
+      await tester.tap(find.text('Open in New Tab'));
+      await tester.pumpAndSettle();
+      return second;
+    }
+
+    testWidgets('a page opens in a tab of its own, and each tab shows its '
+        'own page', (tester) async {
+      final first = await openPage(tester);
+      final second = await openSecondInNewTab(tester, first);
+
+      expect(tabsOf(tester).tabs, hasLength(2));
+      expect(tabsOf(tester).active, 1);
+      expect(onPage('Energy is conserved'), findsOneWidget);
+      expect(tabNamed('Lecture 1'), findsOneWidget);
+      expect(tabNamed('Lecture 2'), findsOneWidget);
+
+      await tester.tap(tabNamed('Lecture 1'));
+      await tester.pumpAndSettle();
+      expect(onPage('Newtons second law'), findsOneWidget);
+      expect(containerOf(tester).read(selectedPageProvider), first.id);
+
+      // The sidebar picks for the tab showing, and for no other.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(PageListPane),
+          matching: find.text('Lecture 2'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tabsOf(tester).tabs.map((tab) => tab.pageId), <String>[
+        second.id,
+        second.id,
+      ]);
+    });
+
+    testWidgets('each tab has a panel and a search of its own', (tester) async {
+      await openPage(tester);
+
+      await pressWithControl(tester, LogicalKeyboardKey.keyT);
+      expect(tabsOf(tester).tabs, hasLength(2));
+      expect(tabNamed('New tab'), findsNothing, reason: 'named by its section');
+      expect(find.text('Select a page, or create one'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Search'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(SearchPanel),
+          matching: find.byType(TextField),
+        ),
+        'Newtons',
+      );
+      await tester.pump(SearchPanel.typingPause);
+      await tester.pumpAndSettle();
+
+      await pressWithControl(tester, LogicalKeyboardKey.tab);
+      expect(tabsOf(tester).active, 0);
+      expect(find.byType(SearchPanel), findsNothing);
+      expect(find.byType(LibraryPane), findsOneWidget);
+
+      await pressWithControl(tester, LogicalKeyboardKey.tab, shift: true);
+      expect(tabsOf(tester).active, 1);
+      expect(find.text('Newtons'), findsOneWidget, reason: 'its search kept');
+    });
+
+    testWidgets('Ctrl+W closes the tab showing; the last makes way for a new '
+        'one', (tester) async {
+      final first = await openPage(tester);
+      await openSecondInNewTab(tester, first);
+
+      await pressWithControl(tester, LogicalKeyboardKey.keyW);
+      expect(tabsOf(tester).tabs.single.pageId, first.id);
+      expect(onPage('Newtons second law'), findsOneWidget);
+
+      await pressWithControl(tester, LogicalKeyboardKey.keyW);
+      expect(tabsOf(tester).tabs.single.pageId, isNull);
+      expect(tabNamed('New tab'), findsOneWidget);
+    });
+
+    testWidgets('tabs are remembered, and forget what is deleted', (
+      tester,
+    ) async {
+      final preferences = Preferences.inMemory();
+      final first = await openPage(tester, preferences: preferences);
+      final second = await openSecondInNewTab(tester, first);
+      expect(preferences['tabs'], <Object?>[
+        containsPair('page', first.id),
+        containsPair('page', second.id),
+      ]);
+
+      // Opened again, the window shows the same tabs.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(shellWith(store, preferences: preferences));
+      await tester.pumpAndSettle();
+      expect(tabsOf(tester).tabs.map((tab) => tab.pageId), <String>[
+        first.id,
+        second.id,
+      ]);
+      expect(onPage('Energy is conserved'), findsOneWidget);
+
+      await containerOf(tester).read(libraryActionsProvider).delete(second);
+      await tester.pumpAndSettle();
+      expect(tabsOf(tester).tabs.map((tab) => tab.pageId), <String?>[
+        first.id,
+        null,
+      ]);
+    });
+
+    testWidgets('going back to a tab finds its page where it was left', (
+      tester,
+    ) async {
+      final first = await openPage(tester);
+      final canvas = containerOf(tester);
+      CanvasController view() =>
+          tester.widget<InfiniteCanvas>(find.byType(InfiniteCanvas)).controller;
+      view().viewport = const CanvasViewport(origin: Offset(0, 300), zoom: 1.5);
+      await tester.pumpAndSettle();
+
+      await openSecondInNewTab(tester, first);
+      expect(view().viewport.origin, Offset.zero);
+      canvas.read(tabsProvider.notifier).activate(0);
+      await tester.pumpAndSettle();
+      expect(
+        view().viewport,
+        const CanvasViewport(origin: Offset(0, 300), zoom: 1.5),
+      );
+    });
+
+    test('closing and moving tabs keeps the one showing, or its neighbour', () {
+      final container = ProviderContainer(
+        overrides: [
+          preferencesProvider.overrideWith(
+            (ref) async => Preferences.inMemory(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final tabs = container.read(tabsProvider.notifier)
+        ..open()
+        ..open();
+      expect(container.read(tabsProvider).active, 2);
+
+      tabs.move(2, 0);
+      expect(container.read(tabsProvider).active, 0);
+      tabs.close(1);
+      expect(container.read(tabsProvider).active, 0);
+      tabs.close(0);
+      expect(container.read(tabsProvider).tabs, hasLength(1));
+      expect(container.read(tabsProvider).active, 0);
+      tabs
+        ..open()
+        ..closeOthers(0);
+      expect(container.read(tabsProvider).tabs, hasLength(1));
     });
   });
 

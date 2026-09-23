@@ -15,6 +15,7 @@ import 'package:path/path.dart' as p;
 import '../palette.dart';
 import '../../spelling/dictionaries.dart';
 import '../../spelling/spelling.dart';
+import '../page_minimap.dart';
 import '../text/cheat_sheet.dart';
 import '../text/math_syntax.dart';
 import '../text/math_templates.dart';
@@ -137,6 +138,7 @@ IconData ribbonIconOf(RibbonItem item) => switch (item) {
   RibbonItem.zoomLevel => Icons.crop_free_rounded,
   RibbonItem.zoomIn => Icons.zoom_in_rounded,
   RibbonItem.fitPage => Icons.fit_screen_outlined,
+  RibbonItem.pagePreview => Icons.view_sidebar_outlined,
   RibbonItem.resetRibbon => Icons.restart_alt_rounded,
   RibbonItem.mathFraction ||
   RibbonItem.mathScript ||
@@ -473,6 +475,17 @@ class RibbonItemView extends StatelessWidget {
         label: item.label,
         tooltip: 'Fit everything on the page into view',
         onPressed: commands.onFitPage,
+      ),
+      RibbonItem.pagePreview => Consumer(
+        builder: (context, ref, _) => RibbonLargeButton(
+          icon: Icon(ribbonIconOf(item), size: RibbonMetrics.largeIcon),
+          label: item.label,
+          tooltip:
+              'Page preview\nThe whole page drawn small beside it, in place '
+              'of its scrollbar',
+          selected: ref.watch(minimapProvider),
+          onPressed: ref.read(minimapProvider.notifier).toggle,
+        ),
       ),
       RibbonItem.mathFraction ||
       RibbonItem.mathScript ||

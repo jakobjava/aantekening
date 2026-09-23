@@ -36,9 +36,14 @@ What is missing is the background job that keeps embeddings in step with edits,
 and the UI that blends semantic hits with FTS hits.
 
 ### Smaller gaps
-* Pictures inside a text box take the box's width at most, but cannot be
-  resized on their own.
-* Tables render but are not yet edited in place.
+* Pictures inside a text box grow no wider than the box, as a table's
+  columns do; a box of fixed width does not widen for them.
+* Tables have no merged cells, and rows take the height of their text, not
+  one dragged to. Cells pasted into a cell go into it as lines, rather than
+  filling the cells beside it. Free-standing tables from earlier builds are
+  shown but not edited.
+* Tabs keep each page's view, but not its undo history: going to another
+  page, in a tab or not, starts that page's history afresh.
 * Colours picked with the colour picker are remembered for the session only.
 * Deleted notebooks, sections and pages stay in the workspace and the store can
   restore them, but there is no recycle bin in the app to do it from yet.

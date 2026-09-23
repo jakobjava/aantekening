@@ -68,6 +68,7 @@ enum RibbonItem {
   zoomOut('Zoom out'),
   zoomLevel('Actual size', large: true),
   fitPage('Fit page', large: true),
+  pagePreview('Page preview', large: true),
   resetRibbon('Reset ribbon', large: true),
   mathFraction('Fraction', large: true),
   mathScript('Script', large: true),
@@ -169,6 +170,7 @@ enum RibbonGroup implements ArrangementGroup<RibbonItem> {
     RibbonItem.zoomLevel,
     RibbonItem.fitPage,
   ]),
+  page(RibbonTab.view, 'Page', <RibbonItem>[RibbonItem.pagePreview]),
   ribbon(RibbonTab.view, 'Ribbon', <RibbonItem>[RibbonItem.resetRibbon]);
 
   const RibbonGroup(this.tab, this.label, this.defaults);

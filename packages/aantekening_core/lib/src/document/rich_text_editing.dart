@@ -6,7 +6,10 @@
 /// Backspace, paste and formatting be tested without a widget in sight.
 library;
 
+import 'dart:math' as math;
+
 import 'rich_text.dart';
+import 'text_tables.dart';
 
 /// A caret position in a text box: a block and an offset within it.
 ///
@@ -80,6 +83,11 @@ typedef RichEdit = ({List<TextBlock> blocks, RichSelection selection});
 
 /// The start and end offsets of one run within its block.
 typedef RunSpan = ({int start, int end});
+
+/// What a selection takes in of one block: its text from [from] to [to], and
+/// whether that is the block whole as a line of a table cell the selection
+/// takes in whole ([cell]).
+typedef Covered = ({int block, int from, int to, bool cell});
 
 /// Pure editing operations over a list of [TextBlock]s.
 abstract final class RichTextEditing {
@@ -221,10 +229,21 @@ abstract final class RichTextEditing {
   ///
   /// The joined block keeps the kind of the block the range started in, as
   /// every word processor does. An embed wholly inside the range is removed.
-  static RichEdit deleteRange(List<TextBlock> blocks, RichSelection range) {
+  /// A range across a table's cells never joins them (see
+  /// [_deleteCells]); with [closeUp], as Delete and Cut have it, the rows
+  /// and columns a block of selected cells takes in whole go with it, and
+  /// without, as typing over them has it, they are emptied.
+  static RichEdit deleteRange(
+    List<TextBlock> blocks,
+    RichSelection range, {
+    bool closeUp = false,
+  }) {
     if (range.isCollapsed) return (blocks: blocks, selection: range);
     final start = clamp(blocks, range.start);
     final end = clamp(blocks, range.end);
+    if (_crossesCells(blocks, start.block, end.block)) {
+      return _deleteCells(blocks, start, end, closeUp: closeUp);
+    }
 
     final head = _prefix(blocks[start.block], start.offset);
     final tail = _suffix(blocks[end.block], end.offset);
@@ -240,7 +259,7 @@ abstract final class RichTextEditing {
       final template = blocks[start.block];
       middle = <TextBlock>[
         template.isEmbed
-            ? const TextBlock()
+            ? TextBlock(cell: template.cell)
             : _withRuns(template, const <TextRun>[]),
       ];
       caret = RichPosition(start.block, 0);
@@ -259,6 +278,179 @@ abstract final class RichTextEditing {
       blocks: _replaceRange(blocks, start.block, end.block + 1, middle),
       selection: RichSelection.collapsed(caret),
     );
+  }
+
+  /// Whether the blocks from [from] to [to] are not all lines of one cell,
+  /// nor all outside any table.
+  static bool _crossesCells(List<TextBlock> blocks, int from, int to) {
+    final first = blocks[from].cell;
+    for (var i = from + 1; i <= to; i++) {
+      final cell = blocks[i].cell;
+      if (first == null ? cell != null : !_inCell(blocks[i], first)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _inCell(TextBlock block, TableCell cell) =>
+      block.cell?.sameCell(cell) ?? false;
+
+  /// Whether blocks [a] and [b], one after the other, are lines of the same
+  /// cell.
+  static bool _sameCell(TextBlock a, TextBlock b) {
+    final cell = a.cell;
+    return cell != null && _inCell(b, cell);
+  }
+
+  /// What [range] takes in of each block it touches, in order.
+  ///
+  /// Within a cell, or outside any table, a selection takes in text, as in a
+  /// paragraph, every block from its start to its end included. From one
+  /// cell into another of the same table, it takes in the cells between
+  /// them, whole, as OneNote selects cells: the block of them with those two
+  /// at its corners. Running into or out of a table, it takes in whole every
+  /// cell it passes.
+  static List<Covered> coveredBy(List<TextBlock> blocks, RichSelection range) {
+    if (range.isCollapsed) return const <Covered>[];
+    final start = clamp(blocks, range.start);
+    final end = clamp(blocks, range.end);
+    Covered text(int i) => (
+      block: i,
+      from: i == start.block ? start.offset : 0,
+      to: i == end.block ? end.offset : blocks[i].length,
+      cell: false,
+    );
+    Covered whole(int i) =>
+        (block: i, from: 0, to: blocks[i].length, cell: true);
+
+    if (!_crossesCells(blocks, start.block, end.block)) {
+      return <Covered>[for (var i = start.block; i <= end.block; i++) text(i)];
+    }
+    final table = TextTables.tableAt(blocks, start.block);
+    if (table != null && table.contains(end.block)) {
+      final a = blocks[start.block].cell!;
+      final b = blocks[end.block].cell!;
+      final rows = (math.min(a.row, b.row), math.max(a.row, b.row));
+      final columns = (
+        math.min(a.column, b.column),
+        math.max(a.column, b.column),
+      );
+      return <Covered>[
+        for (var i = table.start; i < table.end; i++)
+          if (blocks[i].cell! case final cell
+              when cell.row >= rows.$1 &&
+                  cell.row <= rows.$2 &&
+                  cell.column >= columns.$1 &&
+                  cell.column <= columns.$2)
+            whole(i),
+      ];
+    }
+    return <Covered>[
+      for (var i = start.block; i <= end.block; i++)
+        blocks[i].inTable ? whole(i) : text(i),
+    ];
+  }
+
+  /// Deletes from [start] to [end] across a table's cells, which are never
+  /// joined, and what is left of the text either side joins only outside
+  /// any table.
+  ///
+  /// The cells the range takes in (see [coveredBy]) are emptied. Running
+  /// into or out of a table, it takes away the rows it takes in whole, and a
+  /// table it takes in whole, as it would lines of text. A block of cells
+  /// selected from cell to cell is only emptied, unless [closeUp]: then the
+  /// rows and columns it takes in whole go too.
+  static RichEdit _deleteCells(
+    List<TextBlock> blocks,
+    RichPosition start,
+    RichPosition end, {
+    required bool closeUp,
+  }) {
+    final covered = <int>{
+      for (final part in coveredBy(blocks, RichSelection(start, end)))
+        part.block,
+    };
+    final within = TextTables.tableAt(blocks, start.block);
+    final block = within != null && within.contains(end.block) ? within : null;
+    final gone = <int>{
+      for (final table in TextTables.tablesIn(blocks))
+        if (table != block || closeUp)
+          ..._goneFrom(blocks, table, covered, columns: table == block),
+    };
+    final first = blocks[start.block];
+    final last = blocks[end.block];
+    final head = first.inTable ? null : _prefix(first, start.offset);
+    final tail = last.inTable ? null : _suffix(last, end.offset);
+
+    final out = <TextBlock>[];
+    RichPosition? caret = head == null
+        ? null
+        : RichPosition(start.block, head.length);
+    for (var i = 0; i < blocks.length; i++) {
+      final cell = blocks[i].cell;
+      if (i == start.block && head != null) {
+        out.add(head);
+      } else if (i == end.block && tail != null) {
+        if (head != null && !head.isEmbed && !tail.isEmbed) {
+          out.last = _withRuns(head, <TextRun>[...head.runs, ...tail.runs]);
+        } else {
+          out.add(tail);
+        }
+      } else if (!covered.contains(i)) {
+        out.add(blocks[i]);
+      } else {
+        // The caret goes to the first cell taken in, or where it was: the
+        // end of the cell before it in its table, or else what follows.
+        caret ??= !gone.contains(i)
+            ? RichPosition(out.length, 0)
+            : (out.isNotEmpty && TextTables.continues(out.last, blocks[i])
+                  ? RichPosition(out.length - 1, out.last.length)
+                  : RichPosition(out.length, 0));
+        // An emptied cell keeps one line, empty.
+        if (cell != null &&
+            !gone.contains(i) &&
+            !(i > 0 && _inCell(blocks[i - 1], cell))) {
+          out.add(TextBlock(cell: cell));
+        }
+      }
+    }
+    if (out.isEmpty) out.add(const TextBlock());
+
+    // Rows and columns left with no cells close up.
+    final result = TextTables.normalize(out);
+    return (
+      blocks: result,
+      selection: RichSelection.collapsed(
+        clamp(result, caret ?? RichPosition(start.block, 0)),
+      ),
+    );
+  }
+
+  /// The lines of [table] in the rows [covered] takes in whole, and with
+  /// [columns] in the columns it takes in whole.
+  static Iterable<int> _goneFrom(
+    List<TextBlock> blocks,
+    TextTable table,
+    Set<int> covered, {
+    required bool columns,
+  }) {
+    final inRow = List<int>.filled(table.rows, 0);
+    final inColumn = List<int>.filled(table.columns, 0);
+    for (var i = table.start; i < table.end; i++) {
+      final cell = blocks[i].cell!;
+      // Each cell counted once, by its first line.
+      final laterLine = i > table.start && _inCell(blocks[i - 1], cell);
+      if (!covered.contains(i) || laterLine) continue;
+      inRow[cell.row]++;
+      inColumn[cell.column]++;
+    }
+    return <int>[
+      for (var i = table.start; i < table.end; i++)
+        if (inRow[blocks[i].cell!.row] == table.columns ||
+            (columns && inColumn[blocks[i].cell!.column] == table.rows))
+          i,
+    ];
   }
 
   /// Backspace with a collapsed caret at the start of block [index].
@@ -297,6 +489,21 @@ abstract final class RichTextEditing {
     if (index == 0) return unchanged;
 
     final previous = blocks[index - 1];
+    if ((block.inTable || previous.inTable) && !_sameCell(previous, block)) {
+      // Cells are never joined, to one another or to the text around their
+      // table. Below a table, an empty line goes and the caret steps into
+      // the last cell, as it does from a line with something on it.
+      if (block.inTable) return unchanged;
+      final lastCell = RichSelection.collapsed(
+        RichPosition(index - 1, previous.length),
+      );
+      return (
+        blocks: block.length == 0 && !block.isEmbed
+            ? _replaceRange(blocks, index, index + 1, const <TextBlock>[])
+            : blocks,
+        selection: lastCell,
+      );
+    }
     if (previous.isEmbed) {
       // The object above is removed whole; the caret stays where it was.
       return (
@@ -339,6 +546,14 @@ abstract final class RichTextEditing {
     if (index == blocks.length - 1) return unchanged;
 
     final next = blocks[index + 1];
+    if ((block.inTable || next.inTable) && !_sameCell(block, next)) {
+      // Cells are never joined; above a table, an empty line goes.
+      if (block.inTable || block.length > 0 || block.isEmbed) return unchanged;
+      return (
+        blocks: _replaceRange(blocks, index, index + 1, const <TextBlock>[]),
+        selection: RichSelection.collapsed(RichPosition(index, 0)),
+      );
+    }
     if (next.isEmbed) {
       return (
         blocks: _replaceRange(
@@ -377,12 +592,15 @@ abstract final class RichTextEditing {
   }
 
   /// Removes the embed block at [index], leaving an empty line if it was the
-  /// only thing in the box.
+  /// only thing in the box, or in its table cell.
   static RichEdit deleteEmbed(List<TextBlock> blocks, int index) {
-    if (blocks.length == 1) {
+    final cell = TextTables.cellAt(blocks, index);
+    if (blocks.length == 1 || cell.end - cell.start == 1) {
       return (
-        blocks: const <TextBlock>[TextBlock()],
-        selection: const RichSelection.collapsed(RichPosition.zero),
+        blocks: _replaceRange(blocks, index, index + 1, <TextBlock>[
+          TextBlock(cell: blocks[index].cell),
+        ]),
+        selection: RichSelection.collapsed(RichPosition(index, 0)),
       );
     }
     final next = _replaceRange(blocks, index, index + 1, const <TextBlock>[]);
@@ -433,7 +651,10 @@ abstract final class RichTextEditing {
     if (block.isEmbed) {
       // Text cannot go into an object, so it starts a line of its own beside
       // it: above when the caret is before the object, below when after.
-      final line = TextBlock(runs: normalizeRuns(<TextRun>[run]));
+      final line = TextBlock(
+        runs: normalizeRuns(<TextRun>[run]),
+        cell: block.cell,
+      );
       final index = position.offset == 0 ? position.block : position.block + 1;
       return (
         blocks: _replaceRange(blocks, index, index, <TextBlock>[line]),
@@ -472,7 +693,7 @@ abstract final class RichTextEditing {
       final index = before ? position.block : position.block + 1;
       return (
         blocks: _replaceRange(blocks, index, index, <TextBlock>[
-          TextBlock(indent: block.indent),
+          TextBlock(indent: block.indent, cell: block.cell),
         ]),
         selection: RichSelection.collapsed(
           before ? RichPosition(position.block + 1, 0) : RichPosition(index, 0),
@@ -495,6 +716,7 @@ abstract final class RichTextEditing {
             indent: block.indent,
             kind: continuation,
             bullet: block.bullet,
+            cell: block.cell,
           )
         : _withRuns(block, left);
     final second = atStart
@@ -504,6 +726,7 @@ abstract final class RichTextEditing {
             indent: block.indent,
             bullet: block.bullet,
             runs: normalizeRuns(right),
+            cell: block.cell,
           );
 
     return (
@@ -558,7 +781,9 @@ abstract final class RichTextEditing {
   ///
   /// The first and last pasted blocks join the text either side of the caret,
   /// so pasting part of a sentence into the middle of another reads on, while
-  /// whole paragraphs in between keep their own kind and formatting.
+  /// whole paragraphs in between keep their own kind and formatting. Pasted
+  /// into a table cell, everything becomes lines of the cell; a table pasted
+  /// elsewhere stays a table, joined to nothing.
   static RichEdit insertFragment(
     List<TextBlock> blocks,
     RichSelection selection,
@@ -568,6 +793,8 @@ abstract final class RichTextEditing {
     final edit = deleteRange(blocks, selection);
     final caret = edit.selection.extent;
     final target = edit.blocks[caret.block];
+    final cell = target.cell;
+    bool joins(TextBlock piece) => !piece.isEmbed && !piece.inTable;
 
     // Pasting beside an embed never merges with it.
     final TextBlock? head;
@@ -582,19 +809,29 @@ abstract final class RichTextEditing {
       tail = _suffix(target, caret.offset);
     }
 
-    final pieces = <TextBlock>[...fragment];
+    final pieces = <TextBlock>[
+      for (final piece in fragment) cell == null ? piece : piece.inCell(null),
+    ];
     RichPosition end;
 
     if (head == null || tail == null) {
-      final replaced = _replaceRange(edit.blocks, insertAt, insertAt, pieces);
+      final replaced = _replaceRange(
+        edit.blocks,
+        insertAt,
+        insertAt,
+        _intoCell(pieces, cell),
+      );
       final last = insertAt + pieces.length - 1;
       end = RichPosition(last, replaced[last].length);
-      return (blocks: replaced, selection: RichSelection.collapsed(end));
+      return (
+        blocks: TextTables.normalize(replaced),
+        selection: RichSelection.collapsed(end),
+      );
     }
 
     final result = <TextBlock>[];
     final first = pieces.first;
-    if (pieces.length == 1 && !first.isEmbed) {
+    if (pieces.length == 1 && joins(first)) {
       final joined = _withRuns(head, <TextRun>[
         ...head.runs,
         ...first.runs,
@@ -613,7 +850,7 @@ abstract final class RichTextEditing {
       );
     }
 
-    if (first.isEmbed) {
+    if (!joins(first)) {
       if (head.length > 0) result.add(head);
       result.add(first);
     } else {
@@ -624,7 +861,7 @@ abstract final class RichTextEditing {
     }
     if (pieces.length > 1) {
       final last = pieces.last;
-      if (last.isEmbed) {
+      if (!joins(last)) {
         result
           ..add(last)
           ..add(tail);
@@ -641,39 +878,61 @@ abstract final class RichTextEditing {
     }
 
     return (
-      blocks: _replaceRange(edit.blocks, caret.block, caret.block + 1, result),
+      blocks: TextTables.normalize(
+        _replaceRange(
+          edit.blocks,
+          caret.block,
+          caret.block + 1,
+          _intoCell(result, cell),
+        ),
+      ),
       selection: RichSelection.collapsed(end),
     );
   }
 
-  /// Copies the blocks in [range], trimmed to it.
+  /// [pieces] as lines of [cell], or as they are for null.
+  static List<TextBlock> _intoCell(List<TextBlock> pieces, TableCell? cell) =>
+      cell == null
+      ? pieces
+      : <TextBlock>[for (final piece in pieces) piece.inCell(cell)];
+
+  /// Copies what [range] takes in (see [coveredBy]), trimmed to it.
+  ///
+  /// Cells taken in whole are copied as a table of just those cells; text
+  /// copied from within one cell is copied as paragraphs.
   static List<TextBlock> slice(List<TextBlock> blocks, RichSelection range) {
-    if (range.isCollapsed) return const <TextBlock>[];
-    final start = clamp(blocks, range.start);
-    final end = clamp(blocks, range.end);
     final out = <TextBlock>[];
-    for (var i = start.block; i <= end.block; i++) {
-      var block = blocks[i];
+    for (final part in coveredBy(blocks, range)) {
+      final block = part.cell
+          ? blocks[part.block]
+          : blocks[part.block].inCell(null);
       if (block.isEmbed) {
-        final from = i == start.block ? start.offset : 0;
-        final to = i == end.block ? end.offset : 1;
-        if (from < to) out.add(block);
+        if (part.from < part.to) out.add(block);
         continue;
       }
-      if (i == end.block) {
-        block = _withRuns(block, splitRuns(block.runs, end.offset).$1);
-      }
-      if (i == start.block) {
-        block = _withRuns(block, splitRuns(block.runs, start.offset).$2);
-      }
-      out.add(block);
+      final (kept, _) = splitRuns(block.runs, part.to);
+      out.add(_withRuns(block, splitRuns(kept, part.from).$2));
     }
-    return out;
+    return TextTables.normalize(out);
   }
 
-  /// The plain text of a fragment, one line per block.
-  static String plainTextOf(List<TextBlock> fragment) =>
-      fragment.map((block) => block.plainText).join('\n');
+  /// The plain text of a fragment, one line per block, and a table's cells
+  /// separated by tabs, as spreadsheets paste them.
+  static String plainTextOf(List<TextBlock> fragment) {
+    final out = StringBuffer();
+    for (var i = 0; i < fragment.length; i++) {
+      if (i > 0) {
+        final previous = fragment[i - 1];
+        final nextCell =
+            TextTables.continues(previous, fragment[i]) &&
+            !_sameCell(previous, fragment[i]) &&
+            previous.cell!.row == fragment[i].cell!.row;
+        out.write(nextCell ? '\t' : '\n');
+      }
+      out.write(fragment[i].plainText);
+    }
+    return out.toString();
+  }
 
   // ---------------------------------------------------------------- formulas
 
@@ -698,7 +957,7 @@ abstract final class RichTextEditing {
       return (
         (
           blocks: _replaceRange(edit.blocks, index, index, <TextBlock>[
-            TextBlock(runs: <TextRun>[formula]),
+            TextBlock(runs: <TextRun>[formula], cell: block.cell),
           ]),
           selection: RichSelection.collapsed(RichPosition(index, 0)),
         ),
@@ -776,21 +1035,14 @@ abstract final class RichTextEditing {
     RichSelection range,
     TextMarks Function(TextMarks marks) change,
   ) {
-    if (range.isCollapsed) return blocks;
-    final start = clamp(blocks, range.start);
-    final end = clamp(blocks, range.end);
     final out = List<TextBlock>.of(blocks);
+    for (final (:block, :from, :to, cell: _) in coveredBy(blocks, range)) {
+      final text = blocks[block];
+      if (text.isEmbed || from >= to) continue;
 
-    for (var i = start.block; i <= end.block; i++) {
-      final block = blocks[i];
-      if (block.isEmbed) continue;
-      final from = i == start.block ? start.offset : 0;
-      final to = i == end.block ? end.offset : block.length;
-      if (from >= to) continue;
-
-      final (head, rest) = splitRuns(block.runs, from);
+      final (head, rest) = splitRuns(text.runs, from);
       final (middle, tail) = splitRuns(rest, to - from);
-      out[i] = _withRuns(block, <TextRun>[
+      out[block] = _withRuns(text, <TextRun>[
         ...head,
         for (final run in middle)
           run.copyWith(
@@ -825,16 +1077,12 @@ abstract final class RichTextEditing {
     bool Function(TextRun run) test, {
     bool formulas = true,
   }) {
-    final start = clamp(blocks, range.start);
-    final end = clamp(blocks, range.end);
     var saw = false;
-    for (var i = start.block; i <= end.block; i++) {
-      final block = blocks[i];
-      if (block.isEmbed) continue;
-      final from = i == start.block ? start.offset : 0;
-      final to = i == end.block ? end.offset : block.length;
+    for (final (:block, :from, :to, cell: _) in coveredBy(blocks, range)) {
+      final text = blocks[block];
+      if (text.isEmbed) continue;
       var position = 0;
-      for (final run in block.runs) {
+      for (final run in text.runs) {
         final runEnd = position + run.text.length;
         final overlaps = runEnd > from && position < to;
         if (overlaps && (formulas || !run.isMath)) {
@@ -847,6 +1095,12 @@ abstract final class RichTextEditing {
     return saw;
   }
 
+  /// The blocks [range] touches: the caret's alone while it is collapsed.
+  static Set<int> _touched(List<TextBlock> blocks, RichSelection range) =>
+      range.isCollapsed
+      ? <int>{clamp(blocks, range.extent).block}
+      : <int>{for (final part in coveredBy(blocks, range)) part.block};
+
   /// Sets every block touched by [range] to [kind], or back to a paragraph
   /// when they all already are one — the toggle a toolbar button expects.
   static List<TextBlock> toggleBlockKind(
@@ -854,16 +1108,14 @@ abstract final class RichTextEditing {
     RichSelection range,
     TextBlockKind kind,
   ) {
-    final start = clamp(blocks, range.start).block;
-    final end = clamp(blocks, range.end).block;
-    var all = true;
-    for (var i = start; i <= end; i++) {
-      if (!blocks[i].isEmbed && blocks[i].kind != kind) all = false;
-    }
+    final touched = _touched(blocks, range);
+    final all = touched.every(
+      (i) => blocks[i].isEmbed || blocks[i].kind == kind,
+    );
     final target = all ? TextBlockKind.paragraph : kind;
     return <TextBlock>[
       for (var i = 0; i < blocks.length; i++)
-        if (i < start || i > end || blocks[i].isEmbed)
+        if (!touched.contains(i) || blocks[i].isEmbed)
           blocks[i]
         else
           blocks[i].copyWith(kind: target, checked: false),
@@ -876,11 +1128,10 @@ abstract final class RichTextEditing {
     RichSelection range,
     int delta,
   ) {
-    final start = clamp(blocks, range.start).block;
-    final end = clamp(blocks, range.end).block;
+    final touched = _touched(blocks, range);
     return <TextBlock>[
       for (var i = 0; i < blocks.length; i++)
-        if (i < start || i > end)
+        if (!touched.contains(i))
           blocks[i]
         else
           blocks[i].copyWith(
@@ -896,7 +1147,11 @@ abstract final class RichTextEditing {
     int index,
     BlockEmbed embed,
   ) => _replaceRange(blocks, index, index + 1, <TextBlock>[
-    TextBlock.embedded(embed, indent: blocks[index].indent),
+    TextBlock.embedded(
+      embed,
+      indent: blocks[index].indent,
+      cell: blocks[index].cell,
+    ),
   ]);
 
   /// Ticks or unticks the to-do in block [index].
@@ -950,6 +1205,7 @@ abstract final class RichTextEditing {
           indent: block.indent,
           bullet: started.bullet,
           runs: normalizeRuns(rest),
+          cell: block.cell,
         ),
       ]),
       selection: RichSelection.collapsed(RichPosition(caret.block, 0)),

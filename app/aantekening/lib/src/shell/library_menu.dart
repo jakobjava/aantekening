@@ -1,6 +1,8 @@
 /// The right-click menus of the navigation panes, and the dialogs they open.
 library;
 
+import 'dart:async';
+
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,8 +21,9 @@ String pageTitleOrPlaceholder(String title) =>
 
 /// Shows what can be done to a notebook, section or page at [position].
 ///
-/// The commands come in the same order whatever [node] is: making something
-/// new first, then cutting, copying and pasting, then renaming and deleting.
+/// The commands come in the same order whatever [node] is: opening a page in
+/// a tab of its own first, then making something new, then cutting, copying
+/// and pasting, then renaming and deleting.
 Future<void> showLibraryMenu(
   BuildContext context,
   WidgetRef ref,
@@ -97,6 +100,14 @@ Future<void> showLibraryMenu(
   );
 
   return showCommandMenu(context, position, <List<MenuCommand>>[
+    if (node is PageRef)
+      <MenuCommand>[
+        MenuCommand(
+          'Open in New Tab',
+          Icons.open_in_new_rounded,
+          () => unawaited(actions.openInNewTab(node)),
+        ),
+      ],
     create,
     <MenuCommand>[
       // A notebook is not moved or copied on its own; sections are pasted

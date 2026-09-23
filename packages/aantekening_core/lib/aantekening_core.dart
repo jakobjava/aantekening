@@ -10,6 +10,8 @@ export 'src/document/ink.dart';
 export 'src/document/page_document.dart';
 export 'src/document/rich_text.dart';
 export 'src/document/rich_text_editing.dart';
+export 'src/document/table_editing.dart';
+export 'src/document/text_tables.dart';
 export 'src/search/search_terms.dart';
 export 'src/tree/hierarchy.dart';
 export 'src/tree/tree.dart';

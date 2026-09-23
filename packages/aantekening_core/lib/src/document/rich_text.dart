@@ -337,6 +337,64 @@ class BlockEmbed {
       Object.hash(kind, assetId, pageIndex, width, height, text);
 }
 
+/// Where a block sits in a table: the cell it is in, and how wide that
+/// cell's column is.
+///
+/// A table in a text box is not a block of its own but a run of blocks in
+/// reading order, each naming its cell — as Word keeps tables, as paragraphs
+/// ending in cell marks. Everything a paragraph can do, a cell can: carry
+/// formulas, lists and pictures, be selected, searched and spell-checked.
+/// Several blocks in a row naming the same cell are that cell's lines.
+class TableCell {
+  const TableCell(this.row, this.column, {this.width});
+
+  /// Zero-based, counted from the table's top-left cell.
+  final int row;
+  final int column;
+
+  /// The column's width in page units, as its border was dragged to, or null
+  /// for a column fitted to what it holds. Every cell of a column carries it,
+  /// so the column keeps its width whichever of its rows are removed.
+  final double? width;
+
+  /// Whether this names the same cell as [other], whatever their widths.
+  bool sameCell(TableCell other) => row == other.row && column == other.column;
+
+  /// Whether this cell comes before [other] in reading order.
+  bool isBefore(TableCell other) =>
+      row < other.row || (row == other.row && column < other.column);
+
+  /// The cell at [row] and [column], in a column [width] wide.
+  TableCell moved(int row, int column) => TableCell(row, column, width: width);
+
+  TableCell withWidth(double? width) => TableCell(row, column, width: width);
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'row': row,
+    'column': column,
+    if (width != null) 'width': width,
+  };
+
+  static TableCell fromJson(Map<String, Object?> json) => TableCell(
+    readInt(json, 'row'),
+    readInt(json, 'column'),
+    width: readDoubleOrNull(json, 'width'),
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is TableCell &&
+      other.row == row &&
+      other.column == column &&
+      other.width == width;
+
+  @override
+  int get hashCode => Object.hash(row, column, width);
+
+  @override
+  String toString() => 'TableCell($row, $column)';
+}
+
 /// One paragraph-level block of rich text, or an embedded object.
 class TextBlock {
   const TextBlock({
@@ -346,6 +404,7 @@ class TextBlock {
     this.checked = false,
     this.bullet = BulletStyle.disc,
     this.embed,
+    this.cell,
   });
 
   /// Convenience constructor for an unformatted paragraph.
@@ -355,7 +414,7 @@ class TextBlock {
   }) => TextBlock(kind: kind, runs: <TextRun>[TextRun(text)]);
 
   /// A line holding an image or PDF page.
-  const TextBlock.embedded(BlockEmbed this.embed, {this.indent = 0})
+  const TextBlock.embedded(BlockEmbed this.embed, {this.indent = 0, this.cell})
     : kind = TextBlockKind.paragraph,
       runs = const <TextRun>[],
       checked = false,
@@ -378,6 +437,12 @@ class TextBlock {
   final BlockEmbed? embed;
 
   bool get isEmbed => embed != null;
+
+  /// The table cell this block is a line of, or null for one outside any
+  /// table.
+  final TableCell? cell;
+
+  bool get inTable => cell != null;
 
   /// The block's text with all formatting removed. Formulas contribute their
   /// source; an embed contributes nothing.
@@ -408,6 +473,18 @@ class TextBlock {
     checked: checked ?? this.checked,
     bullet: bullet ?? this.bullet,
     embed: embed,
+    cell: cell,
+  );
+
+  /// This block as a line of [cell], or out of any table for null.
+  TextBlock inCell(TableCell? cell) => TextBlock(
+    kind: kind,
+    runs: runs,
+    indent: indent,
+    checked: checked,
+    bullet: bullet,
+    embed: embed,
+    cell: cell,
   );
 
   Map<String, Object?> toJson() {
@@ -416,6 +493,7 @@ class TextBlock {
       return <String, Object?>{
         'embed': embed.toJson(),
         if (indent != 0) 'indent': indent,
+        if (cell != null) 'cell': cell!.toJson(),
       };
     }
     return <String, Object?>{
@@ -424,15 +502,19 @@ class TextBlock {
       if (indent != 0) 'indent': indent,
       if (checked) 'checked': true,
       if (bullet != BulletStyle.disc) 'bullet': bullet.name,
+      if (cell != null) 'cell': cell!.toJson(),
     };
   }
 
   static TextBlock fromJson(Map<String, Object?> json) {
+    final cellJson = readObjectOrNull(json, 'cell');
+    final cell = cellJson == null ? null : TableCell.fromJson(cellJson);
     final embed = json['embed'];
     if (embed is Map) {
       return TextBlock.embedded(
         BlockEmbed.fromJson(embed.cast<String, Object?>()),
         indent: readInt(json, 'indent'),
+        cell: cell,
       );
     }
     return TextBlock(
@@ -448,6 +530,7 @@ class TextBlock {
       indent: readInt(json, 'indent'),
       checked: readBool(json, 'checked'),
       bullet: readEnum(json, 'bullet', BulletStyle.values, BulletStyle.disc),
+      cell: cell,
     );
   }
 
@@ -459,6 +542,7 @@ class TextBlock {
         other.checked != checked ||
         other.bullet != bullet ||
         other.embed != embed ||
+        other.cell != cell ||
         other.runs.length != runs.length) {
       return false;
     }
@@ -469,8 +553,15 @@ class TextBlock {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(kind, indent, checked, bullet, embed, Object.hashAll(runs));
+  int get hashCode => Object.hash(
+    kind,
+    indent,
+    checked,
+    bullet,
+    embed,
+    cell,
+    Object.hashAll(runs),
+  );
 
   @override
   String toString() => embed != null

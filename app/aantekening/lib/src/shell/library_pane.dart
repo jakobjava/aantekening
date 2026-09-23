@@ -1,6 +1,8 @@
 /// The notebook and section navigator.
 library;
 
+import 'dart:async';
+
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -237,7 +239,8 @@ class _SectionTile extends ConsumerWidget {
 }
 
 /// A row for a notebook, section or page: its menu on a right-click or a
-/// long press, and faded while it is cut, waiting to be pasted elsewhere.
+/// long press, a page opened in a new tab by a middle-click, and faded while
+/// it is cut, waiting to be pasted elsewhere.
 class LibraryTile extends ConsumerWidget {
   const LibraryTile({required this.node, required this.child, super.key});
 
@@ -251,7 +254,12 @@ class LibraryTile extends ConsumerWidget {
         (clip) => clip != null && clip.cut && clip.node.id == node.id,
       ),
     );
+    final page = node;
     return GestureDetector(
+      onTertiaryTapUp: page is PageRef
+          ? (_) =>
+                unawaited(ref.read(libraryActionsProvider).openInNewTab(page))
+          : null,
       onSecondaryTapUp: (details) =>
           showLibraryMenu(context, ref, node, details.globalPosition),
       onLongPressStart: (details) =>

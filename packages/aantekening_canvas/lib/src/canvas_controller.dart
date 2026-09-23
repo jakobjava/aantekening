@@ -171,7 +171,7 @@ class CanvasController extends ChangeNotifier {
 
   /// Frames the whole page within a view of [size].
   void zoomToFit(Size size) {
-    final bounds = _document.contentBounds;
+    final bounds = contentBounds;
     viewport = bounds.isEmpty
         ? const CanvasViewport()
         : _viewport.fit(bounds, size);
@@ -235,12 +235,20 @@ class CanvasController extends ChangeNotifier {
   // --------------------------------------------------------------- selection
 
   /// The elements intersecting the visible region, in paint order.
-  List<NoteElement> visibleElements(Size size) {
-    final ids = _index.query(_viewport.visibleBounds(size));
+  List<NoteElement> visibleElements(Size size) =>
+      elementsIn(_viewport.visibleBounds(size));
+
+  /// The elements intersecting [region] of the page, in paint order.
+  List<NoteElement> elementsIn(Aabb region) {
+    final ids = _index.query(region);
     final elements = <NoteElement>[for (final id in ids) ?_byId[id]];
     elements.sort((a, b) => a.z.compareTo(b.z));
     return elements;
   }
+
+  /// What the page's content spans, worked out once for each version of it.
+  Aabb get contentBounds => _contentBounds ??= _document.contentBounds;
+  Aabb? _contentBounds;
 
   /// The topmost unlocked element at a page-space point.
   ///
@@ -724,6 +732,7 @@ class CanvasController extends ChangeNotifier {
   }
 
   void _reindex() {
+    _contentBounds = null;
     _byId
       ..clear()
       ..addEntries(

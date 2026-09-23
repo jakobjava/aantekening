@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import 'tabs.dart';
 import 'tree_rows.dart';
 
 /// A section or page cut or copied, to be pasted elsewhere: moved there if it
@@ -116,6 +117,23 @@ class LibraryActions {
     required String pageId,
   }) => _select(notebookId: notebookId, sectionId: sectionId, pageId: pageId);
 
+  /// Opens [page] in a tab of its own, after the tab showing, and shows it.
+  Future<void> openInNewTab(PageRef page) async {
+    final section = await _ref.read(sectionProvider(page.sectionId).future);
+    _ref
+        .read(tabsProvider.notifier)
+        .open(
+          notebookId: section?.notebookId,
+          sectionId: page.sectionId,
+          pageId: page.id,
+        );
+    await _reveal(
+      notebookId: section?.notebookId,
+      sectionId: page.sectionId,
+      pageId: page.id,
+    );
+  }
+
   // --------------------------------------------------------------- creating
 
   /// Creates a notebook, with a first section and a first page in it, as a
@@ -212,17 +230,10 @@ class LibraryActions {
       case Notebook(:final id):
         await store.library.deleteNotebook(id);
         deleted = <String>[id];
-        if (_ref.read(selectedNotebookProvider) == id) _select();
-      case Section(:final id, :final notebookId):
+      case Section(:final id):
         deleted = await store.library.deleteSection(id);
-        if (deleted.contains(_ref.read(selectedSectionProvider))) {
-          _select(notebookId: notebookId);
-        }
       case PageRef(:final id):
         deleted = await store.pages.deletePage(id);
-        if (deleted.contains(_ref.read(selectedPageProvider))) {
-          _ref.read(selectedPageProvider.notifier).select(null);
-        }
       default:
         throw ArgumentError.value(
           node,
@@ -230,6 +241,8 @@ class LibraryActions {
           'not a notebook, section or page',
         );
     }
+    // No tab goes on showing what was deleted, nor what was in it.
+    _ref.read(tabsProvider.notifier).forget(deleted);
     final clip = _ref.read(libraryClipboardProvider);
     if (clip != null && deleted.contains(clip.node.id)) {
       _ref.read(libraryClipboardProvider.notifier).clear();

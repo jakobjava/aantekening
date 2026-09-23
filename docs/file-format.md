@@ -110,6 +110,22 @@ which nests as a disc, then a circle, then a square, or `dash`, which stays a
 dash at every level. Typing `* ` starts a list of discs and `- ` one of dashes,
 as Word does.
 
+**Tables** are runs of blocks, each with a `cell` naming the cell it is a
+line of, in reading order, as Word keeps tables:
+
+```jsonc
+{ "runs": [{ "text": "Name" }], "cell": { "row": 0, "column": 0, "width": 96 } }
+{ "runs": [{ "text": "Age" }],  "cell": { "row": 0, "column": 1 } }
+```
+
+Rows and columns count from zero. Several blocks in a row with the same cell
+are its lines; a cell that comes before the one above it in reading order
+begins another table. `width` is the column's width in page units, where its
+line was dragged, carried by every cell of the column; without it the column
+fits its text. A build that does not know tables shows the cells as
+paragraphs, one after another. Readers repair a table missing cells by adding
+them empty.
+
 A text box with `"autoWidth": true` widens to fit its longest line, up to a
 limit, as a new OneNote container does; resizing it by hand clears the flag.
 

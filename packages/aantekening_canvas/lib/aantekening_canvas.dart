@@ -9,9 +9,11 @@ library;
 
 export 'src/canvas_controller.dart';
 export 'src/canvas_painters.dart';
+export 'src/canvas_scroll.dart';
 export 'src/canvas_viewport.dart';
 export 'src/canvas_scope.dart';
 export 'src/infinite_canvas.dart';
+export 'src/page_scrollbar.dart';
 export 'src/selection_handles.dart';
 export 'src/spatial_index.dart';
 export 'src/stroke_geometry.dart';
