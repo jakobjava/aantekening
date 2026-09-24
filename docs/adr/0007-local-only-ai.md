@@ -1,6 +1,6 @@
 # 7. AI runs locally, is optional, and is off by default
 
-**Status:** accepted
+**Status:** superseded by [ADR 17](0017-ai-grounded-in-the-notes.md)
 
 ## Context
 

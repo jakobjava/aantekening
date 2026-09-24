@@ -24,11 +24,14 @@ class TabStrip extends ConsumerWidget {
   static const double maxTabWidth = 220;
 
   /// The keys that open, close and step through tabs: Ctrl+T, Ctrl+W, and
-  /// Ctrl+Tab or Ctrl+Page Down on and back with Shift or Page Up.
+  /// Ctrl+Tab or Ctrl+Page Down on and back with Shift or Page Up — and
+  /// Ctrl+J, which turns the tab to the AI of what it shows and back.
   static Map<ShortcutActivator, VoidCallback> shortcuts(
     TabsController tabs,
   ) => <ShortcutActivator, VoidCallback>{
     const SingleActivator(LogicalKeyboardKey.keyT, control: true): tabs.open,
+    const SingleActivator(LogicalKeyboardKey.keyJ, control: true):
+        tabs.toggleAi,
     const SingleActivator(LogicalKeyboardKey.keyW, control: true):
         tabs.closeShowing,
     const SingleActivator(LogicalKeyboardKey.tab, control: true): () =>
@@ -259,7 +262,11 @@ class _TabTitle extends ConsumerWidget {
     return Row(
       children: <Widget>[
         Icon(
-          pageId == null ? Icons.tab_outlined : Icons.description_outlined,
+          tab.ai
+              ? Icons.auto_awesome_rounded
+              : pageId == null
+              ? Icons.tab_outlined
+              : Icons.description_outlined,
           size: 14,
           color: showing ? scheme.primary : scheme.onSurfaceVariant,
         ),

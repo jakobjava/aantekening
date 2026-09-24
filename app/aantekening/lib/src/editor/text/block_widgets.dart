@@ -266,6 +266,31 @@ abstract final class EmbedHandles {
 }
 
 /// A picture or PDF page on its own line inside a text box.
+/// Marks text boxes drawn for a machine to look at, off the screen: the
+/// pictures and PDF pages in them are left as [EmbedStandIn]s of their size,
+/// to be drawn in afterwards where the stand-ins were laid out.
+class EmbedStandIns extends InheritedWidget {
+  const EmbedStandIns({required super.child, super.key});
+
+  /// Whether [context] is within such text boxes.
+  static bool within(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<EmbedStandIns>() != null;
+
+  @override
+  bool updateShouldNotify(EmbedStandIns oldWidget) => false;
+}
+
+/// Where the picture or PDF page [embed] was laid out, in text boxes marked
+/// with [EmbedStandIns]; it draws nothing itself.
+class EmbedStandIn extends StatelessWidget {
+  const EmbedStandIn({required this.embed, super.key});
+
+  final BlockEmbed embed;
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.expand();
+}
+
 class EmbedBlock extends StatelessWidget {
   const EmbedBlock({
     required this.embed,
@@ -315,13 +340,17 @@ class EmbedBlock extends StatelessWidget {
               clipBehavior: Clip.none,
               children: <Widget>[
                 Positioned.fill(
-                  child: switch (embed.kind) {
-                    EmbedKind.image => AssetImageView(assetId: embed.assetId),
-                    EmbedKind.pdfPage => PdfPageView(
-                      assetId: embed.assetId,
-                      pageIndex: embed.pageIndex,
-                    ),
-                  },
+                  child: EmbedStandIns.within(context)
+                      ? EmbedStandIn(embed: embed)
+                      : switch (embed.kind) {
+                          EmbedKind.image => AssetImageView(
+                            assetId: embed.assetId,
+                          ),
+                          EmbedKind.pdfPage => PdfPageView(
+                            assetId: embed.assetId,
+                            pageIndex: embed.pageIndex,
+                          ),
+                        },
                 ),
                 if (selected) ...<Widget>[
                   Positioned.fill(

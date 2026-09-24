@@ -11,6 +11,8 @@ import 'package:aantekening/src/editor/text/table_view.dart';
 import 'package:aantekening/src/editor/text/formula_preview.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/editor/text/text_styles.dart';
+import 'package:aantekening/src/providers.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
@@ -2063,6 +2065,76 @@ void main() {
       await tester.tap(find.text('Delete Table'));
       await tester.pumpAndSettle();
       expect(find.byType(TextTableView), findsNothing);
+    });
+  });
+
+  group('links', () {
+    testWidgets('a link pasted alone is pasted as a link', (tester) async {
+      mockClipboard(tester);
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'See ');
+      await Clipboard.setData(
+        const ClipboardData(text: 'https://example.org/forces'),
+      );
+      await press(tester, LogicalKeyboardKey.keyV, control: true);
+      await tester.pumpAndSettle();
+
+      final runs = blocksOf(tester).single.runs;
+      expect(runs.last.text, 'https://example.org/forces');
+      expect(runs.last.marks.link, 'https://example.org/forces');
+
+      // Typing on after it is not part of it.
+      await type(tester, ' now');
+      expect(blocksOf(tester).single.runs.last.marks.link, isNull);
+    });
+
+    testWidgets('Ctrl+click follows a link to another page', (tester) async {
+      final other = await tester.runAsync(() async {
+        final page = await store.pages.createPage(
+          sectionId: (await store.pages.findPage(pageId))!.sectionId,
+          title: 'Elsewhere',
+        );
+        await store.pages.saveDocument(
+          pageId,
+          PageDocument(
+            id: pageId,
+            elements: <NoteElement>[
+              TextElement(
+                id: 'box',
+                frame: const Frame(x: 100, y: 200, width: 300, height: 60),
+                createdAt: 0,
+                updatedAt: 0,
+                blocks: <TextBlock>[
+                  TextBlock(
+                    runs: <TextRun>[
+                      TextRun(
+                        'elsewhere',
+                        TextMarks(link: NoteLink.page(page.id).toString()),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        return page;
+      });
+      await openEditor(tester, store, pageId);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(TextBoxEditor)),
+      );
+
+      // On the word, which is shorter than its box.
+      final word =
+          tester.getTopLeft(find.byType(BlockParagraph)) + const Offset(20, 8);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.tapAt(word, kind: PointerDeviceKind.mouse);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+
+      expect(container.read(selectedPageProvider), other!.id);
     });
   });
 }

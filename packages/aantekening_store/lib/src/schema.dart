@@ -10,7 +10,7 @@ import 'package:sqlite3/sqlite3.dart';
 /// same code path.
 abstract final class Schema {
   /// The schema version this build expects.
-  static const int version = 1;
+  static const int version = 3;
 
   /// Migrations indexed by the version they produce.
   ///
@@ -18,7 +18,7 @@ abstract final class Schema {
   /// self-contained; to change an existing table, create the new one, copy the
   /// rows across and drop the old one within the same migration.
   static final List<void Function(Database db)> _migrations =
-      <void Function(Database db)>[_v1];
+      <void Function(Database db)>[_v1, _v2, _v3];
 
   /// Brings [db] up to [version], running only the migrations it still needs.
   ///
@@ -190,6 +190,92 @@ abstract final class Schema {
       CREATE TABLE meta (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      ) STRICT;
+    ''');
+  }
+
+  /// What the AI makes, kept apart from the notes: conversations about a
+  /// notebook, section or page, and what of them was kept.
+  ///
+  /// Nothing here is part of a page, and nothing a page holds comes from
+  /// here: the notes are only ever what the person wrote. A conversation or
+  /// a kept answer belongs to the notebook, section or page it is about,
+  /// named by `scope_kind` and `scope_id` rather than by a foreign key, since
+  /// that may be any of three tables.
+  static void _v2(Database db) {
+    db.execute('''
+      CREATE TABLE ai_threads (
+        id         TEXT    PRIMARY KEY,
+        scope_kind TEXT    NOT NULL
+                   CHECK (scope_kind IN ('notebook', 'section', 'page')),
+        scope_id   TEXT    NOT NULL,
+        title      TEXT    NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      ) STRICT;
+    ''');
+    db.execute(
+      'CREATE INDEX idx_ai_threads_scope '
+      'ON ai_threads(scope_kind, scope_id, updated_at);',
+    );
+
+    // One question and its answer. `messages` is the turn as the model had
+    // it, to go on from; `answer` is what was shown.
+    db.execute('''
+      CREATE TABLE ai_turns (
+        id         TEXT    PRIMARY KEY,
+        thread_id  TEXT    NOT NULL REFERENCES ai_threads(id) ON DELETE CASCADE,
+        position   INTEGER NOT NULL,
+        question   TEXT    NOT NULL,
+        answer     TEXT    NOT NULL,
+        messages   TEXT    NOT NULL,
+        provider   TEXT    NOT NULL,
+        model      TEXT    NOT NULL,
+        usage      TEXT,
+        created_at INTEGER NOT NULL
+      ) STRICT;
+    ''');
+    db.execute(
+      'CREATE INDEX idx_ai_turns_thread ON ai_turns(thread_id, position);',
+    );
+
+    // What was kept to come back to: a summary, flashcards, an answer.
+    db.execute('''
+      CREATE TABLE ai_items (
+        id         TEXT    PRIMARY KEY,
+        scope_kind TEXT    NOT NULL
+                   CHECK (scope_kind IN ('notebook', 'section', 'page')),
+        scope_id   TEXT    NOT NULL,
+        kind       TEXT    NOT NULL,
+        title      TEXT    NOT NULL,
+        body       TEXT    NOT NULL,
+        turn_id    TEXT    REFERENCES ai_turns(id) ON DELETE SET NULL,
+        provider   TEXT    NOT NULL,
+        model      TEXT    NOT NULL,
+        position   REAL    NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      ) STRICT;
+    ''');
+    db.execute(
+      'CREATE INDEX idx_ai_items_scope '
+      'ON ai_items(scope_kind, scope_id, position);',
+    );
+  }
+
+  static void _v3(Database db) {
+    // How each card of a set of flashcards is learnt: when it is due, and
+    // what the spacing of its reviews has come to, as JSON the AI package
+    // reads. Kept apart from the set, so remaking or editing the set does
+    // not lose it.
+    db.execute('''
+      CREATE TABLE ai_reviews (
+        item_id    TEXT    NOT NULL REFERENCES ai_items(id) ON DELETE CASCADE,
+        card_id    TEXT    NOT NULL,
+        state      TEXT    NOT NULL,
+        due_at     INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (item_id, card_id)
       ) STRICT;
     ''');
   }

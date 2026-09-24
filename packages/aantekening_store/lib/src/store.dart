@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'ai_repository.dart';
 import 'asset_store.dart';
 import 'database.dart';
 import 'embedding_repository.dart';
@@ -28,6 +29,7 @@ class AantekeningStore {
     required this.search,
     required this.embeddings,
     required this.assets,
+    required this.ai,
   });
 
   /// File name of the database inside a workspace directory.
@@ -55,6 +57,7 @@ class AantekeningStore {
       search: SearchRepository(database),
       embeddings: EmbeddingRepository(database),
       assets: AssetStore(database, assetsDirectory),
+      ai: AiRepository(database),
     );
   }
 
@@ -76,6 +79,7 @@ class AantekeningStore {
       search: SearchRepository(database),
       embeddings: EmbeddingRepository(database),
       assets: AssetStore(database, assets),
+      ai: AiRepository(database),
     );
   }
 
@@ -98,6 +102,10 @@ class AantekeningStore {
 
   /// Imported images and PDFs.
   final AssetStore assets;
+
+  /// Conversations with the AI and what was kept of them, apart from the
+  /// notes.
+  final AiRepository ai;
 
   /// Closes the connection. The store is unusable afterwards.
   Future<void> close() async => database.close();

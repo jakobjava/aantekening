@@ -58,10 +58,13 @@ class TextBoxEditor extends StatefulWidget {
     this.onSizeChanged,
     this.onExit,
     this.highlight,
+    this.mark,
     this.proofreader,
     this.onMatchPlaced,
     this.onPasteElements,
     this.onEmbedToBackground,
+    this.pageId,
+    this.onOpenLink,
   });
 
   final TextElement element;
@@ -101,6 +104,9 @@ class TextBoxEditor extends StatefulWidget {
   /// Words to mark wherever they occur in the box, as a search found them.
   final SearchTerms? highlight;
 
+  /// Words to mark in one paragraph: those a followed link points at.
+  final WordsMark? mark;
+
   /// What marks the words spelled wrongly, if spelling is checked.
   final Proofreader? proofreader;
 
@@ -116,6 +122,13 @@ class TextBoxEditor extends StatefulWidget {
   /// Asks the host to make the picture or PDF page on block [block] part of
   /// the page's background, where it is: [local], in the box's own units.
   final void Function(int block, Rect local)? onEmbedToBackground;
+
+  /// The page the box is on, for links to a paragraph of it.
+  final String? pageId;
+
+  /// Opens a link in the text, clicked with Ctrl held or opened from the
+  /// menu: to a note, or on the web.
+  final ValueChanged<String>? onOpenLink;
 
   /// Height of the band along the top edge that moves the box when dragged.
   static const double grabBand = 12;
@@ -166,6 +179,10 @@ class TextBoxEditor extends StatefulWidget {
   @override
   State<TextBoxEditor> createState() => TextBoxEditorState();
 }
+
+/// Words of a paragraph of a text box: offsets [from] to [to] of its
+/// [block]th paragraph's text.
+typedef WordsMark = ({int block, int from, int to});
 
 /// Which kind of change an edit was, so consecutive edits of the same kind can
 /// share one undo step.
@@ -1526,10 +1543,32 @@ class TextBoxEditorState extends State<TextBoxEditor>
       );
     } else if (clip is ElementsClip) {
       widget.onPasteElements?.call(clip.elements);
+    } else if (_isLink(clip.plain.trim())) {
+      // A link pasted alone is pasted as one, to be followed.
+      final link = clip.plain.trim();
+      _commit(
+        RichTextEditing.insertText(
+          _blocks,
+          _selection,
+          link,
+          marks: _typingMarks().withLink(link),
+        ),
+        _EditKind.other,
+      );
     } else {
       _undoBreak = true;
       _insertText(clip.plain);
     }
+  }
+
+  /// Whether [text] is a link and nothing else: to a note, or on the web.
+  static bool _isLink(String text) {
+    if (text.contains(RegExp(r'\s'))) return false;
+    if (NoteLink.isNoteLink(text)) return true;
+    final uri = Uri.tryParse(text);
+    return uri != null &&
+        (uri.isScheme('http') || uri.isScheme('https')) &&
+        uri.host.isNotEmpty;
   }
 
   // -------------------------------------------------------------- keyboard
@@ -2200,6 +2239,8 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final table = hit == null
         ? null
         : TextTables.tableAt(_blocks, hit.position.block);
+    final link = hit == null ? null : _linkAt(hit.position);
+    final paragraphLink = hit == null ? null : _linkTo(hit.position.block);
     await showCommandMenu(context, global, <List<MenuCommand>>[
       if (misspelled case (:final index, :final word, :final spelled)) ...[
         if (suggestions.isEmpty)
@@ -2248,6 +2289,29 @@ class TextBoxEditorState extends State<TextBoxEditor>
           canPaste ? () => unawaited(_paste(textOnly: true)) : null,
         ),
       ],
+      if (link != null || paragraphLink != null)
+        <MenuCommand>[
+          if (link != null) ...<MenuCommand>[
+            MenuCommand(
+              'Open Link',
+              Icons.open_in_new_rounded,
+              () => widget.onOpenLink?.call(link),
+            ),
+            MenuCommand(
+              'Copy Link',
+              Icons.link_rounded,
+              () => unawaited(Clipboard.setData(ClipboardData(text: link))),
+            ),
+          ],
+          if (paragraphLink != null)
+            MenuCommand(
+              'Copy Link to Paragraph',
+              Icons.add_link_rounded,
+              () => unawaited(
+                Clipboard.setData(ClipboardData(text: paragraphLink)),
+              ),
+            ),
+        ],
       if (table != null) ..._tableCommands(table, hit!.position.block),
       if (picture != null && widget.onEmbedToBackground != null)
         <MenuCommand>[
@@ -2347,6 +2411,29 @@ class TextBoxEditorState extends State<TextBoxEditor>
           ),
       ],
     ];
+  }
+
+  /// The link on the text at [position], if there is one.
+  String? _linkAt(RichPosition position) {
+    final block = _blocks[position.block];
+    for (final (i, span) in RichTextEditing.runSpans(block).indexed) {
+      if (span.start <= position.offset && position.offset < span.end) {
+        return block.runs[i].marks.link;
+      }
+    }
+    return null;
+  }
+
+  /// A link to paragraph [block] of this box, or null off a page.
+  String? _linkTo(int block) {
+    final pageId = widget.pageId;
+    return pageId == null
+        ? null
+        : NoteLink.page(
+            pageId,
+            elementId: widget.element.id,
+            block: block,
+          ).toString();
   }
 
   /// Whether the selection takes in [position].
@@ -2555,6 +2642,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
             }
           }
           _openFormula(target);
+          return;
+        }
+        // Ctrl+click follows a link, as it does in OneNote and Word.
+        final link = _linkAt(hit.position);
+        if (link != null && HardwareKeyboard.instance.isControlPressed) {
+          widget.onOpenLink?.call(link);
           return;
         }
         // A click on a picture or PDF page picks it, as it does on the page.
@@ -3051,10 +3144,20 @@ class TextBoxEditorState extends State<TextBoxEditor>
   /// Where the search's words are in block [index], laid out as [view].
   List<TextRange> _matchesIn(int index, BlockView view) {
     final terms = widget.highlight;
-    if (terms == null) return const <TextRange>[];
+    final mark = widget.mark;
+    final length = _blocks[index].length;
     return <TextRange>[
-      for (final match in TextBoxEditor.matchesIn(_blocks[index], terms))
-        TextRange(start: view.toView(match.start), end: view.toView(match.end)),
+      if (terms != null)
+        for (final match in TextBoxEditor.matchesIn(_blocks[index], terms))
+          TextRange(
+            start: view.toView(match.start),
+            end: view.toView(match.end),
+          ),
+      if (mark != null && mark.block == index && mark.from < length)
+        TextRange(
+          start: view.toView(mark.from),
+          end: view.toView(mark.to.clamp(mark.from, length)),
+        ),
     ];
   }
 

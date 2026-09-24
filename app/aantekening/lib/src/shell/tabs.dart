@@ -22,6 +22,7 @@ class NoteTab {
     this.pageId,
     this.search = '',
     this.panel = SidebarTab.notebooks,
+    this.ai = false,
   });
 
   /// Tells tabs apart for as long as they are open; not kept between
@@ -40,6 +41,14 @@ class NoteTab {
   /// The sidebar panel open beside the tab's page, or null for none.
   final SidebarTab? panel;
 
+  /// Whether the tab shows the AI of what it has chosen — its page, or else
+  /// its section, or else its notebook — in place of the page.
+  final bool ai;
+
+  /// Whether the tab has chosen anything: a notebook, a section, a page.
+  bool get hasChoice =>
+      notebookId != null || sectionId != null || pageId != null;
+
   /// The one of this tab's notebook, section and page that [choice] names.
   String? chosen(TabChoice choice) => switch (choice) {
     TabChoice.notebook => notebookId,
@@ -57,6 +66,8 @@ class NoteTab {
   NoteTab searching(String search) => _copy(search: search);
 
   NoteTab showing(SidebarTab? panel) => _copy(panel: panel);
+
+  NoteTab inAi(bool ai) => ai == this.ai ? this : _copy(ai: ai);
 
   /// This tab with nothing chosen of [ids] or of what lies in them.
   NoteTab forgetting(Set<String> ids) {
@@ -79,6 +90,7 @@ class NoteTab {
     Object? pageId = _same,
     String? search,
     Object? panel = _same,
+    bool? ai,
   }) => NoteTab(
     id: id,
     notebookId: _or(notebookId, this.notebookId),
@@ -86,6 +98,7 @@ class NoteTab {
     pageId: _or(pageId, this.pageId),
     search: search ?? this.search,
     panel: _or(panel, this.panel),
+    ai: ai ?? this.ai,
   );
 
   static const Object _same = Object();
@@ -99,6 +112,7 @@ class NoteTab {
     if (sectionId != null) 'section': sectionId,
     if (pageId != null) 'page': pageId,
     'panel': panel?.name ?? _noPanel,
+    if (ai) 'ai': true,
   };
 
   static NoteTab fromJson(int id, Map<String, Object?> json) => NoteTab(
@@ -107,6 +121,7 @@ class NoteTab {
     sectionId: readStringOrNull(json, 'section'),
     pageId: readStringOrNull(json, 'page'),
     panel: panelNamed(readStringOrNull(json, 'panel')),
+    ai: readBool(json, 'ai'),
   );
 
   /// Saved for a panel closed on purpose, rather than nothing, which opens
@@ -116,7 +131,10 @@ class NoteTab {
   /// The panel saved as [name].
   static SidebarTab? panelNamed(String? name) => name == _noPanel
       ? null
-      : SidebarTab.values.asNameMap()[name] ?? SidebarTab.notebooks;
+      : switch (SidebarTab.values.asNameMap()[name]) {
+          final tab? when tab.opensPanel => tab,
+          _ => SidebarTab.notebooks,
+        };
 }
 
 /// The notebook, section and page a tab has chosen.
@@ -208,6 +226,13 @@ class TabsController extends Notifier<TabsState> {
 
   /// Closes the tab showing.
   void closeShowing() => close(state.active);
+
+  /// Shows the AI of what the tab showing has chosen in place of its page,
+  /// or the page again — so long as it has chosen something.
+  void toggleAi() {
+    if (!state.current.hasChoice) return;
+    updateCurrent((tab) => tab.inAi(!tab.ai));
+  }
 
   /// Closes every tab but the one at [index], and shows that one.
   void closeOthers(int index) =>

@@ -6,6 +6,7 @@
 /// keeps the note format open and exportable without giving up query speed.
 library;
 
+export 'src/ai_repository.dart';
 export 'src/asset_store.dart';
 export 'src/database.dart';
 export 'src/embedding_repository.dart';

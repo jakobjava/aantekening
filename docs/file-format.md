@@ -135,6 +135,46 @@ preferred size in page units, as the handles at its corners set them; a box
 narrower than that shows the object scaled down to fit. `text` is indexed for search — a PDF page's text layer, or a
 picture's description.
 
+## Links to notes
+
+A link to a note is a URI, and may be a text run's `link`:
+
+* `aantekening://notebook/<id>` and `aantekening://section/<id>`
+* `aantekening://page/<id>`, with a place on the page after `#`:
+  `element=<id>`, and in a text box `&block=<n>` for its paragraph, counted
+  from zero, and `&from=<i>&to=<j>` for words of it — a sentence an answer
+  cites — as offsets into the paragraph's text, its runs' text joined.
+
+Identifiers are the workspace's own, so a link keeps pointing at the same
+thing however it is renamed or moved.
+
+## What the AI makes
+
+Nothing the AI writes is part of a page. What it makes is in tables of its
+own, beside the notes and never in them:
+
+* `ai_threads`: a conversation about a notebook, section or page, named by
+  `scope_kind` and `scope_id`.
+* `ai_turns`: each question, its answer as shown, and the turn as the model
+  had it, to go on from. An answer is JSON: its Markdown, in which `⟦1,3⟧`
+  after a stretch names the citations it draws on, counted from one; and
+  its citations, each with the link or web address cited — to the sentence,
+  for the notes — its title, whether it is from the notes or the web, and
+  the words cited. Flashcards and quizzes in an answer are fenced blocks in
+  the Markdown, marked `flashcards` and `quiz`, holding JSON lists.
+* `ai_items`: what was kept about a scope. A study set — `kind` `summary`,
+  `flashcards`, `quiz` or `terms` — holds JSON with `"study"` naming its
+  kind: a summary's `title`, `gist`, `sections` of `points`, `formulas` and
+  what goes `beyond` the notes; flashcards' `cards`; a quiz's `questions`;
+  the key `terms`. Each card, question and point carries the citations it
+  comes from, and each card and question an `id`. A kept answer (`kind`
+  `answer`) holds the answer's JSON.
+* `ai_reviews`: how each card of a set of flashcards is learnt — by
+  `item_id` and `card_id`, its spaced-repetition state as JSON (when it is
+  due, the gap and ease of its reviews, how often it was forgotten) and
+  `due_at`. Kept apart from the set, so a card corrected or a set made
+  again keeps what was learnt of the cards that stay.
+
 ## Compatibility rules
 
 The format is designed to be read by builds that did not write it:

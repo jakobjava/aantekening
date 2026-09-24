@@ -27,13 +27,23 @@ and would build on the same runs.
 
 ### Handwriting recognition
 `InkElement.writeSearchText` is intentionally empty, and the schema already has
-somewhere to put recognised text. Recognition belongs with the AI layer; until
-it exists, handwriting is not searchable and nothing pretends otherwise.
+somewhere to put recognised text. Models that can see read handwriting when the
+AI looks at it (ADR 17), but nothing is recognised ahead of time, so handwriting
+is not searchable and nothing pretends otherwise.
 
-### Semantic search in the UI
-`EmbeddingRepository` and `NoteAssistant.embedPage` are complete and tested.
-What is missing is the background job that keeps embeddings in step with edits,
-and the UI that blends semantic hits with FTS hits.
+### Semantic search
+`EmbeddingRepository` is complete and tested. What is missing is an embedding
+provider behind `ChatProvider`, the background job that keeps embeddings in step
+with edits, and blending semantic hits with full-text ones — in search, and in
+what the AI is given with a question, which today is chosen by full-text search.
+
+### The AI, further
+* A notebook too large for a model's context is read through its overview and
+  the tools; summaries of pages, made once and kept up to date, would let a
+  model take in a large notebook at a glance.
+* What the AI keeps does not yet notice when the notes it came from change.
+* Flashcards remember only within a session how well they are known; spaced
+  repetition across sessions would build on the kept decks.
 
 ### Smaller gaps
 * Pictures inside a text box grow no wider than the box, as a table's

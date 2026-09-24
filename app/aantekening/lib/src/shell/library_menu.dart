@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
@@ -21,9 +22,10 @@ String pageTitleOrPlaceholder(String title) =>
 
 /// Shows what can be done to a notebook, section or page at [position].
 ///
-/// The commands come in the same order whatever [node] is: opening a page in
-/// a tab of its own first, then making something new, then cutting, copying
-/// and pasting, then renaming and deleting.
+/// The commands come in the same order whatever [node] is: opening it —
+/// a page in a tab of its own, or its AI — and copying a link to it first,
+/// then making something new, then cutting, copying and pasting, then
+/// renaming and deleting.
 Future<void> showLibraryMenu(
   BuildContext context,
   WidgetRef ref,
@@ -99,15 +101,31 @@ Future<void> showLibraryMenu(
     actions.canPaste(node) ? () => actions.paste(node) : null,
   );
 
+  final link = switch (node) {
+    Notebook(:final id) => NoteLink.notebook(id),
+    Section(:final id) => NoteLink.section(id),
+    _ => NoteLink.page(node.id),
+  };
+
   return showCommandMenu(context, position, <List<MenuCommand>>[
-    if (node is PageRef)
-      <MenuCommand>[
+    <MenuCommand>[
+      if (node is PageRef)
         MenuCommand(
           'Open in New Tab',
           Icons.open_in_new_rounded,
           () => unawaited(actions.openInNewTab(node)),
         ),
-      ],
+      MenuCommand(
+        'Ask AI',
+        Icons.auto_awesome_rounded,
+        () => unawaited(actions.openAi(node)),
+      ),
+      MenuCommand(
+        'Copy Link',
+        Icons.link_rounded,
+        () => unawaited(Clipboard.setData(ClipboardData(text: '$link'))),
+      ),
+    ],
     create,
     <MenuCommand>[
       // A notebook is not moved or copied on its own; sections are pasted

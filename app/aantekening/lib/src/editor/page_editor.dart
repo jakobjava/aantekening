@@ -16,9 +16,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../command_menu.dart';
 import '../providers.dart';
 import '../input_trace.dart';
+import '../links/note_links.dart';
 import '../search/search_panel.dart';
 import '../spelling/proofreader.dart';
 import '../spelling/spelling.dart';
+import '../ai/ai_view.dart';
 import 'element_views.dart';
 import 'media_import.dart';
 import 'note_clipboard.dart';
@@ -43,7 +45,12 @@ import 'trackpad.dart';
 /// [CanvasController] directly rather than holding it in a provider: its
 /// lifetime is exactly this widget's, which guarantees a final save.
 class PageEditor extends ConsumerStatefulWidget {
-  const PageEditor({required this.pageId, this.around, super.key});
+  const PageEditor({
+    required this.pageId,
+    this.around,
+    this.aiScope,
+    super.key,
+  });
 
   /// The page open, or null for none.
   final String? pageId;
@@ -51,6 +58,10 @@ class PageEditor extends ConsumerStatefulWidget {
   /// Lays the page out in the window below the ribbon — beside the sidebar,
   /// say. The ribbon spans the whole window, over both.
   final Widget Function(BuildContext context, Widget page)? around;
+
+  /// What the AI is being asked about, when it is shown in place of the
+  /// page — or null while the page is.
+  final NoteLink? aiScope;
 
   @override
   ConsumerState<PageEditor> createState() => _PageEditorState();
@@ -240,6 +251,9 @@ class _PageEditorState extends ConsumerState<PageEditor> {
         _loading = false;
         _ready = true;
       });
+      // A link followed to a place on this page shows it once the page is
+      // laid out.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _meetRevealRequest());
     } on Object catch (error) {
       if (!mounted || pageId != widget.pageId) return;
       setState(() {
@@ -248,6 +262,34 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       });
     }
   }
+
+  /// Brings the place a followed link points at into view, and picks it,
+  /// once its page is showing.
+  void _meetRevealRequest() {
+    final link = ref.read(revealRequestProvider);
+    if (!mounted || link == null || link.id != widget.pageId || !_ready) return;
+    ref.read(revealRequestProvider.notifier).done();
+    final id = link.elementId;
+    final element = id == null ? null : _controller.document.elementById(id);
+    if (element == null) return;
+    final words = link.words;
+    final block = link.block;
+    setState(() {
+      _revealed = words == null || block == null
+          ? null
+          : (
+              elementId: element.id,
+              words: (block: block, from: words.from, to: words.to),
+            );
+    });
+    _controller
+      ..reveal(element.bounds)
+      ..select(element.id);
+  }
+
+  /// The words a followed link points at, marked in their text box until
+  /// something else is picked.
+  ({String elementId, WordsMark words})? _revealed;
 
   /// Drops text boxes with nothing in them, which an interrupted session or
   /// an undo can leave behind invisibly.
@@ -262,6 +304,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// scrolling among them — so it rebuilds nothing itself: the canvas and
   /// the ribbon's buttons each listen for what they show.
   void _onCanvasChanged() {
+    if (_revealed case final revealed?
+        when !_controller.selection.contains(revealed.elementId)) {
+      setState(() => _revealed = null);
+    }
     final tool = _controller.tool;
     if (tool.draws) _lastInkTool = tool;
     _syncBoxFormatting();
@@ -1023,6 +1069,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(revealRequestProvider, (_, _) => _meetRevealRequest());
     ref.listen<MathMode>(
       mathSyntaxProvider,
       (_, syntax) => _textController.formulaSyntax.value = syntax,
@@ -1032,7 +1079,11 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
     return Column(
       children: <Widget>[
-        Ribbon(commands: _ribbonCommands, enabled: _ready),
+        // The ribbon works on the page, so it rests while the AI shows.
+        Ribbon(
+          commands: _ribbonCommands,
+          enabled: _ready && widget.aiScope == null,
+        ),
         Expanded(
           child: (widget.around ?? _alone)(
             context,
@@ -1056,6 +1107,8 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
   Widget _page(SearchTerms? highlight) {
     final pageId = widget.pageId;
+    final aiScope = widget.aiScope;
+    if (aiScope != null) return AiView(scope: aiScope);
     if (pageId == null) return const _NoPageSelected();
     if (_loading) return const Center(child: CircularProgressIndicator());
     return Column(
@@ -1252,6 +1305,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       startsInFormula: isEditing && _editingStartsInFormula,
       interactive: _controller.tool == CanvasTool.select,
       highlight: element is TextElement ? highlight : null,
+      mark: _revealed?.elementId == id ? _revealed!.words : null,
       proofreader: element is TextElement ? _proofreader : null,
       placesMatch: id == firstMatch,
     );
@@ -1279,6 +1333,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       interactive: built.interactive,
       startInFormula: built.startsInFormula,
       highlight: built.highlight,
+      mark: built.mark,
       proofreader: built.proofreader,
       onMatchPlaced: built.placesMatch
           ? (local) => _revealMatch(element, local)
@@ -1291,6 +1346,8 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       onPasteElements: _pasteFromBox,
       onEmbedToBackground: (block, local) =>
           _embedToBackground(id, block, local),
+      pageId: widget.pageId,
+      onOpenLink: (uri) => unawaited(ref.read(noteLinksProvider).open(uri)),
     );
   }
 }
@@ -1304,6 +1361,7 @@ typedef _ElementBuild = ({
   bool startsInFormula,
   bool interactive,
   SearchTerms? highlight,
+  WordsMark? mark,
   Proofreader? proofreader,
   bool placesMatch,
 });

@@ -55,6 +55,9 @@ abstract final class RichTextStyles {
   /// The lines round a table's cells.
   static const Color tableRule = Color(0xFFB4BAC4);
 
+  /// Linked text, where it has no colour of its own.
+  static const Color link = Color(0xFF1A5FB4);
+
   /// Behind words a search found: amber, so it is not taken for a yellow
   /// highlight someone made.
   static const Color searchMatch = Color(0x99FFB020);
@@ -140,10 +143,14 @@ abstract final class RichTextStyles {
       fontWeight: marks.bold ? FontWeight.w700 : null,
       fontStyle: marks.italic ? FontStyle.italic : null,
       decoration: TextDecoration.combine(<TextDecoration>[
-        if (marks.underline) TextDecoration.underline,
+        if (marks.underline || marks.link != null) TextDecoration.underline,
         if (marks.strikethrough) TextDecoration.lineThrough,
       ]),
-      color: marks.color != null ? Color(marks.color!) : null,
+      color: marks.color != null
+          ? Color(marks.color!)
+          : marks.link != null
+          ? link
+          : null,
       backgroundColor: marks.highlight != null ? Color(marks.highlight!) : null,
       fontSize: marks.size != null ? marks.size! * unitsPerPoint : null,
     );

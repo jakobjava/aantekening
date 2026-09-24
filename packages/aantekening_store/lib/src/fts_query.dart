@@ -13,15 +13,21 @@ abstract final class FtsQuery {
   /// Converts [input] into a MATCH expression, or returns null when it
   /// contains nothing searchable.
   ///
-  /// Terms are ANDed. When [prefixLastTerm] is set the final bare word
-  /// matches as a prefix, so results narrow as the user types rather than
-  /// appearing only once a word is finished.
-  static String? build(String input, {bool prefixLastTerm = true}) {
+  /// Terms are ANDed, or with [matchAny] ORed, for a question asked in
+  /// words rather than a search typed as terms: the pages with more of its
+  /// words, and rarer ones, rank first. When [prefixLastTerm] is set the
+  /// final bare word matches as a prefix, so results narrow as the user
+  /// types rather than appearing only once a word is finished.
+  static String? build(
+    String input, {
+    bool prefixLastTerm = true,
+    bool matchAny = false,
+  }) {
     final terms = SearchTerms.parse(input, prefixLastTerm: prefixLastTerm);
     if (terms.isEmpty) return null;
     return <String>[
       for (final term in terms.terms)
         '"${term.text.replaceAll('"', '""')}"${term.isPrefix ? '*' : ''}',
-    ].join(' AND ');
+    ].join(matchAny ? ' OR ' : ' AND ');
   }
 }

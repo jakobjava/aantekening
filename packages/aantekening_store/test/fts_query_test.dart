@@ -10,6 +10,13 @@ void main() {
       );
     });
 
+    test('ORs the words of a question asked', () {
+      expect(
+        FtsQuery.build('newton laws', prefixLastTerm: false, matchAny: true),
+        '"newton" OR "laws"',
+      );
+    });
+
     test('makes the last word a prefix so results narrow while typing', () {
       expect(FtsQuery.build('four'), '"four"*');
       expect(FtsQuery.build('fourier tra'), '"fourier" AND "tra"*');

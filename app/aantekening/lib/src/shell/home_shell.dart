@@ -3,10 +3,12 @@ library;
 
 import 'dart:async';
 
+import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../ai/ai_state.dart';
 import '../editor/page_editor.dart';
 import '../preferences.dart';
 import '../providers.dart';
@@ -80,6 +82,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         error: (error, stack) => _WorkspaceError(error: error),
         data: (_) => PageEditor(
           pageId: ref.watch(selectedPageProvider),
+          aiScope: _aiScope(ref.watch(tabsProvider.select((t) => t.current))),
           around: (context, page) => Column(
             children: <Widget>[
               const TabStrip(),
@@ -91,6 +94,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     );
   }
 }
+
+/// What [tab] asks the AI about, while it shows the AI.
+NoteLink? _aiScope(NoteTab tab) => tab.ai
+    ? aiScopeOf(
+        notebookId: tab.notebookId,
+        sectionId: tab.sectionId,
+        pageId: tab.pageId,
+      )
+    : null;
 
 class _WorkspaceError extends StatelessWidget {
   const _WorkspaceError({required this.error});

@@ -18,16 +18,20 @@ packages. Dependencies point in one direction only.
 ```
 
 * **`aantekening_core`** — pure Dart, no Flutter. The page document, the element
-  hierarchy, ink, rich text, the organisational tree, geometry and identifiers.
+  hierarchy, ink, rich text, the organisational tree, geometry and identifiers,
+  links to notes, and pages taken apart for machines to read (`PageDigest`).
   It runs anywhere: in the UI, in the store, in a background isolate, in tests,
   and in any future command-line importer.
-* **`aantekening_store`** — SQLite, full-text search, embeddings and the
-  content-addressed asset store.
+* **`aantekening_store`** — SQLite, full-text search, embeddings, the
+  content-addressed asset store, and what the AI makes, in tables of its own.
 * **`aantekening_canvas`** — the infinite canvas, running right and down from
   a page's top-left corner: viewport, spatial index, ink capture and the
   painted layers. Knows nothing about maths or PDFs.
 * **`aantekening_math`** — linear-input parsing and LaTeX rendering.
-* **`aantekening_ai`** — interfaces to language models running locally.
+* **`aantekening_ai`** — pure Dart: models from any provider behind one
+  interface, the conversation they share, citations, and the agent that
+  answers from the notes (ADR 17). It reads the workspace only through a
+  `NoteReader` the app gives it.
 * **`aantekening_spell`** — pure Dart: Hunspell's checking and suggesting,
   ported, and a checker that runs it in an isolate of its own (ADR 12). It
   depends on nothing else here.
@@ -47,6 +51,22 @@ general-purpose surface while the app decides what an element looks like.
 4. A debounced timer fires ~700 ms later and calls `PageRepository.saveDocument`.
 5. That one transaction writes the body, the page row, the FTS entry and the
    asset links. The index can never describe a page that is not on disk.
+
+## Data flow for a question to the AI
+
+1. The AI view hands the question to its `AiSession`, one per notebook,
+   section or page, which lives on while other tabs show.
+2. The `NoteAgent` asks the app's `NoteReader` for the scope: its pages,
+   taken apart into citable passages and visuals (`PageDigest`), chosen to
+   fit a share of the model's context (`NoteContext`), with handwriting over
+   printouts drawn as pictures.
+3. The provider's adapter turns the conversation into its API's terms —
+   search results for Claude, numbered text for the rest — and streams the
+   answer back as neutral events: text, cited spans, activity, tool calls.
+4. Tool calls — search the notes, read a page, look at a visual, search the
+   web — are run and answered, until the model is done.
+5. The turn, and anything kept, is written to the AI's own tables; nothing is
+   written to a page.
 
 ## Where speed comes from
 

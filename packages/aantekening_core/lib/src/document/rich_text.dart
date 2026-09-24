@@ -114,6 +114,9 @@ class TextMarks {
   /// A copy with the font size set, or cleared with null.
   TextMarks withSize(double? size) => _with(size: () => size);
 
+  /// A copy linking to [link], or to nothing with null.
+  TextMarks withLink(String? link) => _with(link: () => link);
+
   /// Only the marks a formula can carry: colour and size. Formulas are
   /// typeset by their own rules, so bold or underline mean nothing to them,
   /// and a highlight on one is part of its LaTeX, whole or in part.
@@ -123,6 +126,7 @@ class TextMarks {
     int? Function()? color,
     int? Function()? highlight,
     double? Function()? size,
+    String? Function()? link,
   }) => TextMarks(
     bold: bold,
     italic: italic,
@@ -131,7 +135,7 @@ class TextMarks {
     code: code,
     color: color == null ? this.color : color(),
     highlight: highlight == null ? this.highlight : highlight(),
-    link: link,
+    link: link == null ? this.link : link(),
     size: size == null ? this.size : size(),
   );
 

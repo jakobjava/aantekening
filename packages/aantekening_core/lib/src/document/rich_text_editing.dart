@@ -159,7 +159,9 @@ abstract final class RichTextEditing {
   ///
   /// Formulas are passed over, so writing on after one continues the text
   /// before it. Beside a formula with no text either side, typing takes the
-  /// formula's size and colour, the only formatting it has.
+  /// formula's size and colour, the only formatting it has. A link is
+  /// written on only within it: text typed at its end, or its start, is not
+  /// part of it.
   static TextMarks marksAt(TextBlock block, int offset) {
     var position = 0;
     TextRun? before;
@@ -179,7 +181,8 @@ abstract final class RichTextEditing {
       }
       position = end;
     }
-    return (before ?? after)?.marks ?? formula?.marks ?? TextMarks.none;
+    return ((before ?? after)?.marks ?? formula?.marks ?? TextMarks.none)
+        .withLink(null);
   }
 
   // ----------------------------------------------------------------- blocks

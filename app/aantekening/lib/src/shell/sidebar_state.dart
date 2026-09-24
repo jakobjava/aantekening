@@ -52,7 +52,10 @@ class SidebarController extends Notifier<SidebarState> {
   /// Opens [tab]'s panel, or closes it if it is the one open.
   void toggle(SidebarTab tab) => state.open == tab ? close() : show(tab);
 
-  void show(SidebarTab tab) => _open(tab);
+  void show(SidebarTab tab) {
+    assert(tab.opensPanel, '$tab opens no panel');
+    _open(tab);
+  }
 
   void close() => _open(null);
 

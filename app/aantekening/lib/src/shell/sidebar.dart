@@ -11,14 +11,14 @@ import '../arrangement/arrangement_drag.dart';
 import '../graph/graph_panel.dart';
 import '../providers.dart';
 import '../search/search_panel.dart';
-import '../settings/ai_panel.dart';
 import 'library_pane.dart';
 import 'page_list_pane.dart';
 import 'sidebar_state.dart';
 import 'tabs.dart';
 
 /// A strip of buttons, each opening a panel beside it — the notebooks and
-/// pages, search, the graph, the local AI — with [page] taking the rest of
+/// pages, search, the graph — and one turning the tab to its AI, with
+/// [page] taking the rest of
 /// the window.
 ///
 /// Clicking the open panel's button closes it. Each column of a panel is
@@ -215,12 +215,18 @@ class _TabButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final open = ref.watch(sidebarProvider.select((state) => state.open));
-    final selected = open == tab;
-    // The local AI's button is lit while a model runtime can be reached.
-    final connected =
-        tab == SidebarTab.assistant &&
-        ref.watch(modelAvailabilityProvider).value == true;
+    // The AI's button shows whether the tab shows the AI, and works only
+    // once the tab has chosen something to ask about.
+    final ai = tab == SidebarTab.ai;
+    final current = ref.watch(tabsProvider.select((tabs) => tabs.current));
+    final selected = ai
+        ? current.ai
+        : ref.watch(sidebarProvider.select((state) => state.open)) == tab;
+    final VoidCallback? onPressed = !ai
+        ? () => ref.read(sidebarProvider.notifier).toggle(tab)
+        : current.hasChoice
+        ? ref.read(tabsProvider.notifier).toggleAi
+        : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -228,9 +234,13 @@ class _TabButton extends ConsumerWidget {
         children: <Widget>[
           IconButton(
             icon: Icon(tab.icon, size: 20),
-            tooltip: connected ? '${tab.label} — connected' : tab.label,
+            tooltip: ai
+                ? (current.ai
+                      ? 'Back to the notes  (Ctrl+J)'
+                      : 'Ask AI about what is open  (Ctrl+J)')
+                : tab.label,
             isSelected: selected,
-            color: connected ? scheme.primary : scheme.onSurfaceVariant,
+            color: scheme.onSurfaceVariant,
             selectedIcon: Icon(tab.icon, size: 20, color: scheme.primary),
             style: IconButton.styleFrom(
               fixedSize: const Size.square(36),
@@ -238,7 +248,7 @@ class _TabButton extends ConsumerWidget {
                   ? scheme.primary.withValues(alpha: 0.12)
                   : null,
             ),
-            onPressed: () => ref.read(sidebarProvider.notifier).toggle(tab),
+            onPressed: onPressed,
           ),
           if (selected)
             Positioned(
@@ -334,7 +344,6 @@ class _Panel extends ConsumerWidget {
     SidebarColumn.pages => const PageListPane(),
     SidebarColumn.search => const SearchPanel(),
     SidebarColumn.graph => const GraphPanel(),
-    SidebarColumn.assistant => const AiPanel(),
   };
 }
 

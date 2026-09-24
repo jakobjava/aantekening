@@ -5,6 +5,8 @@
 /// and the test suite, and it can run inside a background isolate.
 library;
 
+export 'src/digest/page_digest.dart';
+export 'src/digest/rich_markdown.dart';
 export 'src/document/elements.dart';
 export 'src/document/ink.dart';
 export 'src/document/page_document.dart';
@@ -12,6 +14,7 @@ export 'src/document/rich_text.dart';
 export 'src/document/rich_text_editing.dart';
 export 'src/document/table_editing.dart';
 export 'src/document/text_tables.dart';
+export 'src/link/note_link.dart';
 export 'src/search/search_terms.dart';
 export 'src/tree/hierarchy.dart';
 export 'src/tree/tree.dart';

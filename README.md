@@ -31,7 +31,7 @@ stays instant.
   showing alone. Drag tabs to reorder them; the window remembers them, and
   going back to a tab finds its page where you left it.
 * **Sidebar** — a strip of buttons down the left opens panels beside the page:
-  the notebooks and pages, search, a graph of the workspace, and the local AI.
+  the notebooks and pages, search, and a graph of the workspace.
   A panel's button closes it again, its columns are widened by dragging their
   edges, and the buttons can be dragged into another order, as the ribbon's
   can.
@@ -105,8 +105,36 @@ stays instant.
 * **Graph** — every notebook, section and page as a dot joined to what it is
   in, laid out by a force simulation, as Obsidian draws a vault. Drag the dots
   about; click one to open it.
-* **Local AI** — optional, off by default, set up in its sidebar panel, and
-  wired only to runtimes on your own machine.
+* **AI** — every notebook, section and page has an AI of its own: press
+  **Ctrl+J**, the ✦ **AI** button on the sidebar, or *Ask AI* in its menu.
+  It opens on what you can make to learn from it, each from your notes and
+  linked back to the very sentence each part comes from:
+  * a **summary** set out as a study sheet — the gist, the ideas in
+    numbered parts, the formulas in boxes, and what goes beyond your notes
+    kept apart;
+  * **flashcards** that turn over, graded by how well you knew them and
+    shown again just before you would forget them (spaced repetition), each
+    to correct or take out;
+  * a **quiz** taken a question at a time, each answer explained, the ones
+    you missed to take again;
+  * the **key terms**, as a glossary.
+
+  Or ask anything, as you would someone who has read every note you ever
+  wrote: answers start from that page, section or notebook, search the rest
+  of your notes when they need to, look at your handwriting over PDF
+  printouts, and can search the web. A small number after each statement
+  names the sentence it comes from — hover to read it, click to open the
+  page with the sentence marked — your notes in blue, the web in green, and
+  the model's own knowledge ruled grey. Everything the AI makes stays with
+  the page it is about, apart from your notes. While it works you see each
+  step and how long it takes — the notes gathered, how much the model is
+  reading, its thinking as it thinks, how fast it writes. Use a model on
+  your own computer (Ollama, LM Studio, llama.cpp — nothing leaves it) or a
+  provider you choose (Anthropic, OpenAI, Gemini, OpenRouter, Mistral,
+  Groq, DeepSeek, or any OpenAI-compatible server); nothing is sent
+  anywhere until you ask.
+* **Links** — copy a link to any notebook, section, page or paragraph from
+  its menu; paste it into a text box and Ctrl+click it to go there.
 
 ## Running it
 
@@ -187,6 +215,8 @@ puts everything back.
 | Enter (in a table) | At the end of a row, add a row; in an empty row, leave the table |
 | Ctrl+T / Ctrl+W | Open a new tab / close the tab showing |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab (also Ctrl+Page Down / Page Up) |
+| Ctrl+J | The AI of the page, section or notebook showing, and back |
+| Ctrl+click (on a link) | Follow it: to a note, or to the web |
 | V or T, P, H, E | Type-and-select, pen, highlighter, eraser (outside a text box); shows the Home or Draw tab |
 | Ctrl+F1 | Collapse or show the ribbon |
 | Ctrl+A, arrow keys | Select everything; nudge the selection (Shift: further) |
@@ -228,17 +258,29 @@ dart analyze
 (cd app/aantekening            && flutter test)
 ```
 
-### Optional: local AI
+### Optional: the AI
 
-Install [Ollama](https://ollama.com) and pull a chat model and an embedding
-model, then enable the features in the sidebar's **Local AI** panel:
+Open any page's AI (**Ctrl+J**) and **Choose a model**. To keep everything
+on your computer, install [Ollama](https://ollama.com) and pull a model that
+can use tools and see pictures, then add **Ollama** under *On this
+computer*:
 
 ```bash
-ollama pull llama3.2
-ollama pull nomic-embed-text
+ollama pull qwen3-vl:4b-instruct
 ```
 
-Nothing leaves your machine, and nothing is contacted until you switch it on.
+An *instruct* model answers straight away. A model that thinks first answers
+better, but without a graphics card its thinking can take many minutes; turn
+**Think before answering** off in the settings for the models that allow it,
+and give a model more **Room** there if it runs out before it answers. A
+model that thinks longer than **Think for at most** (three minutes unless
+you change it) is stopped and answers from what it has worked out.
+
+Or add a provider under *Online* with its API key, which is kept in your
+system's keychain. For web search with providers other than Anthropic,
+which searches itself, point the settings at a
+[SearXNG](https://docs.searxng.org) you run, or a Brave Search API key.
+Nothing is contacted until you ask something.
 
 ## Layout
 
@@ -247,7 +289,7 @@ packages/aantekening_core     model + page format   (pure Dart)
 packages/aantekening_store    SQLite, search, assets
 packages/aantekening_canvas   infinite canvas engine
 packages/aantekening_math     Simple syntax ⇄ LaTeX, typesetting
-packages/aantekening_ai       local model clients
+packages/aantekening_ai       AI providers, citations, the note agent
 packages/aantekening_spell    spell checking, Hunspell ported to Dart
 app/aantekening               the application
 docs/                         architecture, file format, decisions, roadmap

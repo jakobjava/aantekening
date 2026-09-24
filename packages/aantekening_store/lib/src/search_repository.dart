@@ -42,8 +42,13 @@ class SearchRepository {
     String? notebookId,
     String? sectionId,
     bool prefixLastTerm = true,
+    bool matchAny = false,
   }) async {
-    final match = FtsQuery.build(query, prefixLastTerm: prefixLastTerm);
+    final match = FtsQuery.build(
+      query,
+      prefixLastTerm: prefixLastTerm,
+      matchAny: matchAny,
+    );
     if (match == null) return const <SearchHit>[];
 
     final filters = StringBuffer();

@@ -288,7 +288,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final gesture = await tester.startGesture(
-        tester.getCenter(find.byTooltip('Local AI')),
+        tester.getCenter(find.byTooltip('Graph')),
         kind: PointerDeviceKind.mouse,
       );
       await gesture.moveBy(const Offset(0, -10));
@@ -301,7 +301,7 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
 
-      final buttons = <String>['Local AI', 'Notebooks', 'Search', 'Graph'];
+      final buttons = <String>['Graph', 'Notebooks', 'Search'];
       final heights = <double>[
         for (final label in buttons) tester.getCenter(find.byTooltip(label)).dy,
       ];
@@ -334,18 +334,6 @@ void main() {
       // Picking a page puts it away, showing the page.
       expect(find.byType(LibraryPane), findsNothing);
       expect(find.byType(InfiniteCanvas), findsOneWidget);
-    });
-
-    testWidgets('opens the local AI\'s settings', (tester) async {
-      useSurface(tester, wideWindow);
-      await tester.pumpWidget(shellWith(store));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byTooltip('Local AI'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Enable local AI features'), findsOneWidget);
-      expect(find.byType(LibraryPane), findsNothing);
     });
 
     testWidgets('shows the graph of notebooks, sections and pages', (

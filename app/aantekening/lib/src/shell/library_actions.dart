@@ -117,6 +117,28 @@ class LibraryActions {
     required String pageId,
   }) => _select(notebookId: notebookId, sectionId: sectionId, pageId: pageId);
 
+  /// Shows the AI of [node] — a notebook, section or page — in the tab
+  /// showing, in place of the page.
+  Future<void> openAi(TreeNode node) async {
+    switch (node) {
+      case Notebook(:final id):
+        openNotebook(id);
+      case Section(:final id, :final notebookId):
+        openSection(notebookId, id);
+      case PageRef(:final id, :final sectionId):
+        final section = await _ref.read(sectionProvider(sectionId).future);
+        if (section == null) return;
+        openPage(
+          notebookId: section.notebookId,
+          sectionId: sectionId,
+          pageId: id,
+        );
+      default:
+        return;
+    }
+    _ref.read(tabsProvider.notifier).updateCurrent((tab) => tab.inAi(true));
+  }
+
   /// Opens [page] in a tab of its own, after the tab showing, and shows it.
   Future<void> openInNewTab(PageRef page) async {
     final section = await _ref.read(sectionProvider(page.sectionId).future);

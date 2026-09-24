@@ -114,9 +114,12 @@ void main() {
       expect(all.toSet(), SidebarTab.values.toSet());
       expect(all, hasLength(SidebarTab.values.length));
 
-      final moved = layout.move(SidebarTab.assistant, SidebarGroup.top, 0);
-      expect(moved.itemsIn(SidebarGroup.top).first, SidebarTab.assistant);
-      expect(moved.itemsIn(SidebarGroup.bottom), isEmpty);
+      final moved = layout.move(SidebarTab.graph, SidebarGroup.bottom, 0);
+      expect(moved.itemsIn(SidebarGroup.bottom).single, SidebarTab.graph);
+      expect(
+        moved.itemsIn(SidebarGroup.top),
+        isNot(contains(SidebarTab.graph)),
+      );
       expect(Arrangement.fromJson(SidebarGroup.values, moved.toJson()), moved);
     });
   });

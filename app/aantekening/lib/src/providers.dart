@@ -4,7 +4,6 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -171,39 +170,4 @@ final assetFileProvider = FutureProvider.family<File?, String>((
   if (asset == null) return null;
   final file = store.assets.fileFor(asset);
   return file.existsSync() ? file : null;
-});
-
-/// Settings for the local AI features.
-class AiSettingsController extends Notifier<AiSettings> {
-  @override
-  AiSettings build() => const AiSettings();
-
-  void update(AiSettings settings) => state = settings;
-}
-
-final aiSettingsProvider = NotifierProvider<AiSettingsController, AiSettings>(
-  AiSettingsController.new,
-);
-
-/// A client for the configured local model runtime.
-final modelClientProvider = Provider<LocalModelClient>((ref) {
-  final settings = ref.watch(aiSettingsProvider);
-  final client = OllamaClient(settings: settings);
-  ref.onDispose(client.close);
-  return client;
-});
-
-/// Whether a local runtime is reachable, so the UI can offer or hide the AI
-/// features without the user having to find out by trying them.
-final modelAvailabilityProvider = FutureProvider<bool>((ref) async {
-  final settings = ref.watch(aiSettingsProvider);
-  if (!settings.enabled) return false;
-  return ref.watch(modelClientProvider).isAvailable();
-});
-
-/// The models the runtime has installed.
-final availableModelsProvider = FutureProvider<List<ModelInfo>>((ref) async {
-  final available = await ref.watch(modelAvailabilityProvider.future);
-  if (!available) return const <ModelInfo>[];
-  return ref.watch(modelClientProvider).listModels();
 });
