@@ -314,23 +314,33 @@ void main() {
     final brokenOff = Completer<void>();
     ollama.listen((socket) {
       var asked = '';
+      var answered = false;
+      void closed() {
+        if (asked.startsWith('POST /api/chat') && !brokenOff.isCompleted) {
+          brokenOff.complete();
+        }
+      }
+
       socket.listen(
         (bytes) {
           asked += latin1.decode(bytes);
+          // Answered once its first line is in, however it arrives.
+          if (answered || !asked.contains('\r\n')) return;
+          answered = true;
           if (asked.startsWith('POST /api/show')) {
             socket.write(
               'HTTP/1.1 404 Not Found\r\nconnection: close\r\n'
               'content-length: 0\r\n\r\n',
             );
-            unawaited(socket.close());
-          } else if (!reading.isCompleted) {
+            socket.close().ignore();
+          } else {
             // Reads for as long as it takes, answering nothing meanwhile.
             reading.complete();
           }
         },
-        onDone: () {
-          if (asked.startsWith('POST /api/chat')) brokenOff.complete();
-        },
+        // Closed or, on Windows, reset.
+        onError: (Object _) => closed(),
+        onDone: closed,
       );
     });
     addTearDown(ollama.close);
