@@ -54,19 +54,13 @@ Future<void> showLibraryMenu(
     Notebook(:final id) => <MenuCommand>[
       MenuCommand(
         'New section',
-        Icons.create_new_folder_outlined,
         () => createNamedSection(context, ref, notebookId: id),
       ),
     ],
     Section(:final id, :final notebookId) => <MenuCommand>[
-      MenuCommand(
-        'New page',
-        Icons.note_add_outlined,
-        () => actions.createPage(sectionId: id),
-      ),
+      MenuCommand('New page', () => actions.createPage(sectionId: id)),
       MenuCommand(
         'New subsection',
-        Icons.create_new_folder_outlined,
         () => createNamedSection(
           context,
           ref,
@@ -76,14 +70,9 @@ Future<void> showLibraryMenu(
       ),
     ],
     PageRef(:final id, :final sectionId) => <MenuCommand>[
-      MenuCommand(
-        'New page',
-        Icons.note_add_outlined,
-        () => actions.createPage(sectionId: sectionId),
-      ),
+      MenuCommand('New page', () => actions.createPage(sectionId: sectionId)),
       MenuCommand(
         'New subpage',
-        Icons.subdirectory_arrow_right_rounded,
         () => actions.createPage(sectionId: sectionId, parentId: id),
       ),
     ],
@@ -97,7 +86,6 @@ Future<void> showLibraryMenu(
   };
   final paste = MenuCommand(
     pasteLabel,
-    Icons.content_paste_rounded,
     actions.canPaste(node) ? () => actions.paste(node) : null,
   );
 
@@ -111,18 +99,12 @@ Future<void> showLibraryMenu(
     <MenuCommand>[
       if (node is PageRef)
         MenuCommand(
-          'Open in New Tab',
-          Icons.open_in_new_rounded,
+          'Open in new tab',
           () => unawaited(actions.openInNewTab(node)),
         ),
+      MenuCommand('Ask AI', () => unawaited(actions.openAi(node))),
       MenuCommand(
-        'Ask AI',
-        Icons.auto_awesome_rounded,
-        () => unawaited(actions.openAi(node)),
-      ),
-      MenuCommand(
-        'Copy Link',
-        Icons.link_rounded,
+        'Copy link',
         () => unawaited(Clipboard.setData(ClipboardData(text: '$link'))),
       ),
     ],
@@ -131,24 +113,12 @@ Future<void> showLibraryMenu(
       // A notebook is not moved or copied on its own; sections are pasted
       // into it.
       if (node is! Notebook) ...<MenuCommand>[
-        MenuCommand('Cut', Icons.content_cut_rounded, () => actions.cut(node)),
-        MenuCommand(
-          'Copy',
-          Icons.content_copy_rounded,
-          () => actions.copy(node),
-        ),
+        MenuCommand('Cut', () => actions.cut(node)),
+        MenuCommand('Copy', () => actions.copy(node)),
       ],
       paste,
     ],
-    <MenuCommand>[
-      MenuCommand('Rename', Icons.drive_file_rename_outline_rounded, rename),
-      MenuCommand(
-        'Delete',
-        Icons.delete_outline_rounded,
-        delete,
-        destructive: true,
-      ),
-    ],
+    <MenuCommand>[MenuCommand('Rename', rename), MenuCommand('Delete', delete)],
   ]);
 }
 
@@ -218,27 +188,21 @@ Future<bool> confirmDeletion(BuildContext context, TreeNode node) async {
   };
   final confirmed = await showDialog<bool>(
     context: context,
-    builder: (context) {
-      final scheme = Theme.of(context).colorScheme;
-      return AlertDialog(
-        title: Text('Delete the $kind “${displayTitle(node)}”?'),
-        content: Text(contents),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: scheme.error,
-              foregroundColor: scheme.onError,
-            ),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      );
-    },
+    builder: (context) => AlertDialog(
+      title: Text('Delete the $kind “${displayTitle(node)}”?'),
+      content: Text(contents),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          autofocus: true,
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
   );
   return confirmed ?? false;
 }

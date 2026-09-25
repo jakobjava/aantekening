@@ -14,6 +14,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
+import '../commands/app_command.dart';
+import '../commands/editor_keys.dart';
+import '../commands/shortcuts.dart';
+import '../look/controls.dart';
+import '../look/tones.dart';
 import '../providers.dart';
 import '../input_trace.dart';
 import '../links/note_links.dart';
@@ -158,11 +163,15 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// final save runs from [dispose], where `ref` may no longer be used.
   AantekeningStore? _store;
   late final LibraryRevision _libraryRevision;
+  late final VoidCallback _unregisterCommands;
 
   @override
   void initState() {
     super.initState();
     _libraryRevision = ref.read(libraryRevisionProvider.notifier);
+    _unregisterCommands = ref
+        .read(commandHandlersProvider)
+        .register(_pageCommands);
     _controller.addListener(_onCanvasChanged);
     _stopTracingView = traceViewOf(_controller);
     _textController.formula.addListener(_onFormulaChanged);
@@ -201,6 +210,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
   @override
   void dispose() {
+    _unregisterCommands();
     _autosave?.cancel();
     _controller.removeListener(_onCanvasChanged);
     _stopTracingView();
@@ -887,36 +897,34 @@ class _PageEditorState extends ConsumerState<PageEditor> {
         <MenuCommand>[
           MenuCommand(
             'Cut',
-            Icons.content_cut_rounded,
             some ? () => unawaited(_copySelection(cut: true)) : null,
+            shortcut: EditorKey.cut.keys,
           ),
           MenuCommand(
             'Copy',
-            Icons.content_copy_rounded,
             some ? () => unawaited(_copySelection()) : null,
+            shortcut: EditorKey.copy.keys,
           ),
           MenuCommand(
             'Paste',
-            Icons.content_paste_rounded,
             canPaste ? () => unawaited(_paste(at: page)) : null,
+            shortcut: EditorKey.paste.keys,
           ),
           MenuCommand(
-            'Paste Text Only',
-            Icons.content_paste_go_rounded,
+            'Paste text only',
             canPaste ? () => unawaited(_paste(at: page, textOnly: true)) : null,
+            shortcut: EditorKey.pasteText.keys,
           ),
         ],
         <MenuCommand>[
           if (picture != null)
             MenuCommand(
-              'Set Picture As Background',
-              Icons.wallpaper_rounded,
+              'Set picture as background',
               () => _controller.setBackground(picture.id, background: true),
             ),
           if (background != null)
             MenuCommand(
-              'Set Picture As Background',
-              Icons.wallpaper_rounded,
+              'Set picture as background',
               () => _controller.setBackground(background.id, background: false),
               checked: true,
             ),
@@ -925,9 +933,8 @@ class _PageEditorState extends ConsumerState<PageEditor> {
           if (some)
             MenuCommand(
               'Delete',
-              Icons.delete_outline_rounded,
               _deleteSelection,
-              destructive: true,
+              shortcut: EditorKey.deleteSelection.keys,
             ),
         ],
       ],
@@ -936,10 +943,67 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
   // ------------------------------------------------------------- shortcuts
 
-  /// Page-level shortcuts. A text box being edited stops the plain-letter
-  /// ones from reaching here, so typing never switches tools.
-  Map<ShortcutActivator, VoidCallback>
-  get _shortcuts => <ShortcutActivator, VoidCallback>{
+  /// Whether a page is showing, for the page's commands to act on.
+  bool get _pageShowing => _ready && widget.aiScope == null;
+
+  /// The page's own commands, run from their shortcuts wherever the
+  /// keyboard is, and from the command palette.
+  late final Map<AppCommand, CommandAction> _pageCommands =
+      <AppCommand, CommandAction>{
+        AppCommand.save: CommandAction(_saveNow, enabled: () => _ready),
+        AppCommand.toggleRibbon: CommandAction(
+          ref.read(ribbonProvider.notifier).toggleCollapsed,
+        ),
+        for (final (command, tool) in _tools)
+          command: CommandAction(
+            () => _useTool(tool),
+            enabled: () => _pageShowing,
+          ),
+        AppCommand.insertTextBox: CommandAction(
+          _ribbonCommands.onInsertTextBox,
+          enabled: () => _pageShowing,
+        ),
+        AppCommand.insertPicture: CommandAction(
+          _ribbonCommands.onInsertImage,
+          enabled: () => _pageShowing,
+        ),
+        AppCommand.insertPdf: CommandAction(
+          _ribbonCommands.onInsertPdf,
+          enabled: () => _pageShowing,
+        ),
+        AppCommand.zoomIn: CommandAction(
+          _ribbonCommands.onZoomIn,
+          enabled: () => _pageShowing,
+        ),
+        AppCommand.zoomOut: CommandAction(
+          _ribbonCommands.onZoomOut,
+          enabled: () => _pageShowing,
+        ),
+        AppCommand.actualSize: CommandAction(
+          _ribbonCommands.onActualSize,
+          enabled: () => _pageShowing,
+        ),
+        AppCommand.fitPage: CommandAction(
+          _ribbonCommands.onFitPage,
+          enabled: () => _pageShowing,
+        ),
+      };
+
+  static const List<(AppCommand, CanvasTool)> _tools =
+      <(AppCommand, CanvasTool)>[
+        (AppCommand.selectTool, CanvasTool.select),
+        (AppCommand.pen, CanvasTool.pen),
+        (AppCommand.highlighter, CanvasTool.highlighter),
+        (AppCommand.eraser, CanvasTool.eraser),
+      ];
+
+  /// Page-level shortcuts: those of editing what is on the page, and the
+  /// page's commands bound to keys the window does not catch — plain
+  /// letters, and those typing takes. A text box being edited has them
+  /// first, so typing never switches tools.
+  Map<ShortcutActivator, VoidCallback> _shortcuts(
+    ShortcutBindings bindings,
+  ) => <ShortcutActivator, VoidCallback>{
     const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
         _controller.undo,
     const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true):
@@ -952,40 +1016,11 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       _stopEditing();
       _controller.clearSelection();
     },
-    // A tool's shortcut also brings its tab forward on the ribbon.
-    const SingleActivator(LogicalKeyboardKey.keyV): () =>
-        _useTool(CanvasTool.select),
-    const SingleActivator(LogicalKeyboardKey.keyT): () =>
-        _useTool(CanvasTool.select),
-    const SingleActivator(LogicalKeyboardKey.keyP): () =>
-        _useTool(CanvasTool.pen),
-    const SingleActivator(LogicalKeyboardKey.keyH): () =>
-        _useTool(CanvasTool.highlighter),
-    const SingleActivator(LogicalKeyboardKey.keyE): () =>
-        _useTool(CanvasTool.eraser),
     const SingleActivator(LogicalKeyboardKey.keyM): _formulaShortcut,
     const SingleActivator(LogicalKeyboardKey.keyM, control: true):
         _formulaShortcut,
     const SingleActivator(LogicalKeyboardKey.equal, alt: true):
         _formulaShortcut,
-    const SingleActivator(LogicalKeyboardKey.f1, control: true): () =>
-        ref.read(ribbonProvider.notifier).toggleCollapsed(),
-    const SingleActivator(LogicalKeyboardKey.equal, control: true): () =>
-        _controller.zoomAtCenter(_zoomStep),
-    const SingleActivator(LogicalKeyboardKey.add, control: true): () =>
-        _controller.zoomAtCenter(_zoomStep),
-    const SingleActivator(LogicalKeyboardKey.numpadAdd, control: true): () =>
-        _controller.zoomAtCenter(_zoomStep),
-    const SingleActivator(LogicalKeyboardKey.minus, control: true): () =>
-        _controller.zoomAtCenter(1 / _zoomStep),
-    const SingleActivator(
-      LogicalKeyboardKey.numpadSubtract,
-      control: true,
-    ): () =>
-        _controller.zoomAtCenter(1 / _zoomStep),
-    const SingleActivator(LogicalKeyboardKey.digit0, control: true): () =>
-        _controller.resetZoom(_controller.viewSize),
-    const SingleActivator(LogicalKeyboardKey.keyS, control: true): _saveNow,
     const SingleActivator(LogicalKeyboardKey.keyC, control: true): () =>
         unawaited(_copySelection()),
     const SingleActivator(LogicalKeyboardKey.keyX, control: true): () =>
@@ -1005,6 +1040,9 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       SingleActivator(key): () => _nudge(direction),
       SingleActivator(key, shift: true): () => _nudge(direction * 10),
     },
+    for (final MapEntry(key: command, value: action) in _pageCommands.entries)
+      for (final chord in bindings.of(command))
+        if (!chord.worksAnywhere) chord.activator: action.run,
   };
 
   static const List<(LogicalKeyboardKey, Offset)> _arrows =
@@ -1110,7 +1148,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     final aiScope = widget.aiScope;
     if (aiScope != null) return AiView(scope: aiScope);
     if (pageId == null) return const _NoPageSelected();
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const Loading();
     return Column(
       children: <Widget>[
         if (_error != null) _ErrorBanner(error: _error!),
@@ -1122,7 +1160,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// [page] with a scrollbar beneath it and another, or the page drawn
   /// small, down its right-hand side.
   Widget _scrolled(Widget page) {
-    final scheme = Theme.of(context).colorScheme;
+    final corner = ColoredBox(color: context.tones.mix(0.02));
     final minimap = ref.watch(minimapProvider);
     return Column(
       children: <Widget>[
@@ -1151,15 +1189,12 @@ class _PageEditorState extends ConsumerState<PageEditor> {
               ),
             ),
             // The corner where the bars meet.
-            SizedBox.square(
-              dimension: PageScrollbar.thickness,
-              child: ColoredBox(color: scheme.surfaceContainerLow),
-            ),
+            SizedBox.square(dimension: PageScrollbar.thickness, child: corner),
             if (minimap)
               SizedBox(
                 width: PageMinimap.width + 1 - PageScrollbar.thickness,
                 height: PageScrollbar.thickness,
-                child: ColoredBox(color: scheme.surfaceContainerLow),
+                child: corner,
               ),
           ],
         ),
@@ -1196,7 +1231,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   );
 
   Widget _canvas(String pageId, SearchTerms? highlight) => CallbackShortcuts(
-    bindings: _shortcuts,
+    bindings: _shortcuts(ref.watch(shortcutsProvider)),
     child: Focus(
       focusNode: _canvasFocus,
       autofocus: true,
@@ -1227,6 +1262,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
             ),
           ),
           trackpadPanScale: _trackpadPanScale,
+          selectionColor: context.tones.paperEmphasis,
         ),
       ),
     ),
@@ -1366,29 +1402,47 @@ typedef _ElementBuild = ({
   bool placesMatch,
 });
 
-/// Where the page goes while none is open.
-class _NoPageSelected extends StatelessWidget {
+/// Where the page goes while none is open: what to do instead.
+class _NoPageSelected extends ConsumerWidget {
   const _NoPageSelected();
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tones = context.tones;
+    final bindings = ref.watch(shortcutsProvider);
+    Widget line(AppCommand command, String what) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          SizedBox(
+            width: 170,
+            child: Text(
+              what,
+              style: TextStyle(fontSize: 13, color: tones.muted),
+            ),
+          ),
+          SizedBox(
+            width: 120,
+            child: KeyHint(
+              bindings.of(command).firstOrNull?.label ?? '',
+              color: tones.text,
+            ),
+          ),
+        ],
+      ),
+    );
     return ColoredBox(
-      color: scheme.surfaceContainerLowest,
+      color: tones.base,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
-              Icons.edit_note_rounded,
-              size: 48,
-              color: scheme.outlineVariant,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Select a page, or create one',
-              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
-            ),
+            line(AppCommand.goTo, 'Go to a page'),
+            line(AppCommand.newPage, 'New page'),
+            line(AppCommand.search, 'Search every page'),
+            line(AppCommand.commands, 'Every command'),
+            line(AppCommand.settings, 'Settings'),
           ],
         ),
       ),
@@ -1403,15 +1457,15 @@ class _ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     return Container(
       width: double.infinity,
-      color: scheme.errorContainer,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Text(
-        '$error',
-        style: TextStyle(fontSize: 12, color: scheme.onErrorContainer),
+      decoration: BoxDecoration(
+        color: tones.base,
+        border: Border(bottom: BorderSide(color: tones.strongLine)),
       ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Text('$error', style: TextStyle(fontSize: 12, color: tones.text)),
     );
   }
 }

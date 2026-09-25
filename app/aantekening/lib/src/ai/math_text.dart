@@ -73,10 +73,15 @@ class MathText extends StatelessWidget {
           ),
         );
       } else if (match[4] != null) {
+        // Highlighted in a tint of the text's own colour, which shows on
+        // any base.
         spans.add(
           TextSpan(
             children: MathText.spans(match[4]!, style),
-            style: const TextStyle(backgroundColor: Color(0x55FFD60A)),
+            style: TextStyle(
+              backgroundColor: (style.color ?? const Color(0xFF000000))
+                  .withValues(alpha: 0.14),
+            ),
           ),
         );
       } else {

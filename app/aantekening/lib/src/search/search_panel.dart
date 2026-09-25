@@ -11,11 +11,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import '../look/controls.dart';
+import '../look/marks.dart';
+import '../look/tones.dart';
 import '../shell/library_actions.dart';
 import '../shell/library_menu.dart';
-import '../shell/library_pane.dart';
+import '../shell/panel_focus.dart';
 import '../shell/sidebar_state.dart';
-import '../theme.dart';
 
 /// What the search panel is looking for, to be shown wherever it occurs on
 /// the page: the terms of its query while the panel is open, or null.
@@ -48,6 +50,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
     text: ref.read(searchQueryProvider),
   );
   Timer? _typing;
+  final FocusNode _field = FocusNode(debugLabel: 'Search');
 
   /// The page showing, as an index into the results.
   int _current = 0;
@@ -56,6 +59,7 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
   void dispose() {
     _typing?.cancel();
     _query.dispose();
+    _field.dispose();
     super.dispose();
   }
 
@@ -105,20 +109,21 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final results = ref.watch(searchResultsProvider);
     final hits = results.value ?? const <SearchHit>[];
     final searching = ref.watch(searchQueryProvider).trim().isNotEmpty;
     final current = hits.isEmpty ? 0 : _current.clamp(0, hits.length - 1);
 
-    // ListTile paints its selection tint and ink onto the nearest Material.
+    // The rows paint their hover and selection on the nearest Material.
     return Material(
-      color: AppTheme.paneColor(scheme),
+      color: tones.pane,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          const PaneHeader(title: 'Search'),
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
             child: CallbackShortcuts(
               bindings: <ShortcutActivator, VoidCallback>{
                 const SingleActivator(LogicalKeyboardKey.enter): () => _step(1),
@@ -129,56 +134,55 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
                     _step(-1),
                 const SingleActivator(LogicalKeyboardKey.escape): _clear,
               },
-              child: TextField(
-                controller: _query,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Search all notes',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                  suffixIcon: _query.text.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 16),
-                          tooltip: 'Clear  (Esc)',
-                          onPressed: _clear,
-                        ),
+              child: PanelFocus(
+                tab: SidebarTab.search,
+                node: _field,
+                child: TextField(
+                  controller: _query,
+                  focusNode: _field,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Search all notes',
+                    suffixIcon: _query.text.isEmpty
+                        ? null
+                        : MarkButton(
+                            MarkShape.close,
+                            tooltip: 'Clear  (Esc)',
+                            onPressed: _clear,
+                          ),
+                    suffixIconConstraints: const BoxConstraints(
+                      minWidth: 30,
+                      minHeight: 24,
+                    ),
+                  ),
+                  onChanged: _changed,
                 ),
-                onChanged: _changed,
               ),
             ),
           ),
           if (searching)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 6, 2),
+              padding: const EdgeInsets.fromLTRB(12, 0, 6, 2),
               child: Row(
                 children: <Widget>[
                   Expanded(
-                    child: Text(
+                    child: SmallCaps(
                       results.isLoading && results.value == null
-                          ? 'SEARCHING…'
+                          ? 'Searching…'
                           : switch (hits.length) {
-                              0 => 'NO MATCHES',
-                              1 => '1 PAGE',
-                              _ => '${current + 1} OF ${hits.length} PAGES',
+                              0 => 'No matches',
+                              1 => '1 page',
+                              _ => '${current + 1} of ${hits.length} pages',
                             },
-                      style: TextStyle(
-                        fontSize: 11,
-                        letterSpacing: 0.8,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurfaceVariant,
-                      ),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.keyboard_arrow_up_rounded, size: 18),
+                  MarkButton(
+                    MarkShape.arrowUp,
                     tooltip: 'Previous page  (Shift+Enter)',
                     onPressed: hits.length > 1 ? () => _step(-1) : null,
                   ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 18,
-                    ),
+                  MarkButton(
+                    MarkShape.arrowDown,
                     tooltip: 'Next page  (Enter)',
                     onPressed: hits.length > 1 ? () => _step(1) : null,
                   ),
@@ -188,10 +192,11 @@ class _SearchPanelState extends ConsumerState<SearchPanel> {
           Expanded(
             child: results.when(
               skipLoadingOnReload: true,
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => PaneMessage('$error', error: true),
+              loading: () => const Loading(),
+              error: (error, _) =>
+                  EmptyMessage('The search failed.', detail: '$error'),
               data: (hits) => ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
+                padding: const EdgeInsets.only(bottom: 8),
                 itemCount: hits.length,
                 itemBuilder: (context, index) => _HitTile(
                   hit: hits[index],
@@ -222,26 +227,14 @@ class _HitTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return ListTile(
-      selected: selected,
-      selectedTileColor: scheme.primary.withValues(alpha: 0.12),
-      title: Text(
-        pageTitleOrPlaceholder(hit.title),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-      ),
-      subtitle: Text.rich(
-        highlightedSnippet(hit.snippet, scheme),
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-      ),
-      onTap: onTap,
-    );
-  }
+  Widget build(BuildContext context) => RowTile(
+    selected: selected,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    title: Text(pageTitleOrPlaceholder(hit.title)),
+    subtitle: Text.rich(highlightedSnippet(hit.snippet, context.tones)),
+    subtitleLines: 3,
+    onTap: onTap,
+  );
 }
 
 /// Converts a snippet's marker characters into styled spans.
@@ -249,7 +242,7 @@ class _HitTile extends StatelessWidget {
 /// SQLite marks the matched terms with two control characters chosen because
 /// they cannot occur in a note, so a page containing markup cannot fake a
 /// highlight.
-TextSpan highlightedSnippet(String snippet, ColorScheme scheme) {
+TextSpan highlightedSnippet(String snippet, Tones tones) {
   final children = <InlineSpan>[];
   var index = 0;
 
@@ -271,14 +264,14 @@ TextSpan highlightedSnippet(String snippet, ColorScheme scheme) {
     children.add(
       TextSpan(
         text: snippet.substring(start + 1, end),
-        style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w700),
+        style: TextStyle(color: tones.text, fontWeight: FontWeight.w700),
       ),
     );
     index = end + 1;
   }
 
   return TextSpan(
-    style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+    style: TextStyle(fontSize: 11.5, color: tones.muted),
     children: children,
   );
 }

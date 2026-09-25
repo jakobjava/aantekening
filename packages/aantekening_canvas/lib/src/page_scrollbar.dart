@@ -165,10 +165,7 @@ class _ScrollbarPainter extends CustomPainter {
     final rect = vertical
         ? Rect.fromLTRB(inset, along.start, size.width - inset, along.end)
         : Rect.fromLTRB(along.start, inset, along.end, size.height - inset);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(3)),
-      Paint()..color = thumb,
-    );
+    canvas.drawRect(rect, Paint()..color = thumb);
   }
 
   @override

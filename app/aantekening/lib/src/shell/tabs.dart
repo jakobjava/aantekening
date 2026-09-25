@@ -69,6 +69,17 @@ class NoteTab {
 
   NoteTab inAi(bool ai) => ai == this.ai ? this : _copy(ai: ai);
 
+  /// This tab as another, [id], opened again once this one was closed.
+  NoteTab reopenedAs(int id) => NoteTab(
+    id: id,
+    notebookId: notebookId,
+    sectionId: sectionId,
+    pageId: pageId,
+    search: search,
+    panel: panel,
+    ai: ai,
+  );
+
   /// This tab with nothing chosen of [ids] or of what lies in them.
   NoteTab forgetting(Set<String> ids) {
     final notebook = ids.contains(notebookId);
@@ -163,6 +174,22 @@ class TabsController extends Notifier<TabsState> {
 
   int _nextId = 0;
 
+  /// How many pages back each tab remembers, and how many closed tabs are
+  /// kept to be reopened.
+  static const int _remembered = 50;
+
+  /// The pages each tab has left, by tab, the most recent last; and those
+  /// gone back from, to go forward to again.
+  final Map<int, List<String>> _back = <int, List<String>>{};
+  final Map<int, List<String>> _forward = <int, List<String>>{};
+
+  /// The page being gone back or forward to, whose opening is not itself
+  /// remembered as a step.
+  String? _travellingTo;
+
+  /// The tabs closed, the most recent last.
+  final List<NoteTab> _closed = <NoteTab>[];
+
   /// The tabs as last saved, so a change to what is not saved — a search —
   /// writes nothing.
   String? _saved;
@@ -216,6 +243,8 @@ class TabsController extends Notifier<TabsState> {
   /// Closes the tab at [index]. Closing the last one opens a new, empty tab
   /// in its place, so there is always one.
   void close(int index) {
+    _closed.add(state.tabs[index]);
+    if (_closed.length > _remembered) _closed.removeAt(0);
     final tabs = <NoteTab>[...state.tabs]..removeAt(index);
     if (tabs.isEmpty) tabs.add(NoteTab(id: _nextId++));
     final active = index < state.active || state.active >= tabs.length
@@ -226,6 +255,69 @@ class TabsController extends Notifier<TabsState> {
 
   /// Closes the tab showing.
   void closeShowing() => close(state.active);
+
+  bool get canReopen => _closed.isNotEmpty;
+
+  /// Opens the tab closed last again, after the one showing, as it was.
+  void reopen() {
+    if (_closed.isEmpty) return;
+    final tab = _closed.removeLast().reopenedAs(_nextId++);
+    final at = state.active + 1;
+    _set(TabsState(<NoteTab>[...state.tabs]..insert(at, tab), at));
+  }
+
+  /// Shows the [number]th tab from the left, counting from 1; 9 is the last,
+  /// however many there are.
+  void showNumber(int number) {
+    final count = state.tabs.length;
+    if (number == 9) {
+      activate(count - 1);
+    } else if (number <= count) {
+      activate(number - 1);
+    }
+  }
+
+  bool get canGoBack => _back[state.current.id]?.isNotEmpty ?? false;
+
+  bool get canGoForward => _forward[state.current.id]?.isNotEmpty ?? false;
+
+  /// The page the tab showing had open before this one, taken as the page
+  /// it is going to, or null if there is none.
+  String? goBack() => _travel(from: _back, to: _forward);
+
+  /// The page the tab showing went back from, taken as the page it is going
+  /// to, or null if there is none.
+  String? goForward() => _travel(from: _forward, to: _back);
+
+  String? _travel({
+    required Map<int, List<String>> from,
+    required Map<int, List<String>> to,
+  }) {
+    final tab = state.current;
+    final steps = from[tab.id];
+    if (steps == null || steps.isEmpty) return null;
+    final target = steps.removeLast();
+    if (tab.pageId case final here?) (to[tab.id] ??= <String>[]).add(here);
+    return _travellingTo = target;
+  }
+
+  /// Forgets the page being gone to, which could not be opened.
+  void cancelTravel() => _travellingTo = null;
+
+  /// Remembers that the tab showing is leaving [from] for [to], unless it is
+  /// going back or forward.
+  void _step(NoteTab tab, String? from, String? to) {
+    if (from == to) return;
+    if (to != null && to == _travellingTo) {
+      _travellingTo = null;
+      return;
+    }
+    if (from == null) return;
+    final back = _back[tab.id] ??= <String>[];
+    back.add(from);
+    if (back.length > _remembered) back.removeAt(0);
+    _forward[tab.id]?.clear();
+  }
 
   /// Shows the AI of what the tab showing has chosen in place of its page,
   /// or the page again — so long as it has chosen something.
@@ -262,6 +354,7 @@ class TabsController extends Notifier<TabsState> {
   void updateCurrent(NoteTab Function(NoteTab tab) change) {
     final changed = change(state.current);
     if (identical(changed, state.current)) return;
+    _step(changed, state.current.pageId, changed.pageId);
     _set(
       TabsState(
         <NoteTab>[...state.tabs]..[state.active] = changed,

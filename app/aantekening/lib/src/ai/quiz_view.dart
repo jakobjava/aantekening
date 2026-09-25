@@ -7,9 +7,11 @@ import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../look/controls.dart';
+import '../look/marks.dart';
+import '../look/tones.dart';
 import 'math_text.dart';
 import 'sources_view.dart';
-import 'study_style.dart';
 
 class QuizView extends StatefulWidget {
   const QuizView({
@@ -122,9 +124,7 @@ class _QuizViewState extends State<QuizView> {
   }
 
   Widget _asking(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final accent = StudyKind.quiz.accent(scheme);
+    final tones = context.tones;
     final question = _question;
     final chosen = _chosen;
     final right = chosen == question.answer;
@@ -135,23 +135,25 @@ class _QuizViewState extends State<QuizView> {
           children: <Widget>[
             Text(
               'Question ${_at + 1} of ${_round.length}',
-              style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+              style: TextStyle(fontSize: 12.5, color: tones.muted),
             ),
             const Spacer(),
+            // One square a question: filled once got right, hollow once
+            // missed, marked while asked.
             for (var i = 0; i < _round.length; i++)
               Container(
                 width: 8,
                 height: 8,
                 margin: const EdgeInsets.only(left: 4),
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
                   color: i < _at
-                      ? (_missed.contains(_round[i])
-                            ? const Color(0xFFD64545)
-                            : accent)
+                      ? (_missed.contains(_round[i]) ? null : tones.text)
                       : i == _at
-                      ? accent.withValues(alpha: 0.45)
-                      : scheme.surfaceContainerHighest,
+                      ? tones.emphasis
+                      : tones.line,
+                  border: i < _at && _missed.contains(_round[i])
+                      ? Border.all(color: tones.text)
+                      : null,
                 ),
               ),
           ],
@@ -160,16 +162,8 @@ class _QuizViewState extends State<QuizView> {
         Container(
           padding: const EdgeInsets.fromLTRB(26, 22, 26, 22),
           decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: scheme.outlineVariant),
-            boxShadow: const <BoxShadow>[
-              BoxShadow(
-                color: Color(0x0F000000),
-                blurRadius: 18,
-                offset: Offset(0, 6),
-              ),
-            ],
+            color: tones.base,
+            border: Border.all(color: tones.strongLine),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -180,7 +174,7 @@ class _QuizViewState extends State<QuizView> {
                   fontSize: 19,
                   height: 1.45,
                   fontWeight: FontWeight.w600,
-                  color: scheme.onSurface,
+                  color: tones.text,
                 ),
               ),
               const SizedBox(height: 18),
@@ -216,13 +210,23 @@ class _QuizViewState extends State<QuizView> {
         const SizedBox(height: 16),
         Align(
           alignment: Alignment.centerRight,
-          child: FilledButton.icon(
-            icon: const Icon(Icons.arrow_forward_rounded),
-            iconAlignment: IconAlignment.end,
-            label: Text(
-              _at + 1 < _round.length ? 'Next question' : 'See how it went',
+          child: Tooltip(
+            message: 'Enter',
+            child: FilledButton(
+              onPressed: chosen == null ? null : _next,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    _at + 1 < _round.length
+                        ? 'Next question'
+                        : 'See how it went',
+                  ),
+                  const SizedBox(width: 8),
+                  const Mark(MarkShape.arrowRight),
+                ],
+              ),
             ),
-            onPressed: chosen == null ? null : _next,
           ),
         ),
       ],
@@ -231,36 +235,16 @@ class _QuizViewState extends State<QuizView> {
 
   Widget _result(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final accent = StudyKind.quiz.accent(scheme);
+    final tones = context.tones;
     final total = _round.length;
     final right = total - _missed.length;
     final share = total == 0 ? 0.0 : right / total;
     return Column(
       children: <Widget>[
         const SizedBox(height: 12),
-        SizedBox.square(
-          dimension: 120,
-          child: Stack(
-            alignment: Alignment.center,
-            children: <Widget>[
-              SizedBox.expand(
-                child: CircularProgressIndicator(
-                  value: share,
-                  strokeWidth: 9,
-                  color: accent,
-                  backgroundColor: scheme.surfaceContainerHighest,
-                ),
-              ),
-              Text(
-                '$right / $total',
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
+        Text('$right / $total', style: theme.textTheme.displaySmall),
+        const SizedBox(height: 10),
+        SizedBox(width: 240, child: LinearProgressIndicator(value: share)),
         const SizedBox(height: 14),
         Text(
           share == 1
@@ -272,9 +256,9 @@ class _QuizViewState extends State<QuizView> {
         ),
         if (_missed.isNotEmpty) ...<Widget>[
           const SizedBox(height: 22),
-          Align(
+          const Align(
             alignment: Alignment.centerLeft,
-            child: SmallCaps('Missed', color: scheme.error),
+            child: SmallCaps('Missed'),
           ),
           const SizedBox(height: 8),
           for (final i in _missed)
@@ -283,9 +267,8 @@ class _QuizViewState extends State<QuizView> {
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               decoration: BoxDecoration(
-                color: scheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: scheme.outlineVariant),
+                color: tones.base,
+                border: Border.all(color: tones.line),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -296,8 +279,8 @@ class _QuizViewState extends State<QuizView> {
                   ),
                   const SizedBox(height: 6),
                   MathText(
-                    '✓ ${widget.quiz.questions[i].options[widget.quiz.questions[i].answer]}',
-                    style: const TextStyle(color: Color(0xFF2E9E5B)),
+                    'Answer: ${widget.quiz.questions[i].options[widget.quiz.questions[i].answer]}',
+                    style: TextStyle(color: tones.emphasis),
                   ),
                   if (widget.quiz.questions[i].sources.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 8),
@@ -317,15 +300,13 @@ class _QuizViewState extends State<QuizView> {
           alignment: WrapAlignment.center,
           children: <Widget>[
             if (_missed.isNotEmpty)
-              FilledButton.icon(
-                icon: const Icon(Icons.replay_rounded),
-                label: Text('Try the ${_missed.length} missed again'),
+              FilledButton(
                 onPressed: () => _restart(missedOnly: true),
+                child: Text('Try the ${_missed.length} missed again'),
               ),
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.restart_alt_rounded),
-              label: const Text('Start over'),
+            OutlinedButton(
               onPressed: _restart,
+              child: const Text('Start over'),
             ),
           ],
         ),
@@ -351,58 +332,49 @@ class _Option extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    const right = Color(0xFF2E9E5B);
-    const wrong = Color(0xFFD64545);
-    final color = switch (state) {
-      _OptionState.right => right,
-      _OptionState.wrong => wrong,
-      _ => scheme.outline,
+    final tones = context.tones;
+    final marked = state == _OptionState.right || state == _OptionState.wrong;
+    // The right answer marked in the accent, the wrong one chosen in the
+    // text's colour: told apart by their marks, not by red and green.
+    final edge = switch (state) {
+      _OptionState.right => tones.emphasis,
+      _OptionState.wrong => tones.text,
+      _ => tones.line,
     };
-    final filled = state == _OptionState.right || state == _OptionState.wrong;
     return Opacity(
-      opacity: state == _OptionState.other ? 0.55 : 1,
+      opacity: state == _OptionState.other ? 0.5 : 1,
       child: Material(
-        color: filled ? color.withValues(alpha: 0.09) : scheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        color: state == _OptionState.right ? tones.selection : tones.base,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
           onTap: state == _OptionState.open ? onTap : null,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(12, 11, 14, 11),
+            padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: filled ? color : scheme.outlineVariant,
-                width: filled ? 1.5 : 1,
-              ),
+              border: Border.all(color: edge, width: marked ? 1.5 : 1),
             ),
             child: Row(
               children: <Widget>[
                 Container(
-                  width: 28,
-                  height: 28,
+                  width: 26,
+                  height: 26,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: filled ? color : scheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: marked ? edge : tones.strongLine),
                   ),
                   child: switch (state) {
-                    _OptionState.right => const Icon(
-                      Icons.check_rounded,
-                      size: 18,
-                      color: Colors.white,
+                    _OptionState.right => Mark(
+                      MarkShape.check,
+                      color: tones.emphasis,
                     ),
-                    _OptionState.wrong => const Icon(
-                      Icons.close_rounded,
-                      size: 18,
-                      color: Colors.white,
+                    _OptionState.wrong => Mark(
+                      MarkShape.close,
+                      color: tones.text,
                     ),
                     _ => Text(
                       letter,
                       style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                        color: tones.muted,
                       ),
                     ),
                   },
@@ -411,7 +383,7 @@ class _Option extends StatelessWidget {
                 Expanded(
                   child: MathText(
                     text,
-                    style: TextStyle(fontSize: 15, color: scheme.onSurface),
+                    style: TextStyle(fontSize: 15, color: tones.text),
                   ),
                 ),
               ],
@@ -441,30 +413,33 @@ class _Explanation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = right ? const Color(0xFF2E9E5B) : const Color(0xFFD64545);
+    final tones = context.tones;
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        color: tones.pane,
+        border: Border(
+          left: BorderSide(
+            color: right ? tones.emphasis : tones.text,
+            width: 2,
+          ),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Text(
             right ? 'Right.' : 'Not quite — it is $answer.',
-            style: TextStyle(fontWeight: FontWeight.w700, color: color),
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: right ? tones.emphasis : tones.text,
+            ),
           ),
           if (explanation.isNotEmpty) ...<Widget>[
             const SizedBox(height: 4),
             MathText(
               explanation,
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.5,
-                color: scheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 14, height: 1.5, color: tones.muted),
             ),
           ],
           if (sources.isNotEmpty) ...<Widget>[

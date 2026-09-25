@@ -6,6 +6,8 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../look/marks.dart';
+import '../look/tones.dart';
 import '../preferences.dart';
 
 /// The ids of the rows collapsed to hide what lies beneath them, remembered
@@ -156,9 +158,11 @@ class TreeRow extends StatelessWidget {
 
   /// How far the row's content is inset from where it starts, so the line
   /// branching to it ends just short of its icon.
-  static const EdgeInsetsGeometry tilePadding = EdgeInsetsDirectional.only(
-    start: 4,
-    end: 8,
+  static const EdgeInsetsGeometry tilePadding = EdgeInsetsDirectional.fromSTEB(
+    4,
+    5,
+    8,
+    5,
   );
 
   final TreePlace place;
@@ -167,7 +171,7 @@ class TreeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final hovered = TreeLines._hoveredOf(context);
     final lead = (place.depth + 1) * indent;
 
@@ -204,8 +208,8 @@ class TreeRow extends StatelessWidget {
             painter: _TreeLinePainter(
               place: place,
               hovered: hovered,
-              color: scheme.outlineVariant,
-              highlight: scheme.primary,
+              color: tones.line,
+              highlight: tones.emphasis,
               textDirection: Directionality.of(context),
             ),
             child: Row(
@@ -230,10 +234,12 @@ class TreeRow extends StatelessWidget {
                         child: AnimatedRotation(
                           turns: expanded ? 0.25 : 0,
                           duration: const Duration(milliseconds: 150),
-                          child: Icon(
-                            Icons.chevron_right_rounded,
-                            size: _TreeLinePainter.chevronSize,
-                            color: scheme.onSurfaceVariant,
+                          child: Center(
+                            child: Mark(
+                              MarkShape.chevronRight,
+                              size: 10,
+                              color: tones.muted,
+                            ),
                           ),
                         ),
                       ),
@@ -261,10 +267,7 @@ class _TreeLinePainter extends CustomPainter {
     required this.textDirection,
   }) : super(repaint: hovered);
 
-  static const double chevronSize = 16;
-
-  /// How sharply the line turns into the last child.
-  static const double _corner = 4;
+  static const double chevronSize = 12;
 
   final TreePlace place;
   final ValueNotifier<String?> hovered;
@@ -308,11 +311,8 @@ class _TreeLinePainter extends CustomPainter {
           ..lineTo(line, size.height)
           ..moveTo(line, middle);
       } else {
-        // The line ends here, turning into this row.
-        final turn = end > line ? _corner : -_corner;
-        branch
-          ..lineTo(line, middle - _corner)
-          ..quadraticBezierTo(line, middle, line + turn, middle);
+        // The line ends here, turning into this row at a right angle.
+        branch.lineTo(line, middle);
       }
       canvas.drawPath(branch..lineTo(end, middle), paint);
     }

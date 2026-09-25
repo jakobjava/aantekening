@@ -7,6 +7,8 @@ import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/material.dart';
 import 'package:markdown/markdown.dart' as md;
 
+import '../look/appearance.dart';
+import '../look/tones.dart';
 import 'flashcards_view.dart';
 import 'quiz_view.dart';
 import 'sources_view.dart';
@@ -73,18 +75,14 @@ class _OwnKnowledgeKey extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     return Row(
       children: <Widget>[
-        Container(
-          width: 2.5,
-          height: 12,
-          color: OriginColors.model(scheme).withValues(alpha: 0.5),
-        ),
+        Container(width: 2, height: 12, color: Origins.colourOf(null, tones)),
         const SizedBox(width: 7),
         Text(
           'From the model’s own knowledge, not from your notes',
-          style: TextStyle(fontSize: 11.5, color: scheme.outline),
+          style: TextStyle(fontSize: 11.5, color: tones.muted),
         ),
       ],
     );
@@ -142,7 +140,7 @@ class _Blocks {
     this.onOpen,
     this.onAddCards,
   ) : theme = Theme.of(context),
-      scheme = Theme.of(context).colorScheme;
+      tones = context.tones;
 
   final BuildContext context;
   final AiAnswer answer;
@@ -150,7 +148,7 @@ class _Blocks {
   final void Function(Citation citation) onOpen;
   final ValueChanged<List<StudyCard>>? onAddCards;
   final ThemeData theme;
-  final ColorScheme scheme;
+  final Tones tones;
 
   /// Whether any of the answer is from the model's own knowledge, ruled
   /// grey — once the blocks are built.
@@ -214,9 +212,7 @@ class _Blocks {
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.only(left: 12),
           decoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(color: scheme.outlineVariant, width: 3),
-            ),
+            border: Border(left: BorderSide(color: tones.strongLine, width: 2)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -249,10 +245,7 @@ class _Blocks {
         children: <Widget>[
           SizedBox(
             width: 22,
-            child: Text(
-              marker,
-              style: _body.copyWith(color: scheme.onSurfaceVariant),
-            ),
+            child: Text(marker, style: _body.copyWith(color: tones.muted)),
           ),
           Expanded(
             child: inline
@@ -298,10 +291,7 @@ class _Blocks {
         padding: const EdgeInsets.only(left: 10),
         decoration: BoxDecoration(
           border: Border(
-            left: BorderSide(
-              color: OriginColors.model(scheme).withValues(alpha: 0.4),
-              width: 2.5,
-            ),
+            left: BorderSide(color: Origins.colourOf(null, tones), width: 2),
           ),
         ),
         child: child,
@@ -363,16 +353,16 @@ class _Blocks {
       case 'mark':
         return _styled(
           children,
-          style.copyWith(backgroundColor: const Color(0x66FFD60A)),
+          style.copyWith(backgroundColor: tones.selection),
         );
       case 'code':
         return <InlineSpan>[
           TextSpan(
             text: node.textContent,
             style: style.copyWith(
-              fontFamily: 'monospace',
+              fontFamily: InterfaceFont.mono.family,
               fontSize: (style.fontSize ?? 14) * 0.92,
-              backgroundColor: scheme.surfaceContainerHighest,
+              backgroundColor: tones.hover,
             ),
           ),
         ];
@@ -387,7 +377,7 @@ class _Blocks {
             child: _Link(
               label: node.textContent,
               style: style.copyWith(
-                color: scheme.primary,
+                color: tones.emphasis,
                 decoration: TextDecoration.underline,
               ),
               onTap: () => onOpen(
@@ -433,7 +423,7 @@ class _Blocks {
         source: node.attributes['tex']!,
         mode: MathMode.latex,
         displayStyle: display,
-        textStyle: style.copyWith(color: scheme.onSurface),
+        textStyle: style.copyWith(color: tones.text),
       );
 
   Widget _fenced(md.Element pre) {
@@ -453,10 +443,9 @@ class _Blocks {
             if (onAddCards case final add?)
               Align(
                 alignment: Alignment.centerLeft,
-                child: FilledButton.tonalIcon(
-                  icon: const Icon(Icons.style_outlined, size: 18),
-                  label: const Text('Add these to my flashcards'),
+                child: OutlinedButton(
                   onPressed: () => add(cards),
+                  child: const Text('Add these to my flashcards'),
                 ),
               ),
           ],
@@ -476,13 +465,10 @@ class _Blocks {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(6),
-      ),
+      color: tones.hover,
       child: Text(
         body.replaceAll(AiAnswer.marker, ''),
-        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+        style: TextStyle(fontFamily: InterfaceFont.mono.family, fontSize: 13),
       ),
     );
   }
@@ -498,13 +484,11 @@ class _Blocks {
         scrollDirection: Axis.horizontal,
         child: Table(
           defaultColumnWidth: const IntrinsicColumnWidth(),
-          border: TableBorder.all(color: scheme.outlineVariant),
+          border: TableBorder.all(color: tones.line),
           children: <TableRow>[
             for (final (i, row) in rows.indexed)
               TableRow(
-                decoration: i == 0
-                    ? BoxDecoration(color: scheme.surfaceContainerHigh)
-                    : null,
+                decoration: i == 0 ? BoxDecoration(color: tones.hover) : null,
                 children: <Widget>[
                   for (final cell in row.children!.whereType<md.Element>())
                     Padding(

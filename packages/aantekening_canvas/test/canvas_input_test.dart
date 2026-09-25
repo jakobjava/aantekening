@@ -331,6 +331,28 @@ void main() {
   });
 
   group('InfiniteCanvas selecting', () {
+    testWidgets('a press let go of after the canvas has gone does nothing', (
+      tester,
+    ) async {
+      final controller = CanvasController();
+      final taps = <Offset>[];
+      await tester.pumpWidget(_host(controller, onEmptyTap: taps.add));
+      final gesture = await tester.startGesture(
+        const Offset(120, 80),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+
+      // The press took the canvas away — it opened another page, say.
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      await gesture.moveBy(const Offset(40, 30));
+      await gesture.up();
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(taps, isEmpty);
+    });
+
     testWidgets('a click on empty canvas reports a tap in page space', (
       tester,
     ) async {

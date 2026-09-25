@@ -65,6 +65,7 @@ class InfiniteCanvas extends StatefulWidget {
     this.onContextMenu,
     this.header,
     this.trackpadPanScale = 1,
+    this.selectionColor,
   });
 
   final CanvasController controller;
@@ -107,6 +108,10 @@ class InfiniteCanvas extends StatefulWidget {
   /// host passes the factor that brings them back to finger distance; see
   /// the app's `trackpadPanScale`.
   final double trackpadPanScale;
+
+  /// What the selection's frame and handles, and the band dragged to
+  /// select, are drawn in: the theme's primary colour, if not given.
+  final Color? selectionColor;
 
   @override
   State<InfiniteCanvas> createState() => _InfiniteCanvasState();
@@ -343,7 +348,11 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     }
   }
 
+  /// The rest of a gesture begun on the canvas comes here even once the
+  /// canvas has gone — a press that opened another page, say — and is let
+  /// go of: the page it was on is no longer here to act on.
   void _onPointerMove(PointerMoveEvent event) {
+    if (!mounted) return;
     if (event.kind == PointerDeviceKind.mouse) {
       _mousePosition = event.localPosition;
     }
@@ -410,6 +419,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   }
 
   void _onPointerUp(PointerEvent event) {
+    if (!mounted) return;
     if (_touches.remove(event.pointer) != null &&
         _action == _PointerAction.pinch) {
       // The pinch ends only when every finger has lifted; the finger left
@@ -454,6 +464,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
+    if (!mounted) return;
     _touches.remove(event.pointer);
     if (_action == _PointerAction.pinch) {
       if (_touches.isEmpty) _resetPointer();
@@ -781,6 +792,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   /// A trackpad gesture: two-finger scrolling and pinching.
   void _onPanZoomUpdate(PointerPanZoomUpdateEvent event) {
+    if (!mounted) return;
     _stopFling();
     final gesture = _trackpad;
     if (gesture == null) {
@@ -866,6 +878,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   }
 
   void _onPanZoomEnd(PointerPanZoomEndEvent event) {
+    if (!mounted) return;
     final gesture = _trackpad;
     _trackpad = null;
     if (gesture == null || gesture.zoomed || gesture.steps.length < 3) return;
@@ -1117,7 +1130,9 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
                         painter: SelectionPainter(
                           selected: controller.selectedElements,
                           viewport: viewport,
-                          accent: Theme.of(context).colorScheme.primary,
+                          accent:
+                              widget.selectionColor ??
+                              Theme.of(context).colorScheme.primary,
                           marquee: _marquee,
                         ),
                       ),

@@ -9,11 +9,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
+import '../commands/app_command.dart';
+import '../commands/shortcuts.dart';
+import '../look/controls.dart';
+import '../look/tones.dart';
 import '../providers.dart';
-import '../theme.dart';
 import 'library_actions.dart';
 import 'library_menu.dart';
 import 'library_pane.dart';
+import 'panel_focus.dart';
+import 'sidebar_state.dart';
 import 'tree_rows.dart';
 
 /// Lists the pages of the selected section, with subpages beneath their
@@ -25,27 +30,26 @@ class PageListPane extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
     final sectionId = ref.watch(selectedSectionProvider);
     final actions = ref.read(libraryActionsProvider);
+    final bindings = ref.watch(shortcutsProvider);
 
-    // ListTile paints its selection tint and ink onto the nearest Material,
-    // so the pane's background has to be one rather than a coloured box.
+    // The rows paint their hover and selection on the nearest Material.
     return Material(
-      color: AppTheme.paneColor(scheme).withValues(alpha: 0.6),
+      color: context.tones.pane,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           PaneHeader(
             title: 'Pages',
-            actionTooltip: 'New page',
+            actionTooltip: bindings.tooltip(AppCommand.newPage),
             onAction: sectionId == null
                 ? null
                 : () => actions.createPage(sectionId: sectionId),
           ),
           Expanded(
             child: sectionId == null
-                ? const PaneMessage('Select a section')
+                ? const EmptyMessage('Select a section')
                 : _PageList(sectionId: sectionId),
           ),
         ],
@@ -54,13 +58,29 @@ class PageListPane extends ConsumerWidget {
   }
 }
 
-class _PageList extends ConsumerWidget {
+/// The pages, the one open — or else the first — taking the keyboard when
+/// the notebooks panel is asked to; the arrow keys go on from there.
+class _PageList extends ConsumerStatefulWidget {
   const _PageList({required this.sectionId});
 
   final String sectionId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PageList> createState() => _PageListState();
+}
+
+class _PageListState extends ConsumerState<_PageList> {
+  final FocusNode _row = FocusNode(debugLabel: 'Page row');
+
+  @override
+  void dispose() {
+    _row.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sectionId = widget.sectionId;
     final pages = ref.watch(pageTreeProvider(sectionId));
     final collapsed = ref.watch(collapsedRowsProvider);
     final section = ref.watch(sectionProvider(sectionId)).value;
@@ -68,41 +88,54 @@ class _PageList extends ConsumerWidget {
     final actions = ref.read(libraryActionsProvider);
 
     return PaneBackgroundMenu(
-      commands: () {
-        return <MenuCommand>[
-          MenuCommand(
-            'New page',
-            Icons.note_add_outlined,
-            () => actions.createPage(sectionId: sectionId),
-          ),
-          MenuCommand(
-            'Paste page',
-            Icons.content_paste_rounded,
-            section != null && actions.canPaste(section)
-                ? () => actions.paste(section)
-                : null,
-          ),
-        ];
-      },
+      commands: () => <MenuCommand>[
+        MenuCommand(
+          'New page',
+          () => actions.createPage(sectionId: sectionId),
+          shortcut: ref
+              .read(shortcutsProvider)
+              .of(AppCommand.newPage)
+              .firstOrNull
+              ?.label,
+        ),
+        MenuCommand(
+          'Paste page',
+          section != null && actions.canPaste(section)
+              ? () => actions.paste(section)
+              : null,
+        ),
+      ],
       child: pages.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => PaneMessage('$error', error: true),
+        loading: () => const Loading(),
+        error: (error, _) =>
+            EmptyMessage('The pages could not be read.', detail: '$error'),
         data: (tree) {
-          if (tree.isEmpty) return const PaneMessage('No pages yet');
+          if (tree.isEmpty) return const EmptyMessage('No pages yet');
           final rows = treeRows(tree, collapsed);
+          final focused = rows.any((row) => row.item.id == selected)
+              ? selected
+              : rows.first.item.id;
 
-          return TreeLines(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              itemCount: rows.length,
-              itemBuilder: (context, index) {
-                final (item: page, :place) = rows[index];
-                return TreeRow(
-                  place: place,
-                  onToggle: ref.read(collapsedRowsProvider.notifier).toggle,
-                  child: _PageTile(page: page, selected: page.id == selected),
-                );
-              },
+          return PanelFocus(
+            tab: SidebarTab.notebooks,
+            node: _row,
+            child: TreeLines(
+              child: ListView.builder(
+                padding: const EdgeInsets.only(bottom: 8),
+                itemCount: rows.length,
+                itemBuilder: (context, index) {
+                  final (item: page, :place) = rows[index];
+                  return TreeRow(
+                    place: place,
+                    onToggle: ref.read(collapsedRowsProvider.notifier).toggle,
+                    child: _PageTile(
+                      page: page,
+                      selected: page.id == selected,
+                      focusNode: page.id == focused ? _row : null,
+                    ),
+                  );
+                },
+              ),
             ),
           );
         },
@@ -112,51 +145,34 @@ class _PageList extends ConsumerWidget {
 }
 
 class _PageTile extends ConsumerWidget {
-  const _PageTile({required this.page, required this.selected});
+  const _PageTile({
+    required this.page,
+    required this.selected,
+    required this.focusNode,
+  });
 
   final PageRef page;
   final bool selected;
+  final FocusNode? focusNode;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return LibraryTile(
-      node: page,
-      child: ListTile(
-        selected: selected,
-        selectedTileColor: scheme.primary.withValues(alpha: 0.12),
-        contentPadding: TreeRow.tilePadding,
-        leading: Icon(
-          Icons.description_outlined,
-          size: 16,
-          color: selected ? null : scheme.onSurfaceVariant,
-        ),
-        title: Text(
-          displayTitle(page),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-            fontStyle: page.title.trim().isEmpty
-                ? FontStyle.italic
-                : FontStyle.normal,
-          ),
-        ),
-        subtitle: page.preview.isEmpty
-            ? null
-            : Text(
-                page.preview,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-              ),
-        // Ctrl+click opens the page in a new tab, as in a browser.
-        onTap: () => HardwareKeyboard.instance.isControlPressed
-            ? unawaited(ref.read(libraryActionsProvider).openInNewTab(page))
-            : ref.read(selectedPageProvider.notifier).select(page.id),
+  Widget build(BuildContext context, WidgetRef ref) => LibraryTile(
+    node: page,
+    child: RowTile(
+      selected: selected,
+      focusNode: focusNode,
+      padding: TreeRow.tilePadding,
+      titleStyle: TextStyle(
+        fontStyle: page.title.trim().isEmpty
+            ? FontStyle.italic
+            : FontStyle.normal,
       ),
-    );
-  }
+      title: Text(displayTitle(page)),
+      subtitle: page.preview.isEmpty ? null : Text(page.preview),
+      // Ctrl+click opens the page in a new tab, as in a browser.
+      onTap: () => HardwareKeyboard.instance.isControlPressed
+          ? unawaited(ref.read(libraryActionsProvider).openInNewTab(page))
+          : ref.read(selectedPageProvider.notifier).select(page.id),
+    ),
+  );
 }

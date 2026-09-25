@@ -3,6 +3,7 @@
 library;
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 abstract final class RichTextStyles {
@@ -38,9 +39,9 @@ abstract final class RichTextStyles {
   static const Color boxOutline = Color(0xFFCDD2DA);
 
   /// The band along the top of a text box that moves it, while the pointer
-  /// is over the box and while it is being typed in.
+  /// is over the box, and while it is being typed in.
   static const Color boxBand = Color(0x0D000000);
-  static const Color boxBandActive = Color(0x141C4FA8);
+  static const Color boxBandActive = Color(0x17000000);
 
   /// The grip drawn in the middle of that band.
   static const Color boxGrip = Color(0x59000000);
@@ -52,18 +53,11 @@ abstract final class RichTextStyles {
   /// The line beneath a page's title.
   static const Color titleRule = Color(0xFFD5D9E0);
 
+  /// Behind a block of code.
+  static const Color codeFill = Color(0x0D000000);
+
   /// The lines round a table's cells.
   static const Color tableRule = Color(0xFFB4BAC4);
-
-  /// Linked text, where it has no colour of its own.
-  static const Color link = Color(0xFF1A5FB4);
-
-  /// Behind words a search found: amber, so it is not taken for a yellow
-  /// highlight someone made.
-  static const Color searchMatch = Color(0x99FFB020);
-
-  /// The wavy line beneath a word spelled wrongly.
-  static const Color misspelling = Color(0xFFD93025);
 
   /// The font sizes offered, in points.
   static const List<double> pointSizes = <double>[
@@ -90,15 +84,19 @@ abstract final class RichTextStyles {
   /// Width reserved for a bullet, number or checkbox.
   static const double markerWidth = 22;
 
-  /// The style every text box starts from.
-  static TextStyle base(BuildContext context) {
-    final theme = Theme.of(context);
-    return (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
-      fontSize: bodySize,
-      height: 1.4,
-      color: ink,
+  /// The type pages are set in: the platform's own, as Material sets body
+  /// text — never the interface's, so a page reads the same whatever the
+  /// interface is set in.
+  static final TextStyle paperType = () {
+    final typography = Typography.material2021(platform: defaultTargetPlatform);
+    return typography.englishLike.bodyMedium!.merge(
+      typography.black.bodyMedium,
     );
-  }
+  }();
+
+  /// The style every text box starts from.
+  static TextStyle base(BuildContext context) =>
+      paperType.copyWith(fontSize: bodySize, height: 1.4, color: ink);
 
   /// The size, in points, of text in [block] that has no size of its own:
   /// the body size, or a heading's.
@@ -136,8 +134,9 @@ abstract final class RichTextStyles {
   }
 
   /// The style a run's marks add on top of its block's style, or null for an
-  /// unformatted run.
-  static TextStyle? runStyle(TextMarks marks) {
+  /// unformatted run. Linked text with no colour of its own is drawn in
+  /// [link] — the interface's mark on paper, `Tones.paperEmphasis`.
+  static TextStyle? runStyle(TextMarks marks, {Color link = ink}) {
     if (marks.isEmpty) return null;
     final style = TextStyle(
       fontWeight: marks.bold ? FontWeight.w700 : null,
@@ -157,10 +156,14 @@ abstract final class RichTextStyles {
     return marks.code ? style.merge(monospace) : style;
   }
 
-  /// The source of the formula being edited: code-like, in the accent the
-  /// box marks it with, at the formula's own size — the size of the text
-  /// it is written in.
-  static TextStyle formulaSource(TextStyle blockStyle, TextMarks marks) {
+  /// The source of the formula being edited: code-like, in [accent] — that
+  /// its box is marked with — at the formula's own size, the size of the
+  /// text it is written in.
+  static TextStyle formulaSource(
+    TextStyle blockStyle,
+    TextMarks marks, {
+    required Color accent,
+  }) {
     final size =
         (marks.size != null ? marks.size! * unitsPerPoint : null) ??
         blockStyle.fontSize ??
@@ -169,17 +172,9 @@ abstract final class RichTextStyles {
       fontSize: size,
       fontWeight: FontWeight.w400,
       fontStyle: FontStyle.normal,
-      color: formulaAccent,
+      color: accent,
     );
   }
-
-  /// The accent marking the formula being edited. The paper is white in
-  /// light and dark mode alike, so it is fixed rather than themed.
-  static const Color formulaAccent = Color(0xFF1C4FA8);
-
-  /// The tint behind the formula being edited, and its outline.
-  static const Color formulaFill = Color(0xFFE9F0FC);
-  static const Color formulaOutline = Color(0xFF9DB9EA);
 
   /// The room on either side of the formula being edited, inside its box, in
   /// page units. It is part of the line, so the box never covers the text

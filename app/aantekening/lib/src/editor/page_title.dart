@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../look/tones.dart';
 import '../providers.dart';
 import '../shell/library_actions.dart';
 import 'text/text_styles.dart';
@@ -74,13 +75,23 @@ class _PageTitleState extends ConsumerState<PageTitle> {
       pageProvider(widget.pageId),
       (_, next) => _showPage(next.value),
     );
-    // A page just created is named first, as in OneNote.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted &&
-          ref.read(titleFocusProvider.notifier).take(widget.pageId)) {
-        _focus.requestFocus();
-      }
-    });
+    // A page just created is named first, as in OneNote; and a page is
+    // renamed from the keyboard by asking its title for the keyboard.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _takeFocus());
+    ref.listenManual<String?>(titleFocusProvider, (_, _) => _takeFocus());
+  }
+
+  /// Takes the keyboard, with the title selected, if it was asked to.
+  void _takeFocus() {
+    if (!mounted ||
+        !ref.read(titleFocusProvider.notifier).take(widget.pageId)) {
+      return;
+    }
+    _focus.requestFocus();
+    _title.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _title.text.length,
+    );
   }
 
   @override
@@ -158,7 +169,11 @@ class _PageTitleState extends ConsumerState<PageTitle> {
         : DateTime.fromMillisecondsSinceEpoch(page.createdAt);
     _title.terms = widget.highlight;
 
-    const muted = TextStyle(fontSize: 12.5, color: RichTextStyles.inkMuted);
+    // On the paper, so in the page's type rather than the interface's.
+    final muted = RichTextStyles.paperType.copyWith(
+      fontSize: 12.5,
+      color: RichTextStyles.inkMuted,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -181,23 +196,30 @@ class _PageTitleState extends ConsumerState<PageTitle> {
               }
               return KeyEventResult.skipRemainingHandlers;
             },
+            // Selected on the white paper as text in a box is, whatever the
+            // interface's theme.
             child: DefaultTextEditingShortcuts(
-              child: TextField(
-                controller: _title,
-                focusNode: _focus,
-                style: const TextStyle(
-                  fontSize: PageTitle.titleSize,
-                  fontWeight: FontWeight.w300,
-                  color: RichTextStyles.ink,
-                  height: 1.3,
+              child: TextSelectionTheme(
+                data: TextSelectionThemeData(
+                  selectionColor: context.tones.paperSelection,
                 ),
-                cursorColor: RichTextStyles.ink,
-                decoration: const InputDecoration.collapsed(
-                  hintText: 'Title',
-                  hintStyle: TextStyle(color: RichTextStyles.inkMuted),
+                child: TextField(
+                  controller: _title,
+                  focusNode: _focus,
+                  style: RichTextStyles.paperType.copyWith(
+                    fontSize: PageTitle.titleSize,
+                    fontWeight: FontWeight.w300,
+                    color: RichTextStyles.ink,
+                    height: 1.3,
+                  ),
+                  cursorColor: context.tones.paperEmphasis,
+                  decoration: const InputDecoration.collapsed(
+                    hintText: 'Title',
+                    hintStyle: TextStyle(color: RichTextStyles.inkMuted),
+                  ),
+                  onChanged: _changed,
+                  onSubmitted: (_) => _leave(),
                 ),
-                onChanged: _changed,
-                onSubmitted: (_) => _leave(),
               ),
             ),
           ),
@@ -251,9 +273,11 @@ class _DateButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Tooltip(
     message: tooltip,
+    // Lit as things on the paper are, which is white in dark mode too.
     child: InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(4),
+      hoverColor: RichTextStyles.boxBand,
+      highlightColor: RichTextStyles.boxBandActive,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
         child: Text(label, style: style),
@@ -281,7 +305,7 @@ class _MatchingController extends TextEditingController {
         withComposing: withComposing,
       );
     }
-    const found = TextStyle(backgroundColor: RichTextStyles.searchMatch);
+    final found = TextStyle(backgroundColor: context.tones.paperMatch);
     final spans = <TextSpan>[];
     var at = 0;
     for (final match in matches) {

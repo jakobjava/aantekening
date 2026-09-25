@@ -12,6 +12,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../command_menu.dart';
+import '../../commands/editor_keys.dart';
+import '../../look/tones.dart';
 import '../../spelling/proofreader.dart';
 import '../note_clipboard.dart';
 import 'block_paragraph.dart';
@@ -2083,7 +2085,10 @@ class TextBoxEditorState extends State<TextBoxEditor>
       _blocks[index].kind,
       RichTextStyles.base(context),
     );
-    final marks = RichTextStyles.runStyle(pending);
+    final marks = RichTextStyles.runStyle(
+      pending,
+      link: context.tones.paperEmphasis,
+    );
     return marks == null ? blockStyle : blockStyle.merge(marks);
   }
 
@@ -2244,69 +2249,57 @@ class TextBoxEditorState extends State<TextBoxEditor>
     await showCommandMenu(context, global, <List<MenuCommand>>[
       if (misspelled case (:final index, :final word, :final spelled)) ...[
         if (suggestions.isEmpty)
-          const <MenuCommand>[MenuCommand('No suggestions', null, null)]
+          const <MenuCommand>[MenuCommand('No suggestions', null)]
         else
           <MenuCommand>[
             for (final suggestion in suggestions)
               MenuCommand(
                 suggestion,
-                null,
                 () => _replaceWord(index, word, spelled, suggestion),
               ),
           ],
         <MenuCommand>[
           MenuCommand(
             'Add to dictionary',
-            Icons.library_add_outlined,
             () => unawaited(widget.proofreader!.addWord(spelled)),
           ),
-          MenuCommand(
-            'Ignore',
-            Icons.visibility_off_outlined,
-            () => widget.proofreader!.ignore(spelled),
-          ),
+          MenuCommand('Ignore', () => widget.proofreader!.ignore(spelled)),
         ],
       ],
       <MenuCommand>[
         MenuCommand(
           'Cut',
-          Icons.content_cut_rounded,
           selected ? () => unawaited(_copy(cut: true)) : null,
+          shortcut: EditorKey.cut.keys,
         ),
         MenuCommand(
           'Copy',
-          Icons.content_copy_rounded,
           selected ? () => unawaited(_copy()) : null,
+          shortcut: EditorKey.copy.keys,
         ),
         MenuCommand(
           'Paste',
-          Icons.content_paste_rounded,
           canPaste ? () => unawaited(_paste()) : null,
+          shortcut: EditorKey.paste.keys,
         ),
         MenuCommand(
-          'Paste Text Only',
-          Icons.content_paste_go_rounded,
+          'Paste text only',
           canPaste ? () => unawaited(_paste(textOnly: true)) : null,
+          shortcut: EditorKey.pasteText.keys,
         ),
       ],
       if (link != null || paragraphLink != null)
         <MenuCommand>[
           if (link != null) ...<MenuCommand>[
+            MenuCommand('Open link', () => widget.onOpenLink?.call(link)),
             MenuCommand(
-              'Open Link',
-              Icons.open_in_new_rounded,
-              () => widget.onOpenLink?.call(link),
-            ),
-            MenuCommand(
-              'Copy Link',
-              Icons.link_rounded,
+              'Copy link',
               () => unawaited(Clipboard.setData(ClipboardData(text: link))),
             ),
           ],
           if (paragraphLink != null)
             MenuCommand(
-              'Copy Link to Paragraph',
-              Icons.add_link_rounded,
+              'Copy link to paragraph',
               () => unawaited(
                 Clipboard.setData(ClipboardData(text: paragraphLink)),
               ),
@@ -2316,8 +2309,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       if (picture != null && widget.onEmbedToBackground != null)
         <MenuCommand>[
           MenuCommand(
-            'Set Picture As Background',
-            Icons.wallpaper_rounded,
+            'Set picture as background',
             () => _embedToBackground(picture),
           ),
         ],
@@ -2341,18 +2333,15 @@ class TextBoxEditorState extends State<TextBoxEditor>
     return <List<MenuCommand>>[
       <MenuCommand>[
         MenuCommand(
-          'Insert Row Above',
-          Icons.table_rows_outlined,
+          'Insert row above',
           () => edit((b) => TableEditing.insertRow(b, table, cell.row)),
         ),
         MenuCommand(
-          'Insert Row Below',
-          null,
+          'Insert row below',
           () => edit((b) => TableEditing.insertRow(b, table, cell.row + 1)),
         ),
         MenuCommand(
-          'Insert Column Left',
-          Icons.view_column_outlined,
+          'Insert column left',
           () => edit(
             (b) => TableEditing.insertColumn(
               b,
@@ -2363,8 +2352,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
           ),
         ),
         MenuCommand(
-          'Insert Column Right',
-          null,
+          'Insert column right',
           () => edit(
             (b) => TableEditing.insertColumn(
               b,
@@ -2377,13 +2365,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
       ],
       <MenuCommand>[
         MenuCommand(
-          'Delete Row',
-          Icons.delete_outline_rounded,
+          'Delete row',
           () => edit((b) => TableEditing.deleteRow(b, table, cell.row)),
         ),
         MenuCommand(
-          'Delete Column',
-          null,
+          'Delete column',
           () => edit(
             (b) => TableEditing.deleteColumn(
               b,
@@ -2394,14 +2380,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
           ),
         ),
         MenuCommand(
-          'Delete Table',
-          Icons.grid_off_rounded,
+          'Delete table',
           () => edit((b) => TableEditing.deleteTable(b, table)),
         ),
         if (dragged)
           MenuCommand(
-            'Fit Columns to Text',
-            Icons.fit_screen_outlined,
+            'Fit columns to text',
             () => edit(
               (b) => (
                 blocks: TableEditing.fitColumns(b, table),
@@ -3314,21 +3298,22 @@ class TextBoxEditorState extends State<TextBoxEditor>
   @override
   Widget build(BuildContext context) {
     _ensureKeys();
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final tones = context.tones;
     final base = RichTextStyles.base(context);
     final focused = _focusNode.hasFocus;
     final autoWidth = widget.element.autoWidth;
     final empty = TextBoxEditor.isEmpty(_blocks);
 
+    // The paper is white in light and dark mode alike, so what is drawn on
+    // it takes the interface's mark as made to show on paper.
     final paint = BlockPaint(
-      caretColor: scheme.primary,
-      selectionColor: scheme.primary.withValues(alpha: 0.22),
-      formulaColor: RichTextStyles.formulaFill,
-      formulaOutline: RichTextStyles.formulaOutline,
+      caretColor: tones.paperEmphasis,
+      selectionColor: tones.paperSelection,
+      formulaColor: tones.paperFill,
+      formulaOutline: tones.paperOutline,
       composingColor: RichTextStyles.ink,
-      matchColor: RichTextStyles.searchMatch,
-      misspellingColor: RichTextStyles.misspelling,
+      matchColor: tones.paperMatch,
+      misspellingColor: tones.paperEmphasis,
     );
 
     final ordinals = ListNumbering.ordinals(_blocks);
@@ -3337,12 +3322,10 @@ class TextBoxEditorState extends State<TextBoxEditor>
     while (i < _blocks.length) {
       final table = TextTables.tableAt(_blocks, i);
       if (table == null) {
-        rows.add(
-          _buildBlock(i, base, scheme, paint, ordinals[i], focused, autoWidth),
-        );
+        rows.add(_buildBlock(i, base, paint, ordinals[i], focused, autoWidth));
         i++;
       } else {
-        rows.add(_buildTable(table, base, scheme, paint, ordinals, focused));
+        rows.add(_buildTable(table, base, paint, ordinals, focused));
         i = table.end;
       }
     }
@@ -3456,7 +3439,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
   Widget _buildTable(
     TextTable table,
     TextStyle base,
-    ColorScheme scheme,
     BlockPaint paint,
     List<int> ordinals,
     bool focused,
@@ -3471,15 +3453,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             for (var line = cell.start; line < cell.end; line++)
-              _buildBlock(
-                line,
-                base,
-                scheme,
-                paint,
-                ordinals[line],
-                focused,
-                false,
-              ),
+              _buildBlock(line, base, paint, ordinals[line], focused, false),
           ],
         ),
       );
@@ -3510,7 +3484,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
   Widget _buildBlock(
     int index,
     TextStyle base,
-    ColorScheme scheme,
     BlockPaint paint,
     int ordinal,
     bool focused,
@@ -3552,7 +3525,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       paint: paint,
       caretVisible: _caretVisible,
       child: RichText(
-        text: view.span(base: base),
+        text: view.span(base: base, mark: context.tones.paperEmphasis),
         textAlign: view.isDisplayFormula ? TextAlign.center : TextAlign.start,
         textScaler: TextScaler.noScaling,
         // A box sizing itself to its text measures its longest line; a box of
@@ -3564,7 +3537,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
       ),
     );
 
-    final marker = blockMarker(block, blockStyle, scheme, ordinal);
+    final marker = blockMarker(
+      block,
+      blockStyle,
+      context.tones.paperEmphasis,
+      ordinal,
+    );
     Widget row = Row(
       mainAxisSize: autoWidth ? MainAxisSize.min : MainAxisSize.max,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3582,9 +3560,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (block.kind == TextBlockKind.quote) {
       row = Container(
         padding: const EdgeInsets.only(left: 10),
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           border: Border(
-            left: BorderSide(color: scheme.outlineVariant, width: 3),
+            left: BorderSide(color: RichTextStyles.titleRule, width: 3),
           ),
         ),
         child: row,
@@ -3592,10 +3570,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     } else if (block.kind == TextBlockKind.code) {
       row = Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(4),
-        ),
+        decoration: const BoxDecoration(color: RichTextStyles.codeFill),
         child: row,
       );
     }

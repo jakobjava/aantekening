@@ -12,14 +12,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../links/note_links.dart';
+import '../look/controls.dart';
+import '../look/marks.dart';
+import '../look/tones.dart';
+import '../settings/settings_view.dart';
 import 'ai_session.dart';
-import 'ai_settings_dialog.dart';
 import 'ai_state.dart';
 import 'answer_progress.dart';
 import 'answer_view.dart';
-import 'flashcards_view.dart';
 import 'study_pages.dart';
-import 'study_style.dart';
 
 /// The AI of [scope], in place of the page: what was kept about it and its
 /// conversations down the side, the conversation showing, and a line at the
@@ -38,9 +39,9 @@ class AiView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     return Material(
-      color: scheme.surfaceContainerLowest,
+      color: tones.base,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final rail = constraints.maxWidth >= railFrom;
@@ -48,7 +49,13 @@ class AiView extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               if (rail) ...<Widget>[
-                SizedBox(width: 244, child: _Rail(scope: scope)),
+                SizedBox(
+                  width: 236,
+                  child: ColoredBox(
+                    color: tones.pane,
+                    child: _Rail(scope: scope),
+                  ),
+                ),
                 const VerticalDivider(width: 1),
               ],
               Expanded(
@@ -73,95 +80,70 @@ class _Rail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final state = ref.watch(aiSessionProvider(scope));
     final session = ref.read(aiSessionProvider(scope).notifier);
 
     Widget heading(String label, {Widget? action}) => Padding(
-      padding: const EdgeInsets.fromLTRB(10, 18, 4, 4),
-      child: Row(
-        children: <Widget>[
-          Expanded(child: SmallCaps(label)),
-          ?action,
-        ],
+      padding: const EdgeInsets.fromLTRB(12, 16, 4, 2),
+      child: SizedBox(
+        height: 24,
+        child: Row(
+          children: <Widget>[
+            Expanded(child: SmallCaps(label)),
+            ?action,
+          ],
+        ),
       ),
     );
 
     Widget entry({
-      required Widget leading,
       required String title,
       required bool selected,
       required VoidCallback? onTap,
       Widget? trailing,
       List<Widget> menu = const <Widget>[],
-    }) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Material(
-        color: selected
-            ? scheme.secondaryContainer.withValues(alpha: 0.7)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(9),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(9),
-          onTap: onTap,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(8, 7, menu.isEmpty ? 8 : 0, 7),
-            child: Row(
+    }) => RowTile(
+      selected: selected,
+      onTap: onTap,
+      padding: EdgeInsets.fromLTRB(12, 6, menu.isEmpty ? 12 : 2, 6),
+      title: Text(title),
+      trailing: trailing == null && menu.isEmpty
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                leading,
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: selected ? FontWeight.w600 : null,
-                    ),
-                  ),
-                ),
                 ?trailing,
                 if (menu.isNotEmpty)
                   MenuAnchor(
                     menuChildren: menu,
-                    builder: (context, controller, _) => SizedBox.square(
-                      dimension: 28,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        icon: const Icon(Icons.more_horiz_rounded, size: 17),
-                        tooltip: 'More',
-                        onPressed: () => controller.isOpen
-                            ? controller.close()
-                            : controller.open(),
-                      ),
+                    builder: (context, controller, _) => MarkButton(
+                      MarkShape.more,
+                      tooltip: 'More',
+                      size: 22,
+                      onPressed: () => controller.isOpen
+                          ? controller.close()
+                          : controller.open(),
                     ),
                   ),
               ],
             ),
-          ),
-        ),
-      ),
     );
 
-    Widget count(String text, {Color? color}) => Text(
+    Widget count(String text, {bool strong = false}) => Text(
       text,
       style: TextStyle(
         fontSize: 12,
-        fontWeight: color == null ? null : FontWeight.w700,
-        color: color ?? scheme.outline,
+        fontWeight: strong ? FontWeight.w700 : null,
+        color: strong ? tones.emphasis : tones.muted,
+        fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
       ),
     );
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(8, 10, 8, 16),
+      padding: const EdgeInsets.only(top: 6, bottom: 16),
       children: <Widget>[
         entry(
-          leading: Icon(
-            Icons.space_dashboard_outlined,
-            size: 20,
-            color: scheme.onSurfaceVariant,
-          ),
           title: 'Overview',
           selected: state.atOverview,
           onTap: session.newThread,
@@ -172,74 +154,52 @@ class _Rail extends ConsumerWidget {
             builder: (context) {
               final item = state.setOf(kind);
               final set = item == null ? null : StudySet.fromJson(item.body);
-              final making = state.making.containsKey(kind);
-              final due = switch ((item, set)) {
-                (final AiItem item, final FlashcardSet cards) => () {
-                  final status = deckStatus(
-                    cards.cards,
-                    ref.watch(cardReviewsProvider(item.id)).value ??
-                        const <String, CardReview>{},
-                    DateTime.now(),
-                  );
-                  return status.due + status.fresh.clamp(0, newCardsPerSession);
-                }(),
-                _ => 0,
-              };
+              final due = cardsToStudy(ref, item);
               return entry(
-                leading: StudyBadge(kind, size: 26),
                 title: kind.label,
                 selected:
                     state.shownKind == kind ||
                     (item != null && state.itemId == item.id),
                 onTap: () => session.openKind(kind),
-                trailing: making
-                    ? const SizedBox.square(
-                        dimension: 14,
-                        child: CircularProgressIndicator(strokeWidth: 1.8),
-                      )
+                trailing: state.making.containsKey(kind)
+                    ? const Busy()
                     : due > 0
-                    ? count('$due', color: kind.accent(scheme))
-                    : set == null
-                    ? Icon(Icons.add_rounded, size: 17, color: scheme.outline)
-                    : set is StudySummary
-                    ? Icon(Icons.check_rounded, size: 16, color: scheme.outline)
-                    : count('${set.size}'),
+                    ? count('$due', strong: true)
+                    : switch (set) {
+                        null => count('—'),
+                        StudySummary() => Mark(
+                          MarkShape.check,
+                          color: tones.muted,
+                        ),
+                        _ => count('${set.size}'),
+                      },
               );
             },
           ),
         heading(
           'Conversations',
-          action: SizedBox.square(
-            dimension: 28,
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              tooltip: 'Ask something new',
-              onPressed: session.newThread,
-            ),
+          action: MarkButton(
+            MarkShape.add,
+            tooltip: 'Ask something new',
+            size: 22,
+            onPressed: session.newThread,
           ),
         ),
         if (state.threads.isEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 2, 10, 0),
+            padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
             child: Text(
               'Ask below — each question starts one.',
-              style: TextStyle(fontSize: 12, color: scheme.outline),
+              style: TextStyle(fontSize: 12, color: tones.muted),
             ),
           ),
         for (final thread in state.threads)
           entry(
-            leading: Icon(
-              Icons.forum_outlined,
-              size: 18,
-              color: scheme.onSurfaceVariant,
-            ),
             title: thread.title.isEmpty ? 'Conversation' : thread.title,
             selected: state.itemId == null && state.threadId == thread.id,
             onTap: () => unawaited(session.openThread(thread.id)),
             menu: <Widget>[
               MenuItemButton(
-                leadingIcon: const Icon(Icons.delete_outline_rounded),
                 onPressed: () => session.deleteThread(thread.id),
                 child: const Text('Delete'),
               ),
@@ -249,19 +209,11 @@ class _Rail extends ConsumerWidget {
           heading('Kept answers'),
           for (final item in state.savedAnswers)
             entry(
-              leading: Icon(
-                Icons.bookmark_outline_rounded,
-                size: 18,
-                color: scheme.onSurfaceVariant,
-              ),
               title: item.title,
               selected: state.itemId == item.id,
               onTap: () => session.openItem(item.id),
               menu: <Widget>[
                 MenuItemButton(
-                  leadingIcon: const Icon(
-                    Icons.drive_file_rename_outline_rounded,
-                  ),
                   onPressed: () async {
                     final title = await _askName(context, item.title);
                     if (title != null) await session.renameItem(item.id, title);
@@ -269,7 +221,6 @@ class _Rail extends ConsumerWidget {
                   child: const Text('Rename'),
                 ),
                 MenuItemButton(
-                  leadingIcon: const Icon(Icons.delete_outline_rounded),
                   onPressed: () => session.deleteItem(item.id),
                   child: const Text('Delete'),
                 ),
@@ -359,7 +310,7 @@ class _MainState extends ConsumerState<_Main> {
     final set = item == null ? null : StudySet.fromJson(item.body);
     final Widget page;
     if (!state.loaded || model.isLoading) {
-      page = const Center(child: CircularProgressIndicator());
+      page = const Loading();
     } else if (item != null && set != null) {
       page = StudySetPage(scope: scope, item: item, set: set, onOpen: _open);
     } else if (item != null) {
@@ -392,12 +343,18 @@ class _MainState extends ConsumerState<_Main> {
             alignment: Alignment.centerLeft,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
-              child: TextButton.icon(
-                icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                label: const Text('Overview'),
+              child: TextButton(
                 onPressed: ref
                     .read(aiSessionProvider(scope).notifier)
                     .newThread,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Mark(MarkShape.arrowLeft),
+                    SizedBox(width: 8),
+                    Text('Overview'),
+                  ],
+                ),
               ),
             ),
           ),
@@ -416,27 +373,30 @@ class _ErrorLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
+    final tones = context.tones;
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 800),
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border(left: BorderSide(color: tones.text, width: 2)),
+          color: tones.hover,
+        ),
+        child: Text(message, style: TextStyle(color: tones.text)),
       ),
-      child: Text(message, style: TextStyle(color: scheme.onErrorContainer)),
     );
   }
 }
 
 /// Before a model is chosen: what the AI does, and where to choose one.
-class _ChooseModel extends ConsumerWidget {
+class _ChooseModel extends StatelessWidget {
   const _ChooseModel();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
+  Widget build(BuildContext context) {
+    final tones = context.tones;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460),
@@ -445,12 +405,6 @@ class _ChooseModel extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(
-                Icons.auto_awesome_rounded,
-                size: 40,
-                color: scheme.tertiary,
-              ),
-              const SizedBox(height: 12),
               Text(
                 'Ask about your notes',
                 style: Theme.of(context).textTheme.titleLarge,
@@ -461,13 +415,12 @@ class _ChooseModel extends ConsumerWidget {
                 'your notes stay, or a provider you trust. Answers come from '
                 'your notes first and say where each part comes from.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.onSurfaceVariant, height: 1.4),
+                style: TextStyle(color: tones.muted, height: 1.45),
               ),
               const SizedBox(height: 16),
-              FilledButton.icon(
-                icon: const Icon(Icons.tune_rounded),
-                label: const Text('Choose a model'),
-                onPressed: () => showAiSettings(context),
+              FilledButton(
+                onPressed: () => showSettings(context, page: SettingsPage.ai),
+                child: const Text('Choose a model'),
               ),
             ],
           ),
@@ -554,16 +507,17 @@ class _Exchange extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final done = byline != null;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              // The question, set off to the right in a shade of its own.
               Align(
                 alignment: Alignment.centerRight,
                 child: Container(
@@ -572,77 +526,50 @@ class _Exchange extends StatelessWidget {
                     horizontal: 14,
                     vertical: 10,
                   ),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                  color: tones.hover,
                   child: SelectableText(question),
                 ),
               ),
-              const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2, right: 10),
-                    child: CircleAvatar(
-                      radius: 13,
-                      backgroundColor: scheme.tertiaryContainer,
-                      child: Icon(
-                        Icons.auto_awesome_rounded,
-                        size: 14,
-                        color: scheme.onTertiaryContainer,
+              const SizedBox(height: 14),
+              SmallCaps('Answer', color: tones.emphasis),
+              const SizedBox(height: 6),
+              if (pending != null) AnswerProgress(pending: pending!),
+              if (!answer.isEmpty)
+                AnswerView(
+                  answer: answer,
+                  onOpen: onOpen,
+                  showSources: done,
+                  onAddCards: onAddCards,
+                ),
+              if (done)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          byline!,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11.5, color: tones.muted),
+                        ),
                       ),
-                    ),
+                      SmallButton(
+                        'Copy',
+                        tooltip: 'Copy the answer',
+                        onPressed: () => Clipboard.setData(
+                          ClipboardData(text: answer.plainText),
+                        ),
+                      ),
+                      SmallButton(
+                        kept ? 'Kept' : 'Keep',
+                        tooltip: kept
+                            ? 'Kept, under Kept answers'
+                            : 'Keep the answer, under Kept answers',
+                        onPressed: kept ? null : onKeep,
+                      ),
+                    ],
                   ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        if (pending != null) AnswerProgress(pending: pending!),
-                        if (!answer.isEmpty)
-                          AnswerView(
-                            answer: answer,
-                            onOpen: onOpen,
-                            showSources: done,
-                            onAddCards: onAddCards,
-                          ),
-                        if (done)
-                          Row(
-                            children: <Widget>[
-                              Text(
-                                byline!,
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: scheme.outline,
-                                ),
-                              ),
-                              const Spacer(),
-                              IconButton(
-                                icon: const Icon(Icons.copy_rounded, size: 17),
-                                tooltip: 'Copy the answer',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () => Clipboard.setData(
-                                  ClipboardData(text: answer.plainText),
-                                ),
-                              ),
-                              TextButton.icon(
-                                icon: Icon(
-                                  kept
-                                      ? Icons.bookmark_rounded
-                                      : Icons.bookmark_add_outlined,
-                                  size: 18,
-                                ),
-                                label: Text(kept ? 'Kept' : 'Keep'),
-                                onPressed: kept ? null : onKeep,
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                ),
             ],
           ),
         ),
@@ -665,7 +592,7 @@ class _ItemReader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final session = ref.read(aiSessionProvider(scope).notifier);
     final answer = AiAnswer.fromJson(item.body);
     final made = DateTime.fromMillisecondsSinceEpoch(item.createdAt);
@@ -677,19 +604,18 @@ class _ItemReader extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              const SmallCaps('Kept answer'),
+              const SizedBox(height: 4),
               Row(
                 children: <Widget>[
-                  Icon(Icons.bookmark_rounded, color: scheme.primary),
-                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       item.title,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.drive_file_rename_outline_rounded),
-                    tooltip: 'Rename',
+                  SmallButton(
+                    'Rename',
                     onPressed: () async {
                       final title = await _askName(context, item.title);
                       if (title != null) {
@@ -697,19 +623,19 @@ class _ItemReader extends ConsumerWidget {
                       }
                     },
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
+                  MarkButton(
+                    MarkShape.close,
                     tooltip: 'Back to the overview',
                     onPressed: session.newThread,
                   ),
                 ],
               ),
               Padding(
-                padding: const EdgeInsets.only(left: 34, bottom: 14),
+                padding: const EdgeInsets.only(top: 2, bottom: 14),
                 child: Text(
                   'Made by ${item.provider} · ${item.model}, '
                   '${made.year}-${made.month.toString().padLeft(2, '0')}-${made.day.toString().padLeft(2, '0')}',
-                  style: TextStyle(fontSize: 12, color: scheme.outline),
+                  style: TextStyle(fontSize: 12, color: tones.muted),
                 ),
               ),
               AnswerView(answer: answer, onOpen: onOpen),
@@ -734,7 +660,8 @@ class _Composer extends ConsumerStatefulWidget {
 
 class _ComposerState extends ConsumerState<_Composer> {
   final TextEditingController _text = TextEditingController();
-  final FocusNode _focus = FocusNode();
+  // Its edge is marked while it has the keyboard.
+  late final FocusNode _focus = FocusNode()..addListener(() => setState(() {}));
   bool? _web;
 
   @override
@@ -766,7 +693,7 @@ class _ComposerState extends ConsumerState<_Composer> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final pending = ref.watch(
       aiSessionProvider(widget.scope).select((s) => s.pending),
     );
@@ -778,98 +705,98 @@ class _ComposerState extends ConsumerState<_Composer> {
         (_web ?? ref.watch(aiSettingsProvider.select((s) => s.searchWeb))) &&
         available;
 
-    return Container(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 800),
-          child: Container(
+          child: DecoratedBox(
             decoration: BoxDecoration(
-              color: scheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: scheme.outlineVariant),
-              boxShadow: const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x14000000),
-                  blurRadius: 8,
-                  offset: Offset(0, 2),
-                ),
-              ],
+              color: tones.base,
+              border: Border.all(
+                color: _focus.hasFocus ? tones.emphasis : tones.strongLine,
+              ),
             ),
-            padding: const EdgeInsets.fromLTRB(14, 4, 6, 6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                CallbackShortcuts(
-                  bindings: <ShortcutActivator, VoidCallback>{
-                    const SingleActivator(LogicalKeyboardKey.enter): _send,
-                  },
-                  child: TextField(
-                    controller: _text,
-                    focusNode: _focus,
-                    minLines: 1,
-                    maxLines: 8,
-                    enabled: model != null,
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      filled: false,
-                      hintText: model == null
-                          ? 'Choose a model to ask'
-                          : 'Ask about ${info == null ? 'this' : '“${info.title}”'}…',
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 2, 6, 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  CallbackShortcuts(
+                    bindings: <ShortcutActivator, VoidCallback>{
+                      const SingleActivator(LogicalKeyboardKey.enter): _send,
+                    },
+                    child: TextField(
+                      controller: _text,
+                      focusNode: _focus,
+                      minLines: 1,
+                      maxLines: 8,
+                      enabled: model != null,
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                        ),
+                        hintText: model == null
+                            ? 'Choose a model to ask'
+                            : 'Ask about ${info == null ? 'this' : '“${info.title}”'}…',
+                      ),
                     ),
                   ),
-                ),
-                Row(
-                  children: <Widget>[
-                    Tooltip(
-                      message: available
-                          ? 'Let this answer search the web. What it finds is cited as the web.'
-                          : 'Set up web search in the AI settings',
-                      child: FilterChip(
-                        avatar: const Icon(Icons.public_rounded, size: 16),
-                        label: const Text('Web'),
-                        selected: web,
-                        visualDensity: VisualDensity.compact,
-                        onSelected: available
-                            ? (on) => setState(() => _web = on)
-                            : null,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const _ModelChip(),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        info == null
-                            ? ''
-                            : 'Starts from this ${info.kindName}, then all your notes',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: scheme.outline),
-                      ),
-                    ),
-                    if (pending != null)
-                      IconButton.filledTonal(
-                        icon: const Icon(Icons.stop_rounded),
-                        tooltip: 'Stop',
-                        onPressed: () => unawaited(
-                          ref
-                              .read(aiSessionProvider(widget.scope).notifier)
-                              .stop(),
+                  Row(
+                    children: <Widget>[
+                      Tooltip(
+                        message: available
+                            ? 'Let this answer search the web. What it finds '
+                                  'is cited as the web.'
+                            : 'Set up web search in the AI settings',
+                        child: _WebToggle(
+                          on: web,
+                          onChanged: available
+                              ? (on) => setState(() => _web = on)
+                              : null,
                         ),
-                      )
-                    else
-                      IconButton.filled(
-                        icon: const Icon(Icons.arrow_upward_rounded),
-                        tooltip: 'Ask (Enter)',
-                        onPressed: model == null ? null : _send,
                       ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 4),
+                      const _ModelButton(),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          info == null
+                              ? ''
+                              : 'Starts from this ${info.kindName}, then all '
+                                    'your notes',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: tones.muted),
+                        ),
+                      ),
+                      if (pending != null)
+                        Tooltip(
+                          message: 'Stop',
+                          child: OutlinedButton(
+                            onPressed: () => unawaited(
+                              ref
+                                  .read(
+                                    aiSessionProvider(widget.scope).notifier,
+                                  )
+                                  .stop(),
+                            ),
+                            child: const Text('Stop'),
+                          ),
+                        )
+                      else
+                        Tooltip(
+                          message: 'Ask (Enter)',
+                          child: FilledButton(
+                            onPressed: model == null ? null : _send,
+                            child: const Text('Ask'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -878,10 +805,48 @@ class _ComposerState extends ConsumerState<_Composer> {
   }
 }
 
+/// Whether this question searches the web: a box to tick, and "Web".
+class _WebToggle extends StatelessWidget {
+  const _WebToggle({required this.on, required this.onChanged});
+
+  final bool on;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tones = context.tones;
+    final onChanged = this.onChanged;
+    return InkWell(
+      onTap: onChanged == null ? null : () => onChanged(!on),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Mark(
+              on ? MarkShape.boxTicked : MarkShape.box,
+              color: onChanged == null ? tones.faint : tones.text,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Web',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: onChanged == null ? tones.faint : tones.text,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Who answers, and where the notes go to be answered: opens the settings
 /// to choose.
-class _ModelChip extends ConsumerWidget {
-  const _ModelChip();
+class _ModelButton extends ConsumerWidget {
+  const _ModelButton();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -889,22 +854,19 @@ class _ModelChip extends ConsumerWidget {
     final local = model?.config.local ?? true;
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 260),
-      child: ActionChip(
-        avatar: Icon(
-          local ? Icons.computer_rounded : Icons.cloud_outlined,
-          size: 16,
-        ),
-        label: Text(
-          model == null ? 'Choose a model' : model.config.model,
-          overflow: TextOverflow.ellipsis,
-        ),
-        visualDensity: VisualDensity.compact,
+      child: SmallButton(
+        model == null
+            ? 'Choose a model'
+            : local
+            ? model.config.model
+            : '${model.config.model} · online',
         tooltip: model == null
             ? 'Choose which model answers'
             : local
             ? '${model.config.name}: answers come from a model on this computer'
-            : 'Questions, and the notes they are about, go to ${model.config.name}',
-        onPressed: () => showAiSettings(context),
+            : 'Questions, and the notes they are about, go to '
+                  '${model.config.name}',
+        onPressed: () => showSettings(context, page: SettingsPage.ai),
       ),
     );
   }

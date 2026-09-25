@@ -4,12 +4,13 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:aantekening/src/commands/command_keys.dart';
 import 'package:aantekening/src/editor/page_editor.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
-import 'package:aantekening/src/theme.dart';
+import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
@@ -43,7 +44,9 @@ Future<void> openEditor(
       ],
       child: MaterialApp(
         theme: AppTheme.light(),
-        home: Scaffold(body: PageEditor(pageId: pageId)),
+        home: CommandKeys(
+          child: Scaffold(body: PageEditor(pageId: pageId)),
+        ),
       ),
     ),
   );

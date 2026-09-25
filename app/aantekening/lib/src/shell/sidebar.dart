@@ -6,20 +6,25 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../command_menu.dart';
 import '../arrangement/arrangement_drag.dart';
+import '../command_menu.dart';
+import '../commands/app_command.dart';
+import '../commands/shortcuts.dart';
 import '../graph/graph_panel.dart';
+import '../look/tones.dart';
 import '../providers.dart';
 import '../search/search_panel.dart';
+import '../settings/settings_view.dart';
 import 'library_pane.dart';
 import 'page_list_pane.dart';
 import 'sidebar_state.dart';
 import 'tabs.dart';
 
 /// A strip of buttons, each opening a panel beside it — the notebooks and
-/// pages, search, the graph — and one turning the tab to its AI, with
-/// [page] taking the rest of
-/// the window.
+/// pages, search, the graph — one turning the tab to its AI and one opening
+/// the settings, with [page] taking the rest of the window.
+///
+/// The buttons are their names, written up the strip.
 ///
 /// Clicking the open panel's button closes it. Each column of a panel is
 /// dragged by its right edge to make it wider or narrower, and the buttons
@@ -30,7 +35,7 @@ class Sidebar extends ConsumerStatefulWidget {
 
   final Widget page;
 
-  static const double barWidth = 44;
+  static const double barWidth = 28;
 
   /// The narrowest a panel beside it squeezes the page to.
   static const double minPageWidth = 320;
@@ -86,14 +91,24 @@ class _SidebarState extends ConsumerState<Sidebar> {
                     Positioned.fill(
                       child: GestureDetector(
                         onTap: ref.read(sidebarProvider.notifier).close,
-                        child: const ColoredBox(color: Color(0x42000000)),
+                        child: ColoredBox(
+                          color: context.tones.text.withValues(alpha: 0.12),
+                        ),
                       ),
                     ),
                     Positioned(
                       left: 0,
                       top: 0,
                       bottom: 0,
-                      child: Material(elevation: 8, child: panel),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: context.tones.base,
+                          border: Border(
+                            right: BorderSide(color: context.tones.strongLine),
+                          ),
+                        ),
+                        child: panel,
+                      ),
                     ),
                   ],
                 ],
@@ -132,7 +147,6 @@ class _ButtonStripState extends ConsumerState<_ButtonStrip> {
   @override
   Widget build(BuildContext context) {
     final layout = ref.watch(sidebarLayoutProvider);
-    final scheme = Theme.of(context).colorScheme;
 
     Widget group(SidebarGroup group) {
       final tabs = layout.itemsIn(group);
@@ -157,7 +171,6 @@ class _ButtonStripState extends ConsumerState<_ButtonStrip> {
                   index: i,
                   count: tabs.length,
                   axis: Axis.vertical,
-                  icon: Icon(tabs[i].icon, size: 18),
                   label: tabs[i].label,
                   child: _TabButton(tab: tabs[i]),
                 ),
@@ -166,8 +179,8 @@ class _ButtonStripState extends ConsumerState<_ButtonStrip> {
               if (tabs.isEmpty && dragging != null)
                 ArrangementEmptyGroup(
                   highlighted: highlighted,
-                  width: 34,
-                  height: 34,
+                  width: 18,
+                  height: 40,
                 ),
             ],
           ),
@@ -180,8 +193,7 @@ class _ButtonStripState extends ConsumerState<_ButtonStrip> {
           showCommandMenu(context, details.globalPosition, <List<MenuCommand>>[
             <MenuCommand>[
               MenuCommand(
-                'Reset the sidebar',
-                Icons.restart_alt_rounded,
+                'Put the buttons back',
                 layout.isDefault
                     ? null
                     : ref.read(sidebarLayoutProvider.notifier).reset,
@@ -189,11 +201,11 @@ class _ButtonStripState extends ConsumerState<_ButtonStrip> {
             ],
           ]),
       child: Material(
-        color: scheme.surfaceContainer,
+        color: context.tones.pane,
         child: SizedBox(
           width: Sidebar.barWidth,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 2),
             child: Column(
               children: <Widget>[
                 Expanded(child: group(SidebarGroup.top)),
@@ -214,56 +226,78 @@ class _TabButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
+    final bindings = ref.watch(shortcutsProvider);
+    final current = ref.watch(tabsProvider.select((tabs) => tabs.current));
+    final open = ref.watch(sidebarProvider.select((state) => state.open));
     // The AI's button shows whether the tab shows the AI, and works only
     // once the tab has chosen something to ask about.
-    final ai = tab == SidebarTab.ai;
-    final current = ref.watch(tabsProvider.select((tabs) => tabs.current));
-    final selected = ai
-        ? current.ai
-        : ref.watch(sidebarProvider.select((state) => state.open)) == tab;
-    final VoidCallback? onPressed = !ai
-        ? () => ref.read(sidebarProvider.notifier).toggle(tab)
-        : current.hasChoice
-        ? ref.read(tabsProvider.notifier).toggleAi
-        : null;
+    final selected = switch (tab) {
+      SidebarTab.ai => current.ai,
+      SidebarTab.settings => false,
+      _ => open == tab,
+    };
+    final VoidCallback? onPressed = switch (tab) {
+      SidebarTab.ai =>
+        current.hasChoice ? ref.read(tabsProvider.notifier).toggleAi : null,
+      SidebarTab.settings => () => showSettings(context),
+      _ => () => ref.read(sidebarProvider.notifier).toggle(tab),
+    };
+    final tooltip = switch (tab) {
+      SidebarTab.ai when current.ai => bindings.tooltip(
+        AppCommand.ai,
+        label: 'Back to the notes',
+      ),
+      SidebarTab.ai => bindings.tooltip(
+        AppCommand.ai,
+        label: 'Ask AI about what is open',
+      ),
+      _ => bindings.tooltip(tab.command, label: tab.label),
+    };
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Stack(
-        children: <Widget>[
-          IconButton(
-            icon: Icon(tab.icon, size: 20),
-            tooltip: ai
-                ? (current.ai
-                      ? 'Back to the notes  (Ctrl+J)'
-                      : 'Ask AI about what is open  (Ctrl+J)')
-                : tab.label,
-            isSelected: selected,
-            color: scheme.onSurfaceVariant,
-            selectedIcon: Icon(tab.icon, size: 20, color: scheme.primary),
-            style: IconButton.styleFrom(
-              fixedSize: const Size.square(36),
-              backgroundColor: selected
-                  ? scheme.primary.withValues(alpha: 0.12)
-                  : null,
-            ),
-            onPressed: onPressed,
-          ),
-          if (selected)
-            Positioned(
-              left: 0,
-              top: 8,
-              bottom: 8,
-              child: Container(
-                width: 2.5,
-                decoration: BoxDecoration(
-                  color: scheme.primary,
-                  borderRadius: BorderRadius.circular(2),
+    return Tooltip(
+      message: tooltip,
+      preferBelow: false,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        child: Material(
+          color: selected ? tones.selection : Colors.transparent,
+          child: InkWell(
+            onTap: onPressed,
+            child: Container(
+              width: Sidebar.barWidth,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                border: Border(
+                  left: BorderSide(
+                    color: selected ? tones.emphasis : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+              ),
+              alignment: Alignment.center,
+              // Written up the strip, read with the head tilted left.
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: Text(
+                  tab.label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 12,
+                    letterSpacing: 0.3,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: onPressed == null
+                        ? tones.faint
+                        : selected
+                        ? tones.text
+                        : tones.muted,
+                  ),
                 ),
               ),
             ),
-        ],
+          ),
+        ),
       ),
     );
   }
@@ -409,11 +443,7 @@ class _EdgeHandleState extends State<_EdgeHandle> {
         onHorizontalDragCancel: () => setState(() => _dragging = false),
         child: Align(
           alignment: Alignment.centerRight,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            width: lit ? 3 : 0,
-            color: Theme.of(context).colorScheme.primary,
-          ),
+          child: Container(width: lit ? 2 : 0, color: context.tones.emphasis),
         ),
       ),
     );

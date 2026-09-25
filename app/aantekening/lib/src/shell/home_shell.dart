@@ -5,16 +5,22 @@ import 'dart:async';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../ai/ai_state.dart';
+import '../commands/command_keys.dart';
+import '../commands/editor_keys.dart';
+import '../commands/key_chord.dart';
+import '../commands/shortcuts.dart';
 import '../editor/page_editor.dart';
+import '../look/controls.dart';
 import '../preferences.dart';
 import '../providers.dart';
+import 'recent_pages.dart';
 import 'sidebar.dart';
 import 'tab_strip.dart';
 import 'tabs.dart';
+import 'window_commands.dart';
 
 /// The ribbon across the top, and beneath it the tabs, and beneath those
 /// the sidebar and the page of the tab showing.
@@ -23,6 +29,10 @@ import 'tabs.dart';
 /// ribbon can; the tabs, the sidebar and the page are laid out beneath it.
 /// There is one editor and one sidebar, which show whichever tab is showing:
 /// what each tab has open is kept by [tabsProvider].
+///
+/// Every shortcut with Ctrl, Alt or Meta is caught here, wherever the
+/// keyboard is, and run as the command it is bound to; Alt and a digit
+/// shows that tab.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -31,36 +41,29 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
+  late final VoidCallback _unregister;
+
   @override
   void initState() {
     super.initState();
     unawaited(_forgetMissing());
-    HardwareKeyboard.instance.addHandler(_onKey);
+    _unregister = ref
+        .read(commandHandlersProvider)
+        .register(windowCommands(context, ref));
   }
 
   @override
   void dispose() {
-    HardwareKeyboard.instance.removeHandler(_onKey);
+    _unregister();
     super.dispose();
   }
 
-  /// The keys that open, close and step through tabs, taken from the
-  /// keyboard itself rather than through the focus, since they work
-  /// wherever the focus is — even nowhere, as it is once the panel that had
-  /// it goes with the tab left. Not while a dialog is over the window.
-  bool _onKey(KeyEvent event) {
-    if (event is KeyUpEvent || !(ModalRoute.of(context)?.isCurrent ?? true)) {
-      return false;
-    }
-    for (final MapEntry(key: activator, value: action) in TabStrip.shortcuts(
-      ref.read(tabsProvider.notifier),
-    ).entries) {
-      if (activator.accepts(event, HardwareKeyboard.instance)) {
-        action();
-        return true;
-      }
-    }
-    return false;
+  /// Shows the tab Alt and a digit number.
+  bool _showTab(KeyChord chord) {
+    final tab = EditorKey.showTab.chords.indexOf(chord);
+    if (tab < 0) return false;
+    ref.read(tabsProvider.notifier).showNumber(tab + 1);
+    return true;
   }
 
   /// Once the workspace and the tabs kept from the last session have been
@@ -74,20 +77,30 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Go to offers the pages opened lately first.
+    ref.listen<String?>(selectedPageProvider, (_, pageId) {
+      if (pageId != null) ref.read(recentPagesProvider.notifier).visit(pageId);
+    });
     final store = ref.watch(storeProvider);
 
-    return Scaffold(
-      body: store.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => _WorkspaceError(error: error),
-        data: (_) => PageEditor(
-          pageId: ref.watch(selectedPageProvider),
-          aiScope: _aiScope(ref.watch(tabsProvider.select((t) => t.current))),
-          around: (context, page) => Column(
-            children: <Widget>[
-              const TabStrip(),
-              Expanded(child: Sidebar(page: page)),
-            ],
+    return CommandKeys(
+      onChord: _showTab,
+      child: Scaffold(
+        body: store.when(
+          loading: () => const Loading(),
+          error: (error, stack) => EmptyMessage(
+            'The workspace could not be opened.',
+            detail: '$error',
+          ),
+          data: (_) => PageEditor(
+            pageId: ref.watch(selectedPageProvider),
+            aiScope: _aiScope(ref.watch(tabsProvider.select((t) => t.current))),
+            around: (context, page) => Column(
+              children: <Widget>[
+                const TabStrip(),
+                Expanded(child: Sidebar(page: page)),
+              ],
+            ),
           ),
         ),
       ),
@@ -103,33 +116,3 @@ NoteLink? _aiScope(NoteTab tab) => tab.ai
         pageId: tab.pageId,
       )
     : null;
-
-class _WorkspaceError extends StatelessWidget {
-  const _WorkspaceError({required this.error});
-
-  final Object error;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.error_outline_rounded, color: scheme.error, size: 36),
-            const SizedBox(height: 12),
-            const Text('The workspace could not be opened.'),
-            const SizedBox(height: 8),
-            SelectableText(
-              '$error',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

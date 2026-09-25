@@ -30,6 +30,16 @@ stays instant.
   and page, its open panel and its search — and the sidebar acts on the tab
   showing alone. Drag tabs to reorder them; the window remembers them, and
   going back to a tab finds its page where you left it.
+* **Look** — one colour and its text, for focus: light and dark modes, each
+  in a base and text colour of your choosing, and one accent colour or none.
+  No icons, no rounded corners, no shadows; the interface is set in IBM Plex
+  Sans or Mono, at any of five sizes. All in **Settings** (Ctrl+,), with the
+  layout, the shortcuts, spelling and the AI's models.
+* **Keyboard** — Ctrl+P goes to any page, section or notebook by a few
+  letters of its name; Ctrl+Shift+P runs any command by name. Alt+arrows step
+  through pages and sections and go back and forward; Alt+1–9 shows a tab;
+  Ctrl+Shift+T reopens one. Every shortcut is listed, and can be changed, in
+  the settings (F1).
 * **Sidebar** — a strip of buttons down the left opens panels beside the page:
   the notebooks and pages, search, and a graph of the workspace.
   A panel's button closes it again, its columns are widened by dragging their
@@ -82,12 +92,13 @@ stays instant.
   **Math** tab has structures (fractions, roots, integrals, sums, brackets,
   bras and kets, accents, matrices) and symbols to click in, and a cheat
   sheet of the Simple syntax beside the page: click an example to write it.
-* **Spelling** — words spelled wrongly are underlined with a wavy red line as
+* **Spelling** — words spelled wrongly are underlined with a wavy line as
   you type, in any number of languages at once; right-click one for
   corrections, to add it to your dictionary, or to ignore it. The **Review**
-  tab turns it on and off and chooses the languages: British English, Dutch
-  and German are downloaded when first chosen, and any Hunspell dictionary
-  (as LibreOffice uses) can be added from its `.aff` and `.dic` files.
+  tab turns it on and off and chooses among the languages installed;
+  **Settings → Spelling** downloads British English, Dutch and German, adds
+  any Hunspell dictionary (as LibreOffice uses) from its `.aff` and `.dic`
+  files, and lists the words you have added.
 * **Pictures and PDFs** — insert them onto the canvas to annotate, or into a
   text box as a printout, and resize them there by their corners. PDF pages
   are rendered sharply at any zoom and their text is searchable. Right-click
@@ -106,7 +117,7 @@ stays instant.
   in, laid out by a force simulation, as Obsidian draws a vault. Drag the dots
   about; click one to open it.
 * **AI** — every notebook, section and page has an AI of its own: press
-  **Ctrl+J**, the ✦ **AI** button on the sidebar, or *Ask AI* in its menu.
+  **Ctrl+J**, the **AI** button on the sidebar, or *Ask AI* in its menu.
   It opens on what you can make to learn from it, each from your notes and
   linked back to the very sentence each part comes from:
   * a **summary** set out as a study sheet — the gist, the ideas in
@@ -213,9 +224,15 @@ puts everything back.
 | `- `, `1. `, `[] `, `# `, `> ` | Markdown shortcuts at the start of a line |
 | Tab / Shift+Tab | Indent / outdent; after a word, start a table; in a table, the next / previous cell |
 | Enter (in a table) | At the end of a row, add a row; in an empty row, leave the table |
-| Ctrl+T / Ctrl+W | Open a new tab / close the tab showing |
-| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab (also Ctrl+Page Down / Page Up) |
+| Ctrl+P / Ctrl+Shift+P | Go to a page, section or notebook / run a command, by a few letters of its name |
+| Alt+Up / Alt+Down | Previous / next page in the section (with Shift: section in the notebook) |
+| Alt+Left / Alt+Right | Back / forward through the pages the tab has shown |
+| Ctrl+N, F2 | New page, rename the page |
+| Ctrl+T / Ctrl+W / Ctrl+Shift+T | Open a new tab / close the tab showing / reopen the tab closed last |
+| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab (also Ctrl+Page Down / Page Up); Alt+1–9 shows a tab |
+| Ctrl+Shift+E / Ctrl+F / Ctrl+Shift+G | The notebooks / search / graph, with the keyboard in them; Ctrl+\ hides or shows the panel |
 | Ctrl+J | The AI of the page, section or notebook showing, and back |
+| Ctrl+, / F1 / Ctrl+Shift+D | Settings / every shortcut, to change / light or dark |
 | Ctrl+click (on a link) | Follow it: to a note, or to the web |
 | V or T, P, H, E | Type-and-select, pen, highlighter, eraser (outside a text box); shows the Home or Draw tab |
 | Ctrl+F1 | Collapse or show the ribbon |
@@ -225,6 +242,9 @@ puts everything back.
 | Scroll, space+drag, middle-drag | Move around the page with any tool |
 | Enter / Shift+Enter (in search) | Open the next / previous page found; Esc clears the search |
 | Enter or Esc (in the title) | Back to the page |
+
+The shortcuts of commands can be changed in **Settings → Keyboard**; those of
+typing are fixed.
 
 Arrowing into a typeset formula, or clicking it, shows its source again with
 the caret in it; arrowing off either end goes back to the text beside it and

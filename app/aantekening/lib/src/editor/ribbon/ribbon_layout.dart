@@ -99,7 +99,7 @@ enum RibbonItem {
 
 /// A section of a tab, and the buttons it starts out with.
 enum RibbonGroup implements ArrangementGroup<RibbonItem> {
-  history(RibbonTab.home, 'Undo', <RibbonItem>[
+  history(RibbonTab.home, 'History', <RibbonItem>[
     RibbonItem.undo,
     RibbonItem.redo,
   ]),
@@ -121,13 +121,13 @@ enum RibbonGroup implements ArrangementGroup<RibbonItem> {
     RibbonItem.indent,
   ]),
   styles(RibbonTab.home, 'Styles', <RibbonItem>[RibbonItem.paragraphStyle]),
-  math(RibbonTab.home, 'Formula', <RibbonItem>[RibbonItem.formula]),
+  math(RibbonTab.home, 'Formulas', <RibbonItem>[RibbonItem.formula]),
   text(RibbonTab.insert, 'Text', <RibbonItem>[RibbonItem.textBox]),
   files(RibbonTab.insert, 'Files', <RibbonItem>[
     RibbonItem.picture,
     RibbonItem.pdf,
   ]),
-  symbols(RibbonTab.insert, 'Formula', <RibbonItem>[RibbonItem.insertFormula]),
+  symbols(RibbonTab.insert, 'Formulas', <RibbonItem>[RibbonItem.insertFormula]),
   tools(RibbonTab.draw, 'Tools', <RibbonItem>[
     RibbonItem.select,
     RibbonItem.eraser,

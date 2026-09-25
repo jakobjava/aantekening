@@ -148,6 +148,23 @@ void main() {
     expect(runs.first.marks.bold, isFalse);
   });
 
+  testWidgets('Ctrl+− strikes text through, and leaves the zoom alone', (
+    tester,
+  ) async {
+    await openEditor(tester, store, pageId);
+    final canvas = tester
+        .widget<InfiniteCanvas>(find.byType(InfiniteCanvas))
+        .controller;
+    final zoom = canvas.viewport.zoom;
+    await startTextBox(tester);
+
+    await press(tester, LogicalKeyboardKey.minus, control: true);
+    await type(tester, 'struck');
+
+    expect(blocksOf(tester).single.runs.single.marks.strikethrough, isTrue);
+    expect(canvas.viewport.zoom, zoom, reason: 'typing had the key');
+  });
+
   group('formulas', () {
     /// The caret's paragraph as the input method sees it, the formula being
     /// edited shown as its source. The room laid out either side of that
@@ -493,14 +510,17 @@ void main() {
                     paint: const BlockPaint(
                       caretColor: Color(0xFF000000),
                       selectionColor: Color(0xFF000000),
-                      formulaColor: RichTextStyles.formulaFill,
+                      formulaColor: Color(0xFFE9F0FC),
                       composingColor: Color(0xFF000000),
                       matchColor: Color(0xFF000000),
                       misspellingColor: Color(0xFF000000),
                     ),
                     caretVisible: ValueNotifier<bool>(true),
                     child: RichText(
-                      text: view.span(base: RichTextStyles.base(context)),
+                      text: view.span(
+                        base: RichTextStyles.base(context),
+                        mark: const Color(0xFF000000),
+                      ),
                       textScaler: TextScaler.noScaling,
                     ),
                   ),
@@ -2044,10 +2064,10 @@ void main() {
       final cell = tester.getCenter(find.byType(BlockParagraph).first);
 
       await rightClick(tester, cell);
-      await tester.tap(find.text('Insert Row Below'));
+      await tester.tap(find.text('Insert row below'));
       await tester.pumpAndSettle();
       await rightClick(tester, cell);
-      await tester.tap(find.text('Insert Column Left'));
+      await tester.tap(find.text('Insert column left'));
       await tester.pumpAndSettle();
       expect(cellsOf(tester), <String>[
         '0,0:',
@@ -2062,7 +2082,7 @@ void main() {
         tester,
         tester.getCenter(find.byType(BlockParagraph).first),
       );
-      await tester.tap(find.text('Delete Table'));
+      await tester.tap(find.text('Delete table'));
       await tester.pumpAndSettle();
       expect(find.byType(TextTableView), findsNothing);
     });

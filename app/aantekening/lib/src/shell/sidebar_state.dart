@@ -49,6 +49,9 @@ class SidebarController extends Notifier<SidebarState> {
     );
   }
 
+  /// The panel last closed, which [togglePanel] brings back.
+  SidebarTab? _closed;
+
   /// Opens [tab]'s panel, or closes it if it is the one open.
   void toggle(SidebarTab tab) => state.open == tab ? close() : show(tab);
 
@@ -57,7 +60,21 @@ class SidebarController extends Notifier<SidebarState> {
     _open(tab);
   }
 
-  void close() => _open(null);
+  /// Opens [tab]'s panel and gives it the keyboard: the search its field,
+  /// the notebooks the page open.
+  void focus(SidebarTab tab) {
+    show(tab);
+    ref.read(panelFocusProvider.notifier).request(tab);
+  }
+
+  void close() {
+    _closed = state.open ?? _closed;
+    _open(null);
+  }
+
+  /// Closes the panel open, or opens the one last closed.
+  void togglePanel() =>
+      state.open == null ? show(_closed ?? SidebarTab.notebooks) : close();
 
   void _open(SidebarTab? tab) => ref
       .read(tabsProvider.notifier)
@@ -82,6 +99,30 @@ class SidebarController extends Notifier<SidebarState> {
 final sidebarProvider = NotifierProvider<SidebarController, SidebarState>(
   SidebarController.new,
 );
+
+/// A panel asked to take the keyboard, until it has — numbered, so asking
+/// the same panel again is heard again.
+class PanelFocusRequest extends Notifier<({SidebarTab tab, int serial})?> {
+  @override
+  ({SidebarTab tab, int serial})? build() => null;
+
+  void request(SidebarTab tab) =>
+      state = (tab: tab, serial: (state?.serial ?? 0) + 1);
+
+  /// Whether [tab] was asked to take the keyboard and has not yet; it has
+  /// from now on.
+  bool take(SidebarTab tab) {
+    final asked = state;
+    if (asked == null || asked.tab != tab) return false;
+    state = null;
+    return true;
+  }
+}
+
+final panelFocusProvider =
+    NotifierProvider<PanelFocusRequest, ({SidebarTab tab, int serial})?>(
+      PanelFocusRequest.new,
+    );
 
 /// Where the sidebar's buttons are, as arranged.
 final sidebarLayoutProvider =

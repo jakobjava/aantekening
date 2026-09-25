@@ -82,12 +82,24 @@ class SpellingController extends Notifier<SpellingSettings> {
 
   void addWord(String word) {
     if (state.personalWords.contains(word)) return;
-    final words = List<String>.unmodifiable(<String>[
-      ...state.personalWords,
-      word,
+    _setWords(<String>[...state.personalWords, word]);
+  }
+
+  /// Takes [word] out of the person's words, so it is checked again.
+  void removeWord(String word) {
+    if (!state.personalWords.contains(word)) return;
+    _setWords(<String>[
+      for (final kept in state.personalWords)
+        if (kept != word) kept,
     ]);
-    state = state.copyWith(personalWords: words);
-    ref.savePreference(_wordsKey, words);
+    // The checker was given the words it started with, and learns only
+    // those added since; it starts again without this one.
+    ref.invalidate(proofreaderProvider);
+  }
+
+  void _setWords(List<String> words) {
+    state = state.copyWith(personalWords: List<String>.unmodifiable(words));
+    ref.savePreference(_wordsKey, words.isEmpty ? null : words);
   }
 }
 

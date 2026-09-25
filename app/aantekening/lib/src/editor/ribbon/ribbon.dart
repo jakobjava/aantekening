@@ -9,6 +9,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../arrangement/arrangement_drag.dart';
+import '../../commands/app_command.dart';
+import '../../commands/shortcuts.dart';
+import '../../look/controls.dart';
+import '../../look/marks.dart';
+import '../../look/tones.dart';
 import 'ribbon_items.dart';
 import 'ribbon_layout.dart';
 import 'ribbon_state.dart';
@@ -92,7 +97,7 @@ class _RibbonState extends ConsumerState<Ribbon> {
   Widget build(BuildContext context) {
     final state = ref.watch(ribbonProvider);
     final layout = ref.watch(ribbonLayoutProvider);
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
 
     return RibbonScope(
       commands: widget.commands,
@@ -100,7 +105,7 @@ class _RibbonState extends ConsumerState<Ribbon> {
       // leaves the caret in the text it formats.
       child: ExcludeFocus(
         child: Material(
-          color: scheme.surfaceContainerLow,
+          color: tones.base,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -122,7 +127,7 @@ class _RibbonState extends ConsumerState<Ribbon> {
                     ),
                   ),
                 ),
-              Divider(height: 1, thickness: 1, color: scheme.outlineVariant),
+              const Divider(),
             ],
           ),
         ),
@@ -182,15 +187,16 @@ class _TabStrip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final controller = ref.read(ribbonProvider.notifier);
+    final bindings = ref.watch(shortcutsProvider);
     final saving = this.saving;
 
     return SizedBox(
       height: Ribbon.tabStripHeight,
       child: Row(
         children: <Widget>[
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
           // The tab names scroll rather than overflow in a narrow window.
           Expanded(
             child: SingleChildScrollView(
@@ -211,20 +217,23 @@ class _TabStrip extends ConsumerWidget {
             ValueListenableBuilder<bool>(
               valueListenable: saving,
               builder: (context, saving, _) => saving
-                  ? _SavingIndicator(color: scheme.onSurfaceVariant)
+                  ? Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: Text(
+                        'Saving…',
+                        style: TextStyle(fontSize: 11.5, color: tones.muted),
+                      ),
+                    )
                   : const SizedBox.shrink(),
             ),
-          IconButton(
-            icon: Icon(
-              state.collapsed
-                  ? Icons.keyboard_arrow_down_rounded
-                  : Icons.keyboard_arrow_up_rounded,
-              size: 18,
+          MarkButton(
+            state.collapsed ? MarkShape.chevronDown : MarkShape.chevronUp,
+            tooltip: bindings.tooltip(
+              AppCommand.toggleRibbon,
+              label: state.collapsed
+                  ? 'Show the ribbon'
+                  : 'Collapse the ribbon',
             ),
-            tooltip: state.collapsed
-                ? 'Show the ribbon  (Ctrl+F1)'
-                : 'Collapse the ribbon  (Ctrl+F1)',
-            visualDensity: VisualDensity.compact,
             onPressed: controller.toggleCollapsed,
           ),
           const SizedBox(width: 4),
@@ -267,7 +276,7 @@ class _TabHeaderState extends ConsumerState<_TabHeader> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final selected = widget.selected;
 
     return DragTarget<RibbonItem>(
@@ -285,20 +294,19 @@ class _TabHeaderState extends ConsumerState<_TabHeader> {
       },
       builder: (context, candidates, _) => InkWell(
         onTap: _open,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          color: candidates.isEmpty
-              ? null
-              : scheme.primary.withValues(alpha: 0.10),
-          alignment: Alignment.bottomCenter,
+          padding: const EdgeInsets.symmetric(horizontal: 11),
+          color: candidates.isEmpty ? null : tones.selection,
+          alignment: Alignment.center,
           child: Container(
-            padding: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.only(top: 2),
+            height: double.infinity,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: selected ? scheme.primary : Colors.transparent,
-                  width: 2.5,
+                  color: selected ? tones.emphasis : Colors.transparent,
+                  width: 2,
                 ),
               ),
             ),
@@ -307,7 +315,7 @@ class _TabHeaderState extends ConsumerState<_TabHeader> {
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                color: selected ? scheme.primary : scheme.onSurfaceVariant,
+                color: selected ? tones.text : tones.muted,
               ),
             ),
           ),
@@ -323,13 +331,8 @@ class _GroupDivider extends StatelessWidget {
   const _GroupDivider();
 
   @override
-  Widget build(BuildContext context) => VerticalDivider(
-    width: 13,
-    thickness: 1,
-    indent: 6,
-    endIndent: 6,
-    color: Theme.of(context).colorScheme.outlineVariant,
-  );
+  Widget build(BuildContext context) =>
+      const VerticalDivider(width: 13, indent: 6, endIndent: 6);
 }
 
 /// A section: its buttons — tall ones side by side, small ones stacked in
@@ -349,7 +352,7 @@ class _GroupView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     return ArrangementDropTarget<RibbonGroup, RibbonItem>(
       drag: drag,
       group: group,
@@ -358,10 +361,7 @@ class _GroupView extends StatelessWidget {
       onDrop: onDrop,
       builder: (context, highlighted) => Container(
         padding: const EdgeInsets.fromLTRB(3, 4, 3, 2),
-        decoration: BoxDecoration(
-          color: highlighted ? scheme.primary.withValues(alpha: 0.05) : null,
-          borderRadius: BorderRadius.circular(6),
-        ),
+        color: highlighted ? tones.hover : null,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -376,10 +376,7 @@ class _GroupView extends StatelessWidget {
               child: Center(
                 child: Text(
                   group.label,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    color: scheme.onSurfaceVariant,
-                  ),
+                  style: TextStyle(fontSize: 10.5, color: tones.muted),
                 ),
               ),
             ),
@@ -436,31 +433,8 @@ class _GroupView extends StatelessWidget {
       index: index,
       count: items.length,
       axis: Axis.horizontal,
-      icon: ribbonGlyphOf(item),
       label: item.label,
       child: RibbonItemView(item: item),
     );
   }
-}
-
-class _SavingIndicator extends StatelessWidget {
-  const _SavingIndicator({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(right: 8),
-    child: Row(
-      children: <Widget>[
-        SizedBox(
-          width: 11,
-          height: 11,
-          child: CircularProgressIndicator(strokeWidth: 1.6, color: color),
-        ),
-        const SizedBox(width: 6),
-        Text('Saving', style: TextStyle(fontSize: 11, color: color)),
-      ],
-    ),
-  );
 }

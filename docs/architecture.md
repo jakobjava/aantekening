@@ -35,7 +35,11 @@ packages. Dependencies point in one direction only.
 * **`aantekening_spell`** — pure Dart: Hunspell's checking and suggesting,
   ported, and a checker that runs it in an isolate of its own (ADR 12). It
   depends on nothing else here.
-* **`app/aantekening`** — the window, navigation, and the wiring between them.
+* **`app/aantekening`** — the window, navigation, and the wiring between them:
+  `look/` the visual language (two colours and an accent, the theme, the
+  drawn marks and the controls every part shares, ADR 18), `commands/` every
+  command with a shortcut, the palette that finds them and the keys that run
+  them, and `settings/` the settings window.
 
 The reason for the split is not tidiness. `_core` having no Flutter dependency
 is what lets the model be tested exhaustively and moved onto an isolate. The

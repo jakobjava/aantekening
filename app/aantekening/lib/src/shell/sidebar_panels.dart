@@ -2,9 +2,8 @@
 /// panels are made of.
 library;
 
-import 'package:flutter/material.dart';
-
 import '../arrangement/arrangement.dart';
+import '../commands/app_command.dart';
 
 /// A column of a panel, as wide as it was last dragged to be.
 enum SidebarColumn {
@@ -22,20 +21,25 @@ enum SidebarColumn {
 
 /// A button on the sidebar, and the panel it opens beside it.
 enum SidebarTab {
-  notebooks('Notebooks', Icons.menu_book_outlined, <SidebarColumn>[
+  notebooks('Notebooks', AppCommand.notebooks, <SidebarColumn>[
     SidebarColumn.notebooks,
     SidebarColumn.pages,
   ]),
-  search('Search', Icons.search_rounded, <SidebarColumn>[SidebarColumn.search]),
-  graph('Graph', Icons.hub_outlined, <SidebarColumn>[SidebarColumn.graph]),
+  search('Search', AppCommand.search, <SidebarColumn>[SidebarColumn.search]),
+  graph('Graph', AppCommand.graph, <SidebarColumn>[SidebarColumn.graph]),
 
   /// Not a panel: turns the tab to the AI of what it shows, and back.
-  ai('AI', Icons.auto_awesome_outlined, <SidebarColumn>[]);
+  ai('AI', AppCommand.ai, <SidebarColumn>[]),
 
-  const SidebarTab(this.label, this.icon, this.columns);
+  /// Not a panel: opens the settings.
+  settings('Settings', AppCommand.settings, <SidebarColumn>[]);
+
+  const SidebarTab(this.label, this.command, this.columns);
 
   final String label;
-  final IconData icon;
+
+  /// The command the button carries out, whose shortcut its tooltip gives.
+  final AppCommand command;
 
   /// The panel's columns, left to right; none for a button that opens no
   /// panel.
@@ -53,7 +57,7 @@ enum SidebarGroup implements ArrangementGroup<SidebarTab> {
     SidebarTab.graph,
     SidebarTab.ai,
   ]),
-  bottom(<SidebarTab>[]);
+  bottom(<SidebarTab>[SidebarTab.settings]);
 
   const SidebarGroup(this.defaults);
 

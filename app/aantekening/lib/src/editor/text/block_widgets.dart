@@ -10,18 +10,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../../look/marks.dart';
+import '../../look/tones.dart';
 import '../media_views.dart';
 import 'list_numbering.dart';
 import 'text_styles.dart';
 
 /// The bullet, number or checkbox before a list item, or null for a block
-/// that has none. Drawn in [style], the block's text style.
-Widget? blockMarker(
-  TextBlock block,
-  TextStyle style,
-  ColorScheme scheme,
-  int ordinal,
-) {
+/// that has none. Drawn in [style], the block's text style, a ticked box
+/// in [mark] — the interface's mark on paper.
+Widget? blockMarker(TextBlock block, TextStyle style, Color mark, int ordinal) {
   final fontSize = style.fontSize ?? RichTextStyles.bodySize;
   final lineHeight = fontSize * (style.height ?? 1.4);
   switch (block.kind) {
@@ -29,14 +27,14 @@ Widget? blockMarker(
       return _Bullet(
         level: block.indent,
         style: block.bullet,
-        color: scheme.onSurfaceVariant,
+        color: RichTextStyles.inkMuted,
         fontSize: fontSize,
         lineHeight: lineHeight,
       );
     case TextBlockKind.numbered:
       return Text(
         '${ListNumbering.label(ordinal, block.indent)}.',
-        style: style.copyWith(color: scheme.onSurfaceVariant),
+        style: style.copyWith(color: RichTextStyles.inkMuted),
         textScaler: TextScaler.noScaling,
       );
     case TextBlockKind.todo:
@@ -45,12 +43,10 @@ Widget? blockMarker(
         padding: EdgeInsets.only(top: math.max(0, (lineHeight - size) / 2)),
         child: Align(
           alignment: Alignment.topLeft,
-          child: Icon(
-            block.checked
-                ? Icons.check_box_rounded
-                : Icons.check_box_outline_blank_rounded,
+          child: Mark(
+            block.checked ? MarkShape.boxTicked : MarkShape.box,
             size: size,
-            color: block.checked ? scheme.primary : scheme.onSurfaceVariant,
+            color: block.checked ? mark : RichTextStyles.inkMuted,
           ),
         ),
       );
@@ -189,10 +185,7 @@ class GrabBand extends StatelessWidget {
                   child: Container(
                     width: 28,
                     height: 3,
-                    decoration: BoxDecoration(
-                      color: RichTextStyles.boxGrip,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+                    color: RichTextStyles.boxGrip,
                   ),
                 ),
               )
@@ -321,7 +314,7 @@ class EmbedBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final mark = context.tones.paperEmphasis;
     // A picked object's frame and handles are drawn in screen pixels, as the
     // page draws them round an element, so zooming does not change them.
     final pixel = selected ? 1 / CanvasScope.zoomOf(context) : 1.0;
@@ -356,9 +349,9 @@ class EmbedBlock extends StatelessWidget {
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: scheme.primary.withValues(alpha: 0.18),
+                        color: mark.withValues(alpha: 0.18),
                         border: Border.all(
-                          color: scheme.primary,
+                          color: mark,
                           width: EmbedHandles.stroke * pixel,
                         ),
                       ),
@@ -368,7 +361,7 @@ class EmbedBlock extends StatelessWidget {
                     _CornerHandle(
                       corner: corner,
                       object: Size(width, height),
-                      color: scheme.primary,
+                      color: mark,
                       pixel: pixel,
                     ),
                 ],
@@ -430,7 +423,6 @@ class _CornerHandle extends StatelessWidget {
               color: const Color(0xFFFFFFFF),
               width: EmbedHandles.stroke * pixel,
             ),
-            borderRadius: BorderRadius.circular(1.5 * pixel),
           ),
         ),
       ),

@@ -20,7 +20,6 @@ class GraphNode {
     required this.label,
     required this.notebookId,
     this.sectionId,
-    this.color,
   });
 
   final String id;
@@ -31,9 +30,6 @@ class GraphNode {
   /// it is opened.
   final String notebookId;
   final String? sectionId;
-
-  /// Its own colour as 32-bit ARGB, if it has one.
-  final int? color;
 }
 
 /// A node for every notebook, section and page, each linked to what it is
@@ -55,7 +51,6 @@ class NoteGraph {
           kind: GraphNodeKind.notebook,
           label: notebook.title,
           notebookId: notebook.id,
-          color: notebook.color,
         ),
     ];
     final sectionNotebook = <String, String>{
@@ -69,7 +64,6 @@ class NoteGraph {
           label: section.title,
           notebookId: section.notebookId,
           sectionId: section.id,
-          color: section.color,
         ),
       for (final page in pages)
         if (sectionNotebook[page.sectionId] case final notebookId?)
@@ -105,6 +99,12 @@ class NoteGraph {
 
   /// The index of the node for [id], if there is one.
   int? indexOf(String id) => _index[id];
+
+  /// The node for [id], if there is one.
+  GraphNode? node(String id) => switch (_index[id]) {
+    final index? => nodes[index],
+    null => null,
+  };
 
   /// Whether [other] has the same nodes, linked the same way — though they
   /// may be named differently — so a layout of this one fits it too.

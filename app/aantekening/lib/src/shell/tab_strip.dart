@@ -2,64 +2,41 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
+import '../commands/app_command.dart';
+import '../commands/shortcuts.dart';
+import '../look/controls.dart';
+import '../look/marks.dart';
+import '../look/tones.dart';
 import '../providers.dart';
-import '../theme.dart';
 import 'library_menu.dart';
 import 'tabs.dart';
 
-/// The tabs, as a browser shows them: the tab showing drawn as part of the
-/// page beneath it, and a button after the last to open another. A tab is
-/// shown by a click, closed by its cross or a middle-click, and moved by
-/// dragging it along the row.
+/// The tabs, as a browser shows them: the tab showing marked by a line
+/// along its top and joined to the page beneath it, and a button after the
+/// last to open another. A tab is shown by a click, closed by its cross or
+/// a middle-click, and moved by dragging it along the row.
 class TabStrip extends ConsumerWidget {
   const TabStrip({super.key});
 
-  static const double height = 34;
+  static const double height = 32;
 
   /// The widest a tab grows; with more tabs than fit, they share the row.
   static const double maxTabWidth = 220;
 
-  /// The keys that open, close and step through tabs: Ctrl+T, Ctrl+W, and
-  /// Ctrl+Tab or Ctrl+Page Down on and back with Shift or Page Up — and
-  /// Ctrl+J, which turns the tab to the AI of what it shows and back.
-  static Map<ShortcutActivator, VoidCallback> shortcuts(
-    TabsController tabs,
-  ) => <ShortcutActivator, VoidCallback>{
-    const SingleActivator(LogicalKeyboardKey.keyT, control: true): tabs.open,
-    const SingleActivator(LogicalKeyboardKey.keyJ, control: true):
-        tabs.toggleAi,
-    const SingleActivator(LogicalKeyboardKey.keyW, control: true):
-        tabs.closeShowing,
-    const SingleActivator(LogicalKeyboardKey.tab, control: true): () =>
-        tabs.step(1),
-    const SingleActivator(
-      LogicalKeyboardKey.tab,
-      control: true,
-      shift: true,
-    ): () =>
-        tabs.step(-1),
-    const SingleActivator(LogicalKeyboardKey.pageDown, control: true): () =>
-        tabs.step(1),
-    const SingleActivator(LogicalKeyboardKey.pageUp, control: true): () =>
-        tabs.step(-1),
-  };
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(tabsProvider);
-    final scheme = Theme.of(context).colorScheme;
-    final tabs = ref.read(tabsProvider.notifier);
+    final bindings = ref.watch(shortcutsProvider);
+    final tones = context.tones;
 
     return Container(
       height: height,
-      padding: const EdgeInsets.only(left: 6, top: 4),
       decoration: BoxDecoration(
-        color: AppTheme.paneColor(scheme),
-        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+        color: tones.pane,
+        border: Border(bottom: BorderSide(color: tones.line)),
       ),
       child: Row(
         children: <Widget>[
@@ -82,11 +59,11 @@ class TabStrip extends ConsumerWidget {
               ],
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.add_rounded, size: 18),
-            tooltip: 'New tab (Ctrl+T)',
-            visualDensity: VisualDensity.compact,
-            onPressed: tabs.open,
+          const SizedBox(width: 4),
+          MarkButton(
+            MarkShape.add,
+            tooltip: bindings.tooltip(AppCommand.newTab),
+            onPressed: ref.read(tabsProvider.notifier).open,
           ),
         ],
       ),
@@ -117,17 +94,25 @@ class _TabState extends ConsumerState<_Tab> {
 
   void _showMenu(Offset position) {
     final count = ref.read(tabsProvider).tabs.length;
+    final bindings = ref.read(shortcutsProvider);
+    String? keys(AppCommand command) => bindings.of(command).firstOrNull?.label;
     showCommandMenu(context, position, <List<MenuCommand>>[
-      <MenuCommand>[MenuCommand('New Tab', Icons.add_rounded, _tabs.open)],
+      <MenuCommand>[
+        MenuCommand('New tab', _tabs.open, shortcut: keys(AppCommand.newTab)),
+        MenuCommand(
+          'Reopen closed tab',
+          _tabs.canReopen ? _tabs.reopen : null,
+          shortcut: keys(AppCommand.reopenTab),
+        ),
+      ],
       <MenuCommand>[
         MenuCommand(
-          'Close Tab',
-          Icons.close_rounded,
+          'Close tab',
           () => _tabs.close(widget.index),
+          shortcut: keys(AppCommand.closeTab),
         ),
         MenuCommand(
-          'Close Other Tabs',
-          null,
+          'Close other tabs',
           count > 1 ? () => _tabs.closeOthers(widget.index) : null,
         ),
       ],
@@ -136,8 +121,12 @@ class _TabState extends ConsumerState<_Tab> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final title = _TabTitle(tab: widget.tab, showing: widget.showing);
+    final tones = context.tones;
+    final showing = widget.showing;
+    final title = _TabTitle(tab: widget.tab, showing: showing);
+    final closeTooltip = ref
+        .watch(shortcutsProvider)
+        .tooltip(AppCommand.closeTab);
 
     final body = MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
@@ -148,37 +137,31 @@ class _TabState extends ConsumerState<_Tab> {
         onTertiaryTapUp: (_) => _tabs.close(widget.index),
         onSecondaryTapUp: (details) => _showMenu(details.globalPosition),
         child: Container(
-          padding: const EdgeInsets.only(left: 10, right: 4),
+          padding: const EdgeInsets.only(left: 12, right: 4),
           decoration: BoxDecoration(
-            color: widget.showing
-                ? scheme.surface
+            color: showing
+                ? tones.base
                 : _hovering
-                ? scheme.onSurface.withValues(alpha: 0.06)
+                ? tones.hover
                 : null,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-            border: widget.showing
-                ? Border(
-                    top: BorderSide(color: scheme.outlineVariant),
-                    left: BorderSide(color: scheme.outlineVariant),
-                    right: BorderSide(color: scheme.outlineVariant),
-                  )
-                : null,
+            border: Border(
+              top: BorderSide(
+                color: showing ? tones.emphasis : Colors.transparent,
+                width: 2,
+              ),
+              right: BorderSide(color: tones.line),
+            ),
           ),
           child: Row(
             children: <Widget>[
               Expanded(child: title),
               Opacity(
-                opacity: widget.showing || _hovering ? 1 : 0,
-                child: IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 14),
-                  tooltip: 'Close tab (Ctrl+W)',
-                  iconSize: 14,
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 22,
-                    height: 22,
-                  ),
-                  padding: EdgeInsets.zero,
+                opacity: showing || _hovering ? 1 : 0,
+                child: MarkButton(
+                  MarkShape.close,
+                  tooltip: closeTooltip,
+                  size: 20,
+                  markSize: 10,
                   onPressed: () => _tabs.close(widget.index),
                 ),
               ),
@@ -198,13 +181,15 @@ class _TabState extends ConsumerState<_Tab> {
             axis: Axis.horizontal,
             affinity: Axis.horizontal,
             feedback: Material(
-              elevation: 4,
-              borderRadius: BorderRadius.circular(8),
+              color: tones.base,
+              shape: RoundedRectangleBorder(
+                side: BorderSide(color: tones.emphasis),
+              ),
               child: SizedBox(
                 width: 160,
-                height: TabStrip.height - 4,
+                height: TabStrip.height - 2,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: title,
                 ),
               ),
@@ -218,7 +203,7 @@ class _TabState extends ConsumerState<_Tab> {
               left: 0,
               top: 4,
               bottom: 4,
-              child: Container(width: 2, color: scheme.primary),
+              child: Container(width: 2, color: tones.emphasis),
             ),
         ],
       ),
@@ -236,7 +221,6 @@ class _TabTitle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
     final pageId = tab.pageId;
     final sectionId = tab.sectionId;
     final notebookId = tab.notebookId;
@@ -261,16 +245,14 @@ class _TabTitle extends ConsumerWidget {
 
     return Row(
       children: <Widget>[
-        Icon(
-          tab.ai
-              ? Icons.auto_awesome_rounded
-              : pageId == null
-              ? Icons.tab_outlined
-              : Icons.description_outlined,
-          size: 14,
-          color: showing ? scheme.primary : scheme.onSurfaceVariant,
-        ),
-        const SizedBox(width: 6),
+        // What sets a tab on the AI apart from one on the page.
+        if (tab.ai) ...<Widget>[
+          SmallCaps(
+            'AI',
+            color: showing ? context.tones.emphasis : context.tones.muted,
+          ),
+          const SizedBox(width: 6),
+        ],
         Expanded(
           child: Text(
             title,
@@ -279,7 +261,8 @@ class _TabTitle extends ConsumerWidget {
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: showing ? FontWeight.w600 : FontWeight.w400,
-              color: showing ? scheme.onSurface : scheme.onSurfaceVariant,
+              fontStyle: pageId == null ? FontStyle.italic : FontStyle.normal,
+              color: showing ? context.tones.text : context.tones.muted,
             ),
           ),
         ),

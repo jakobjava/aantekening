@@ -10,6 +10,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../look/tones.dart';
 import '../preferences.dart';
 import 'element_views.dart';
 import 'text/text_box_editor.dart';
@@ -98,7 +99,7 @@ class _PageMinimapState extends State<PageMinimap> {
       builder: (context, _) {
         _forgetRemoved();
         final placement = _MapPlacement.of(_controller, constraints.biggest);
-        final scheme = Theme.of(context).colorScheme;
+        final mark = context.tones.paperEmphasis;
         return Listener(
           behavior: HitTestBehavior.opaque,
           onPointerDown: (event) {
@@ -129,10 +130,7 @@ class _PageMinimapState extends State<PageMinimap> {
                   ),
                 ),
                 CustomPaint(
-                  painter: _ViewPainter(
-                    view: placement.viewOnMap,
-                    color: scheme.primary,
-                  ),
+                  painter: _ViewPainter(view: placement.viewOnMap, color: mark),
                 ),
               ],
             ),

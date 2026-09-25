@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon_items.dart'
-    show mathGalleryOf;
+    show RibbonButton, mathGalleryOf;
 import 'package:aantekening/src/editor/ribbon/ribbon_layout.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon_state.dart';
 import 'package:aantekening/src/editor/text/math_templates.dart';
@@ -33,13 +33,13 @@ RibbonLayout _layout(WidgetTester tester) =>
     ProviderScope.containerOf(tester.element(find.byType(Ribbon)))
         .read(ribbonLayoutProvider);
 
-/// The icon button showing [tooltip].
-IconButton _button(WidgetTester tester, String tooltip) =>
-    tester.widget<IconButton>(
+/// The button showing [tooltip].
+RibbonButton _button(WidgetTester tester, String tooltip) =>
+    tester.widget<RibbonButton>(
       find
           .ancestor(
             of: find.byTooltip(tooltip),
-            matching: find.byType(IconButton),
+            matching: find.byType(RibbonButton),
           )
           .first,
     );
@@ -124,11 +124,11 @@ void main() {
       expect(find.text(tab.label), findsOneWidget);
     }
     for (final section in <String>[
-      'Undo',
+      'History',
       'Font',
       'Paragraph',
       'Styles',
-      'Formula',
+      'Formulas',
     ]) {
       expect(find.text(section), findsOneWidget, reason: section);
     }
@@ -255,12 +255,12 @@ void main() {
     canvas.select('note');
     await tester.pumpAndSettle();
     expect(_button(tester, _bold).onPressed, isNotNull);
-    expect(_button(tester, _bold).isSelected, isFalse, reason: 'mixed');
+    expect(_button(tester, _bold).selected, isFalse, reason: 'mixed');
 
     await tester.tap(find.byTooltip(_bold), kind: PointerDeviceKind.mouse);
     await tester.pumpAndSettle();
     expect(box().blocks.single.runs.every((run) => run.marks.bold), isTrue);
-    expect(_button(tester, _bold).isSelected, isTrue);
+    expect(_button(tester, _bold).selected, isTrue);
 
     canvas.undo();
     await tester.pumpAndSettle();

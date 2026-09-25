@@ -9,7 +9,7 @@ import 'package:flutter/rendering.dart';
 
 import '../editor/text/block_widgets.dart';
 import '../editor/text/text_box_editor.dart';
-import '../theme.dart';
+import '../look/theme.dart';
 
 /// Text boxes drawn as a picture, and where the pictures and PDF pages in
 /// them came to lie, to be drawn in.

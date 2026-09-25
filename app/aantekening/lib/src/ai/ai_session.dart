@@ -751,6 +751,25 @@ final cardReviewsProvider =
       CardReviews.new,
     );
 
+/// How many cards not yet studied a session brings in, besides those due.
+const int newCardsPerSession = 20;
+
+/// How many of kept set [item]'s cards a session would study now — those
+/// due, and new ones up to [newCardsPerSession] — or 0 for a set that is
+/// not flashcards.
+int cardsToStudy(WidgetRef ref, AiItem? item) {
+  if (item == null) return 0;
+  final set = StudySet.fromJson(item.body);
+  if (set is! FlashcardSet) return 0;
+  final status = deckStatus(
+    set.cards,
+    ref.watch(cardReviewsProvider(item.id)).value ??
+        const <String, CardReview>{},
+    DateTime.now(),
+  );
+  return status.due + status.fresh.clamp(0, newCardsPerSession);
+}
+
 /// How far along [cards] are, by [reviews], at [now].
 ({int due, int fresh, int learnt}) deckStatus(
   List<StudyCard> cards,

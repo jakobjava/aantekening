@@ -12,7 +12,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 
+import '../look/tones.dart';
 import '../providers.dart';
+import 'text/text_styles.dart';
 
 /// An imported picture, read from the asset store.
 class AssetImageView extends ConsumerWidget {
@@ -83,16 +85,10 @@ class PdfPageView extends ConsumerWidget {
     final document = ref.watch(pdfDocumentProvider(assetId));
 
     return DecoratedBox(
+      // A printed page, edged on the paper it lies on.
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0x22000000)),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
-          ),
-        ],
+        color: Tones.paper,
+        border: Border.all(color: RichTextStyles.titleRule),
       ),
       child: document.when(
         loading: () => const SizedBox.expand(),
@@ -328,20 +324,20 @@ class MediaPlaceholder extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        border: Border.all(color: scheme.outlineVariant),
+  Widget build(BuildContext context) => Container(
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: RichTextStyles.codeFill,
+      border: Border.all(color: RichTextStyles.titleRule),
+    ),
+    padding: const EdgeInsets.all(8),
+    child: Text(
+      label,
+      textAlign: TextAlign.center,
+      style: RichTextStyles.paperType.copyWith(
+        fontSize: 11,
+        color: RichTextStyles.inkMuted,
       ),
-      padding: const EdgeInsets.all(8),
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-      ),
-    );
-  }
+    ),
+  );
 }

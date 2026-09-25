@@ -158,8 +158,9 @@ class BlockView {
   /// The run with index [index].
   RunLayout runAt(int index) => runs[index];
 
-  /// Builds the span the layout draws.
-  InlineSpan span({required TextStyle base}) {
+  /// Builds the span the layout draws, with links and the formula being
+  /// edited drawn in [mark].
+  InlineSpan span({required TextStyle base, required Color mark}) {
     final blockStyle = RichTextStyles.blockStyle(block.kind, base);
     final display = isDisplayFormula;
 
@@ -167,7 +168,7 @@ class BlockView {
       style: blockStyle,
       children: <InlineSpan>[
         for (var i = 0; i < block.runs.length; i++)
-          _runSpan(block.runs[i], i, blockStyle, display),
+          _runSpan(block.runs[i], i, blockStyle, display, mark),
       ],
     );
   }
@@ -177,15 +178,20 @@ class BlockView {
     int index,
     TextStyle blockStyle,
     bool display,
+    Color mark,
   ) {
     if (!run.isMath) {
       return TextSpan(
         text: run.text,
-        style: RichTextStyles.runStyle(run.marks),
+        style: RichTextStyles.runStyle(run.marks, link: mark),
       );
     }
     if (index == openRun) {
-      final source = RichTextStyles.formulaSource(blockStyle, run.marks);
+      final source = RichTextStyles.formulaSource(
+        blockStyle,
+        run.marks,
+        accent: mark,
+      );
       const padding = RichTextStyles.formulaPadding;
       return TextSpan(
         children: <InlineSpan>[
@@ -200,7 +206,7 @@ class BlockView {
         ],
       );
     }
-    final marks = RichTextStyles.runStyle(run.marks);
+    final marks = RichTextStyles.runStyle(run.marks, link: mark);
     return WidgetSpan(
       alignment: PlaceholderAlignment.baseline,
       baseline: TextBaseline.alphabetic,

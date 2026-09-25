@@ -3,26 +3,25 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'look/controls.dart';
+import 'look/marks.dart';
+import 'look/tones.dart';
+
 /// One command in a menu; greyed out without [onSelected].
 @immutable
 class MenuCommand {
   const MenuCommand(
     this.label,
-    this.icon,
     this.onSelected, {
-    this.destructive = false,
+    this.shortcut,
     this.checked = false,
   });
 
   final String label;
-
-  /// Drawn before the label; without one, the label lines up with those of
-  /// the commands that have one.
-  final IconData? icon;
   final VoidCallback? onSelected;
 
-  /// Whether it cannot be taken back, and is drawn in the error colour.
-  final bool destructive;
+  /// Its keys, shown at the end of its line: "Ctrl+C".
+  final String? shortcut;
 
   /// Whether what it turns on and off is on, drawn with a tick.
   final bool checked;
@@ -57,37 +56,36 @@ Future<void> showCommandMenu(
   List<List<MenuCommand>> groups, {
   Widget? header,
 }) async {
-  final scheme = Theme.of(context).colorScheme;
+  final tones = context.tones;
   header ??= CommandMenuHeader.of(context);
   final entries = <PopupMenuEntry<VoidCallback>>[
     if (header != null) _HeaderEntry(header),
   ];
   for (final group in groups.where((group) => group.isNotEmpty)) {
-    if (entries.isNotEmpty) entries.add(const PopupMenuDivider(height: 8));
+    if (entries.isNotEmpty) entries.add(const PopupMenuDivider(height: 9));
     for (final command in group) {
-      final color = command.destructive ? scheme.error : null;
+      final enabled = command.onSelected != null;
       entries.add(
         PopupMenuItem<VoidCallback>(
           value: command.onSelected,
-          enabled: command.onSelected != null,
-          height: 36,
+          enabled: enabled,
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: <Widget>[
-              if (command.icon case final icon?)
-                Icon(icon, size: 18, color: color)
-              else
-                const SizedBox(width: 18),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text(
-                  command.label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: color),
-                ),
+              // A tick where it is on; the labels line up either way.
+              SizedBox(
+                width: 18,
+                child: command.checked
+                    ? Mark(MarkShape.check, color: tones.emphasis)
+                    : null,
               ),
-              if (command.checked) ...<Widget>[
-                const SizedBox(width: 12),
-                Icon(Icons.check_rounded, size: 18, color: scheme.primary),
+              Expanded(
+                child: Text(command.label, overflow: TextOverflow.ellipsis),
+              ),
+              if (command.shortcut case final shortcut?) ...<Widget>[
+                const SizedBox(width: 28),
+                KeyHint(shortcut, color: enabled ? tones.muted : tones.faint),
               ],
             ],
           ),
@@ -95,19 +93,18 @@ Future<void> showCommandMenu(
       );
     }
   }
+  // The menu is placed in the overlay, which the interface's size may have
+  // scaled, so the point on screen is taken into it first.
+  final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
+  final at = overlay.globalToLocal(position);
   final picked = await showMenu<VoidCallback>(
     context: context,
-    position: RelativeRect.fromLTRB(
-      position.dx,
-      position.dy,
-      position.dx,
-      position.dy,
-    ),
+    position: RelativeRect.fromRect(at & Size.zero, Offset.zero & overlay.size),
     items: entries,
-    // Wide enough for a header of formatting controls.
     constraints: header == null
-        ? null
-        : const BoxConstraints(minWidth: 112, maxWidth: 440),
+        ? const BoxConstraints(minWidth: 180, maxWidth: 360)
+        // Wide enough for a header of formatting controls.
+        : const BoxConstraints(minWidth: 180, maxWidth: 440),
   );
   picked?.call();
 }

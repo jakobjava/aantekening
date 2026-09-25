@@ -11,13 +11,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../look/controls.dart';
+import '../look/marks.dart';
+import '../look/tones.dart';
 import 'ai_session.dart';
 import 'math_text.dart';
 import 'sources_view.dart';
-import 'study_style.dart';
-
-/// How many cards not yet studied a session brings in, besides those due.
-const int newCardsPerSession = 20;
 
 /// The flashcards of kept set [itemId]: studied, or all of them looked at.
 class FlashcardsView extends ConsumerStatefulWidget {
@@ -50,68 +49,51 @@ class _FlashcardsViewState extends ConsumerState<FlashcardsView> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final reviews =
         ref.watch(cardReviewsProvider(widget.itemId)).value ??
         const <String, CardReview>{};
     final status = deckStatus(widget.set.cards, reviews, DateTime.now());
-    final accent = StudyKind.flashcards.accent(scheme);
-
-    Widget count(String label, int n, Color color) => Padding(
-      padding: const EdgeInsets.only(left: 14),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            '$n $label',
-            style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
 
     return Column(
       children: <Widget>[
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
           child: Row(
             children: <Widget>[
-              SegmentedButton<_Mode>(
-                showSelectedIcon: false,
-                style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                segments: const <ButtonSegment<_Mode>>[
-                  ButtonSegment<_Mode>(
-                    value: _Mode.study,
-                    icon: Icon(Icons.school_outlined, size: 17),
-                    label: Text('Study'),
-                  ),
-                  ButtonSegment<_Mode>(
-                    value: _Mode.browse,
-                    icon: Icon(Icons.grid_view_rounded, size: 17),
-                    label: Text('All cards'),
-                  ),
-                ],
-                selected: <_Mode>{_mode},
-                onSelectionChanged: (mode) => setState(() {
-                  _mode = mode.single;
+              ChoiceRow<_Mode>(
+                choices: _Mode.values,
+                selected: _mode,
+                labelOf: (mode) => switch (mode) {
+                  _Mode.study => 'Study',
+                  _Mode.browse => 'All cards',
+                },
+                onSelected: (mode) => setState(() {
+                  _mode = mode;
                   _session++;
                 }),
               ),
+              const SizedBox(width: 14),
               Expanded(
-                child: Wrap(
-                  alignment: WrapAlignment.end,
-                  runSpacing: 4,
-                  children: <Widget>[
-                    count('due', status.due, accent),
-                    count('new', status.fresh, scheme.primary),
-                    count('learnt', status.learnt, const Color(0xFF2E9E5B)),
-                  ],
+                child: Text.rich(
+                  TextSpan(
+                    children: <InlineSpan>[
+                      TextSpan(
+                        text: '${status.due} due',
+                        style: TextStyle(
+                          fontWeight: status.due > 0 ? FontWeight.w700 : null,
+                          color: status.due > 0 ? tones.emphasis : null,
+                        ),
+                      ),
+                      TextSpan(
+                        text:
+                            '  ·  ${status.fresh} new  ·  '
+                            '${status.learnt} learnt',
+                      ),
+                    ],
+                  ),
+                  textAlign: TextAlign.end,
+                  style: TextStyle(fontSize: 12.5, color: tones.muted),
                 ),
               ),
             ],
@@ -283,7 +265,7 @@ class _SessionState extends ConsumerState<_Session> {
   @override
   Widget build(BuildContext context) {
     final queue = _queue;
-    if (queue == null) return const Center(child: CircularProgressIndicator());
+    if (queue == null) return const Loading();
     if (_total == 0) {
       return _Finished(
         itemId: widget.itemId,
@@ -305,7 +287,7 @@ class _SessionState extends ConsumerState<_Session> {
       );
     }
     final card = queue.first;
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final review = ref
         .read(cardReviewsProvider(widget.itemId).notifier)
         .of(card.id, DateTime.now());
@@ -334,26 +316,18 @@ class _SessionState extends ConsumerState<_Session> {
                                 : '${_done.length} of $_total',
                             style: TextStyle(
                               fontSize: 12.5,
-                              color: scheme.onSurfaceVariant,
+                              color: tones.muted,
                             ),
                           ),
                           const Spacer(),
                           if (review.isNew)
-                            _Tag('New', scheme.primary)
+                            const SmallCaps('New')
                           else if (review.learning)
-                            _Tag('Learning', scheme.tertiary),
+                            const SmallCaps('Learning'),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: LinearProgressIndicator(
-                          value: _done.length / _total,
-                          minHeight: 5,
-                          color: StudyKind.flashcards.accent(scheme),
-                          backgroundColor: scheme.surfaceContainerHighest,
-                        ),
-                      ),
+                      LinearProgressIndicator(value: _done.length / _total),
                       const SizedBox(height: 18),
                       GestureDetector(
                         onTap: () {
@@ -390,13 +364,16 @@ class _SessionState extends ConsumerState<_Session> {
                                 review: review,
                                 onGrade: (grade) => unawaited(_grade(grade)),
                               )
-                            : FilledButton.tonal(
+                            : Tooltip(
                                 key: const ValueKey<bool>(false),
-                                style: FilledButton.styleFrom(
-                                  minimumSize: const Size(220, 46),
+                                message: 'Space or Enter',
+                                child: OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size(220, 40),
+                                  ),
+                                  onPressed: _turn,
+                                  child: const Text('Show answer'),
                                 ),
-                                onPressed: _turn,
-                                child: const Text('Show answer'),
                               ),
                       ),
                     ],
@@ -411,7 +388,7 @@ class _SessionState extends ConsumerState<_Session> {
   }
 }
 
-/// A card that turns over, in depth, between its [front] and [back].
+/// A card showing its [front], or its [back] once [turned] over.
 class FlipCard extends StatelessWidget {
   const FlipCard({
     required this.turned,
@@ -425,27 +402,12 @@ class FlipCard extends StatelessWidget {
   final Widget back;
 
   @override
-  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
-    tween: Tween<double>(end: turned ? 1 : 0),
-    duration: const Duration(milliseconds: 380),
-    curve: Curves.easeInOutCubic,
-    builder: (context, value, _) {
-      final angle = value * math.pi;
-      final showsBack = value >= 0.5;
-      return Transform(
-        alignment: Alignment.center,
-        transform: Matrix4.identity()
-          ..setEntry(3, 2, 0.0011)
-          ..rotateY(angle),
-        child: showsBack
-            ? Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.rotationY(math.pi),
-                child: back,
-              )
-            : front,
-      );
-    },
+  Widget build(BuildContext context) => AnimatedSwitcher(
+    duration: const Duration(milliseconds: 120),
+    child: KeyedSubtree(
+      key: ValueKey<bool>(turned),
+      child: turned ? back : front,
+    ),
   );
 }
 
@@ -471,124 +433,82 @@ class CardFace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final accent = StudyKind.flashcards.accent(scheme);
+    final tones = context.tones;
     return Container(
       width: double.infinity,
       constraints: const BoxConstraints(minHeight: 300),
       decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 24,
-            offset: Offset(0, 8),
-          ),
-        ],
+        color: tones.base,
+        border: Border.all(color: tones.strongLine),
       ),
-      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.fromLTRB(28, 18, 28, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Container(height: 5, color: accent),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(28, 18, 28, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                SmallCaps(label, color: accent),
-                if (above != null) ...<Widget>[
-                  const SizedBox(height: 8),
-                  MathText(
-                    above!,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Divider(height: 1, color: scheme.outlineVariant),
-                ],
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: above == null ? 190 : 130,
-                  ),
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      child: MathText(
-                        text,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 21,
-                          height: 1.45,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onSurface,
-                        ),
-                      ),
-                    ),
+          SmallCaps(label),
+          if (above != null) ...<Widget>[
+            const SizedBox(height: 8),
+            MathText(
+              above!,
+              style: TextStyle(fontSize: 14, color: tones.muted),
+            ),
+            const SizedBox(height: 12),
+            const Divider(),
+          ],
+          ConstrainedBox(
+            constraints: BoxConstraints(minHeight: above == null ? 190 : 130),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                child: MathText(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 21,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                    color: tones.text,
                   ),
                 ),
-                ?footer,
-                if (hint != null)
-                  Text(
-                    hint!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: scheme.outline),
-                  ),
-              ],
+              ),
             ),
           ),
+          ?footer,
+          if (hint != null)
+            Text(
+              hint!,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: tones.faint),
+            ),
         ],
       ),
     );
   }
 }
 
-/// How well it was remembered: four buttons, each saying when the card
-/// comes back, with its key.
+/// How well it was remembered: four buttons, each with its key and when
+/// the card comes back.
 class _GradeButtons extends StatelessWidget {
   const _GradeButtons({required this.review, required this.onGrade, super.key});
 
   final CardReview review;
   final ValueChanged<Grade> onGrade;
 
-  static Color colorOf(Grade grade) => switch (grade) {
-    Grade.again => const Color(0xFFD64545),
-    Grade.hard => const Color(0xFFD9822B),
-    Grade.good => const Color(0xFF2E9E5B),
-    Grade.easy => const Color(0xFF3B7DD8),
-  };
-
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) => Row(
     children: <Widget>[
-      Row(
-        children: <Widget>[
-          for (final grade in Grade.values)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: _GradeButton(
-                  grade: grade,
-                  gap: describeGap(review.next(grade)),
-                  color: colorOf(grade),
-                  onPressed: () => onGrade(grade),
-                ),
-              ),
+      for (final (index, grade) in Grade.values.indexed)
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: _GradeButton(
+              grade: grade,
+              shortcut: '${index + 1}',
+              gap: describeGap(review.next(grade)),
+              onPressed: () => onGrade(grade),
             ),
-        ],
-      ),
-      const SizedBox(height: 10),
-      Text(
-        'How well did you know it? Keys 1 to 4.',
-        style: TextStyle(
-          fontSize: 12,
-          color: Theme.of(context).colorScheme.outline,
+          ),
         ),
-      ),
     ],
   );
 }
@@ -596,48 +516,48 @@ class _GradeButtons extends StatelessWidget {
 class _GradeButton extends StatelessWidget {
   const _GradeButton({
     required this.grade,
+    required this.shortcut,
     required this.gap,
-    required this.color,
     required this.onPressed,
   });
 
   final Grade grade;
+
+  /// The key that grades it.
+  final String shortcut;
   final String gap;
-  final Color color;
   final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: color.withValues(alpha: 0.1),
-    borderRadius: BorderRadius.circular(12),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onPressed,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.35)),
+  Widget build(BuildContext context) {
+    final tones = context.tones;
+    return Tooltip(
+      message: 'Key $shortcut',
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 10),
         ),
         child: Column(
           children: <Widget>[
-            Text(
-              grade.label,
-              style: TextStyle(fontWeight: FontWeight.w700, color: color),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                KeyHint(shortcut),
+                const SizedBox(width: 6),
+                Text(
+                  grade.label,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
             const SizedBox(height: 2),
-            Text(
-              gap,
-              style: TextStyle(
-                fontSize: 11.5,
-                color: color.withValues(alpha: 0.85),
-              ),
-            ),
+            Text(gap, style: TextStyle(fontSize: 11.5, color: tones.muted)),
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// The end of a session, or nothing due: how it went, when the next cards
@@ -664,7 +584,7 @@ class _Finished extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final tones = context.tones;
     final reviews =
         ref.watch(cardReviewsProvider(itemId)).value ??
         const <String, CardReview>{};
@@ -682,19 +602,11 @@ class _Finished extends ConsumerWidget {
           constraints: const BoxConstraints(maxWidth: 460),
           child: Column(
             children: <Widget>[
-              Icon(
-                studied ? Icons.celebration_outlined : Icons.task_alt_rounded,
-                size: 44,
-                color: StudyKind.flashcards.accent(scheme),
-              ),
-              const SizedBox(height: 12),
               Text(
                 studied
                     ? (practised ? 'Practice done' : 'Session done')
                     : 'All caught up',
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: theme.textTheme.headlineSmall,
               ),
               const SizedBox(height: 8),
               Text(
@@ -703,7 +615,7 @@ class _Finished extends ConsumerWidget {
                     : 'The next card is due in '
                           '${describeGap(next.first.difference(now))}.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.onSurfaceVariant),
+                style: TextStyle(color: tones.muted),
               ),
               if (studied) ...<Widget>[
                 const SizedBox(height: 18),
@@ -717,17 +629,16 @@ class _Finished extends ConsumerWidget {
                           children: <Widget>[
                             Text(
                               '${grades[grade] ?? 0}',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                                color: _GradeButtons.colorOf(grade),
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                             Text(
                               grade.label,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: scheme.onSurfaceVariant,
+                                color: tones.muted,
                               ),
                             ),
                           ],
@@ -743,20 +654,17 @@ class _Finished extends ConsumerWidget {
                 alignment: WrapAlignment.center,
                 children: <Widget>[
                   if (onAgain != null && !practised)
-                    FilledButton.icon(
-                      icon: const Icon(Icons.replay_rounded),
-                      label: const Text('Study what is due'),
+                    FilledButton(
                       onPressed: onAgain,
+                      child: const Text('Study what is due'),
                     ),
-                  FilledButton.tonalIcon(
-                    icon: const Icon(Icons.shuffle_rounded),
-                    label: const Text('Practise all cards'),
+                  OutlinedButton(
                     onPressed: onPractice,
+                    child: const Text('Practise all cards'),
                   ),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.grid_view_rounded),
-                    label: const Text('See all cards'),
+                  OutlinedButton(
                     onPressed: onBrowse,
+                    child: const Text('See all cards'),
                   ),
                 ],
               ),
@@ -852,26 +760,21 @@ class _SmallCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final accent = StudyKind.flashcards.accent(scheme);
+    final tones = context.tones;
     final now = DateTime.now();
     final review = this.review;
-    final (tag, color) = switch (review) {
-      null => ('New', scheme.primary),
-      _ when review.isDue(now) => ('Due', accent),
-      _ when review.learning => ('Learning', scheme.tertiary),
-      _ => (
-        'In ${describeGap(review.due.difference(now))}',
-        const Color(0xFF2E9E5B),
-      ),
+    final (tag, due) = switch (review) {
+      null => ('New', false),
+      _ when review.isDue(now) => ('Due', true),
+      _ when review.learning => ('Learning', false),
+      _ => ('In ${describeGap(review.due.difference(now))}', false),
     };
     return Container(
       decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: scheme.outlineVariant),
+        color: tones.base,
+        border: Border.all(color: tones.line),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      padding: const EdgeInsets.fromLTRB(16, 10, 6, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -882,31 +785,28 @@ class _SmallCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: accent,
+                  color: tones.muted,
                 ),
               ),
-              const SizedBox(width: 8),
-              _Tag(tag, color),
+              const SizedBox(width: 10),
+              SmallCaps(tag, color: due ? tones.emphasis : null),
               const Spacer(),
               if (onEdit != null || onDelete != null)
                 MenuAnchor(
                   menuChildren: <Widget>[
                     if (onEdit != null)
                       MenuItemButton(
-                        leadingIcon: const Icon(Icons.edit_outlined),
                         onPressed: onEdit,
                         child: const Text('Correct'),
                       ),
                     if (onDelete != null)
                       MenuItemButton(
-                        leadingIcon: const Icon(Icons.delete_outline_rounded),
                         onPressed: onDelete,
                         child: const Text('Take out'),
                       ),
                   ],
-                  builder: (context, controller, _) => IconButton(
-                    icon: const Icon(Icons.more_horiz_rounded, size: 18),
-                    visualDensity: VisualDensity.compact,
+                  builder: (context, controller, _) => MarkButton(
+                    MarkShape.more,
                     tooltip: 'More',
                     onPressed: () => controller.isOpen
                         ? controller.close()
@@ -917,7 +817,7 @@ class _SmallCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.only(right: 10),
             child: MathText(
               card.front,
               style: const TextStyle(
@@ -929,20 +829,16 @@ class _SmallCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.only(right: 10),
             child: MathText(
               card.back,
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.45,
-                color: scheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 14, height: 1.45, color: tones.muted),
             ),
           ),
           if (card.sources.isNotEmpty) ...<Widget>[
             const SizedBox(height: 10),
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.only(right: 10),
               child: SourceLine(sources: card.sources, onOpen: onOpen),
             ),
           ],
@@ -950,26 +846,6 @@ class _SmallCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Tag extends StatelessWidget {
-  const _Tag(this.label, this.color);
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(6),
-    ),
-    child: Text(
-      label,
-      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color),
-    ),
-  );
 }
 
 /// Asks for [card] corrected: its question and its answer.

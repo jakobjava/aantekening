@@ -555,18 +555,15 @@ class RenderBlockParagraph extends RenderProxyBox {
     final canvas = context.canvas;
     final formula = _decoration.formula;
     final boxes = formula == null
-        ? const <RRect>[]
-        : <RRect>[
+        ? const <Rect>[]
+        : <Rect>[
             for (final rect in formulaRects(formula.start, formula.end))
-              RRect.fromRectAndRadius(
-                rect.shift(offset),
-                const Radius.circular(3),
-              ),
+              rect.shift(offset),
           ];
     if (formula != null) {
       final fill = Paint()..color = _blockPaint.formulaColor;
       for (final box in boxes) {
-        canvas.drawRRect(box, fill);
+        canvas.drawRect(box, fill);
       }
       for (final mark in _decoration.formulaMarks) {
         final paint = Paint()..color = mark.color;
@@ -581,7 +578,7 @@ class RenderBlockParagraph extends RenderProxyBox {
           ..style = PaintingStyle.stroke
           ..strokeWidth = _caretWidth * 0.7;
         for (final box in boxes) {
-          canvas.drawRRect(box, stroke);
+          canvas.drawRect(box, stroke);
         }
       }
     }

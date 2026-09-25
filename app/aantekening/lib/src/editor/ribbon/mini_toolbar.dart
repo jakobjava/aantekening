@@ -37,14 +37,19 @@ class MiniToolbar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          // Drawn smaller, rather than cut off, in a menu too narrow.
           for (final row in _rows)
             SizedBox(
               height: RibbonMetrics.row,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  for (final item in row) RibbonItemView(item: item),
-                ],
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    for (final item in row) RibbonItemView(item: item),
+                  ],
+                ),
               ),
             ),
         ],

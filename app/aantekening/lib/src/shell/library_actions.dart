@@ -125,18 +125,71 @@ class LibraryActions {
         openNotebook(id);
       case Section(:final id, :final notebookId):
         openSection(notebookId, id);
-      case PageRef(:final id, :final sectionId):
-        final section = await _ref.read(sectionProvider(sectionId).future);
-        if (section == null) return;
-        openPage(
-          notebookId: section.notebookId,
-          sectionId: sectionId,
-          pageId: id,
-        );
+      case PageRef(:final id):
+        if (!await openPageId(id)) return;
       default:
         return;
     }
     _ref.read(tabsProvider.notifier).updateCurrent((tab) => tab.inAi(true));
+  }
+
+  /// Opens the page [pageId], wherever it is, saying whether it could be:
+  /// not if it has since been deleted.
+  Future<bool> openPageId(String pageId) async {
+    final page = await _ref.read(pageProvider(pageId).future);
+    if (page == null || page.isDeleted) return false;
+    final section = await _ref.read(sectionProvider(page.sectionId).future);
+    if (section == null || section.isDeleted) return false;
+    openPage(
+      notebookId: section.notebookId,
+      sectionId: section.id,
+      pageId: page.id,
+    );
+    return true;
+  }
+
+  /// Opens the page [by] places below the one open in its section — above,
+  /// for a negative [by] — counting subpages where they are in the list,
+  /// and stopping at either end. With no page open, opens the first.
+  Future<void> stepPage(int by) async {
+    final sectionId = _ref.read(selectedSectionProvider);
+    final notebookId = _ref.read(selectedNotebookProvider);
+    if (sectionId == null || notebookId == null) return;
+    final tree = await _ref.read(pageTreeProvider(sectionId).future);
+    final pages = <String>[for (final entry in tree.walk()) entry.id];
+    final next = _stepIn(pages, _ref.read(selectedPageProvider), by);
+    if (next != null) {
+      openPage(notebookId: notebookId, sectionId: sectionId, pageId: next);
+    }
+  }
+
+  /// Opens the section [by] places below the one open in its notebook —
+  /// above, for a negative [by] — and its first page, stopping at either
+  /// end.
+  Future<void> stepSection(int by) async {
+    final notebookId = _ref.read(selectedNotebookProvider);
+    if (notebookId == null) return;
+    final tree = await _ref.read(sectionTreeProvider(notebookId).future);
+    final sections = <String>[for (final entry in tree.walk()) entry.id];
+    final next = _stepIn(sections, _ref.read(selectedSectionProvider), by);
+    if (next == null) return;
+    final pages = await _ref.read(pageTreeProvider(next).future);
+    final first = pages.walk().firstOrNull?.id;
+    if (first == null) {
+      openSection(notebookId, next);
+    } else {
+      openPage(notebookId: notebookId, sectionId: next, pageId: first);
+    }
+  }
+
+  /// The id [by] places on from [current] in [ids], the first if there is
+  /// no [current], or null past either end.
+  static String? _stepIn(List<String> ids, String? current, int by) {
+    if (ids.isEmpty) return null;
+    final at = current == null ? -1 : ids.indexOf(current);
+    if (at < 0) return ids.first;
+    final to = at + by;
+    return to < 0 || to >= ids.length ? null : ids[to];
   }
 
   /// Opens [page] in a tab of its own, after the tab showing, and shows it.
@@ -154,6 +207,12 @@ class LibraryActions {
       sectionId: page.sectionId,
       pageId: page.id,
     );
+  }
+
+  /// Opens the page [pageId] in a tab of its own, if it is still there.
+  Future<void> openIdInNewTab(String pageId) async {
+    final page = await _ref.read(pageProvider(pageId).future);
+    if (page != null && !page.isDeleted) await openInNewTab(page);
   }
 
   // --------------------------------------------------------------- creating

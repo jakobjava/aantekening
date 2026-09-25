@@ -8,5 +8,6 @@ import 'src/input_trace.dart';
 void main() {
   AantekeningBinding.ensureInitialized();
   installInputTrace();
+  registerFontLicence();
   runApp(const ProviderScope(child: AantekeningApp()));
 }

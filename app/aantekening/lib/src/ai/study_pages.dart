@@ -11,6 +11,8 @@ import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../look/controls.dart';
+import '../look/tones.dart';
 import 'ai_session.dart';
 import 'ai_state.dart';
 import 'answer_progress.dart';
@@ -79,9 +81,8 @@ class StudySetPage extends ConsumerWidget {
                 '${item.model.isEmpty ? '' : ' by ${item.model}'}',
           ].join('  ·  '),
           actions: <Widget>[
-            TextButton.icon(
-              icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Make again'),
+            SmallButton(
+              'Make again',
               onPressed: () async {
                 if (kind == StudyKind.flashcards &&
                     !await _confirm(
@@ -95,9 +96,8 @@ class StudySetPage extends ConsumerWidget {
                 unawaited(session.make(kind));
               },
             ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline_rounded),
-              tooltip: 'Delete',
+            SmallButton(
+              'Delete',
               onPressed: () async {
                 if (await _confirm(
                   context,
@@ -174,11 +174,9 @@ class StudyKindPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final tones = context.tones;
     final info = ref.watch(aiScopeInfoProvider(scope)).value;
     final model = ref.watch(aiModelProvider).value;
-    final accent = kind.accent(scheme);
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -186,19 +184,15 @@ class StudyKindPage extends ConsumerWidget {
           constraints: const BoxConstraints(maxWidth: 460),
           child: Column(
             children: <Widget>[
-              StudyBadge(kind, size: 64),
-              const SizedBox(height: 16),
               Text(
                 kind.label,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 8),
               Text(
                 kind.purpose,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.onSurfaceVariant, height: 1.45),
+                style: TextStyle(color: tones.muted, height: 1.45),
               ),
               const SizedBox(height: 6),
               Text(
@@ -206,21 +200,17 @@ class StudyKindPage extends ConsumerWidget {
                 '${model == null ? '' : ' by ${model.config.model}'}. You can '
                 'look at anything else while it is made.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12.5, color: scheme.outline),
+                style: TextStyle(fontSize: 12.5, color: tones.faint),
               ),
               const SizedBox(height: 20),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  minimumSize: const Size(0, 44),
-                ),
-                icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-                label: Text('Make the ${kind.label.toLowerCase()}'),
+              FilledButton(
+                style: FilledButton.styleFrom(minimumSize: const Size(0, 38)),
                 onPressed: model == null
                     ? null
                     : () => unawaited(
                         ref.read(aiSessionProvider(scope).notifier).make(kind),
                       ),
+                child: Text('Make the ${kind.label.toLowerCase()}'),
               ),
             ],
           ),
@@ -261,12 +251,11 @@ class StudyDraftPage extends ConsumerWidget {
             '— look at anything else meanwhile',
           ].join('  '),
           actions: <Widget>[
-            TextButton.icon(
-              icon: const Icon(Icons.stop_rounded, size: 18),
-              label: const Text('Stop'),
+            OutlinedButton(
               onPressed: () => unawaited(
                 ref.read(aiSessionProvider(scope).notifier).stopMaking(kind),
               ),
+              child: const Text('Stop'),
             ),
           ],
         ),
@@ -333,7 +322,7 @@ class StudyOverview extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final tones = context.tones;
     final state = ref.watch(aiSessionProvider(scope));
     final session = ref.read(aiSessionProvider(scope).notifier);
     final info = ref.watch(aiScopeInfoProvider(scope)).value;
@@ -358,15 +347,13 @@ class StudyOverview extends ConsumerWidget {
                   const SizedBox(height: 4),
                   Text(
                     info?.title ?? '',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: theme.textTheme.headlineMedium,
                   ),
                   const SizedBox(height: 6),
                   Text(
                     'Made from your notes, kept apart from them, and linked '
                     'back to the very sentences they come from.',
-                    style: TextStyle(color: scheme.onSurfaceVariant),
+                    style: TextStyle(color: tones.muted),
                   ),
                   const SizedBox(height: 22),
                   Wrap(
@@ -395,9 +382,7 @@ class StudyOverview extends ConsumerWidget {
                     runSpacing: 8,
                     children: <Widget>[
                       for (final action in AiAction.values)
-                        ActionChip(
-                          avatar: Icon(_iconOf(action), size: 17),
-                          label: Text(action.label),
+                        OutlinedButton(
                           onPressed: state.pending != null
                               ? null
                               : () => unawaited(
@@ -407,6 +392,7 @@ class StudyOverview extends ConsumerWidget {
                                     action: action,
                                   ),
                                 ),
+                          child: Text(action.label),
                         ),
                     ],
                   ),
@@ -416,7 +402,6 @@ class StudyOverview extends ConsumerWidget {
                     const SizedBox(height: 6),
                     for (final thread in state.threads.take(5))
                       _Line(
-                        icon: Icons.forum_outlined,
                         title: thread.title.isEmpty
                             ? 'Conversation'
                             : thread.title,
@@ -430,7 +415,6 @@ class StudyOverview extends ConsumerWidget {
                     const SizedBox(height: 6),
                     for (final item in state.savedAnswers)
                       _Line(
-                        icon: Icons.bookmark_outline_rounded,
                         title: item.title,
                         trailing: whenOf(item.createdAt),
                         onTap: () => session.openItem(item.id),
@@ -444,13 +428,6 @@ class StudyOverview extends ConsumerWidget {
       },
     );
   }
-
-  static IconData _iconOf(AiAction action) => switch (action) {
-    AiAction.explain => Icons.lightbulb_outline_rounded,
-    AiAction.test => Icons.assignment_outlined,
-    AiAction.tutor => Icons.record_voice_over_outlined,
-    AiAction.connect => Icons.hub_outlined,
-  };
 }
 
 /// One kind of set on the overview: what it is for, whether it is made and
@@ -477,23 +454,10 @@ class _StudyTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final accent = kind.accent(scheme);
+    final tones = context.tones;
     final item = this.item;
     final set = item == null ? null : StudySet.fromJson(item.body);
-    final due = switch ((item, set)) {
-      (final AiItem item, final FlashcardSet cards) => () {
-        final status = deckStatus(
-          cards.cards,
-          ref.watch(cardReviewsProvider(item.id)).value ??
-              const <String, CardReview>{},
-          DateTime.now(),
-        );
-        return status.due + status.fresh.clamp(0, newCardsPerSession);
-      }(),
-      _ => 0,
-    };
+    final due = cardsToStudy(ref, item);
     final open = switch (kind) {
       StudyKind.summary => 'Read',
       StudyKind.flashcards => due > 0 ? 'Study $due' : 'Open',
@@ -502,64 +466,41 @@ class _StudyTile extends ConsumerWidget {
     };
 
     return Material(
-      color: scheme.surface,
-      borderRadius: BorderRadius.circular(16),
+      color: tones.base,
+      shape: RoundedRectangleBorder(side: BorderSide(color: tones.line)),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: onShow,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(18, 16, 14, 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  StudyBadge(kind, size: 40),
-                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       kind.label,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
                   if (due > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: accent,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '$due to study',
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
+                    Text(
+                      '$due to study',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: tones.emphasis,
                       ),
                     ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Text(
                 kind.purpose,
                 maxLines: 2,
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.4,
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: TextStyle(fontSize: 13, height: 1.4, color: tones.muted),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               Row(
                 children: <Widget>[
                   Expanded(
@@ -571,34 +512,15 @@ class _StudyTile extends ConsumerWidget {
                           : '${sizeOf(set)}  ·  ${whenOf(item!.updatedAt)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: scheme.outline),
+                      style: TextStyle(fontSize: 12, color: tones.faint),
                     ),
                   ),
                   if (making)
-                    const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                    const Busy(width: 32)
                   else if (item != null)
-                    FilledButton.tonal(
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        backgroundColor: accent.withValues(alpha: 0.14),
-                        foregroundColor: accent,
-                      ),
-                      onPressed: onShow,
-                      child: Text(open),
-                    )
+                    OutlinedButton(onPressed: onShow, child: Text(open))
                   else
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        backgroundColor: accent,
-                      ),
-                      icon: const Icon(Icons.auto_awesome_rounded, size: 16),
-                      label: const Text('Make'),
-                      onPressed: onMake,
-                    ),
+                    FilledButton(onPressed: onMake, child: const Text('Make')),
                 ],
               ),
             ],
@@ -612,39 +534,20 @@ class _StudyTile extends ConsumerWidget {
 /// A line of the overview's lists: a conversation, a kept answer.
 class _Line extends StatelessWidget {
   const _Line({
-    required this.icon,
     required this.title,
     required this.trailing,
     required this.onTap,
   });
 
-  final IconData icon;
   final String title;
   final String trailing;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        child: Row(
-          children: <Widget>[
-            Icon(icon, size: 17, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-            Text(
-              trailing,
-              style: TextStyle(fontSize: 12, color: scheme.outline),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => RowTile(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+    title: Text(title),
+    trailing: KeyHint(trailing),
+    onTap: onTap,
+  );
 }

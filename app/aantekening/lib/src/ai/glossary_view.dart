@@ -5,9 +5,10 @@ library;
 import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:flutter/material.dart';
 
+import '../look/controls.dart';
+import '../look/tones.dart';
 import 'math_text.dart';
 import 'sources_view.dart';
-import 'study_style.dart';
 import 'summary_sheet.dart';
 
 class GlossaryView extends StatefulWidget {
@@ -33,8 +34,7 @@ class _GlossaryViewState extends State<GlossaryView> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final accent = StudyKind.terms.accent(scheme);
+    final tones = context.tones;
     final filter = _filter.toLowerCase();
     final terms = <GlossaryTerm>[
       for (final term in widget.glossary.terms)
@@ -51,17 +51,13 @@ class _GlossaryViewState extends State<GlossaryView> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              SmallCaps('Key terms', color: accent),
+              SmallCaps('Key terms', color: tones.emphasis),
               const Spacer(),
               if (widget.glossary.terms.length > 8)
                 SizedBox(
                   width: 220,
                   child: TextField(
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      prefixIcon: Icon(Icons.search_rounded, size: 18),
-                      hintText: 'Find a term',
-                    ),
+                    decoration: const InputDecoration(hintText: 'Find a term'),
                     onChanged: (text) => setState(() => _filter = text),
                   ),
                 ),
@@ -74,7 +70,7 @@ class _GlossaryViewState extends State<GlossaryView> {
               decoration: BoxDecoration(
                 border: i == 0
                     ? null
-                    : Border(top: BorderSide(color: scheme.outlineVariant)),
+                    : Border(top: BorderSide(color: tones.line)),
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -83,7 +79,7 @@ class _GlossaryViewState extends State<GlossaryView> {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: accent,
+                      color: tones.text,
                     ),
                   );
                   final meaning = MathText(
@@ -91,7 +87,7 @@ class _GlossaryViewState extends State<GlossaryView> {
                     style: TextStyle(
                       fontSize: 14.5,
                       height: 1.5,
-                      color: scheme.onSurface,
+                      color: tones.text,
                     ),
                     trailing: <InlineSpan>[
                       if (term.sources.isNotEmpty)

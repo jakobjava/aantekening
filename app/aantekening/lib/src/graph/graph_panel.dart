@@ -10,9 +10,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../editor/trackpad.dart';
 import '../providers.dart';
+import '../look/controls.dart';
+import '../look/tones.dart';
 import '../shell/library_actions.dart';
-import '../shell/library_pane.dart';
-import '../theme.dart';
 import 'force_layout.dart';
 import 'note_graph.dart';
 
@@ -87,7 +87,7 @@ class _GraphPanelState extends ConsumerState<GraphPanel>
     GraphNode node, {
     required bool faded,
     required TextStyle style,
-    required ColorScheme scheme,
+    required Tones tones,
   }) {
     if (style != _labelStyle) {
       _clearLabels();
@@ -97,7 +97,7 @@ class _GraphPanelState extends ConsumerState<GraphPanel>
       text: TextSpan(
         text: node.label,
         style: style.copyWith(
-          color: scheme.onSurface.withValues(alpha: faded ? 0.3 : 0.9),
+          color: faded ? tones.faint : tones.text,
           fontWeight: node.kind == GraphNodeKind.page
               ? FontWeight.w400
               : FontWeight.w600,
@@ -271,7 +271,7 @@ class _GraphPanelState extends ConsumerState<GraphPanel>
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     ref.listen<AsyncValue<NoteGraph>>(noteGraphProvider, (_, next) {
       final value = next.value;
       if (value != null) _show(value);
@@ -284,10 +284,13 @@ class _GraphPanelState extends ConsumerState<GraphPanel>
     final Widget body;
     if (graph == null) {
       body = loaded.hasError
-          ? PaneMessage('${loaded.error}', error: true)
-          : const Center(child: CircularProgressIndicator());
+          ? EmptyMessage(
+              'The graph could not be drawn.',
+              detail: '${loaded.error}',
+            )
+          : const Loading();
     } else if (graph.nodes.isEmpty) {
-      body = const PaneMessage('No notebooks yet');
+      body = const EmptyMessage('No notebooks yet');
     } else {
       body = ClipRect(
         child: LayoutBuilder(
@@ -315,7 +318,7 @@ class _GraphPanelState extends ConsumerState<GraphPanel>
                     painter: _GraphPainter(
                       state: this,
                       current: current,
-                      scheme: scheme,
+                      tones: tones,
                       labelStyle: Theme.of(context).textTheme.labelSmall!,
                     ),
                   ),
@@ -328,13 +331,13 @@ class _GraphPanelState extends ConsumerState<GraphPanel>
     }
 
     return Material(
-      color: AppTheme.paneColor(scheme),
+      color: tones.pane,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           PaneHeader(
             title: 'Graph',
-            actionIcon: Icons.fit_screen_outlined,
+            action: 'Fit',
             actionTooltip: 'Fit the graph in view',
             onAction: graph == null ? null : _fit,
           ),
@@ -350,7 +353,7 @@ class _GraphPainter extends CustomPainter {
   _GraphPainter({
     required this.state,
     required this.current,
-    required this.scheme,
+    required this.tones,
     required this.labelStyle,
   }) : super(repaint: state._frame);
 
@@ -358,7 +361,7 @@ class _GraphPainter extends CustomPainter {
 
   /// The page open in the editor, which is ringed.
   final String? current;
-  final ColorScheme scheme;
+  final Tones tones;
   final TextStyle labelStyle;
 
   /// Names are shown for notebooks and sections from this zoom, and for
@@ -388,40 +391,47 @@ class _GraphPainter extends CustomPainter {
 
     final link = Paint()
       ..strokeWidth = math.max(0.6, zoom * 0.9)
-      ..color = scheme.outlineVariant.withValues(alpha: dimmed ? 0.35 : 0.9);
+      ..color = dimmed ? tones.line : tones.strongLine;
     final litLink = Paint()
       ..strokeWidth = math.max(1, zoom * 1.4)
-      ..color = scheme.primary;
+      ..color = tones.emphasis;
     for (final (parent, child) in graph.links) {
       final isLit = hovered != null && (parent == hovered || child == hovered);
       canvas.drawLine(toView(parent), toView(child), isLit ? litLink : link);
     }
 
+    // Notebooks solid, sections hollow, pages small and quieter: told apart
+    // by their shape, not by colour.
     for (var i = 0; i < graph.nodes.length; i++) {
       final node = graph.nodes[i];
       final center = toView(i);
       final radius = math.max(2.0, ForceLayout.radiusOf(node) * zoom);
-      final base = node.color != null
-          ? Color(node.color!)
-          : switch (node.kind) {
-              GraphNodeKind.notebook => scheme.primary,
-              GraphNodeKind.section => scheme.tertiary,
-              GraphNodeKind.page => scheme.onSurfaceVariant,
-            };
       final faded = dimmed && !lit.contains(i);
-      canvas.drawCircle(
-        center,
-        radius,
-        Paint()..color = base.withValues(alpha: faded ? 0.25 : 1),
-      );
+      final color = switch (node.kind) {
+        GraphNodeKind.page => tones.muted,
+        _ => tones.text,
+      }.withValues(alpha: faded ? 0.3 : 1);
+      final square = Rect.fromCircle(center: center, radius: radius);
+      if (node.kind == GraphNodeKind.section) {
+        canvas
+          ..drawRect(square, Paint()..color = tones.pane)
+          ..drawRect(
+            square.deflate(0.75),
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.5
+              ..color = color,
+          );
+      } else {
+        canvas.drawRect(square, Paint()..color = color);
+      }
       if (node.id == current) {
-        canvas.drawCircle(
-          center,
-          radius + 3,
+        canvas.drawRect(
+          square.inflate(3),
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 2
-            ..color = scheme.primary,
+            ..strokeWidth = 1.5
+            ..color = tones.emphasis,
         );
       }
 
@@ -435,7 +445,7 @@ class _GraphPainter extends CustomPainter {
         node,
         faded: faded,
         style: labelStyle,
-        scheme: scheme,
+        tones: tones,
       );
       label.paint(canvas, center + Offset(-label.width / 2, radius + 3));
     }
@@ -444,6 +454,6 @@ class _GraphPainter extends CustomPainter {
   @override
   bool shouldRepaint(_GraphPainter oldDelegate) =>
       oldDelegate.current != current ||
-      oldDelegate.scheme != scheme ||
+      oldDelegate.tones != tones ||
       oldDelegate.labelStyle != labelStyle;
 }

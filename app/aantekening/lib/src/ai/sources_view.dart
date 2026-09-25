@@ -7,26 +7,24 @@ import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 
+import '../look/controls.dart';
+import '../look/marks.dart';
+import '../look/tones.dart';
 import 'math_text.dart';
 
-/// Colours that tell where something comes from, the same everywhere: the
-/// person's notes, the web, or the model itself.
-abstract final class OriginColors {
-  static Color notes(ColorScheme scheme) => scheme.primary;
-  static Color web(ColorScheme scheme) => scheme.brightness == Brightness.dark
-      ? const Color(0xFF6FCF97)
-      : const Color(0xFF2E8B57);
-  static Color model(ColorScheme scheme) => scheme.outline;
-
-  static Color of(SourceOrigin? origin, ColorScheme scheme) => switch (origin) {
-    SourceOrigin.notes => notes(scheme),
-    SourceOrigin.web => web(scheme),
-    null => model(scheme),
+/// How where something comes from is shown, the same everywhere: the
+/// person's notes in the interface's mark, the web more quietly and in a
+/// box, and the model's own words fainter still.
+abstract final class Origins {
+  static Color colourOf(SourceOrigin? origin, Tones tones) => switch (origin) {
+    SourceOrigin.notes => tones.emphasis,
+    SourceOrigin.web => tones.muted,
+    null => tones.faint,
   };
 
-  static IconData icon(SourceOrigin origin) => switch (origin) {
-    SourceOrigin.notes => Icons.description_outlined,
-    SourceOrigin.web => Icons.public_rounded,
+  static String nameOf(SourceOrigin origin) => switch (origin) {
+    SourceOrigin.notes => 'Notes',
+    SourceOrigin.web => 'Web',
   };
 }
 
@@ -98,17 +96,14 @@ class FootnoteMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = OriginColors.of(citation.origin, scheme);
+    final tones = context.tones;
+    final color = Origins.colourOf(citation.origin, tones);
+    final web = citation.origin == SourceOrigin.web;
     return Tooltip(
-      richMessage: _preview(citation, scheme),
+      richMessage: _preview(citation, tones),
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       constraints: const BoxConstraints(maxWidth: 360),
       waitDuration: const Duration(milliseconds: 200),
-      decoration: BoxDecoration(
-        color: scheme.inverseSurface,
-        borderRadius: BorderRadius.circular(8),
-      ),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -118,8 +113,8 @@ class FootnoteMark extends StatelessWidget {
             margin: const EdgeInsets.only(left: 1.5),
             padding: const EdgeInsets.symmetric(horizontal: 3),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(4),
+              color: web ? null : tones.selection,
+              border: web ? Border.all(color: tones.line) : null,
             ),
             child: Text(
               '$number',
@@ -138,9 +133,10 @@ class FootnoteMark extends StatelessWidget {
     );
   }
 
-  static TextSpan _preview(Citation citation, ColorScheme scheme) {
+  static TextSpan _preview(Citation citation, Tones tones) {
     final quote = _quoteOf(citation);
-    final on = scheme.onInverseSurface;
+    // A tooltip is the text's colour, with the base's on it.
+    final on = tones.base;
     return TextSpan(
       children: <InlineSpan>[
         TextSpan(
@@ -193,22 +189,20 @@ class SourceLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (sources.isEmpty) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final first = sources.first;
-    final color = OriginColors.of(first.origin, scheme);
+    final color = Origins.colourOf(first.origin, tones);
     final quote = _quoteOf(first, max: 140);
     return Material(
-      color: color.withValues(alpha: 0.07),
-      borderRadius: BorderRadius.circular(8),
+      color: tones.pane,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
         onTap: () => onOpen(first),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 7, 8, 7),
           child: Row(
             children: <Widget>[
-              Icon(OriginColors.icon(first.origin), size: 15, color: color),
-              const SizedBox(width: 8),
+              SmallCaps(Origins.nameOf(first.origin), color: color),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text.rich(
                   TextSpan(
@@ -217,21 +211,18 @@ class SourceLine extends StatelessWidget {
                         text: first.title,
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          color: color,
+                          color: tones.text,
                         ),
                       ),
                       if (quote.isNotEmpty)
                         TextSpan(
                           style: TextStyle(
                             fontStyle: FontStyle.italic,
-                            color: scheme.onSurfaceVariant,
+                            color: tones.muted,
                           ),
                           children: MathText.spans(
                             '  “$quote”',
-                            TextStyle(
-                              fontSize: 12.5,
-                              color: scheme.onSurfaceVariant,
-                            ),
+                            TextStyle(fontSize: 12.5, color: tones.muted),
                           ),
                         ),
                     ],
@@ -244,12 +235,10 @@ class SourceLine extends StatelessWidget {
               if (sources.length > 1)
                 Padding(
                   padding: const EdgeInsets.only(left: 6),
-                  child: Text(
-                    '+${sources.length - 1}',
-                    style: TextStyle(fontSize: 11.5, color: scheme.outline),
-                  ),
+                  child: KeyHint('+${sources.length - 1}'),
                 ),
-              Icon(Icons.north_east_rounded, size: 14, color: scheme.outline),
+              const SizedBox(width: 6),
+              Mark(MarkShape.chevronRight, size: 10, color: tones.muted),
             ],
           ),
         ),
@@ -268,7 +257,7 @@ class SourceList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final cited = footnotes.cited;
     if (cited.isEmpty) return const SizedBox.shrink();
 
@@ -284,23 +273,14 @@ class SourceList extends StatelessWidget {
       }
     }
 
-    Widget heading(String label, Color color) => Padding(
+    Widget heading(String label, SourceOrigin origin) => Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 4),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10.5,
-          letterSpacing: 0.7,
-          fontWeight: FontWeight.w700,
-          color: color,
-        ),
-      ),
+      child: SmallCaps(label, color: Origins.colourOf(origin, tones)),
     );
 
     Widget entry(int number, Citation citation, {String? text}) {
-      final color = OriginColors.of(citation.origin, scheme);
+      final color = Origins.colourOf(citation.origin, tones);
       return InkWell(
-        borderRadius: BorderRadius.circular(6),
         onTap: () => onOpen(citation),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
@@ -326,7 +306,7 @@ class SourceList extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12.5,
                     height: 1.45,
-                    color: scheme.onSurfaceVariant,
+                    color: tones.muted,
                   ),
                 ),
               ),
@@ -339,38 +319,27 @@ class SourceList extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: scheme.outlineVariant)),
+        border: Border(top: BorderSide(color: tones.line)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (pages.isNotEmpty)
-            heading('FROM YOUR NOTES', OriginColors.notes(scheme)),
+          if (pages.isNotEmpty) heading('From your notes', SourceOrigin.notes),
           for (final entries in pages.values) ...<Widget>[
             Padding(
               padding: const EdgeInsets.fromLTRB(4, 4, 4, 2),
-              child: Row(
-                children: <Widget>[
-                  Icon(
-                    Icons.description_outlined,
-                    size: 14,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    entries.first.$2.title,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+              child: Text(
+                entries.first.$2.title,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             for (final (n, citation) in entries)
               if (_quoteOf(citation).isNotEmpty) entry(n, citation),
           ],
-          if (web.isNotEmpty) heading('FROM THE WEB', OriginColors.web(scheme)),
+          if (web.isNotEmpty) heading('From the web', SourceOrigin.web),
           for (final (n, citation) in web)
             entry(
               n,

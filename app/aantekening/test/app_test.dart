@@ -17,7 +17,9 @@ import 'package:aantekening/src/shell/sidebar_state.dart';
 import 'package:aantekening/src/shell/tab_strip.dart';
 import 'package:aantekening/src/shell/tabs.dart';
 import 'package:aantekening/src/shell/tree_rows.dart';
-import 'package:aantekening/src/theme.dart';
+import 'package:aantekening/src/look/appearance.dart';
+import 'package:aantekening/src/look/theme.dart';
+import 'package:aantekening/src/look/tones.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
@@ -149,7 +151,7 @@ void main() {
 
       expect(find.text('NOTEBOOKS'), findsOneWidget);
       expect(find.text('No notebooks yet'), findsOneWidget);
-      expect(find.text('Select a page, or create one'), findsOneWidget);
+      expect(find.text('Go to a page'), findsOneWidget);
     });
 
     testWidgets('has the ribbon across it, over the tabs, the sidebar and '
@@ -237,7 +239,7 @@ void main() {
       await openPage(tester, preferences: preferences);
       final pageLeft = tester.getTopLeft(find.byType(InfiniteCanvas)).dx;
 
-      await tester.tap(find.byTooltip('Notebooks'));
+      await tester.tap(find.byTooltip(RegExp('^Notebooks')));
       await tester.pumpAndSettle();
 
       expect(find.byType(LibraryPane), findsNothing);
@@ -288,13 +290,13 @@ void main() {
       await tester.pumpAndSettle();
 
       final gesture = await tester.startGesture(
-        tester.getCenter(find.byTooltip('Graph')),
+        tester.getCenter(find.byTooltip(RegExp('^Graph'))),
         kind: PointerDeviceKind.mouse,
       );
       await gesture.moveBy(const Offset(0, -10));
       await tester.pump();
       await gesture.moveTo(
-        tester.getRect(find.byTooltip('Notebooks')).topCenter +
+        tester.getRect(find.byTooltip(RegExp('^Notebooks'))).topCenter +
             const Offset(0, 3),
       );
       await tester.pump();
@@ -303,7 +305,8 @@ void main() {
 
       final buttons = <String>['Graph', 'Notebooks', 'Search'];
       final heights = <double>[
-        for (final label in buttons) tester.getCenter(find.byTooltip(label)).dy,
+        for (final label in buttons)
+          tester.getCenter(find.byTooltip(RegExp('^$label'))).dy,
       ];
       expect(heights, orderedEquals(List<double>.of(heights)..sort()));
       expect(preferences['sidebar.layout'], isNotNull, reason: 'saved');
@@ -341,7 +344,7 @@ void main() {
     ) async {
       await openPage(tester);
 
-      await tester.tap(find.byTooltip('Graph'));
+      await tester.tap(find.byTooltip(RegExp('^Graph')));
       await tester.pumpAndSettle();
 
       expect(find.byType(GraphPanel), findsOneWidget);
@@ -452,7 +455,7 @@ void main() {
     testWidgets('a new page is named first', (tester) async {
       await openPage(tester);
 
-      await tester.tap(find.byTooltip('New page'));
+      await tester.tap(find.byTooltip(RegExp('^New page')));
       await tester.pumpAndSettle();
 
       final title = tester.widget<EditableText>(titleField);
@@ -529,13 +532,13 @@ void main() {
 
       expect(find.text('Mechanics'), findsNothing);
       expect(find.text('Select a section'), findsOneWidget);
-      expect(find.text('Select a page, or create one'), findsOneWidget);
+      expect(find.text('Go to a page'), findsOneWidget);
     });
   });
 
   group('search', () {
     Future<void> search(WidgetTester tester, String query) async {
-      await tester.tap(find.byTooltip('Search'));
+      await tester.tap(find.byTooltip(RegExp('^Search')));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.descendant(
@@ -581,7 +584,7 @@ void main() {
       expect(marked(tester), isTrue);
 
       // Closing the panel takes the marks away.
-      await tester.tap(find.byTooltip('Search'));
+      await tester.tap(find.byTooltip(RegExp('^Search')));
       await tester.pumpAndSettle();
       expect(marked(tester), isFalse);
     });
@@ -773,7 +776,7 @@ void main() {
           matching: find.text('Lecture 2'),
         ),
       );
-      await tester.tap(find.text('Open in New Tab'));
+      await tester.tap(find.text('Open in new tab'));
       await tester.pumpAndSettle();
       return second;
     }
@@ -814,9 +817,9 @@ void main() {
       await pressWithControl(tester, LogicalKeyboardKey.keyT);
       expect(tabsOf(tester).tabs, hasLength(2));
       expect(tabNamed('New tab'), findsNothing, reason: 'named by its section');
-      expect(find.text('Select a page, or create one'), findsOneWidget);
+      expect(find.text('Go to a page'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Search'));
+      await tester.tap(find.byTooltip(RegExp('^Search')));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.descendant(
@@ -938,12 +941,12 @@ void main() {
   });
 
   group('snippet highlighting', () {
-    const scheme = ColorScheme.light();
+    final tones = Tones.of(const Appearance(), Brightness.light);
 
     test('marks the matched terms', () {
       final span = highlightedSnippet(
         'the ${SnippetMarkers.start}residue${SnippetMarkers.end} theorem',
-        scheme,
+        tones,
       );
       final children = span.children!.cast<TextSpan>();
 
@@ -955,7 +958,7 @@ void main() {
     });
 
     test('passes through text with no markers', () {
-      final span = highlightedSnippet('plain text', scheme);
+      final span = highlightedSnippet('plain text', tones);
       expect(
         span.children!.cast<TextSpan>().map((c) => c.text).join(),
         'plain text',
@@ -963,10 +966,7 @@ void main() {
     });
 
     test('tolerates an unterminated marker', () {
-      final span = highlightedSnippet(
-        'a ${SnippetMarkers.start}broken',
-        scheme,
-      );
+      final span = highlightedSnippet('a ${SnippetMarkers.start}broken', tones);
       expect(
         span.children!.cast<TextSpan>().map((c) => c.text).join(),
         'a broken',

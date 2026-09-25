@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:aantekening/src/look/marks.dart';
 import 'package:aantekening/src/editor/media_views.dart';
 import 'package:aantekening/src/editor/ribbon/mini_toolbar.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
@@ -173,7 +174,7 @@ void main() {
 
     await rightClick(tester, at);
     expect(canvasOf(tester).selection, <String>{'picture'});
-    await tester.tap(menuItem('Set Picture As Background'));
+    await tester.tap(menuItem('Set picture as background'));
     await tester.pumpAndSettle();
 
     final background = canvasOf(tester).document.elementById('picture')!;
@@ -189,19 +190,21 @@ void main() {
 
     await rightClick(tester, at);
     expect(
-      tester.widget<Icon>(
-        find.descendant(
-          of: find.ancestor(
-            of: find.text('Set Picture As Background'),
-            matching: find.byType(Row),
-          ),
-          matching: find.byIcon(Icons.check_rounded),
-        ),
-      ),
-      isNotNull,
+      tester
+          .widget<Mark>(
+            find.descendant(
+              of: find.ancestor(
+                of: find.text('Set picture as background'),
+                matching: find.byType(Row),
+              ),
+              matching: find.byType(Mark),
+            ),
+          )
+          .shape,
+      MarkShape.check,
       reason: 'ticked, as it is set',
     );
-    await tester.tap(menuItem('Set Picture As Background'));
+    await tester.tap(menuItem('Set picture as background'));
     await tester.pumpAndSettle();
     expect(canvasOf(tester).document.elementById('picture')!.locked, isFalse);
   });
@@ -252,7 +255,7 @@ void main() {
       final drawn = tester.getRect(find.byType(AssetImageView));
 
       await rightClick(tester, drawn.center);
-      await tester.tap(menuItem('Set Picture As Background'));
+      await tester.tap(menuItem('Set picture as background'));
       await tester.pumpAndSettle();
 
       final background = elementsOf(tester).whereType<ImageElement>().single;

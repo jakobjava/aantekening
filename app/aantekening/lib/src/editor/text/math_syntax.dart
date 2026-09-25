@@ -5,6 +5,8 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../commands/editor_keys.dart';
+import '../../look/controls.dart';
 import '../../preferences.dart';
 
 /// The syntax formulas are typed in: Simple or LaTeX.
@@ -39,62 +41,20 @@ class MathSyntaxToggle extends ConsumerWidget {
   const MathSyntaxToggle({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final syntax = ref.watch(mathSyntaxProvider);
-
-    Widget segment(MathMode value, String label, String tooltip) {
-      final selected = syntax == value;
-      return Tooltip(
-        message: '$tooltip\nCtrl+Shift+M switches',
-        child: InkWell(
-          onTap: selected
-              ? null
-              : () => ref.read(mathSyntaxProvider.notifier).set(value),
-          child: Container(
-            height: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 9),
-            alignment: Alignment.center,
-            color: selected ? scheme.primary.withValues(alpha: 0.14) : null,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? scheme.primary : scheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(5),
-        child: Material(
-          type: MaterialType.transparency,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              segment(
-                MathMode.linear,
-                'Simple',
-                'Type it as you would say it: x^2, a/b, sqrt(x), sum_(i=1)^n',
-              ),
-              segment(
-                MathMode.latex,
-                'LaTeX',
-                r'Type LaTeX, as formulas are stored: x^{2}, \frac{a}{b}',
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context, WidgetRef ref) => ChoiceRow<MathMode>(
+    choices: const <MathMode>[MathMode.linear, MathMode.latex],
+    selected: ref.watch(mathSyntaxProvider),
+    compact: true,
+    labelOf: (mode) => switch (mode) {
+      MathMode.linear => 'Simple',
+      MathMode.latex => 'LaTeX',
+    },
+    tooltipOf: (mode) => EditorKey.formulaSyntax.tooltipOf(switch (mode) {
+      MathMode.linear =>
+        'Type it as you would say it: x^2, a/b, sqrt(x), sum_(i=1)^n',
+      MathMode.latex =>
+        r'Type LaTeX, as formulas are stored: x^{2}, \frac{a}{b}',
+    }),
+    onSelected: ref.read(mathSyntaxProvider.notifier).set,
+  );
 }

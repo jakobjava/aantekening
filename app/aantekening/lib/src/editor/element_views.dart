@@ -69,11 +69,10 @@ class _TableBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final base = RichTextStyles.base(context).copyWith(fontSize: 13);
 
     return Table(
-      border: TableBorder.all(color: scheme.outlineVariant),
+      border: TableBorder.all(color: RichTextStyles.tableRule),
       columnWidths: <int, TableColumnWidth>{
         for (var i = 0; i < element.columnWidths.length; i++)
           i: FixedColumnWidth(element.columnWidths[i]),
@@ -82,7 +81,7 @@ class _TableBox extends StatelessWidget {
         for (var r = 0; r < element.rows.length; r++)
           TableRow(
             decoration: r == 0 && element.headerRow
-                ? BoxDecoration(color: scheme.surfaceContainerHigh)
+                ? const BoxDecoration(color: RichTextStyles.codeFill)
                 : null,
             children: <Widget>[
               for (var c = 0; c < element.columnWidths.length; c++)

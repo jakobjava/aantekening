@@ -115,7 +115,7 @@ void main() {
       expect(all, hasLength(SidebarTab.values.length));
 
       final moved = layout.move(SidebarTab.graph, SidebarGroup.bottom, 0);
-      expect(moved.itemsIn(SidebarGroup.bottom).single, SidebarTab.graph);
+      expect(moved.itemsIn(SidebarGroup.bottom).first, SidebarTab.graph);
       expect(
         moved.itemsIn(SidebarGroup.top),
         isNot(contains(SidebarTab.graph)),

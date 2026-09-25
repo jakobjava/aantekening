@@ -6,12 +6,13 @@ import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../look/appearance.dart';
+import '../../look/controls.dart';
+import '../../look/marks.dart';
+import '../../look/tones.dart';
 import '../../preferences.dart';
-import '../../shell/library_pane.dart';
-import '../../theme.dart';
 import 'math_syntax.dart';
 import 'math_templates.dart';
-import 'text_styles.dart';
 
 /// Whether the cheat sheet is open, remembered between sessions.
 class CheatSheetController extends Notifier<bool> {
@@ -54,12 +55,12 @@ class CheatSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final syntax = ref.watch(mathSyntaxProvider);
 
     return ExcludeFocus(
       child: Material(
-        color: AppTheme.paneColor(scheme),
+        color: tones.pane,
         child: SizedBox(
           width: width,
           child: Column(
@@ -67,12 +68,14 @@ class CheatSheet extends ConsumerWidget {
             children: <Widget>[
               PaneHeader(
                 title: 'Cheat sheet',
-                actionIcon: Icons.close_rounded,
-                actionTooltip: 'Close the cheat sheet',
-                onAction: ref.read(cheatSheetProvider.notifier).toggle,
+                trailing: MarkButton(
+                  MarkShape.close,
+                  tooltip: 'Close the cheat sheet',
+                  onPressed: ref.read(cheatSheetProvider.notifier).toggle,
+                ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: Row(
                   children: <Widget>[
                     const MathSyntaxToggle(),
@@ -82,10 +85,7 @@ class CheatSheet extends ConsumerWidget {
                         onInsert == null
                             ? 'What to type'
                             : 'What to type; click one to write it',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        style: TextStyle(fontSize: 11.5, color: tones.muted),
                       ),
                     ),
                   ],
@@ -121,11 +121,7 @@ class _TopicHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(8, 14, 8, 4),
-    child: Text(
-      title,
-      style: Theme.of(context).textTheme.labelLarge
-          ?.copyWith(fontWeight: FontWeight.w600),
-    ),
+    child: SmallCaps(title),
   );
 }
 
@@ -142,12 +138,11 @@ class _ExampleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final typed = syntax == MathMode.latex ? example.latex : example.typed;
     final insert = onInsert;
 
     return InkWell(
-      borderRadius: BorderRadius.circular(6),
       onTap: insert == null
           ? null
           : () => insert(
@@ -167,17 +162,15 @@ class _ExampleRow extends StatelessWidget {
                 children: <Widget>[
                   Text(
                     typed,
-                    style: RichTextStyles.monospace.copyWith(
+                    style: TextStyle(
+                      fontFamily: InterfaceFont.mono.family,
                       fontSize: 12.5,
-                      color: scheme.onSurface,
+                      color: tones.text,
                     ),
                   ),
                   Text(
                     example.meaning,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: scheme.onSurfaceVariant,
-                    ),
+                    style: TextStyle(fontSize: 11, color: tones.muted),
                   ),
                 ],
               ),
@@ -190,7 +183,7 @@ class _ExampleRow extends StatelessWidget {
                 child: MathView(
                   source: example.latex,
                   mode: MathMode.latex,
-                  textStyle: TextStyle(fontSize: 15, color: scheme.onSurface),
+                  textStyle: TextStyle(fontSize: 15, color: tones.text),
                 ),
               ),
             ),

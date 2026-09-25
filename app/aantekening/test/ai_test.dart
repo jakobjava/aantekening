@@ -13,7 +13,7 @@ import 'package:aantekening/src/providers.dart';
 import 'package:aantekening/src/shell/home_shell.dart';
 import 'package:aantekening/src/shell/library_pane.dart';
 import 'package:aantekening/src/shell/tabs.dart';
-import 'package:aantekening/src/theme.dart';
+import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
@@ -474,7 +474,7 @@ void main() {
     expect(find.text('Ask about your notes'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Choose a model'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add a model provider'));
+    await tester.tap(find.text('Add a model provider…'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Anthropic'));
     await tester.pumpAndSettle();

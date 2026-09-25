@@ -397,8 +397,14 @@ class SelectionPainter extends CustomPainter {
             ..color = accent
             ..strokeWidth = 1.2,
         )
-        ..drawCircle(knob, SelectionHandles.size * 0.7, fill)
-        ..drawCircle(knob, SelectionHandles.size * 0.7, ring);
+        ..drawRect(
+          Rect.fromCircle(center: knob, radius: SelectionHandles.size * 0.6),
+          fill,
+        )
+        ..drawRect(
+          Rect.fromCircle(center: knob, radius: SelectionHandles.size * 0.6),
+          ring,
+        );
     }
 
     for (final entry in positions.entries) {
@@ -407,23 +413,20 @@ class SelectionPainter extends CustomPainter {
       final upright =
           entry.key == SelectionHandle.left ||
           entry.key == SelectionHandle.right;
-      // Handles turn with the box, so a side's pill always lies along it.
+      // Handles turn with the box, so a side's bar always lies along it.
       canvas
         ..save()
         ..translate(entry.value.dx, entry.value.dy)
         ..rotate(frame.rotation);
       const size = SelectionHandles.size;
-      final handle = RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset.zero,
-          width: isSide && !upright ? size * 2.5 : size,
-          height: upright ? size * 2.5 : size,
-        ),
-        Radius.circular(isSide ? size / 2 : 1.5),
+      final handle = Rect.fromCenter(
+        center: Offset.zero,
+        width: isSide && !upright ? size * 2.5 : size,
+        height: upright ? size * 2.5 : size,
       );
       canvas
-        ..drawRRect(handle, fill)
-        ..drawRRect(handle, ring)
+        ..drawRect(handle, fill)
+        ..drawRect(handle, ring)
         ..restore();
     }
   }

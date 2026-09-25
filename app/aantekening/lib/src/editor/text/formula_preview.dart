@@ -5,6 +5,9 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/material.dart';
 
+import '../../commands/editor_keys.dart';
+import '../../look/controls.dart';
+import '../../look/tones.dart';
 import 'math_syntax.dart';
 import 'text_box_controller.dart';
 import 'text_styles.dart';
@@ -31,21 +34,17 @@ class FormulaPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final error = session.error;
 
     return ExcludeFocus(
       child: Material(
-        elevation: 2,
-        shadowColor: Colors.black26,
-        color: scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
+        color: tones.base,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: tones.strongLine),
+        ),
+        child: Padding(
           padding: const EdgeInsets.all(5),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -54,23 +53,11 @@ class FormulaPreview extends StatelessWidget {
               if (error != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 5, 4, 0),
-                  child: Row(
-                    children: <Widget>[
-                      Icon(
-                        Icons.error_outline_rounded,
-                        size: 13,
-                        color: scheme.error,
-                      ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          error,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11.5, color: scheme.error),
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    error,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: tones.text),
                   ),
                 ),
               const SizedBox(height: 5),
@@ -82,21 +69,10 @@ class FormulaPreview extends StatelessWidget {
                 runSpacing: 4,
                 children: <Widget>[
                   const MathSyntaxToggle(),
-                  Tooltip(
-                    message: 'Done  (Enter)',
-                    child: TextButton.icon(
-                      onPressed: onDone,
-                      icon: const Icon(Icons.check_rounded, size: 15),
-                      label: const Text('Done'),
-                      style: TextButton.styleFrom(
-                        minimumSize: const Size(0, 26),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                        textStyle: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                    ),
+                  SmallButton(
+                    'Done',
+                    tooltip: EditorKey.finishFormula.tooltipOf('Done'),
+                    onPressed: onDone,
                   ),
                 ],
               ),
@@ -120,8 +96,8 @@ class _Typeset extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 40, maxHeight: 180),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
+        color: Tones.paper,
+        border: Border.all(color: context.tones.line),
       ),
       // Only as tall as the formula: centring it must not fill the space
       // it is allowed.
@@ -133,7 +109,7 @@ class _Typeset extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontStyle: FontStyle.italic,
-                  color: Colors.black.withValues(alpha: 0.4),
+                  color: RichTextStyles.inkMuted,
                 ),
               )
             : FittedBox(

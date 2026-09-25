@@ -7,6 +7,9 @@ import 'dart:math' as math;
 import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:flutter/material.dart';
 
+import '../look/controls.dart';
+import '../look/marks.dart';
+import '../look/tones.dart';
 import 'ai_session.dart';
 
 /// The steps [pending] has taken, each with how long it took, and the one
@@ -48,8 +51,7 @@ class _AnswerProgressState extends State<AnswerProgress> {
     final progress = pending.progress;
     final now = DateTime.now();
     final took = now.difference(pending.since);
-    final scheme = Theme.of(context).colorScheme;
-    final faint = TextStyle(fontSize: 12, color: scheme.outline);
+    final faint = TextStyle(fontSize: 12, color: context.tones.faint);
 
     final speed = _speed(progress.written - pending.writtenBefore, took);
     final details = <Widget>[
@@ -76,10 +78,7 @@ class _AnswerProgressState extends State<AnswerProgress> {
         children: <Widget>[
           for (final step in pending.steps) _StepRow(step: step),
           _Row(
-            leading: const SizedBox.square(
-              dimension: 12,
-              child: CircularProgressIndicator(strokeWidth: 1.8),
-            ),
+            leading: const Busy(width: 12),
             label: '${progress.activity}…',
             detail: speed,
             took: wholeSeconds(took),
@@ -117,17 +116,20 @@ class _StepRowState extends State<_StepRow> {
   @override
   Widget build(BuildContext context) {
     final step = widget.step;
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final thought = step.reasoning.trim().isNotEmpty;
     final row = _Row(
-      leading: Icon(Icons.check_rounded, size: 14, color: scheme.outline),
+      leading: Mark(MarkShape.check, size: 10, color: tones.faint),
       label: thought ? 'Thought' : step.activity,
       took: _took(step.took),
       trailing: thought
-          ? Icon(
-              _open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-              size: 16,
-              color: scheme.outline,
+          ? Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Mark(
+                _open ? MarkShape.chevronUp : MarkShape.chevronDown,
+                size: 10,
+                color: tones.faint,
+              ),
             )
           : null,
     );
@@ -135,11 +137,7 @@ class _StepRowState extends State<_StepRow> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        InkWell(
-          borderRadius: BorderRadius.circular(4),
-          onTap: () => setState(() => _open = !_open),
-          child: row,
-        ),
+        InkWell(onTap: () => setState(() => _open = !_open), child: row),
         if (_open) _Reasoning(text: step.reasoning, live: false),
       ],
     );
@@ -173,8 +171,8 @@ class _Row extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final faint = TextStyle(fontSize: 12, color: scheme.outline);
+    final tones = context.tones;
+    final faint = TextStyle(fontSize: 12, color: tones.faint);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -190,7 +188,7 @@ class _Row extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12.5,
-                      color: strong ? scheme.onSurfaceVariant : scheme.outline,
+                      color: strong ? tones.muted : tones.faint,
                     ),
                   ),
                 ),
@@ -225,21 +223,19 @@ class _Reasoning extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     final style = TextStyle(
       fontSize: 12,
       height: 1.4,
       fontStyle: FontStyle.italic,
-      color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+      color: tones.faint,
     );
     final shown = text.trim();
     return Container(
       margin: const EdgeInsets.fromLTRB(7, 2, 0, 4),
       padding: const EdgeInsets.only(left: 14),
       decoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(color: scheme.outlineVariant, width: 2),
-        ),
+        border: Border(left: BorderSide(color: tones.line, width: 2)),
       ),
       child: live
           ? Text(

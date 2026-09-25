@@ -7,6 +7,9 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../look/marks.dart';
+import '../look/tones.dart';
+
 /// Where a dragged item would land: in front of the item now at [index] in
 /// [group], or at its end.
 typedef ArrangementSlot<G> = ({G group, int index});
@@ -79,7 +82,6 @@ class ArrangeableItem<G, I extends Object> extends StatelessWidget {
     required this.index,
     required this.count,
     required this.axis,
-    required this.icon,
     required this.label,
     required this.child,
     super.key,
@@ -92,8 +94,7 @@ class ArrangeableItem<G, I extends Object> extends StatelessWidget {
   final int count;
   final Axis axis;
 
-  /// What the item is shown as while it is dragged.
-  final Widget icon;
+  /// What the item is called, shown while it is dragged.
   final String label;
 
   final Widget child;
@@ -116,7 +117,7 @@ class ArrangeableItem<G, I extends Object> extends StatelessWidget {
           child: _ArrangeDraggable<I>(
             data: item,
             dragAnchorStrategy: pointerDragAnchorStrategy,
-            feedback: _DragPreview(icon: icon, label: label),
+            feedback: _DragPreview(label: label),
             childWhenDragging: Opacity(
               opacity: 0.3,
               child: IgnorePointer(child: child),
@@ -189,18 +190,17 @@ class ArrangementEmptyGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     return Container(
       width: width,
       height: height,
       margin: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         border: Border.all(
-          color: highlighted ? scheme.primary : scheme.outlineVariant,
+          color: highlighted ? tones.emphasis : tones.strongLine,
         ),
-        borderRadius: BorderRadius.circular(6),
       ),
-      child: Icon(Icons.add_rounded, size: 16, color: scheme.outline),
+      child: Center(child: Mark(MarkShape.add, color: tones.muted)),
     );
   }
 }
@@ -226,7 +226,7 @@ class _DropMarker extends StatelessWidget {
         ? _DropMarkerPainter(
             axis: axis,
             atStart: before,
-            color: Theme.of(context).colorScheme.primary,
+            color: context.tones.emphasis,
           )
         : null,
     child: child,
@@ -248,8 +248,7 @@ class _DropMarkerPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round;
+      ..strokeWidth = 2;
     if (axis == Axis.horizontal) {
       final x = atStart ? 1.0 : size.width - 1;
       canvas.drawLine(Offset(x, 2), Offset(x, size.height - 2), paint);
@@ -266,32 +265,23 @@ class _DropMarkerPainter extends CustomPainter {
       oldDelegate.color != color;
 }
 
-/// What follows the pointer while an item is dragged.
+/// What follows the pointer while an item is dragged: its name.
 class _DragPreview extends StatelessWidget {
-  const _DragPreview({required this.icon, required this.label});
+  const _DragPreview({required this.label});
 
-  final Widget icon;
   final String label;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final tones = context.tones;
     return FractionalTranslation(
       translation: const Offset(-0.5, -0.5),
       child: Material(
-        elevation: 6,
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        color: tones.base,
+        shape: RoundedRectangleBorder(side: BorderSide(color: tones.emphasis)),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              icon,
-              const SizedBox(width: 6),
-              Text(label, style: theme.textTheme.labelMedium),
-            ],
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          child: Text(label, style: Theme.of(context).textTheme.labelMedium),
         ),
       ),
     );

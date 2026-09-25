@@ -8,9 +8,10 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/material.dart';
 
+import '../look/controls.dart';
+import '../look/tones.dart';
 import 'math_text.dart';
 import 'sources_view.dart';
-import 'study_style.dart';
 
 class SummarySheet extends StatelessWidget {
   const SummarySheet({
@@ -29,15 +30,14 @@ class SummarySheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final accent = StudyKind.summary.accent(scheme);
+    final tones = context.tones;
     final footnotes = Footnotes()
       ..numberAll(<List<Citation>>[
         for (final section in summary.sections)
           for (final point in section.points) point.sources,
         for (final formula in summary.formulas) formula.sources,
       ]);
-    final body = TextStyle(fontSize: 15, height: 1.55, color: scheme.onSurface);
+    final body = TextStyle(fontSize: 15, height: 1.55, color: tones.text);
     List<InlineSpan> marks(List<Citation> sources) => sources.isEmpty
         ? const <InlineSpan>[]
         : <InlineSpan>[footnoteMarks(sources, footnotes, onOpen: onOpen)];
@@ -47,30 +47,25 @@ class SummarySheet extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          SmallCaps('Summary', color: accent),
+          SmallCaps('Summary', color: tones.emphasis),
           if (title.isNotEmpty) ...<Widget>[
             const SizedBox(height: 6),
-            Text(
-              title,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                height: 1.25,
-              ),
-            ),
+            Text(title, style: theme.textTheme.headlineSmall),
           ],
           if (summary.gist.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(top: 16),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(10),
-                border: Border(left: BorderSide(color: accent, width: 3)),
+                color: tones.pane,
+                border: Border(
+                  left: BorderSide(color: tones.emphasis, width: 2),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  SmallCaps('In short', color: accent),
+                  const SmallCaps('In short'),
                   const SizedBox(height: 4),
                   MathText(summary.gist, style: body.copyWith(fontSize: 16)),
                 ],
@@ -79,31 +74,25 @@ class SummarySheet extends StatelessWidget {
           for (final (i, section) in summary.sections.indexed) ...<Widget>[
             const SizedBox(height: 26),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
               children: <Widget>[
-                Container(
-                  width: 24,
-                  height: 24,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: accent,
-                    borderRadius: BorderRadius.circular(7),
-                  ),
+                SizedBox(
+                  width: 34,
                   child: Text(
                     '${i + 1}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w800,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: tones.emphasis,
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
                 Expanded(
                   child: MathText(
                     section.heading,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: theme.textTheme.titleMedium,
                   ),
                 ),
               ],
@@ -116,13 +105,10 @@ class SummarySheet extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Container(
-                      width: 6,
-                      height: 6,
-                      margin: const EdgeInsets.only(top: 9, right: 12),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.7),
-                        shape: BoxShape.circle,
-                      ),
+                      width: 5,
+                      height: 5,
+                      margin: const EdgeInsets.only(top: 10, right: 12),
+                      color: tones.muted,
                     ),
                     Expanded(
                       child: MathText(
@@ -137,7 +123,7 @@ class SummarySheet extends StatelessWidget {
           ],
           if (summary.formulas.isNotEmpty) ...<Widget>[
             const SizedBox(height: 30),
-            SmallCaps('Formulas', color: accent),
+            const SmallCaps('Formulas'),
             const SizedBox(height: 10),
             LayoutBuilder(
               builder: (context, constraints) {
@@ -181,14 +167,10 @@ class _FormulaCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
+      decoration: BoxDecoration(border: Border.all(color: tones.line)),
       child: Column(
         children: <Widget>[
           SingleChildScrollView(
@@ -197,7 +179,7 @@ class _FormulaCard extends StatelessWidget {
               source: formula.latex,
               mode: MathMode.latex,
               displayStyle: true,
-              textStyle: TextStyle(fontSize: 19, color: scheme.onSurface),
+              textStyle: TextStyle(fontSize: 19, color: tones.text),
             ),
           ),
           if (formula.meaning.isNotEmpty || marks.isNotEmpty) ...<Widget>[
@@ -205,11 +187,7 @@ class _FormulaCard extends StatelessWidget {
             MathText(
               formula.meaning,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.45,
-                color: scheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 13, height: 1.45, color: tones.muted),
               trailing: marks,
             ),
           ],
@@ -229,32 +207,26 @@ class _Beyond extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: scheme.outlineVariant),
+        border: Border(
+          left: BorderSide(color: Origins.colourOf(null, tones), width: 2),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(
-                Icons.auto_awesome_outlined,
-                size: 15,
-                color: OriginColors.model(scheme),
-              ),
-              const SizedBox(width: 6),
               const SmallCaps('Beyond your notes'),
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
                   'from the model, not from what you wrote',
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, color: scheme.outline),
+                  style: TextStyle(fontSize: 11.5, color: tones.faint),
                 ),
               ),
             ],
@@ -265,10 +237,7 @@ class _Beyond extends StatelessWidget {
               padding: const EdgeInsets.only(top: 3),
               child: MathText(
                 line,
-                style: style.copyWith(
-                  fontSize: 14,
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: style.copyWith(fontSize: 14, color: tones.muted),
               ),
             ),
         ],
@@ -286,7 +255,7 @@ class StudyPaper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tones = context.tones;
     return Center(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
@@ -294,16 +263,8 @@ class StudyPaper extends StatelessWidget {
           margin: const EdgeInsets.fromLTRB(20, 8, 20, 28),
           padding: const EdgeInsets.fromLTRB(36, 30, 36, 24),
           decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: scheme.outlineVariant),
-            boxShadow: const <BoxShadow>[
-              BoxShadow(
-                color: Color(0x0F000000),
-                blurRadius: 18,
-                offset: Offset(0, 6),
-              ),
-            ],
+            color: tones.base,
+            border: Border.all(color: tones.line),
           ),
           child: SelectionArea(child: child),
         ),
