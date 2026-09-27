@@ -402,6 +402,7 @@ class _GraphPainter extends CustomPainter {
 
     // Notebooks solid, sections hollow, pages small and quieter: told apart
     // by their shape, not by colour.
+    final names = <({int rank, int node, Offset center, double radius})>[];
     for (var i = 0; i < graph.nodes.length; i++) {
       final node = graph.nodes[i];
       final center = toView(i);
@@ -441,13 +442,43 @@ class _GraphPainter extends CustomPainter {
           zoom >=
               (node.kind == GraphNodeKind.page ? _pageLabelZoom : _labelZoom);
       if (!named) continue;
+      names.add((
+        rank: lit.contains(i) || node.id == current
+            ? 0
+            : switch (node.kind) {
+                GraphNodeKind.notebook => 1,
+                GraphNodeKind.section => 2,
+                GraphNodeKind.page => 3,
+              },
+        node: i,
+        center: center,
+        radius: radius,
+      ));
+    }
+
+    // Names go over every node, the most telling first: what the pointer is
+    // on and the page open, then notebooks, sections and pages. One that
+    // would cover a name already there is left out until zooming in makes
+    // room for it, and each stands on the pane, clear of the links.
+    names.sort(
+      (a, b) => a.rank != b.rank ? a.rank - b.rank : a.node.compareTo(b.node),
+    );
+    final view = Offset.zero & size;
+    final taken = <Rect>[];
+    final ground = Paint()..color = tones.pane.withValues(alpha: 0.85);
+    for (final name in names) {
       final label = state._label(
-        node,
-        faded: faded,
+        graph.nodes[name.node],
+        faded: dimmed && !lit.contains(name.node),
         style: labelStyle,
         tones: tones,
       );
-      label.paint(canvas, center + Offset(-label.width / 2, radius + 3));
+      final at = name.center + Offset(-label.width / 2, name.radius + 3);
+      final box = (at & label.size).inflate(2);
+      if (!view.overlaps(box) || taken.any(box.overlaps)) continue;
+      taken.add(box);
+      canvas.drawRect(box, ground);
+      label.paint(canvas, at);
     }
   }
 

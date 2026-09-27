@@ -95,11 +95,11 @@ class ForceLayout {
   static double _charge(GraphNode node) => switch (node.kind) {
     GraphNodeKind.notebook => -300,
     GraphNodeKind.section => -140,
-    GraphNodeKind.page => -50,
+    GraphNodeKind.page => -80,
   };
 
   static double _linkLength(GraphNode child) =>
-      child.kind == GraphNodeKind.page ? 36 : 64;
+      child.kind == GraphNodeKind.page ? 48 : 72;
 
   /// Warms the simulation to at least [alpha], to set it moving again.
   void reheat([double alpha = 0.3]) => _alpha = math.max(_alpha, alpha);
