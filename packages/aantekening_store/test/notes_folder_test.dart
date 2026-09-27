@@ -277,40 +277,48 @@ void main() {
     );
   });
 
-  test(
-    'a damaged index is set aside and filled again from the folder',
-    () async {
-      final indexFolder = p.join(root.path, 'index-a');
-      final store = await computer('a');
-      final (_, pageId) = await seed(store);
-      await store.mirror!.flush();
-      // Stopped without closing, and the index damaged meanwhile.
-      store.database.close();
-      final index = Directory(indexFolder)
-          .listSync()
-          .whereType<File>()
-          .firstWhere((file) => file.path.endsWith('.sqlite'));
-      final bytes = index.readAsBytesSync();
-      for (var i = 100; i < bytes.length; i += 97) {
-        bytes[i] = 0x55;
-      }
-      index.writeAsBytesSync(bytes);
+  // Damaged past its header, the index opens and fails its check; damaged
+  // in its header too, it cannot even be set up — and must still be let go
+  // of, or Windows will not let it be moved aside.
+  for (final (damage, from) in const <(String, int)>[
+    ('within', 100),
+    ('past opening', 0),
+  ]) {
+    test(
+      'an index damaged $damage is set aside and filled again from the folder',
+      () async {
+        final indexFolder = p.join(root.path, 'index-a');
+        final store = await computer('a');
+        final (_, pageId) = await seed(store);
+        await store.mirror!.flush();
+        // Stopped without closing, and the index damaged meanwhile.
+        store.database.close();
+        final index = Directory(indexFolder)
+            .listSync()
+            .whereType<File>()
+            .firstWhere((file) => file.path.endsWith('.sqlite'));
+        final bytes = index.readAsBytesSync();
+        for (var i = from; i < bytes.length; i += 97) {
+          bytes[i] = 0x55;
+        }
+        index.writeAsBytesSync(bytes);
 
-      final again = await AantekeningStore.open(
-        notesFolder: notes,
-        indexFolder: indexFolder,
-        automatic: false,
-      );
-      addTearDown(again.close);
-      expect(await textOf(again, pageId), 'F = ma');
-      expect(
-        Directory(
-          indexFolder,
-        ).listSync().any((file) => file.path.contains('.damaged-')),
-        isTrue,
-      );
-    },
-  );
+        final again = await AantekeningStore.open(
+          notesFolder: notes,
+          indexFolder: indexFolder,
+          automatic: false,
+        );
+        addTearDown(again.close);
+        expect(await textOf(again, pageId), 'F = ma');
+        expect(
+          Directory(
+            indexFolder,
+          ).listSync().any((file) => file.path.contains('.damaged-')),
+          isTrue,
+        );
+      },
+    );
+  }
 
   test(
     'backups hold the whole folder, and restore as notes of their own',

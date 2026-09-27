@@ -15,18 +15,13 @@ class AantekeningDatabase {
   AantekeningDatabase._(this._db);
 
   /// Opens (or creates) the database at [path].
-  factory AantekeningDatabase.open(String path) {
-    final db = AantekeningDatabase._(sqlite3.open(path));
-    db._configure(persistent: true);
-    return db;
-  }
+  factory AantekeningDatabase.open(String path) =>
+      AantekeningDatabase._(sqlite3.open(path)).._configure(persistent: true);
 
   /// Opens a throwaway in-memory database, used by tests and previews.
-  factory AantekeningDatabase.inMemory() {
-    final db = AantekeningDatabase._(sqlite3.openInMemory());
-    db._configure(persistent: false);
-    return db;
-  }
+  factory AantekeningDatabase.inMemory() =>
+      AantekeningDatabase._(sqlite3.openInMemory())
+        .._configure(persistent: false);
 
   final Database _db;
   final Map<String, PreparedStatement> _statements =
@@ -38,7 +33,19 @@ class AantekeningDatabase {
   /// The underlying connection, for queries that need the raw API.
   Database get raw => _db;
 
+  /// Sets the connection up, or closes it if it cannot be: a database too
+  /// damaged to set up must not stay open, or Windows will not let it be
+  /// moved aside.
   void _configure({required bool persistent}) {
+    try {
+      _setUp(persistent: persistent);
+    } catch (_) {
+      _db.close();
+      rethrow;
+    }
+  }
+
+  void _setUp({required bool persistent}) {
     if (persistent) {
       // WAL lets reads proceed while a save is in flight, which is what keeps
       // typing responsive during an autosave.
