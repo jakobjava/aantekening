@@ -47,6 +47,12 @@ enum ProviderPreset {
     'https://openrouter.ai/api/v1',
     needsKey: true,
   ),
+  requesty(
+    'Requesty',
+    ProviderKind.openAiCompatible,
+    'https://router.requesty.ai/v1',
+    needsKey: true,
+  ),
   mistral(
     'Mistral',
     ProviderKind.openAiCompatible,

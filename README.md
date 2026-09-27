@@ -142,8 +142,8 @@ navigating and searching thousands of pages stays instant.
   step and how long it takes — the notes gathered, how much the model is
   reading, its thinking as it thinks, how fast it writes. Use a model on
   your own computer (Ollama, LM Studio, llama.cpp — nothing leaves it) or a
-  provider you choose (Anthropic, OpenAI, Gemini, OpenRouter, Mistral,
-  Groq, DeepSeek, or any OpenAI-compatible server); nothing is sent
+  provider you choose (Anthropic, OpenAI, Gemini, OpenRouter, Requesty,
+  Mistral, Groq, DeepSeek, or any OpenAI-compatible server); nothing is sent
   anywhere until you ask.
 * **Saving** — every note is a file of its own in the notes folder, written
   whole or not at all, so a crash, a full disk or a sync service copying it

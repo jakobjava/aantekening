@@ -27,26 +27,26 @@ nothing. What it has to become:
   results) into neutral events. Two classes cover the field: Anthropic's
   Messages API, and the OpenAI chat completions API that nearly every
   runtime and service speaks — LM Studio, llama.cpp, vLLM, OpenAI, Gemini,
-  OpenRouter, Mistral, Groq, DeepSeek. Ollama is spoken to in its own API
-  (a subclass writing the same messages its way), because its OpenAI one
-  cannot say how much room a model runs with: left alone, Ollama runs a
-  model with 4,096 tokens, and a model that thinks first spends them all
-  thinking. Its models run with the room the settings give (16k by
-  default), and think first only if the settings let them. A model that
-  thinks longer than the settings allow (three minutes by default), or into
-  the room its answer needs, is stopped and asked again with what it thought
-  handed back and its answer begun — which closes its thinking, so it
-  answers from there. Small models on a slow computer otherwise think in
-  circles for half an hour. Stopping an answer breaks its request off at
-  once, even while the model is still reading and has sent nothing: the
-  connection closes, and the model stops once it has read the chunk of
+  OpenRouter, Requesty, Mistral, Groq, DeepSeek. Ollama is spoken to in
+  its own API (a subclass writing the same messages its way), because its
+  OpenAI one cannot say how much room a model runs with: left alone,
+  Ollama runs a model with 4,096 tokens, and a model that thinks first
+  spends them all thinking. Its models run with the room the settings give
+  (16k by default), and think first only if the settings let them. A model
+  that thinks longer than the settings allow (three minutes by default),
+  or into the room its answer needs, is stopped and asked again with what
+  it thought handed back and its answer begun — which closes its thinking,
+  so it answers from there. Small models on a slow computer otherwise
+  think in circles for half an hour. Stopping an answer breaks its request
+  off at once, even while the model is still reading and has sent nothing:
+  the connection closes, and the model stops once it has read the chunk of
   the prompt under way — 512 tokens, so a slow computer is free again in
-  seconds, not minutes. What only one provider
-  understands (Claude's reasoning, its web searches) is kept verbatim as a
-  `NativePart`, handed back to that provider as it came and ignored by
-  others. What a model can do (`ModelCapabilities`: images, tools, native
-  citations, native web search, reasoning, context length) decides how it is asked,
-  never which model it is.
+  seconds, not minutes. What only one provider understands (Claude's
+  reasoning, its web searches) is kept verbatim as a `NativePart`, handed
+  back to that provider as it came and ignored by others. What a model can
+  do (`ModelCapabilities`: images, tools, native citations, native web
+  search, reasoning, context length) decides how it is asked, never which
+  model it is.
 * **Nothing goes anywhere by default.** No provider is set up until the
   person adds one; the settings say for each whether the notes stay on this
   machine. API keys live in the system keychain, never in a file.
