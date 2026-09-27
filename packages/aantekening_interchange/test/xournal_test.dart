@@ -62,7 +62,9 @@ void main() {
     expect(pen.pressureAt(1), closeTo(0, 1e-9), reason: 'pressed lightly');
 
     final text = elements[1] as TextElement;
-    expect(text.frame.x + 6, closeTo(96, 1e-9));
+    // The text, not the box around it, starts where Xournal++ had it.
+    expect(text.frame.x + TextElement.sidePadding, closeTo(96, 1e-9));
+    expect(text.frame.y + TextElement.grabBand, closeTo(96, 1e-9));
     expect(text.blocks.map((block) => block.plainText), <String>[
       'Two',
       'lines',

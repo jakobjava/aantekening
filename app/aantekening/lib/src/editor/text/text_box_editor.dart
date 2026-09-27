@@ -141,10 +141,15 @@ class TextBoxEditor extends StatefulWidget {
   final ValueChanged<BlockEmbed>? onSaveFile;
 
   /// Height of the band along the top edge that moves the box when dragged.
-  static const double grabBand = 12;
+  static const double grabBand = TextElement.grabBand;
 
-  /// Space between the box's edges and its text.
-  static const EdgeInsets padding = EdgeInsets.fromLTRB(6, 0, 6, 8);
+  /// Space between the box's edges and its text, below the grab band.
+  static const EdgeInsets padding = EdgeInsets.fromLTRB(
+    TextElement.sidePadding,
+    0,
+    TextElement.sidePadding,
+    TextElement.bottomPadding,
+  );
 
   /// The size of a new, empty text box.
   static const Size newBoxSize = Size(minAutoWidth, 44);

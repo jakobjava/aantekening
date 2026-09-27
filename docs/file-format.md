@@ -26,7 +26,9 @@ optionally `z` and `locked`. `frame` is `{x, y, width, height, rotation?}` in
 page units, from the page's top-left corner, so `x` and `y` are not negative;
 rotation is radians clockwise about the frame's centre. Ink has no
 rotation of its own: turning or scaling handwriting rewrites its samples, and
-its frame is the box around its strokes.
+its frame is the box around its strokes. A text box's text starts 6 units in
+from its frame's sides and 12 below its top, the band it is moved by, and
+the frame reaches 8 below it.
 
 `locked: true` makes an element part of the page's background — a picture or
 PDF page set as the background to write over. It is drawn beneath all ink

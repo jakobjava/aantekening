@@ -20,10 +20,6 @@ import 'office_math.dart';
 const double _perHalfInch = 48;
 const double _perHimetric = 96 / 2540;
 
-/// The padding a text box keeps around its text, which its frame includes.
-const double _boxPaddingLeft = 6;
-const double _boxPaddingRight = 6;
-
 /// OneNote's own text size, in points: text at it is left at the page's.
 const double _bodySize = 11;
 
@@ -219,14 +215,15 @@ final class _Converter {
     if (!blocks.any((block) => block.isEmbed || block.plainText.isNotEmpty)) {
       return null;
     }
-    final width = (outline.maxWidth ?? 13) * _perHalfInch;
     return TextElement(
       id: Ulid.generate(),
-      frame: Frame(
-        x: x - _boxPaddingLeft,
-        y: y,
-        width: width + _boxPaddingLeft + _boxPaddingRight,
-        height: math.max(24, (outline.maxHeight ?? 0.6) * _perHalfInch),
+      frame: TextElement.frameAround(
+        Frame(
+          x: x,
+          y: y,
+          width: (outline.maxWidth ?? 13) * _perHalfInch,
+          height: math.max(24, (outline.maxHeight ?? 0.6) * _perHalfInch),
+        ),
       ),
       createdAt: now,
       updatedAt: now,
@@ -591,11 +588,13 @@ final class _Converter {
     if (embed == null) return null;
     return TextElement(
       id: Ulid.generate(),
-      frame: Frame(
-        x: (file.x ?? 0) * _perHalfInch - _boxPaddingLeft,
-        y: (file.y ?? 0) * _perHalfInch,
-        width: embed.width + _boxPaddingLeft + _boxPaddingRight,
-        height: embed.height,
+      frame: TextElement.frameAround(
+        Frame(
+          x: (file.x ?? 0) * _perHalfInch,
+          y: (file.y ?? 0) * _perHalfInch,
+          width: embed.width,
+          height: embed.height,
+        ),
       ),
       createdAt: now,
       updatedAt: now,

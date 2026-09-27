@@ -167,6 +167,21 @@ final class TextElement extends NoteElement {
     this.autoWidth = false,
   });
 
+  /// How far a box's text sits in from its frame: below the band along its
+  /// top edge that it is moved by, and clear of its sides and bottom. Text
+  /// brought from elsewhere is placed with these, to land where it was.
+  static const double grabBand = 12;
+  static const double sidePadding = 6;
+  static const double bottomPadding = 8;
+
+  /// The frame of a box whose text fills [text].
+  static Frame frameAround(Frame text) => Frame(
+    x: text.x - sidePadding,
+    y: text.y - grabBand,
+    width: text.width + 2 * sidePadding,
+    height: text.height + grabBand + bottomPadding,
+  );
+
   final List<TextBlock> blocks;
 
   /// Whether the box grows downward to fit its content, as OneNote text

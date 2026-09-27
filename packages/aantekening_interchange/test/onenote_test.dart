@@ -250,10 +250,11 @@ void main() {
       final document =
           draft.notebooks.single.sections.single.pages.single.document;
       final box = document.elements.single as TextElement;
-      // Half-inches, 48 page units each; the text starts past the padding.
-      expect(box.frame.x + 6, 96);
-      expect(box.frame.y, 240);
-      expect(box.frame.width, 480 + 12);
+      // Half-inches, 48 page units each: the text, not the box around it,
+      // starts where the outline did.
+      expect(box.frame.x + TextElement.sidePadding, 96);
+      expect(box.frame.y + TextElement.grabBand, 240);
+      expect(box.frame.width, 480 + 2 * TextElement.sidePadding);
       final heading = box.blocks.first;
       expect(heading.align, BlockAlign.center);
       expect(heading.spacing, BlockSpacing.tight);

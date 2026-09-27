@@ -384,11 +384,13 @@ final class _Reader {
     );
     return TextElement(
       id: Ulid.generate(),
-      frame: Frame(
-        x: _number(text, 'x', 0) * _perPoint - 6,
-        y: top + _number(text, 'y', 0) * _perPoint,
-        width: math.max(40, longest * size * 0.62 * _perPoint + 12),
-        height: lines.length * size * 1.3 * _perPoint,
+      frame: TextElement.frameAround(
+        Frame(
+          x: _number(text, 'x', 0) * _perPoint,
+          y: top + _number(text, 'y', 0) * _perPoint,
+          width: math.max(28, longest * size * 0.62 * _perPoint),
+          height: lines.length * size * 1.3 * _perPoint,
+        ),
       ),
       createdAt: now,
       updatedAt: now,
@@ -425,12 +427,7 @@ final class _Reader {
       final size = (frame.height / _perPoint / 1.35).clamp(8.0, 40.0);
       return TextElement(
         id: Ulid.generate(),
-        frame: Frame(
-          x: frame.x - 6,
-          y: frame.y,
-          width: frame.width + 12,
-          height: frame.height,
-        ),
+        frame: TextElement.frameAround(frame),
         createdAt: now,
         updatedAt: now,
         autoWidth: true,
