@@ -111,14 +111,15 @@ class _PageScrollbarState extends State<PageScrollbar> {
         onPointerUp: _onPointerUp,
         onPointerCancel: _onPointerUp,
         onPointerSignal: _onPointerSignal,
-        child: ListenableBuilder(
-          listenable: widget.controller,
-          builder: (context, _) => CustomPaint(
+        // The thumb follows the page by repainting, with nothing built
+        // or laid out again.
+        child: RepaintBoundary(
+          child: CustomPaint(
             size: _axis == Axis.vertical
                 ? const Size.fromWidth(PageScrollbar.thickness)
                 : const Size.fromHeight(PageScrollbar.thickness),
             painter: _ScrollbarPainter(
-              span: ScrollSpan.of(widget.controller, _axis),
+              controller: widget.controller,
               axis: _axis,
               track: scheme.surfaceContainerLow,
               thumb: scheme.onSurface.withValues(alpha: active ? 0.45 : 0.25),
@@ -131,14 +132,19 @@ class _PageScrollbarState extends State<PageScrollbar> {
 }
 
 class _ScrollbarPainter extends CustomPainter {
-  const _ScrollbarPainter({
-    required this.span,
+  _ScrollbarPainter({
+    required this.controller,
     required this.axis,
     required this.track,
     required this.thumb,
-  });
+  }) : super(
+         repaint: Listenable.merge(<Listenable>[
+           controller.view,
+           controller.contents,
+         ]),
+       );
 
-  final ScrollSpan span;
+  final CanvasController controller;
   final Axis axis;
   final Color track;
   final Color thumb;
@@ -160,7 +166,10 @@ class _ScrollbarPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = track);
     final vertical = axis == Axis.vertical;
-    final along = thumbOf(span, vertical ? size.height : size.width);
+    final along = thumbOf(
+      ScrollSpan.of(controller, axis),
+      vertical ? size.height : size.width,
+    );
     const inset = 3.0;
     final rect = vertical
         ? Rect.fromLTRB(inset, along.start, size.width - inset, along.end)
@@ -170,7 +179,7 @@ class _ScrollbarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ScrollbarPainter old) =>
-      old.span != span ||
+      old.controller != controller ||
       old.axis != axis ||
       old.track != track ||
       old.thumb != thumb;

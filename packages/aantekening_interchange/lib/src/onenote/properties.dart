@@ -69,6 +69,7 @@ abstract final class Prop {
   static const isTitleTime = 0x08001C87;
   static const isTitleDate = 0x08001CB5;
   static const listRestart = 0x14001CB7;
+  static const isLayoutSizeSetByUser = 0x08001CBD;
   static const notebookElementOrderingId = 0x14001CB9;
   static const sectionColor = 0x14001CBE;
   static const cachedTitleString = 0x1C001CF3;

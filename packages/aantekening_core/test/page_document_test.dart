@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
@@ -185,6 +187,108 @@ void main() {
         'points': <double>[0, 0, 1, 0, 5, 5, 1],
       });
       expect(stroke.pointCount, 1);
+    });
+
+    test('keeps the width a box that fits its text wraps at', () {
+      final document = PageDocument(
+        id: 'PAGE01',
+        elements: <NoteElement>[
+          TextElement(
+            id: 'box',
+            frame: const Frame(x: 0, y: 0, width: 80, height: 40),
+            createdAt: _now,
+            updatedAt: _now,
+            autoWidth: true,
+            widthLimit: 312,
+          ),
+        ],
+      );
+      final box =
+          PageDocument.decode(document.encode()).elements.single as TextElement;
+      expect(box.autoWidth, isTrue);
+      expect(box.widthLimit, 312);
+    });
+
+    test('renames the assets a page shows, and leaves its handwriting', () {
+      final ink = InkElement(
+        id: 'ink',
+        frame: const Frame(x: 0, y: 0, width: 10, height: 10),
+        createdAt: _now,
+        updatedAt: _now,
+      );
+      final document = PageDocument(
+        id: 'PAGE01',
+        elements: <NoteElement>[
+          ink,
+          ImageElement(
+            id: 'picture',
+            frame: const Frame(x: 0, y: 20, width: 40, height: 30),
+            createdAt: _now,
+            updatedAt: _now,
+            assetId: 'old',
+          ),
+        ],
+      );
+      final renamed = document.withAssetsRenamed(<String, String>{
+        'old': 'new',
+      });
+      expect(renamed.referencedAssetIds, <String>{'new'});
+      expect(renamed.elements.first, same(ink));
+    });
+
+    test('writes handwriting as its JSON does, whatever the numbers', () {
+      final random = math.Random(7);
+      final values = <double>[
+        0,
+        -0.001,
+        0.004,
+        0.005,
+        0.05,
+        0.5,
+        1,
+        -1,
+        12.3,
+        -12.34,
+        100.1,
+        99.995,
+        1e-9,
+        123456.78,
+        -98765.43,
+        1e14,
+        3.14159,
+        0.66,
+        4291.91,
+        for (var i = 0; i < 2000; i++) (random.nextDouble() - 0.3) * 20000,
+      ];
+      final stroke = InkStroke(
+        tool: InkTool.pencil,
+        color: 0xFF112233,
+        width: 1.3228347898468258,
+        points: Float32List.fromList(values),
+      );
+      final element = InkElement(
+        id: 'ink',
+        frame: const Frame(x: 1, y: 2, width: 3, height: 4),
+        createdAt: _now,
+        updatedAt: _now,
+        z: 2,
+      ).withStrokes(<InkStroke>[stroke, stroke]);
+      expect(element.encode(), jsonEncode(element.toJson()));
+    });
+
+    test('encodes as its JSON does, after an edit too', () {
+      final document = PageDocument(
+        id: 'PAGE01',
+        revision: 3,
+        elements: <NoteElement>[_text('a', 'one'), _text('b', 'two', y: 60)],
+      );
+      expect(document.encode(), jsonEncode(document.toJson()));
+
+      final edited = document
+          .withElementReplaced(_text('b', 'three', y: 60))
+          .withElementAdded(_text('c', 'four', y: 120));
+      expect(edited.encode(), jsonEncode(edited.toJson()));
+      expect(document.encode(), jsonEncode(document.toJson()));
     });
   });
 

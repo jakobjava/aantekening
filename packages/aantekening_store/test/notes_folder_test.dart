@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:aantekening_core/aantekening_core.dart';
 
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:path/path.dart' as p;
@@ -72,6 +75,65 @@ void main() {
       ).listSync(recursive: true).where((file) => file.path.endsWith('.tmp')),
       isEmpty,
     );
+  });
+
+  test('writes a page of handwriting as it is kept', () async {
+    final store = await computer('a');
+    addTearDown(store.close);
+    final (_, pageId) = await seed(store);
+    final ink =
+        InkElement(
+          id: 'ink',
+          frame: const Frame(x: 0, y: 0, width: 800, height: 800),
+          createdAt: 1,
+          updatedAt: 1,
+        ).withStrokes(<InkStroke>[
+          InkStroke(
+            tool: InkTool.pen,
+            color: 0xFF000000,
+            width: 2,
+            points: Float32List.fromList(<double>[
+              for (var i = 0; i < 60000; i++) i * 0.37 % 800,
+            ]),
+          ),
+        ]);
+    final document = documentWithText(pageId, 'Heavy').withElementAdded(ink);
+    await store.pages.saveDocument(pageId, document);
+    await store.mirror!.flush();
+
+    final file =
+        EntityFile.decode(
+              File(p.join(notes, 'pages', '$pageId.json.gz')).readAsBytesSync(),
+            )!
+            as PageFile;
+    expect(file.document.encode(), document.encode());
+    expect(file.page.title, 'Forces');
+  });
+
+  test('writes by itself what changes, after a quiet spell too', () async {
+    final store = await AantekeningStore.open(
+      notesFolder: notes,
+      indexFolder: p.join(root.path, 'index-a'),
+    );
+    addTearDown(store.close);
+    final (_, pageId) = await seed(store);
+    final page = File(p.join(notes, 'pages', '$pageId.json.gz'));
+    String written() => (EntityFile.decode(page.readAsBytesSync())! as PageFile)
+        .document
+        .extractSearchText();
+    Future<void> until(bool Function() done) async {
+      for (var waited = 0; !done(); waited++) {
+        if (waited > 100) fail('Not written');
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
+
+    await until(() => page.existsSync() && store.mirror!.status.pending == 0);
+    expect(written(), 'F = ma');
+    // Nothing waits now, so nothing is being checked; a change wakes it.
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    await store.pages.saveDocument(pageId, documentWithText(pageId, 'p = mv'));
+    await until(() => written() == 'p = mv');
   });
 
   test('another computer sharing the folder sees the notes, and its '

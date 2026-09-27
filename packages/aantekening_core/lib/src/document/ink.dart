@@ -2,6 +2,7 @@
 /// mouse or finger.
 library;
 
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -272,4 +273,49 @@ class InkStroke {
   }
 
   static double _round2(double value) => (value * 100).roundToDouble() / 100;
+
+  /// Writes the stroke to [json] as compact JSON, as [toJson] has it.
+  void writeJson(StringBuffer json) {
+    json
+      ..write('{"tool":"')
+      ..write(tool.name)
+      ..write('","color":')
+      ..write(color)
+      ..write(',"width":')
+      ..write(jsonEncode(width))
+      ..write(',"points":[');
+    for (var i = 0; i < points.length; i++) {
+      if (i > 0) json.write(',');
+      _writeHundredths(json, points[i]);
+    }
+    json.write(']}');
+  }
+
+  /// Writes [value] rounded to hundredths, as `jsonEncode` writes the
+  /// rounded double, without working out a double's shortest form: the
+  /// rounded double's shortest form is the hundredths themselves.
+  static void _writeHundredths(StringBuffer json, double value) {
+    final hundredths = (value * 100).roundToDouble();
+    if (!(hundredths.abs() < 1e15)) {
+      json.write(jsonEncode(hundredths / 100));
+      return;
+    }
+    final count = hundredths.toInt();
+    if (count == 0) {
+      json.write(hundredths.isNegative ? '-0.0' : '0.0');
+      return;
+    }
+    final magnitude = count.abs();
+    final fraction = magnitude % 100;
+    if (count < 0) json.write('-');
+    json
+      ..write(magnitude ~/ 100)
+      ..write('.');
+    if (fraction % 10 == 0) {
+      json.write(fraction ~/ 10);
+    } else {
+      if (fraction < 10) json.write('0');
+      json.write(fraction);
+    }
+  }
 }

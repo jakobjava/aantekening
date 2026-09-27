@@ -402,7 +402,7 @@ class _ImportSection extends ConsumerWidget {
               ),
               const SizedBox(width: 12),
               OutlinedButton(
-                onPressed: () => unawaited(importNotes(context, ref, importer)),
+                onPressed: () => unawaited(importNotes(context, importer)),
                 child: const Text('Import…'),
               ),
             ],

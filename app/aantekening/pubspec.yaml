@@ -59,5 +59,18 @@ flutter:
           weight: 600
         - asset: fonts/IBMPlexMono-Bold.ttf
           weight: 700
+    # Calibri's measure, for pages brought over from OneNote where Calibri
+    # is not installed.
+    - family: Carlito
+      fonts:
+        - asset: fonts/Carlito-Regular.ttf
+        - asset: fonts/Carlito-Italic.ttf
+          style: italic
+        - asset: fonts/Carlito-Bold.ttf
+          weight: 700
+        - asset: fonts/Carlito-BoldItalic.ttf
+          weight: 700
+          style: italic
   assets:
     - fonts/OFL.txt
+    - fonts/Carlito-OFL.txt

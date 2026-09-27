@@ -330,6 +330,71 @@ void main() {
       );
     });
 
+    testWidgets('a formula alone on its line stays at its start until '
+        'it ends with #', (tester) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      TextAlign drawnAlign() => tester
+          .widget<RichText>(
+            find
+                .descendant(
+                  of: find.byType(TextBoxEditor),
+                  matching: find.byType(RichText),
+                )
+                .first,
+          )
+          .textAlign;
+
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await tester.pumpAndSettle();
+      await type(tester, 'x^2');
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(blocksOf(tester).single.align, BlockAlign.start);
+      expect(drawnAlign(), TextAlign.start);
+
+      // Opened again, it is centred by ending it with the mark.
+      await tester.tapAt(
+        tester.getCenter(find.byType(MathView)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      await type(tester, ' #');
+      await tester.pumpAndSettle();
+      expect(find.byType(FormulaPreview), findsOneWidget);
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      final centred = blocksOf(tester).single;
+      expect(centred.align, BlockAlign.center);
+      expect(centred.runs.single, const TextRun.math('x^2', MathMode.latex));
+      expect(drawnAlign(), TextAlign.center);
+
+      // Centred across the box, however narrow the formula.
+      final box = tester.getRect(find.byType(TextBoxEditor));
+      expect(
+        tester.getCenter(find.byType(MathView)).dx,
+        moreOrLessEquals(box.center.dx, epsilon: 1),
+      );
+
+      // Opened again, it shows the mark; taken away, the line goes back.
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tapAt(
+        tester.getCenter(find.byType(MathView)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(typedLine(tester), 'x^2 #');
+      await press(tester, LogicalKeyboardKey.backspace);
+      await press(tester, LogicalKeyboardKey.backspace);
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(blocksOf(tester).single.align, BlockAlign.start);
+      expect(
+        blocksOf(tester).single.runs.single,
+        const TextRun.math('x^2', MathMode.latex),
+      );
+    });
+
     testWidgets('a formula opened and left unchanged keeps its LaTeX', (
       tester,
     ) async {
@@ -2156,5 +2221,47 @@ void main() {
 
       expect(container.read(selectedPageProvider), other!.id);
     });
+  });
+
+  testWidgets('a box as wide as its text wraps at its limit and centres '
+      'what is centred', (tester) async {
+    await tester.runAsync(() async {
+      final page = PageDocument.empty(id: pageId).withElementAdded(
+        TextElement(
+          id: 'box',
+          frame: const Frame(x: 100, y: 100, width: 400, height: 60),
+          createdAt: 0,
+          updatedAt: 0,
+          autoWidth: true,
+          widthLimit: 200,
+          blocks: const <TextBlock>[
+            TextBlock(
+              align: BlockAlign.center,
+              runs: <TextRun>[TextRun('Title')],
+            ),
+            TextBlock(
+              runs: <TextRun>[
+                TextRun('words enough to wrap well past the box limit'),
+              ],
+            ),
+          ],
+        ),
+      );
+      await store.pages.saveDocument(pageId, page);
+    });
+    await openEditor(tester, store, pageId);
+
+    final box = tester.getRect(find.byType(TextBoxEditor));
+    expect(textBox(tester).element.frame.width, lessThanOrEqualTo(200));
+    final title = tester.getRect(
+      find.descendant(
+        of: find.byType(TextBoxEditor),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is RichText && widget.text.toPlainText() == 'Title',
+        ),
+      ),
+    );
+    expect(title.center.dx, moreOrLessEquals(box.center.dx, epsilon: 1));
   });
 }

@@ -37,19 +37,44 @@ final class FormulaSource {
   static String sourceIn(MathMode syntax, String latex) =>
       syntax == MathMode.latex ? latex : LinearMath.fromLatex(latex);
 
+  /// What ends the source of a formula that is centred on its line: typed
+  /// after a formula alone on its line, it centres the line; taken away,
+  /// the line goes back to where lines start.
+  static const String centreMark = '#';
+
+  /// [source] without the [centreMark] it ends with, if it ends with one,
+  /// and whether it did. LaTeX's own `\#` is part of the formula.
+  static ({String formula, bool centred}) centring(String source) {
+    final trimmed = source.trimRight();
+    if (!trimmed.endsWith(centreMark) || trimmed.endsWith('\\$centreMark')) {
+      return (formula: source, centred: false);
+    }
+    return (
+      formula: trimmed.substring(0, trimmed.length - 1).trimRight(),
+      centred: true,
+    );
+  }
+
+  /// [source] with the [centreMark] after it, if [centred].
+  static String withCentring(String source, {required bool centred}) =>
+      centred ? '$source $centreMark' : source;
+
   /// The LaTeX the formula is stored as while its source is [source].
   String latexFor(String source) {
     final opened = _openedLatex;
     if (opened != null && source == _openedSource) return opened;
-    if (syntax == MathMode.latex || source.trim().isEmpty) return source;
-    return _translate(source).latex;
+    final formula = centring(source).formula;
+    if (syntax == MathMode.latex || formula.trim().isEmpty) return formula;
+    return _translate(formula).latex;
   }
 
   /// What is wrong with [source], as far as it can be read.
-  List<MathDiagnostic> diagnostics(String source) =>
-      syntax == MathMode.linear && source.trim().isNotEmpty
-      ? _translate(source).diagnostics
-      : const <MathDiagnostic>[];
+  List<MathDiagnostic> diagnostics(String source) {
+    final formula = centring(source).formula;
+    return syntax == MathMode.linear && formula.trim().isNotEmpty
+        ? _translate(formula).diagnostics
+        : const <MathDiagnostic>[];
+  }
 
   /// The last source translated is kept with its translation: storing the
   /// formula and previewing it both need it.

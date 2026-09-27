@@ -207,8 +207,18 @@ class PageDocument {
       List<Object?>() => <Object?>[for (final item in value) rename(item)],
       _ => value,
     };
-    return PageDocument.fromJson(
-      jsonDecode(jsonEncode(rename(toJson()))) as Map<String, Object?>,
+    // Handwriting, most of a page by weight, names no asset.
+    return copyWith(
+      elements: <NoteElement>[
+        for (final element in elements)
+          if (element is InkElement)
+            element
+          else
+            ?NoteElement.fromJson(
+              jsonDecode(jsonEncode(rename(element.toJson())))
+                  as Map<String, Object?>,
+            ),
+      ],
     );
   }
 
@@ -301,8 +311,30 @@ class PageDocument {
     );
   }
 
-  /// Encodes the document as compact JSON.
-  String encode() => jsonEncode(toJson());
+  /// Encodes the document as compact JSON, as [toJson] has it.
+  ///
+  /// Each element's JSON is written once and kept with it. Elements are
+  /// immutable, so a page saved again after an edit writes out only what the
+  /// edit changed: a stroke added to a page of handwriting, not the page.
+  String encode() {
+    final head = jsonEncode(<String, Object?>{
+      'formatVersion': currentFormatVersion,
+      'id': id,
+      'revision': revision,
+      'canvas': canvas.toJson(),
+    });
+    final json = StringBuffer(head.substring(0, head.length - 1))
+      ..write(',"elements":[');
+    for (var i = 0; i < elements.length; i++) {
+      final element = elements[i];
+      if (i > 0) json.write(',');
+      json.write(_elementJson[element] ??= element.encode());
+    }
+    json.write(']}');
+    return json.toString();
+  }
+
+  static final Expando<String> _elementJson = Expando<String>('element JSON');
 
   /// Decodes a document from a JSON string.
   ///

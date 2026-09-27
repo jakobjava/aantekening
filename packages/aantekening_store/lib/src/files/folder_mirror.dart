@@ -3,12 +3,14 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
+import '../away.dart';
 import '../bin_repository.dart';
 import '../database.dart';
 import '../library_repository.dart';
@@ -144,7 +146,16 @@ final class FolderMirror {
   /// been still a moment, and the folder is looked at every [every] and
   /// whenever something in it changes.
   void startAutomatically({Duration every = const Duration(minutes: 1)}) {
-    _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+    // Nothing is checked while nothing waits to be written: a change
+    // queued starts the checking, which stops once all is written.
+    _queued ??= _db.raw.updates
+        .where(
+          (update) =>
+              update.tableName == 'mirror_outbox' &&
+              update.kind != SqliteUpdateKind.delete,
+        )
+        .listen((_) => _wake());
+    _wake();
     _looker ??= Timer.periodic(every, (_) => unawaited(scan()));
     try {
       _watch ??= folder.directory
@@ -164,9 +175,16 @@ final class FolderMirror {
   }
 
   Timer? _looker;
+  StreamSubscription<SqliteUpdate>? _queued;
+
+  /// Starts checking each second for what waits to be written.
+  void _wake() {
+    if (_closed) return;
+    _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+  }
 
   /// Writes what changed once it stops changing, and at the latest after a
-  /// few seconds.
+  /// few seconds; stops checking once nothing waits.
   void _tick() {
     if (_closed) return;
     final rows = _db.select(
@@ -176,6 +194,8 @@ final class FolderMirror {
     final pending = integer(rows.first, 'n');
     if (pending == 0) {
       _lastSeq = seq;
+      _ticker?.cancel();
+      _ticker = null;
       return;
     }
     if (seq == _lastSeq || ++_waited >= 5) {
@@ -293,7 +313,11 @@ final class FolderMirror {
 
   Future<void> _write(EntityKind kind, String id) async {
     final file = _current(kind, id);
-    final bytes = file.encode();
+    final bytes = await away(
+      _encode,
+      file,
+      heavy: file is PageFile && (file.documentJson?.length ?? 0) >= heavyBytes,
+    );
     final path = folder.pathFor(kind, id);
     final digest = sha256.convert(bytes).toString();
     final record = _record(path);
@@ -320,6 +344,8 @@ final class FolderMirror {
     await NotesFolder.writeAtomically(path, bytes);
     _remember(path, kind, id, File(path).statSync(), digest);
   }
+
+  static Uint8List _encode(EntityFile file) => file.encode();
 
   /// Keeps [theirs], a page another copy of the notes wrote that is about
   /// to be written over by [ours], as a page of its own if they differ.
@@ -669,6 +695,7 @@ final class FolderMirror {
   Future<void> close() async {
     _closed = true;
     _ticker?.cancel();
+    await _queued?.cancel();
     _looker?.cancel();
     _settle?.cancel();
     await _watch?.cancel();

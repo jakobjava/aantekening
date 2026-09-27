@@ -6,6 +6,7 @@ import 'dart:math' as math;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -65,7 +66,22 @@ class _PageMinimapState extends State<PageMinimap> {
   /// holds for the whole drag so the page follows the pointer steadily.
   _MapPlacement? _dragging;
 
+  /// Where the map sees the page from.
+  late final _MapView _mapView = _MapView(widget.controller);
+
   CanvasController get _controller => widget.controller;
+
+  @override
+  void didUpdateWidget(PageMinimap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _mapView.controller = widget.controller;
+  }
+
+  @override
+  void dispose() {
+    _mapView.dispose();
+    super.dispose();
+  }
 
   Widget? _draw(BuildContext context, NoteElement element) {
     final kept = _drawn[element.id];
@@ -92,53 +108,103 @@ class _PageMinimapState extends State<PageMinimap> {
     );
   }
 
+  /// The map follows the view by itself: it is built again only when the
+  /// page changes.
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => ListenableBuilder(
-      listenable: _controller,
-      builder: (context, _) {
-        _forgetRemoved();
-        final placement = _MapPlacement.of(_controller, constraints.biggest);
-        final mark = context.tones.paperEmphasis;
-        return Listener(
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: (event) {
-            _dragging = placement;
-            _centreOn(event.localPosition, placement);
-          },
-          onPointerMove: (event) {
-            final dragging = _dragging;
-            if (dragging != null) _centreOn(event.localPosition, dragging);
-          },
-          onPointerUp: (_) => _dragging = null,
-          onPointerCancel: (_) => _dragging = null,
-          onPointerSignal: (event) {
-            if (event is PointerScrollEvent) {
-              _controller.panBy(-event.scrollDelta);
-            }
-          },
-          child: ColoredBox(
-            color: Color(_controller.document.canvas.background.paperColor),
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                RepaintBoundary(
-                  child: CanvasPreview(
-                    controller: _controller,
-                    viewport: placement.viewport,
-                    elementBuilder: _draw,
+    builder: (context, constraints) {
+      final size = _mapView.size = constraints.biggest;
+      return ListenableBuilder(
+        listenable: _controller.contents,
+        builder: (context, _) {
+          _forgetRemoved();
+          return Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (event) {
+              final placement = _MapPlacement.of(_controller, size);
+              _dragging = placement;
+              _centreOn(event.localPosition, placement);
+            },
+            onPointerMove: (event) {
+              final dragging = _dragging;
+              if (dragging != null) _centreOn(event.localPosition, dragging);
+            },
+            onPointerUp: (_) => _dragging = null,
+            onPointerCancel: (_) => _dragging = null,
+            onPointerSignal: (event) {
+              if (event is PointerScrollEvent) {
+                _controller.panBy(-event.scrollDelta);
+              }
+            },
+            child: ColoredBox(
+              color: Color(_controller.document.canvas.background.paperColor),
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  RepaintBoundary(
+                    child: CanvasPreview(
+                      controller: _controller,
+                      view: _mapView,
+                      elementBuilder: _draw,
+                    ),
                   ),
-                ),
-                CustomPaint(
-                  painter: _ViewPainter(view: placement.viewOnMap, color: mark),
-                ),
-              ],
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      painter: _ViewPainter(
+                        controller: _controller,
+                        color: context.tones.paperEmphasis,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
-    ),
+          );
+        },
+      );
+    },
   );
+}
+
+/// Where the map sees the page from, following the view.
+class _MapView extends ChangeNotifier
+    implements ValueListenable<CanvasViewport> {
+  _MapView(this._controller) {
+    _controller.addListener(_follow);
+  }
+
+  CanvasController _controller;
+  set controller(CanvasController value) {
+    if (identical(value, _controller)) return;
+    _controller.removeListener(_follow);
+    _controller = value..addListener(_follow);
+    _follow();
+  }
+
+  /// The map's size, as it was last laid out.
+  Size get size => _size;
+  Size _size = Size.zero;
+  set size(Size value) {
+    _size = value;
+    _value = _MapPlacement.of(_controller, value).viewport;
+  }
+
+  @override
+  CanvasViewport get value => _value;
+  CanvasViewport _value = const CanvasViewport();
+
+  void _follow() {
+    final next = _MapPlacement.of(_controller, _size).viewport;
+    if (next == _value) return;
+    _value = next;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_follow);
+    super.dispose();
+  }
 }
 
 /// How the map lies over the page: how small the page is drawn, how far
@@ -182,15 +248,23 @@ class _MapPlacement {
   Offset toPage(Offset local) => viewport.toPage(local);
 }
 
-/// The part of the page in view, marked on the map.
+/// The part of the page in view, marked on the map; it follows the view
+/// by itself.
 class _ViewPainter extends CustomPainter {
-  const _ViewPainter({required this.view, required this.color});
+  _ViewPainter({required this.controller, required this.color})
+    : super(
+        repaint: Listenable.merge(<Listenable>[
+          controller.view,
+          controller.contents,
+        ]),
+      );
 
-  final Rect view;
+  final CanvasController controller;
   final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final view = _MapPlacement.of(controller, size).viewOnMap;
     final rect = view.intersect(Offset.zero & size);
     if (rect.isEmpty) return;
     canvas
@@ -205,5 +279,5 @@ class _ViewPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ViewPainter old) =>
-      old.view != view || old.color != color;
+      old.controller != controller || old.color != color;
 }

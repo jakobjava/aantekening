@@ -215,19 +215,25 @@ final class _Converter {
     if (!blocks.any((block) => block.isEmbed || block.plainText.isNotEmpty)) {
       return null;
     }
+    final frame = TextElement.frameAround(
+      Frame(
+        x: x,
+        y: y,
+        width: (outline.maxWidth ?? 13) * _perHalfInch,
+        height: math.max(24, (outline.maxHeight ?? 0.6) * _perHalfInch),
+      ),
+    );
+    // A container never sized by hand is as wide as its text, wrapping at
+    // its width; one sized by hand is as wide as it was made.
+    final sized = outline.sizeSetByUser;
     return TextElement(
       id: Ulid.generate(),
-      frame: TextElement.frameAround(
-        Frame(
-          x: x,
-          y: y,
-          width: (outline.maxWidth ?? 13) * _perHalfInch,
-          height: math.max(24, (outline.maxHeight ?? 0.6) * _perHalfInch),
-        ),
-      ),
+      frame: frame,
       createdAt: now,
       updatedAt: now,
       blocks: blocks,
+      autoWidth: !sized,
+      widthLimit: sized ? null : frame.width,
     );
   }
 

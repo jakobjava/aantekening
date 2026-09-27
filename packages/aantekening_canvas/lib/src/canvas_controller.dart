@@ -2,9 +2,9 @@
 library;
 
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'canvas_viewport.dart';
@@ -34,7 +34,11 @@ class CanvasController extends ChangeNotifier {
   static const double hitSlop = 4;
 
   PageDocument _document;
-  CanvasViewport _viewport = const CanvasViewport();
+  final ValueNotifier<CanvasViewport> _view = ValueNotifier<CanvasViewport>(
+    const CanvasViewport(),
+  );
+  final _Signal _contents = _Signal();
+  final _Signal _wetInk = _Signal();
 
   /// The size of the view the canvas was last laid out in.
   ///
@@ -84,7 +88,20 @@ class CanvasController extends ChangeNotifier {
 
   PageDocument get document => _document;
 
-  CanvasViewport get viewport => _viewport;
+  CanvasViewport get viewport => _view.value;
+
+  /// The view, by itself. Listeners are told of every change to the view,
+  /// scrolling among them, and of nothing else.
+  ValueListenable<CanvasViewport> get view => _view;
+
+  /// Told of every change but those to the view and to the stroke in
+  /// progress: what the page holds, what is selected, the tools. What shows
+  /// the page rebuilds for these, and follows the view without rebuilding.
+  Listenable get contents => _contents;
+
+  /// Told of each sample added to the stroke in progress, and of its start
+  /// and end.
+  Listenable get wetInk => _wetInk;
 
   CanvasTool get tool => _tool;
 
@@ -118,23 +135,38 @@ class CanvasController extends ChangeNotifier {
   /// from its top-left corner at the zoom in use.
   void loadDocument(PageDocument document) {
     _document = document;
-    _viewport = CanvasViewport(zoom: _viewport.zoom);
+    _view.value = CanvasViewport(zoom: viewport.zoom);
     _undoStack.clear();
     _redoStack.clear();
     _selection.clear();
     _wetPoints.clear();
+    _wetInk.signal();
     _activeInkElementId = null;
     _drawing = false;
     _dirty = false;
     _reindex();
-    notifyListeners();
+    _changed();
   }
 
   /// Marks the current document as persisted.
   void markSaved() {
     if (!_dirty) return;
     _dirty = false;
+    _changed();
+  }
+
+  /// Tells what listens that the page, the selection or the tools changed.
+  void _changed() {
+    _contents.signal();
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _view.dispose();
+    _contents.dispose();
+    _wetInk.dispose();
+    super.dispose();
   }
 
   // ---------------------------------------------------------------- viewport
@@ -148,21 +180,21 @@ class CanvasController extends ChangeNotifier {
             origin: Offset(math.max(0, origin.dx), math.max(0, origin.dy)),
             zoom: value.zoom,
           );
-    if (_viewport == kept) return;
-    _viewport = kept;
+    if (viewport == kept) return;
+    _view.value = kept;
     notifyListeners();
   }
 
   /// The page-space point at the centre of the view.
   Offset get viewCenter =>
-      _viewport.toPage(Offset(viewSize.width / 2, viewSize.height / 2));
+      viewport.toPage(Offset(viewSize.width / 2, viewSize.height / 2));
 
   /// Pans by a screen-space delta.
-  void panBy(Offset delta) => viewport = _viewport.panBy(delta);
+  void panBy(Offset delta) => viewport = viewport.panBy(delta);
 
   /// Zooms by [factor] about a screen point.
   void zoomBy(double factor, Offset screenFocus) =>
-      viewport = _viewport.zoomAround(_viewport.zoom * factor, screenFocus);
+      viewport = viewport.zoomAround(viewport.zoom * factor, screenFocus);
 
   /// Zooms by [factor] about the centre of the view, for keyboard and toolbar
   /// zooming where there is no pointer to anchor on.
@@ -174,20 +206,20 @@ class CanvasController extends ChangeNotifier {
     final bounds = contentBounds;
     viewport = bounds.isEmpty
         ? const CanvasViewport()
-        : _viewport.fit(bounds, size);
+        : viewport.fit(bounds, size);
   }
 
   /// Resets to 100% zoom around the centre of the view.
   void resetZoom(Size size) {
-    final center = _viewport.toPage(Offset(size.width / 2, size.height / 2));
-    viewport = _viewport.zoomAround(1, Offset.zero).centeredOn(center, size);
+    final center = viewport.toPage(Offset(size.width / 2, size.height / 2));
+    viewport = viewport.zoomAround(1, Offset.zero).centeredOn(center, size);
   }
 
   /// Scrolls just far enough to show [bounds] with [margin] screen pixels
   /// around it, or, if it does not fit, to show its top-left part.
   void reveal(Aabb bounds, {double margin = 48}) {
-    final visible = _viewport.visibleBounds(viewSize);
-    final pad = _viewport.toPageDistance(margin);
+    final visible = viewport.visibleBounds(viewSize);
+    final pad = viewport.toPageDistance(margin);
     double along(double start, double end, double viewStart, double viewEnd) {
       if (start - pad >= viewStart && end + pad <= viewEnd) return viewStart;
       final length = viewEnd - viewStart;
@@ -202,7 +234,7 @@ class CanvasController extends ChangeNotifier {
         along(bounds.left, bounds.right, visible.left, visible.right),
         along(bounds.top, bounds.bottom, visible.top, visible.bottom),
       ),
-      zoom: _viewport.zoom,
+      zoom: viewport.zoom,
     );
   }
 
@@ -215,7 +247,7 @@ class CanvasController extends ChangeNotifier {
     // fresh element rather than joining strokes made with a different pen.
     _activeInkElementId = null;
     if (value != CanvasTool.select) _selection.clear();
-    notifyListeners();
+    _changed();
   }
 
   /// Changes the pen's settings, or the highlighter's when [value] is a
@@ -229,14 +261,14 @@ class CanvasController extends ChangeNotifier {
       _pen = value;
     }
     _activeInkElementId = null;
-    notifyListeners();
+    _changed();
   }
 
   // --------------------------------------------------------------- selection
 
   /// The elements intersecting the visible region, in paint order.
   List<NoteElement> visibleElements(Size size) =>
-      elementsIn(_viewport.visibleBounds(size));
+      elementsIn(viewport.visibleBounds(size));
 
   /// The elements intersecting [region] of the page, in paint order.
   List<NoteElement> elementsIn(Aabb region) {
@@ -329,7 +361,7 @@ class CanvasController extends ChangeNotifier {
     } else {
       _selection.add(id);
     }
-    notifyListeners();
+    _changed();
   }
 
   /// Selects everything the marquee [region] takes in.
@@ -377,7 +409,7 @@ class CanvasController extends ChangeNotifier {
     }
 
     if (identical(next, _document)) {
-      notifyListeners();
+      _changed();
     } else {
       // Splitting changes nothing that can be seen, so it is not an undo step
       // of its own; it is kept with whatever the selection is used for next.
@@ -393,13 +425,13 @@ class CanvasController extends ChangeNotifier {
         for (final element in _document.elements)
           if (!element.locked) element.id,
       ]);
-    notifyListeners();
+    _changed();
   }
 
   void clearSelection() {
     if (_selection.isEmpty) return;
     _selection.clear();
-    notifyListeners();
+    _changed();
   }
 
   /// The selected elements, in paint order.
@@ -483,7 +515,7 @@ class CanvasController extends ChangeNotifier {
     _selection
       ..clear()
       ..addAll(ids.where(_byId.containsKey));
-    notifyListeners();
+    _changed();
   }
 
   /// Replaces the element sharing [element]'s identifier.
@@ -544,7 +576,8 @@ class CanvasController extends ChangeNotifier {
     _wetPoints
       ..clear()
       ..addAll(<double>[page.dx, page.dy, _pressure(pressure), tilt]);
-    notifyListeners();
+    _wetInk.signal();
+    _changed();
   }
 
   /// Adds a sample to the stroke in progress.
@@ -561,6 +594,7 @@ class CanvasController extends ChangeNotifier {
       if (dx * dx + dy * dy < _minSampleDistanceSquared) return;
     }
     _wetPoints.addAll(<double>[page.dx, page.dy, _pressure(pressure), tilt]);
+    _wetInk.signal();
     notifyListeners();
   }
 
@@ -574,7 +608,8 @@ class CanvasController extends ChangeNotifier {
 
     if (_wetPoints.length < 4) {
       _wetPoints.clear();
-      notifyListeners();
+      _wetInk.signal();
+      _changed();
       return null;
     }
 
@@ -586,6 +621,7 @@ class CanvasController extends ChangeNotifier {
       points: Float32List.fromList(_wetPoints),
     );
     _wetPoints.clear();
+    _wetInk.signal();
 
     final clock = DateTime.now();
     final now = clock.millisecondsSinceEpoch;
@@ -622,7 +658,8 @@ class CanvasController extends ChangeNotifier {
     if (!_drawing && _wetPoints.isEmpty) return;
     _drawing = false;
     _wetPoints.clear();
-    notifyListeners();
+    _wetInk.signal();
+    _changed();
   }
 
   /// Erases whole strokes within [radius] of a page-space point.
@@ -689,7 +726,7 @@ class CanvasController extends ChangeNotifier {
     _dirty = true;
     _reindex();
     _selection.removeWhere((id) => !_byId.containsKey(id));
-    notifyListeners();
+    _changed();
   }
 
   // ----------------------------------------------------------------- helpers
@@ -728,7 +765,7 @@ class CanvasController extends ChangeNotifier {
     if (markDirty) _dirty = true;
     _reindex();
     _selection.removeWhere((id) => !_byId.containsKey(id));
-    notifyListeners();
+    _changed();
   }
 
   void _reindex() {
@@ -742,4 +779,9 @@ class CanvasController extends ChangeNotifier {
       );
     _index.rebuild(_document.elements);
   }
+}
+
+/// A change with nothing to say but that it happened.
+class _Signal extends ChangeNotifier {
+  void signal() => notifyListeners();
 }

@@ -1,6 +1,7 @@
 # 5. Ink is painted; everything else is a widget
 
-**Status:** accepted
+**Status:** accepted; its last consequence superseded by
+[ADR 21](0021-the-page-follows-the-view-as-one-transform.md)
 
 ## Context
 
@@ -11,7 +12,7 @@ One rendering strategy cannot serve both well.
 ## Decision
 
 Paint ink with `CustomPainter` in page space. Render every other element as a
-real widget, positioned at its on-screen rectangle and scaled from page units.
+real widget, laid out in page units and scaled with the page.
 Highlighter paints beneath the widget layer, pen above it.
 
 ## Consequences
@@ -25,6 +26,7 @@ Highlighter paints beneath the widget layer, pen above it.
   with text in paint order. Bound to the tools rather than to `z`, this matches
   what the instruments mean physically: a highlighter goes under writing, a pen
   over it.
-* Elements are placed individually rather than under one big `Transform`,
+* ~~Elements are placed individually rather than under one big `Transform`,
   because a transformed, overflowing layer silently loses hit-testing and
-  keyboard focus for anything outside its box.
+  keyboard focus for anything outside its box.~~ They are now laid out in
+  page units under one transform, hit through it (ADR 21).

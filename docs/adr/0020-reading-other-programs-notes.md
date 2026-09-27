@@ -80,6 +80,13 @@ identity so links between them still lead there.
 * A typeface that is not installed is drawn in one made to the same
   measure — Carlito for Calibri, Liberation for Arial and Times — so lines
   break where they broke in OneNote wherever such a face is installed.
+  Carlito comes with the app, Calibri being OneNote's own: drawn in any
+  other face, its lines stood taller, and a paragraph's text sank further
+  below where it was with every line.
+* A OneNote container never resized by hand is as wide as its text and
+  wraps at the width it had (`autoWidth`, `widthLimit`); one resized keeps
+  its width. Given their widest width, a word alone filled a box across
+  the page.
 * OneNote files in its online format are recognised and refused with a
   reason; exporting the notebook from OneNote on a computer gives a file
   that is read.

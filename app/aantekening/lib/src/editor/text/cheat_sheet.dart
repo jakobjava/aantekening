@@ -11,6 +11,7 @@ import '../../look/controls.dart';
 import '../../look/marks.dart';
 import '../../look/tones.dart';
 import '../../preferences.dart';
+import 'formula_source.dart';
 import 'math_syntax.dart';
 import 'math_templates.dart';
 
@@ -94,20 +95,59 @@ class CheatSheet extends ConsumerWidget {
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
-                  itemCount: _rows.length,
-                  itemBuilder: (context, index) => switch (_rows[index]) {
-                    (final topic, null) => _TopicHeading(topic.title),
-                    (_, final example?) => _ExampleRow(
-                      example: example,
-                      syntax: syntax,
-                      onInsert: onInsert,
-                    ),
-                  },
+                  itemCount: _rows.length + 2,
+                  itemBuilder: (context, index) =>
+                      switch (index - _rows.length) {
+                        0 => const _TopicHeading('Placing'),
+                        1 => const _CentringNote(),
+                        _ => switch (_rows[index]) {
+                          (final topic, null) => _TopicHeading(topic.title),
+                          (_, final example?) => _ExampleRow(
+                            example: example,
+                            syntax: syntax,
+                            onInsert: onInsert,
+                          ),
+                        },
+                      },
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// How a formula alone on its line is centred: by what its source ends
+/// with, in either syntax.
+class _CentringNote extends StatelessWidget {
+  const _CentringNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final tones = context.tones;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      child: Text.rich(
+        TextSpan(
+          children: <InlineSpan>[
+            const TextSpan(text: 'End a formula alone on its line with '),
+            TextSpan(
+              text: FormulaSource.centreMark,
+              style: TextStyle(
+                fontFamily: InterfaceFont.mono.family,
+                color: tones.text,
+              ),
+            ),
+            const TextSpan(
+              text:
+                  ' to centre it; take the mark away to put it back at '
+                  'the start of the line.',
+            ),
+          ],
+        ),
+        style: TextStyle(fontSize: 12, height: 1.4, color: tones.muted),
       ),
     );
   }

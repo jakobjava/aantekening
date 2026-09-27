@@ -2,12 +2,14 @@
 /// search index.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'away.dart';
 import 'database.dart';
 import 'files/entity_files.dart';
 import 'row_read.dart';
@@ -110,30 +112,28 @@ class PageRepository {
   // ------------------------------------------------------------ page contents
 
   /// Loads a page's document, or null when the page has no body.
-  Future<PageDocument?> loadDocument(String pageId) async =>
-      _readDocument(pageId);
-
-  PageDocument? _readDocument(String pageId) {
-    final source = _readSource(pageId);
-    return source == null ? null : PageDocument.decode(source);
+  ///
+  /// A long page is read on an isolate of its own.
+  Future<PageDocument?> loadDocument(String pageId) async {
+    final body = _readBody(pageId);
+    if (body == null) return null;
+    return away(_Body.read, body, heavy: body.stored.length >= heavyBytes ~/ 4);
   }
 
-  /// A page's contents as the JSON they are kept as.
-  String? _readSource(String pageId) {
+  PageDocument? _readDocument(String pageId) {
+    final body = _readBody(pageId);
+    return body == null ? null : _Body.read(body);
+  }
+
+  /// A page's body as it is kept, and its JSON read from that when asked.
+  _Body? _readBody(String pageId) {
     final rows = _db.select(
       'SELECT encoding, body FROM page_bodies WHERE page_id = ?',
       <Object?>[pageId],
     );
     if (rows.isEmpty) return null;
-
     final row = rows.first;
-    final bytes = row['body'] as List<int>;
-    final encoding = str(row, 'encoding');
-    return switch (encoding) {
-      BodyEncoding.gzippedJson => utf8.decode(gzip.decode(bytes)),
-      BodyEncoding.json => utf8.decode(bytes),
-      _ => throw PageFormatException('Unknown body encoding "$encoding"'),
-    };
+    return _Body(str(row, 'encoding'), row['body'] as List<int>);
   }
 
   /// Saves [document] as the contents of [pageId].
@@ -145,13 +145,39 @@ class PageRepository {
   /// The title becomes [title] when one is given and is otherwise left as it
   /// is: a page's title is what it is named, in its title field or when it is
   /// renamed, never something taken from its text.
+  ///
+  /// A long page is compressed on an isolate of its own, and saves are made
+  /// in the order they were asked for, so an earlier one never lands last.
   Future<PageRef> saveDocument(
     String pageId,
     PageDocument document, {
     String? title,
   }) async {
+    final before = _saving;
+    final turn = Completer<void>();
+    _saving = turn.future;
+    try {
+      if (before != null) await before;
+      return await _save(pageId, document, title);
+    } finally {
+      turn.complete();
+      if (identical(_saving, turn.future)) _saving = null;
+    }
+  }
+
+  /// When the save last asked for is done; null while none is under way.
+  Future<void>? _saving;
+
+  Future<PageRef> _save(
+    String pageId,
+    PageDocument document,
+    String? title,
+  ) async {
     final text = document.extractSearchText();
     final preview = previewOf(text);
+    // Written out here, where each element's JSON is kept with it.
+    final json = document.encode();
+    final body = await away(_Body.of, json, heavy: json.length >= heavyBytes);
     final now = _now;
 
     return _db.transaction(() {
@@ -162,7 +188,7 @@ class PageRepository {
         throw StateError('Cannot save unknown page $pageId');
       }
       final resolvedTitle = title ?? existing.title;
-      _writeBody(pageId, document);
+      _putBody(pageId, document.revision, body);
       _db.run(
         'UPDATE pages SET title = ?, preview = ?, revision = ?, updated_at = ? '
         'WHERE id = ?',
@@ -394,7 +420,7 @@ class PageRepository {
   PageFile? pageFile(String pageId) {
     final page = _findPage(pageId);
     if (page == null) return null;
-    final source = _readSource(pageId);
+    final body = _readBody(pageId);
     final assets = <AssetRef>[
       for (final row in _db.select(
         'SELECT a.* FROM assets a JOIN page_assets pa ON pa.asset_id = a.id '
@@ -412,10 +438,8 @@ class PageRepository {
     ];
     return PageFile(
       page: page,
-      document: source == null
-          ? PageDocument.empty(id: pageId)
-          : PageDocument.decode(source),
-      documentJson: source,
+      document: body == null ? PageDocument.empty(id: pageId) : null,
+      documentJson: body?.json,
       assets: assets,
       tags: <String>[
         for (final row in _db.select(
@@ -562,10 +586,10 @@ class PageRepository {
     ],
   );
 
-  void _writeBody(String pageId, PageDocument document) {
-    final bytes = utf8.encode(document.encode());
-    final compress = bytes.length >= BodyEncoding.compressionThreshold;
-    final stored = compress ? gzip.encode(bytes) : bytes;
+  void _writeBody(String pageId, PageDocument document) =>
+      _putBody(pageId, document.revision, _Body.of(document.encode()));
+
+  void _putBody(String pageId, int revision, _Body body) {
     _db.run(
       'INSERT INTO page_bodies (page_id, format_version, revision, encoding, body) '
       'VALUES (?, ?, ?, ?, ?) '
@@ -577,9 +601,9 @@ class PageRepository {
       <Object?>[
         pageId,
         PageDocument.currentFormatVersion,
-        document.revision,
-        compress ? BodyEncoding.gzippedJson : BodyEncoding.json,
-        stored,
+        revision,
+        body.encoding,
+        body.stored,
       ],
     );
   }
@@ -730,4 +754,32 @@ class PageRepository {
     color: intOrNull(row, 'color'),
     deletedAt: intOrNull(row, 'deleted_at'),
   );
+}
+
+/// A page's body as the database keeps it: its JSON, compressed if it is
+/// long.
+final class _Body {
+  _Body(this.encoding, this.stored);
+
+  /// The body of a page whose JSON is [json].
+  factory _Body.of(String json) {
+    final bytes = utf8.encode(json);
+    return bytes.length >= BodyEncoding.compressionThreshold
+        ? _Body(BodyEncoding.gzippedJson, pageCompression.encode(bytes))
+        : _Body(BodyEncoding.json, bytes);
+  }
+
+  final String encoding;
+  final List<int> stored;
+
+  /// The document [body] keeps.
+  static PageDocument read(_Body body) =>
+      PageDocument.decode(utf8.decode(body.json));
+
+  /// The body's JSON, as UTF-8.
+  List<int> get json => switch (encoding) {
+    BodyEncoding.gzippedJson => gzip.decode(stored),
+    BodyEncoding.json => stored,
+    _ => throw PageFormatException('Unknown body encoding "$encoding"'),
+  };
 }

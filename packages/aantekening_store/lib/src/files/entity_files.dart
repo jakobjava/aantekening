@@ -35,6 +35,12 @@ enum EntityKind {
   }
 }
 
+/// How pages are compressed, in the notes folder and in the index: at a
+/// level that writes a page of handwriting four times as fast as gzip's
+/// default, for a file about a seventh larger. Pages are written each time
+/// someone stops writing for a moment.
+final GZipCodec pageCompression = GZipCodec(level: 4);
+
 /// What one file of the notes folder holds.
 sealed class EntityFile {
   const EntityFile();
@@ -45,7 +51,9 @@ sealed class EntityFile {
   /// The file's bytes: JSON, gzipped for the kinds that are.
   Uint8List encode() {
     final json = utf8.encode(_json());
-    return Uint8List.fromList(kind.compressed ? gzip.encode(json) : json);
+    return Uint8List.fromList(
+      kind.compressed ? pageCompression.encode(json) : json,
+    );
   }
 
   String _json();
@@ -141,22 +149,42 @@ final class SectionFile extends EntityFile {
 /// pictures and files it shows — so their bytes, in the folder's assets,
 /// can be found — and its contents.
 final class PageFile extends EntityFile {
-  const PageFile({
+  PageFile({
     required this.page,
-    required this.document,
+    PageDocument? document,
     this.assets = const <AssetRef>[],
     this.tags = const <String>[],
     this.documentJson,
-  });
+  }) : assert(document != null || documentJson != null),
+       _document = document;
 
   final PageRef page;
-  final PageDocument document;
   final List<AssetRef> assets;
   final List<String> tags;
 
-  /// The document already written as JSON, as the database keeps it,
-  /// saving writing it again.
-  final String? documentJson;
+  /// The document already written as JSON, in UTF-8, as the database
+  /// keeps it: put in the file as it is, it is neither written again nor
+  /// read until [document] is asked for.
+  final List<int>? documentJson;
+
+  /// The page's contents.
+  PageDocument get document =>
+      _document ??= PageDocument.decode(utf8.decode(documentJson!));
+  PageDocument? _document;
+
+  @override
+  Uint8List encode() {
+    final json = documentJson;
+    if (json == null) return super.encode();
+    return pageCompression.encode(
+          (BytesBuilder(copy: false)
+                ..add(utf8.encode(_head()))
+                ..add(json)
+                ..addByte(0x7D))
+              .takeBytes(),
+        )
+        as Uint8List;
+  }
 
   @override
   EntityKind get kind => EntityKind.page;
@@ -165,12 +193,15 @@ final class PageFile extends EntityFile {
   String get id => page.id;
 
   @override
-  String _json() =>
+  String _json() => '${_head()}${document.encode()}}';
+
+  /// All the file holds up to its document.
+  String _head() =>
       '${EntityFile._header(kind)},'
       '"page":${jsonEncode(page.toJson())},'
       '"tags":${jsonEncode(tags)},'
       '"assets":${jsonEncode(<Object?>[for (final asset in assets) asset.toJson()])},'
-      '"document":${documentJson ?? document.encode()}}';
+      '"document":';
 }
 
 /// A conversation with the AI and its turns, or a kept item and how its

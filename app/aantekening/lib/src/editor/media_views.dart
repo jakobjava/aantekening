@@ -17,6 +17,11 @@ import '../providers.dart';
 import 'text/text_styles.dart';
 
 /// An imported picture, read from the asset store.
+///
+/// Decoded no larger than it is shown, in steps as a PDF page is rendered:
+/// a photograph a few thousand pixels across, shown the width of a column,
+/// would otherwise keep all its pixels in memory. Zooming in on it decodes
+/// it again, sharper.
 class AssetImageView extends ConsumerWidget {
   const AssetImageView({
     required this.assetId,
@@ -36,18 +41,64 @@ class AssetImageView extends ConsumerWidget {
       error: (error, _) => MediaPlaceholder(label: 'Image failed: $error'),
       data: (data) => data == null
           ? const MediaPlaceholder(label: 'Image is missing')
-          : Image.memory(
-              data,
-              fit: switch (fit) {
-                MediaFit.contain => BoxFit.contain,
-                MediaFit.cover => BoxFit.cover,
-                MediaFit.stretch => BoxFit.fill,
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final whole = MemoryImage(data);
+                final width = shownPixels(context, constraints.maxWidth);
+                final height = shownPixels(context, constraints.maxHeight);
+                return Image(
+                  image: switch (fit) {
+                    // Filling the box, a picture may run past it either way.
+                    MediaFit.cover => whole,
+                    MediaFit.contain => ResizeImage(
+                      whole,
+                      width: width,
+                      height: height,
+                      policy: ResizeImagePolicy.fit,
+                    ),
+                    MediaFit.stretch => ResizeImage(
+                      whole,
+                      width: width,
+                      height: height,
+                    ),
+                  },
+                  fit: switch (fit) {
+                    MediaFit.contain => BoxFit.contain,
+                    MediaFit.cover => BoxFit.cover,
+                    MediaFit.stretch => BoxFit.fill,
+                  },
+                  filterQuality: FilterQuality.medium,
+                  gaplessPlayback: true,
+                );
               },
-              filterQuality: FilterQuality.medium,
-              gaplessPlayback: true,
             ),
     );
   }
+}
+
+/// The sizes, in device pixels, pictures and PDF pages are drawn at.
+const List<int> _pixelSteps = <int>[
+  256,
+  512,
+  768,
+  1024,
+  1536,
+  2048,
+  3072,
+  4096,
+];
+
+/// How many device pixels to draw something [extent] page units long in, to
+/// show it sharply at the zoom and pixel density it is seen at: the next
+/// step up, so that panning and small changes of zoom never draw it again.
+int shownPixels(BuildContext context, double extent) {
+  final zoom = CanvasScope.zoomOf(context);
+  final pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
+  final wanted = extent * zoom * pixelRatio;
+  return _pixelSteps.firstWhere(
+    (step) => step >= wanted,
+    orElse: () => _pixelSteps.last,
+  );
 }
 
 /// One page of an imported PDF, drawn on white paper.
@@ -66,22 +117,8 @@ class PdfPageView extends ConsumerWidget {
   final String assetId;
   final int pageIndex;
 
-  /// The widths, in device pixels, a page is rendered at.
-  static const List<int> _widthSteps = <int>[
-    256,
-    512,
-    768,
-    1024,
-    1536,
-    2048,
-    3072,
-    4096,
-  ];
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final zoom = CanvasScope.zoomOf(context);
-    final pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
     final document = ref.watch(pdfDocumentProvider(assetId));
 
     return DecoratedBox(
@@ -98,19 +135,12 @@ class PdfPageView extends ConsumerWidget {
             return const MediaPlaceholder(label: 'PDF is missing');
           }
           return LayoutBuilder(
-            builder: (context, constraints) {
-              final wanted = constraints.maxWidth * zoom * pixelRatio;
-              final width = _widthSteps.firstWhere(
-                (step) => step >= wanted,
-                orElse: () => _widthSteps.last,
-              );
-              return _PdfRaster(
-                document: doc,
-                assetId: assetId,
-                pageIndex: pageIndex,
-                pixelWidth: width,
-              );
-            },
+            builder: (context, constraints) => _PdfRaster(
+              document: doc,
+              assetId: assetId,
+              pageIndex: pageIndex,
+              pixelWidth: shownPixels(context, constraints.maxWidth),
+            ),
           );
         },
       ),

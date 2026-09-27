@@ -195,6 +195,45 @@ void main() {
           'Physics': <OneEntry>[OneSection('Mechanics', pages)],
         }, ImportWork(work));
 
+    test('keeps the width of an outline sized by hand', () {
+      final draft = convert(<OnePage>[
+        page(<OnePageItem>[
+          const OneOutline(
+            x: 2,
+            y: 5,
+            maxWidth: 4,
+            sizeSetByUser: true,
+            indents: <double>[],
+            elements: <OneElement>[
+              OneElement(
+                contents: <OneContent>[
+                  OneRichText(
+                    runs: <OneRun>[OneRun('Narrow', _text)],
+                    alignment: 0,
+                  ),
+                ],
+                children: <OneElement>[],
+              ),
+            ],
+          ),
+        ]),
+      ]);
+      final box =
+          draft
+                  .notebooks
+                  .single
+                  .sections
+                  .single
+                  .pages
+                  .single
+                  .document
+                  .elements
+                  .single
+              as TextElement;
+      expect(box.autoWidth, isFalse);
+      expect(box.frame.width, 192 + 2 * TextElement.sidePadding);
+    });
+
     test('put each outline where it was, as one text box', () {
       final draft = convert(<OnePage>[
         page(<OnePageItem>[
@@ -255,6 +294,10 @@ void main() {
       expect(box.frame.x + TextElement.sidePadding, 96);
       expect(box.frame.y + TextElement.grabBand, 240);
       expect(box.frame.width, 480 + 2 * TextElement.sidePadding);
+      // Never sized by hand, it is as wide as its text, wrapping where the
+      // outline did.
+      expect(box.autoWidth, isTrue);
+      expect(box.widthLimit, 480 + 2 * TextElement.sidePadding);
       final heading = box.blocks.first;
       expect(heading.align, BlockAlign.center);
       expect(heading.spacing, BlockSpacing.tight);

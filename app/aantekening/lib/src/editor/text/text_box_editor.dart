@@ -19,6 +19,7 @@ import '../note_clipboard.dart';
 import 'block_paragraph.dart';
 import 'block_view.dart';
 import 'block_widgets.dart';
+import 'aligned_column.dart';
 import 'formula_source.dart';
 import 'list_numbering.dart';
 import 'math_templates.dart';
@@ -231,6 +232,11 @@ class _Hit {
 class TextBoxEditorState extends State<TextBoxEditor>
     implements DeltaTextInputClient, TextEditorCommands {
   static const Duration _blinkInterval = Duration(milliseconds: 530);
+
+  /// How long the caret blinks after the last key or click before it stays
+  /// lit, as GTK's does: blinking on in a window left alone, it would keep
+  /// the screen drawing twice a second.
+  static const Duration _blinkFor = Duration(seconds: 10);
   static const Duration _undoGroupPause = Duration(milliseconds: 1500);
   static const Duration _multiClickWindow = Duration(milliseconds: 450);
 
@@ -768,7 +774,10 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final run = _blocks[formula.block].runs[formula.run];
     final latex = _source.latexFor(run.text);
     _source.syntax = syntax;
-    final source = FormulaSource.sourceIn(syntax, latex);
+    final source = FormulaSource.withCentring(
+      FormulaSource.sourceIn(syntax, latex),
+      centred: FormulaSource.centring(run.text).centred,
+    );
     _source.opened(latex, source);
     _blocks = RichTextEditing.replaceRun(
       _blocks,
@@ -855,7 +864,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
     // Simple syntax.
     final legacy = run.math == MathMode.linear;
     final latex = LinearMath.latexFor(run.math!, run.text);
-    final source = FormulaSource.sourceIn(_source.syntax, latex);
+    final source = FormulaSource.withCentring(
+      FormulaSource.sourceIn(_source.syntax, latex),
+      centred:
+          _isAlone(_blocks[formula.block]) &&
+          _blocks[formula.block].align == BlockAlign.center,
+    );
     _source.opened(latex, source);
     _formula = formula;
     _blocks = RichTextEditing.replaceRun(
@@ -877,6 +891,27 @@ class TextBoxEditorState extends State<TextBoxEditor>
     _connection?.updateConfig(_inputConfiguration());
     _afterChange();
     _reportFormula();
+  }
+
+  /// Whether [block] is a formula alone on its line.
+  static bool _isAlone(TextBlock block) =>
+      block.runs.length == 1 && block.runs.single.isMath;
+
+  /// [blocks] with block [index], if it is a formula alone on its line,
+  /// centred as its source said: centred if it ended with the centring mark,
+  /// back where lines start if it was centred and no longer ends with it.
+  static List<TextBlock> _centredAsMarked(
+    List<TextBlock> blocks,
+    int index, {
+    required bool centred,
+  }) {
+    final block = blocks[index];
+    if (!_isAlone(block)) return blocks;
+    final align = centred
+        ? BlockAlign.center
+        : (block.align == BlockAlign.center ? BlockAlign.start : block.align);
+    if (align == block.align) return blocks;
+    return <TextBlock>[...blocks]..[index] = block.copyWith(align: align);
   }
 
   /// Tells the preview about the formula being edited, or that there is none.
@@ -940,13 +975,14 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final run = span == null ? null : _blocks[formula.block].runs[formula.run];
     final source = run?.text ?? '';
     final latex = _source.latexFor(source);
+    final (formula: written, :centred) = FormulaSource.centring(source);
     _formula = null;
     _source.closed();
     _connection?.updateConfig(_inputConfiguration());
     _reportFormula();
     if (span == null || run == null) return;
 
-    if (source.trim().isEmpty) {
+    if (written.trim().isEmpty) {
       final blocks = RichTextEditing.removeRun(
         _blocks,
         formula.block,
@@ -972,13 +1008,15 @@ class TextBoxEditorState extends State<TextBoxEditor>
       return;
     }
 
-    // The stored text already has this LaTeX: every edit reported it.
-    final blocks = RichTextEditing.replaceRun(
+    // The stored text already has this LaTeX: every edit reported it. Where
+    // the line lies is decided now, and reported.
+    final replaced = RichTextEditing.replaceRun(
       _blocks,
       formula.block,
       formula.run,
       TextRun.math(latex, MathMode.latex, run.marks),
     );
+    final blocks = _centredAsMarked(replaced, formula.block, centred: centred);
     final end = span.start + latex.length;
     RichPosition map(RichPosition p) {
       if (p.block != formula.block || p.offset <= span.start) return p;
@@ -1007,6 +1045,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       _goalX = null;
     });
     _undoBreak = true;
+    if (!identical(blocks, replaced)) _emitStored(record: true);
     _afterChange();
   }
 
@@ -2725,9 +2764,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (resize == null || table == null || box == null) return;
     final drag = box.globalToLocal(to).dx - box.globalToLocal(resize.from).dx;
     final widest =
-        (widget.element.autoWidth
-            ? TextBoxEditor.maxAutoWidth
-            : widget.element.frame.width) -
+        (widget.element.autoWidth ? _widest : widget.element.frame.width) -
         TextBoxEditor.padding.horizontal -
         (box.size.width - box.columnWidth(resize.column));
     final width = math.max(
@@ -2838,7 +2875,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     // A picture never grows wider than the box holding it; one that sizes
     // itself to its content can grow until the box is as wide as it goes.
     final widest = widget.element.autoWidth
-        ? TextBoxEditor.maxAutoWidth
+        ? _widest
         : math.max(_minEmbedWidth, (row?.size.width ?? 0) - indent);
     final width =
         (resize.width + resize.corner.widening(drag, embed.aspectRatio)).clamp(
@@ -2905,8 +2942,14 @@ class TextBoxEditorState extends State<TextBoxEditor>
     // Tests turn blinking off through the framework's own switch, so that
     // waiting for the page to settle does not wait on the caret forever.
     if (!widget.isEditing || EditableText.debugDeterministicCursor) return;
-    _blinkTimer = Timer.periodic(_blinkInterval, (_) {
-      _caretVisible.value = !_caretVisible.value;
+    var blinks = _blinkFor.inMilliseconds ~/ _blinkInterval.inMilliseconds;
+    _blinkTimer = Timer.periodic(_blinkInterval, (timer) {
+      if (--blinks > 0) {
+        _caretVisible.value = !_caretVisible.value;
+      } else {
+        timer.cancel();
+        _caretVisible.value = true;
+      }
     });
   }
 
@@ -3350,15 +3393,24 @@ class TextBoxEditorState extends State<TextBoxEditor>
     );
 
     final ordinals = ListNumbering.ordinals(_blocks);
-    final rows = <Widget>[];
+    // Each row, and where across the box it sits in a box as wide as its
+    // text: a paragraph by its alignment, a table at the start.
+    final rows = <(Widget, double)>[];
     var i = 0;
     while (i < _blocks.length) {
       final table = TextTables.tableAt(_blocks, i);
       if (table == null) {
-        rows.add(_buildBlock(i, base, paint, ordinals[i], focused, autoWidth));
+        rows.add((
+          _buildBlock(i, base, paint, ordinals[i], focused, autoWidth),
+          switch (_blocks[i].align) {
+            BlockAlign.start => 0,
+            BlockAlign.center => 0.5,
+            BlockAlign.end => 1,
+          },
+        ));
         i++;
       } else {
-        rows.add(_buildTable(table, base, paint, ordinals, focused));
+        rows.add((_buildTable(table, base, paint, ordinals, focused), 0));
         i = table.end;
       }
     }
@@ -3384,13 +3436,22 @@ class TextBoxEditorState extends State<TextBoxEditor>
           padding: TextBoxEditor.padding.copyWith(
             top: TextBoxEditor.padding.top + TextBoxEditor.grabBand,
           ),
-          child: Column(
-            crossAxisAlignment: autoWidth
-                ? CrossAxisAlignment.start
-                : CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: rows,
-          ),
+          child: autoWidth
+              ? AlignedColumn(
+                  // As wide as the narrowest box, between its padding.
+                  minWidth:
+                      TextBoxEditor.minAutoWidth -
+                      TextBoxEditor.padding.horizontal,
+                  children: <Widget>[
+                    for (final (row, across) in rows)
+                      AlignedRow(across: across, child: row),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[for (final (row, _) in rows) row],
+                ),
         ),
         Positioned(
           top: 0,
@@ -3441,7 +3502,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
             child: OverflowBox(
               alignment: Alignment.topLeft,
               minWidth: autoWidth ? TextBoxEditor.minAutoWidth : null,
-              maxWidth: autoWidth ? TextBoxEditor.maxAutoWidth : null,
+              maxWidth: autoWidth ? _widest : null,
               minHeight: 0,
               maxHeight: double.infinity,
               child: SizeReporter(onSize: _reportSize, child: content),
@@ -3451,6 +3512,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
       ),
     );
   }
+
+  /// The widest this box grows while it sizes itself to its text.
+  double get _widest => widget.element.widthLimit ?? TextBoxEditor.maxAutoWidth;
 
   void _reportSize(Size size) {
     final reported = _reportedSize;
@@ -3572,13 +3636,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
       caretVisible: _caretVisible,
       child: RichText(
         text: view.span(base: base, mark: context.tones.paperEmphasis),
-        textAlign: view.isDisplayFormula
-            ? TextAlign.center
-            : RichTextStyles.alignOf(block),
+        textAlign: RichTextStyles.alignOf(block),
         textScaler: TextScaler.noScaling,
-        // A box sizing itself to its text measures its longest line; a box of
-        // fixed width gives every paragraph the full width, so a lone formula
-        // can be centred in it.
+        // A box sizing itself to its text measures its longest line, and
+        // places the paragraph across the box as it is aligned; a box of
+        // fixed width gives every paragraph the full width to align in.
         textWidthBasis: autoWidth
             ? TextWidthBasis.longestLine
             : TextWidthBasis.parent,

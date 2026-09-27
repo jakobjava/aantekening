@@ -6,6 +6,8 @@
 /// and serialiser that still needs to handle it.
 library;
 
+import 'dart:convert';
+
 import '../util/geometry.dart';
 import '../util/json_read.dart';
 import '../util/ulid.dart';
@@ -95,6 +97,9 @@ sealed class NoteElement {
 
   Map<String, Object?> toJson();
 
+  /// This element as compact JSON, as [toJson] has it.
+  String encode() => jsonEncode(toJson());
+
   /// Fields shared by every element type.
   Map<String, Object?> baseJson() => <String, Object?>{
     'id': id,
@@ -165,6 +170,7 @@ final class TextElement extends NoteElement {
     this.blocks = const <TextBlock>[],
     this.autoGrow = true,
     this.autoWidth = false,
+    this.widthLimit,
   });
 
   /// How far a box's text sits in from its frame: below the band along its
@@ -192,6 +198,11 @@ final class TextElement extends NoteElement {
   /// OneNote text container does while you type. Resizing the box by hand
   /// fixes its width.
   final bool autoWidth;
+
+  /// How wide, frame and all, the box grows while it sizes itself to its
+  /// text before its lines wrap: the width a OneNote container brought over
+  /// wrapped at, say. Null for the app's own limit.
+  final double? widthLimit;
 
   @override
   String get type => 'text';
@@ -232,6 +243,7 @@ final class TextElement extends NoteElement {
     blocks: blocks ?? this.blocks,
     autoGrow: autoGrow ?? this.autoGrow,
     autoWidth: autoWidth ?? this.autoWidth,
+    widthLimit: widthLimit,
   );
 
   /// Moves, rotates or resizes the box. A new width means the user has sized
@@ -257,6 +269,7 @@ final class TextElement extends NoteElement {
     'blocks': <Object?>[for (final block in blocks) block.toJson()],
     if (!autoGrow) 'autoGrow': false,
     if (autoWidth) 'autoWidth': true,
+    if (widthLimit != null) 'widthLimit': widthLimit,
   };
 
   static TextElement fromJson(Map<String, Object?> json) => TextElement(
@@ -272,6 +285,7 @@ final class TextElement extends NoteElement {
     ],
     autoGrow: readBool(json, 'autoGrow', true),
     autoWidth: readBool(json, 'autoWidth'),
+    widthLimit: readDoubleOrNull(json, 'widthLimit'),
   );
 }
 
@@ -408,6 +422,21 @@ final class InkElement extends NoteElement {
     ...baseJson(),
     'strokes': <Object?>[for (final stroke in strokes) stroke.toJson()],
   };
+
+  /// Handwriting is mostly numbers, which [InkStroke.writeJson] writes
+  /// several times as fast as a general encoder.
+  @override
+  String encode() {
+    final base = jsonEncode(baseJson());
+    final json = StringBuffer(base.substring(0, base.length - 1))
+      ..write(',"strokes":[');
+    for (var i = 0; i < strokes.length; i++) {
+      if (i > 0) json.write(',');
+      strokes[i].writeJson(json);
+    }
+    json.write(']}');
+    return json.toString();
+  }
 
   static InkElement fromJson(Map<String, Object?> json) => InkElement(
     id: readString(json, 'id'),

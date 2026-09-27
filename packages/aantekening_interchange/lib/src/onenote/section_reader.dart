@@ -129,7 +129,7 @@ final class _PageReader {
       y: properties.float(Prop.offsetFromParentVert),
       maxWidth: properties.float(Prop.layoutMaxWidth),
       maxHeight: properties.float(Prop.layoutMaxHeight),
-      sizeSetByUser: properties.flag(0x08001CBD),
+      sizeSetByUser: properties.flag(Prop.isLayoutSizeSetByUser),
     );
   }
 

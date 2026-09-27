@@ -4,6 +4,7 @@ library;
 import 'dart:math' as math;
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -14,6 +15,7 @@ import 'canvas_painters.dart';
 import 'canvas_scope.dart';
 import 'canvas_viewport.dart';
 import 'element_transforms.dart';
+import 'page_space.dart';
 import 'selection_handles.dart';
 import 'tools.dart';
 
@@ -264,26 +266,34 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onControllerChanged);
+    _listen(_controller);
   }
 
   @override
   void didUpdateWidget(InfiniteCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_onControllerChanged);
-      widget.controller.addListener(_onControllerChanged);
+      _stopListening(oldWidget.controller);
+      _listen(widget.controller);
     }
   }
 
   @override
   void dispose() {
     _fling.dispose();
-    _controller.removeListener(_onControllerChanged);
+    _stopListening(_controller);
     super.dispose();
   }
 
-  void _onControllerChanged() {
+  // Only what the page holds rebuilds the canvas: its layers follow the
+  // view by themselves.
+  void _listen(CanvasController controller) =>
+      controller.contents.addListener(_onContentsChanged);
+
+  void _stopListening(CanvasController controller) =>
+      controller.contents.removeListener(_onContentsChanged);
+
+  void _onContentsChanged() {
     if (mounted) setState(() {});
   }
 
@@ -1016,20 +1026,6 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       builder: (context, constraints) {
         _size = constraints.biggest;
         final controller = _controller..viewSize = _size;
-        final viewport = controller.viewport;
-        final visible = controller.visibleElements(_size);
-        final backgrounds = <NoteElement>[
-          for (final element in visible)
-            if (element.locked) element,
-        ];
-        final elements = <NoteElement>[
-          for (final element in visible)
-            if (!element.locked) element,
-        ];
-        final ink = <InkElement>[
-          for (final element in elements)
-            if (element is InkElement) element,
-        ];
 
         return Listener(
           onPointerDown: _onPointerDown,
@@ -1059,77 +1055,27 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
                       child: CustomPaint(
                         painter: BackgroundPainter(
                           background: controller.document.canvas.background,
-                          viewport: viewport,
+                          view: controller.view,
                           paperWidth: controller.document.canvas.paperWidth,
                         ),
                       ),
                     ),
                   ),
-                  // The pictures and PDF pages set as the background, beneath
-                  // all ink, and never pressed.
-                  if (backgrounds.isNotEmpty)
-                    IgnorePointer(
-                      child: CanvasScope(
-                        zoom: viewport.zoom,
-                        child: _ElementLayer(
-                          elements: backgrounds,
-                          viewport: viewport,
-                          builder: widget.elementBuilder,
-                          header: null,
-                          headerInteractive: false,
-                        ),
-                      ),
-                    ),
-                  IgnorePointer(
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        painter: InkPainter(
-                          elements: ink,
-                          viewport: viewport,
-                          layer: InkLayer.beneath,
-                        ),
-                      ),
-                    ),
-                  ),
-                  CanvasScope(
-                    zoom: viewport.zoom,
-                    child: _ElementLayer(
-                      elements: elements,
-                      viewport: viewport,
-                      builder: widget.elementBuilder,
-                      onDoubleTap: widget.onElementDoubleTap,
-                      header: widget.header,
-                      headerInteractive: controller.tool == CanvasTool.select,
-                    ),
-                  ),
-                  IgnorePointer(
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        painter: InkPainter(
-                          elements: ink,
-                          viewport: viewport,
-                          layer: InkLayer.above,
-                        ),
-                      ),
-                    ),
-                  ),
-                  IgnorePointer(
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        painter: WetInkPainter(
-                          points: controller.wetPoints,
-                          pen: controller.pen,
-                          viewport: viewport,
-                        ),
-                      ),
-                    ),
+                  _PageContent(
+                    controller: controller,
+                    view: controller.view,
+                    size: _size,
+                    builder: widget.elementBuilder,
+                    onDoubleTap: widget.onElementDoubleTap,
+                    header: widget.header,
+                    headerInteractive: controller.tool == CanvasTool.select,
                   ),
                   IgnorePointer(
                     child: RepaintBoundary(
                       child: CustomPaint(
                         painter: SelectionPainter(
                           selected: controller.selectedElements,
-                          viewport: viewport,
+                          view: controller.view,
                           accent:
                               widget.selectionColor ??
                               Theme.of(context).colorScheme.primary,
@@ -1179,7 +1125,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 class CanvasPreview extends StatelessWidget {
   const CanvasPreview({
     required this.controller,
-    required this.viewport,
+    required this.view,
     this.elementBuilder,
     super.key,
   });
@@ -1187,71 +1133,182 @@ class CanvasPreview extends StatelessWidget {
   /// The page, as the canvas has it.
   final CanvasController controller;
 
-  final CanvasViewport viewport;
+  /// Where the page is seen from, which the preview follows by itself.
+  final ValueListenable<CanvasViewport> view;
   final CanvasElementBuilder? elementBuilder;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final visible = controller.elementsIn(
-        viewport.visibleBounds(constraints.biggest),
-      );
-      final ink = <InkElement>[
-        for (final element in visible)
-          if (element is InkElement && !element.locked) element,
-      ];
-      Widget layer(bool locked) => _ElementLayer(
-        elements: <NoteElement>[
-          for (final element in visible)
-            if (element.locked == locked) element,
-        ],
-        viewport: viewport,
-        builder: elementBuilder,
-        header: null,
-        headerInteractive: false,
-      );
-      return IgnorePointer(
-        child: ClipRect(
-          child: CanvasScope(
-            zoom: viewport.zoom,
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                layer(true),
-                CustomPaint(
-                  painter: InkPainter(
-                    elements: ink,
-                    viewport: viewport,
-                    layer: InkLayer.beneath,
-                  ),
-                ),
-                layer(false),
-                CustomPaint(
-                  painter: InkPainter(
-                    elements: ink,
-                    viewport: viewport,
-                    layer: InkLayer.above,
-                  ),
-                ),
-              ],
-            ),
-          ),
+    builder: (context, constraints) => IgnorePointer(
+      child: ClipRect(
+        child: _PageContent(
+          controller: controller,
+          view: view,
+          size: constraints.biggest,
+          builder: elementBuilder,
+          header: null,
+          headerInteractive: false,
+          still: true,
         ),
-      );
-    },
+      ),
+    ),
   );
 }
 
-/// Positions element widgets over the canvas, with the header beneath them.
+/// The page's own layers, from the bottom up: the pictures and PDF pages
+/// set as its background, highlighter, the element widgets, pen ink and the
+/// stroke in progress; laid out in page units over the part of the page
+/// around what [view] sees in a view of [size], and shown as it sees it.
 ///
-/// Each element is placed at its on-screen rectangle and scaled from page
-/// units, rather than the whole layer being transformed. Keeping every child
-/// inside the viewport's own box is what lets them receive hits and keyboard
-/// focus, which a transformed, overflowing layer would silently lose.
+/// It follows the view without being built again until the view moves out
+/// of what was laid out, or zooms. Each layer repaints by itself, so a new
+/// ink sample repaints only the stroke in progress, and a caret blinking only
+/// the element layer.
+class _PageContent extends StatefulWidget {
+  const _PageContent({
+    required this.controller,
+    required this.view,
+    required this.size,
+    required this.builder,
+    required this.header,
+    required this.headerInteractive,
+    this.onDoubleTap,
+    this.still = false,
+  });
+
+  final CanvasController controller;
+  final ValueListenable<CanvasViewport> view;
+  final Size size;
+  final CanvasElementBuilder? builder;
+  final CanvasHeader? header;
+  final bool headerInteractive;
+  final void Function(NoteElement element)? onDoubleTap;
+
+  /// Whether the page is only looked at, never zoomed: the stroke in
+  /// progress is left out, and ink is kept as pixels.
+  final bool still;
+
+  @override
+  State<_PageContent> createState() => _PageContentState();
+}
+
+class _PageContentState extends State<_PageContent> {
+  /// The part of the page laid out, and the zoom it was built for.
+  Aabb _region = Aabb.empty;
+  double _zoom = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.view.addListener(_onViewChanged);
+  }
+
+  @override
+  void didUpdateWidget(_PageContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.view, widget.view)) {
+      oldWidget.view.removeListener(_onViewChanged);
+      widget.view.addListener(_onViewChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.view.removeListener(_onViewChanged);
+    super.dispose();
+  }
+
+  void _onViewChanged() {
+    final viewport = widget.view.value;
+    if (viewport.zoom != _zoom ||
+        pageRegion(viewport, widget.size) != _region) {
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final builder = widget.builder;
+    final headerInteractive = widget.headerInteractive;
+    final onDoubleTap = widget.onDoubleTap;
+    final viewport = widget.view.value;
+    final region = _region = pageRegion(viewport, widget.size);
+    _zoom = viewport.zoom;
+    final shown = controller.elementsIn(region);
+    final origin = Offset(region.left, region.top);
+    // The painters draw in page space moved to the region's corner.
+    final fromOrigin = CanvasViewport(origin: origin);
+    final pixelsPerUnit = widget.still
+        ? viewport.zoom * MediaQuery.devicePixelRatioOf(context)
+        : null;
+    final ink = <InkElement>[
+      for (final element in shown)
+        if (element is InkElement && !element.locked) element,
+    ];
+    Widget layer(bool locked, {CanvasHeader? header}) => _ElementLayer(
+      elements: <NoteElement>[
+        for (final element in shown)
+          if (element.locked == locked && element is! InkElement) element,
+      ],
+      origin: origin,
+      builder: builder,
+      onDoubleTap: locked ? null : onDoubleTap,
+      header: header,
+      headerInteractive: headerInteractive,
+    );
+    Widget paint(CustomPainter painter) => IgnorePointer(
+      child: RepaintBoundary(child: CustomPaint(painter: painter)),
+    );
+
+    return CanvasScope(
+      zoom: viewport.zoom,
+      child: PageSpace(
+        view: widget.view,
+        region: region,
+        child: Stack(
+          fit: StackFit.expand,
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            // The pictures and PDF pages set as the background, beneath all
+            // ink, and never pressed.
+            IgnorePointer(child: RepaintBoundary(child: layer(true))),
+            paint(
+              InkPainter(
+                elements: ink,
+                viewport: fromOrigin,
+                layer: InkLayer.beneath,
+                pixelsPerUnit: pixelsPerUnit,
+              ),
+            ),
+            RepaintBoundary(child: layer(false, header: widget.header)),
+            paint(
+              InkPainter(
+                elements: ink,
+                viewport: fromOrigin,
+                layer: InkLayer.above,
+                pixelsPerUnit: pixelsPerUnit,
+              ),
+            ),
+            if (!widget.still)
+              paint(
+                WetInkPainter(controller: controller, viewport: fromOrigin),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Places element widgets on the page, with the header beneath them.
+///
+/// Each is laid out at its frame's size in page units, and the whole layer
+/// is scaled with the page, so text lays out the same at every zoom.
 class _ElementLayer extends StatelessWidget {
   const _ElementLayer({
     required this.elements,
-    required this.viewport,
+    required this.origin,
     required this.builder,
     required this.header,
     required this.headerInteractive,
@@ -1259,7 +1316,9 @@ class _ElementLayer extends StatelessWidget {
   });
 
   final List<NoteElement> elements;
-  final CanvasViewport viewport;
+
+  /// The page point at the layer's top-left corner.
+  final Offset origin;
   final CanvasElementBuilder? builder;
   final CanvasHeader? header;
 
@@ -1272,82 +1331,39 @@ class _ElementLayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final build = builder;
     final header = this.header;
-    final children = <Widget>[
-      // Placed whether or not it is in view: scrolling it out of sight must
-      // not take the keyboard from someone typing a title.
-      if (header != null)
-        _placed(
-          const ValueKey<String>('header'),
-          header.frame,
-          IgnorePointer(ignoring: !headerInteractive, child: header.child),
-        ),
-    ];
-    for (final element in elements) {
-      if (element is InkElement || build == null) continue;
-
-      final content = build(context, element);
-      if (content == null) continue;
-
-      children.add(
-        _placed(
-          // Keyed by identity so an element keeps its widget state — a text
-          // box its caret, a PDF page its rendered image — while others are
-          // added, removed or scrolled out of view around it.
-          ValueKey<String>(element.id),
-          element.frame,
-          GestureDetector(
-            onDoubleTap: onDoubleTap == null
-                ? null
-                : () => onDoubleTap!(element),
-            behavior: HitTestBehavior.deferToChild,
-            child: content,
-          ),
-        ),
-      );
-    }
-
-    return Stack(clipBehavior: Clip.none, children: children);
-  }
-
-  /// [content] laid out at [frame], in page units, and placed on screen.
-  Widget _placed(Key key, Frame frame, Widget content) {
-    final zoom = viewport.zoom;
-    // The content is laid out at its size in page units and then scaled as a
-    // whole; scaling the constraints instead would reflow text differently at
-    // every zoom level. It is placed in the box around its turned shape, so
-    // every visible part of it is inside its parent and can be hit. The
-    // structure is the same at any angle, so turning an element never
-    // rebuilds it from scratch.
-    final box = frame.rotatedBounds;
-    final topLeft = viewport.toScreen(Offset(box.left, box.top));
-    return Positioned(
-      key: key,
-      left: topLeft.dx,
-      top: topLeft.dy,
-      width: box.width * zoom,
-      height: box.height * zoom,
-      child: OverflowBox(
-        minWidth: 0,
-        minHeight: 0,
-        maxWidth: double.infinity,
-        maxHeight: double.infinity,
-        child: Transform.rotate(
-          angle: frame.rotation,
-          child: SizedBox(
-            width: frame.width * zoom,
-            height: frame.height * zoom,
-            child: FittedBox(
-              fit: BoxFit.fill,
-              alignment: Alignment.topLeft,
-              child: SizedBox(
-                width: frame.width,
-                height: frame.height,
-                child: content,
-              ),
+    final onDoubleTap = this.onDoubleTap;
+    return PagePlacement(
+      origin: origin,
+      children: <Widget>[
+        // Placed whether or not it is in view: scrolling it out of sight
+        // must not take the keyboard from someone typing a title.
+        if (header != null)
+          PlacedOnPage(
+            key: const ValueKey<String>('header'),
+            frame: header.frame,
+            child: IgnorePointer(
+              ignoring: !headerInteractive,
+              child: header.child,
             ),
           ),
-        ),
-      ),
+        if (build != null)
+          for (final element in elements)
+            if (build(context, element) case final content?)
+              PlacedOnPage(
+                // Keyed by identity so an element keeps its widget state — a
+                // text box its caret, a PDF page its rendered image — while
+                // others are added, removed or scrolled out of view around it.
+                key: ValueKey<String>(element.id),
+                frame: element.frame,
+                child: GestureDetector(
+                  onDoubleTap: onDoubleTap == null
+                      ? null
+                      : () => onDoubleTap(element),
+                  behavior: HitTestBehavior.deferToChild,
+                  child: content,
+                ),
+              ),
+      ],
     );
   }
 }

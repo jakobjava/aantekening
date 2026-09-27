@@ -108,7 +108,8 @@ class BlockView {
   late final String text;
 
   /// Whether this block is a formula alone on its line, which is typeset in
-  /// display style and centred, as OneNote does with such equations.
+  /// display style, as OneNote does with such equations. It sits where its
+  /// paragraph is aligned: centred only if that is centred.
   bool get isDisplayFormula =>
       block.runs.length == 1 && block.runs.single.isMath && openRun == null;
 

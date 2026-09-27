@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
+import 'package:aantekening_store/src/away.dart' show heavyBytes;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -368,6 +369,53 @@ void main() {
 
       final loaded = await store.pages.loadDocument(page.id);
       expect(loaded!.extractSearchText(), contains('line 399 of the proof'));
+    });
+
+    test('saves and reads a page of handwriting whole, off to one '
+        'side', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+      final samples = Float32List.fromList(<double>[
+        for (var i = 0; i < 60000; i++) i * 0.37 % 800,
+      ]);
+      final ink =
+          InkElement(
+            id: 'ink',
+            frame: const Frame(x: 0, y: 0, width: 800, height: 800),
+            createdAt: 1,
+            updatedAt: 1,
+          ).withStrokes(<InkStroke>[
+            InkStroke(
+              tool: InkTool.pen,
+              color: 0xFF000000,
+              width: 2,
+              points: samples,
+            ),
+          ]);
+      final document = documentWithText(page.id, 'Heavy').withElementAdded(ink);
+      expect(document.encode().length, greaterThan(heavyBytes));
+
+      await store.pages.saveDocument(page.id, document);
+      final loaded = await store.pages.loadDocument(page.id);
+      expect(loaded!.encode(), document.encode());
+    });
+
+    test('saves in the order asked, however long each takes', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+      final long = List<String>.filled(20000, 'a long line').join('\n');
+      final first = store.pages.saveDocument(
+        page.id,
+        documentWithText(page.id, long),
+      );
+      final second = store.pages.saveDocument(
+        page.id,
+        documentWithText(page.id, 'short'),
+      );
+      await Future.wait(<Future<Object?>>[first, second]);
+
+      final loaded = await store.pages.loadDocument(page.id);
+      expect(loaded!.extractSearchText(), 'short');
     });
 
     test('stores small bodies uncompressed', () async {

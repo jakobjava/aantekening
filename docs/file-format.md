@@ -148,6 +148,9 @@ them empty.
 
 A text box with `"autoWidth": true` widens to fit its longest line, up to a
 limit, as a new OneNote container does; resizing it by hand clears the flag.
+The limit is `widthLimit`, in page units and frame and all, where it has one
+— a container brought over from OneNote keeps the width it wrapped at — and
+600 otherwise.
 
 **Embeds** are pictures (`"kind": "image"`), PDF pages (`"pdfPage"`, with
 a zero-based `page`) and attached files (`"file"`, with the file's `name`)

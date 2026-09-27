@@ -1,31 +1,32 @@
 /// The painted layers of the canvas: paper, ink, wet ink and selection.
 library;
 
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'canvas_controller.dart';
 import 'canvas_viewport.dart';
 import 'selection_handles.dart';
 import 'stroke_geometry.dart';
-import 'tools.dart';
 
 /// Draws the paper and its ruling.
 ///
 /// Lines are generated for the visible region only and drawn in screen space,
 /// so the cost of the background is bounded by the window size rather than by
-/// how far the user has panned.
+/// how far the user has panned. It follows [view] by itself, without being
+/// built again.
 class BackgroundPainter extends CustomPainter {
-  const BackgroundPainter({
+  BackgroundPainter({
     required this.background,
-    required this.viewport,
+    required this.view,
     this.paperWidth,
-  });
+  }) : super(repaint: view);
 
   final PageBackground background;
-  final CanvasViewport viewport;
+  final ValueListenable<CanvasViewport> view;
 
   /// Optional page-width guide, in page units.
   final double? paperWidth;
@@ -33,6 +34,8 @@ class BackgroundPainter extends CustomPainter {
   /// Below this on-screen spacing the ruling reads as a grey wash, so it is
   /// dropped rather than drawn.
   static const double minimumScreenSpacing = 6;
+
+  CanvasViewport get viewport => view.value;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -126,7 +129,7 @@ class BackgroundPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(BackgroundPainter old) =>
-      old.viewport != viewport ||
+      old.view != view ||
       old.paperWidth != paperWidth ||
       old.background.kind != background.kind ||
       old.background.spacing != background.spacing ||
@@ -149,12 +152,26 @@ class InkPainter extends CustomPainter {
     required this.elements,
     required this.viewport,
     required this.layer,
+    this.pixelsPerUnit,
     super.repaint,
   });
 
   final List<InkElement> elements;
   final CanvasViewport viewport;
   final InkLayer layer;
+
+  /// How many pixels a page unit is drawn across, where the ink is to be
+  /// kept as pixels, for a view that does not zoom; null to draw the strokes
+  /// themselves every frame, sharp at any zoom.
+  ///
+  /// A page drawn small packs hundreds of strokes into few pixels, and each
+  /// stroke's shape costs as much to draw however small it is. Kept as
+  /// pixels, drawn once each time the layer is painted, every frame draws
+  /// one picture.
+  final double? pixelsPerUnit;
+
+  /// The most pixels the ink is kept in; beyond that it is drawn as strokes.
+  static const int _maxPixels = 4096 * 4096;
 
   static final Expando<ui.Picture> _beneath = Expando<ui.Picture>('beneath');
   static final Expando<ui.Picture> _above = Expando<ui.Picture>('above');
@@ -164,15 +181,56 @@ class InkPainter extends CustomPainter {
     if (elements.isEmpty) return;
 
     final visible = viewport.visibleBounds(size);
-    canvas
-      ..save()
-      ..transform(viewport.toMatrix().storage);
+    final strokes = ui.PictureRecorder();
+    final target = Canvas(strokes);
+    var drawn = false;
     for (final element in elements) {
       if (!element.bounds.intersects(visible)) continue;
       final picture = _pictureOf(element);
-      if (picture != null) canvas.drawPicture(picture);
+      if (picture == null) continue;
+      target.drawPicture(picture);
+      drawn = true;
     }
-    canvas.restore();
+    final ink = strokes.endRecording();
+    if (!drawn) {
+      ink.dispose();
+      return;
+    }
+
+    final scale = pixelsPerUnit;
+    final width = scale == null ? 0 : (size.width * scale).ceil();
+    final height = scale == null ? 0 : (size.height * scale).ceil();
+    if (scale == null || width * height > _maxPixels) {
+      canvas
+        ..save()
+        ..transform(viewport.toMatrix().storage)
+        ..drawPicture(ink)
+        ..restore();
+      ink.dispose();
+      return;
+    }
+
+    final recorder = ui.PictureRecorder();
+    Canvas(recorder)
+      ..scale(scale)
+      ..transform(viewport.toMatrix().storage)
+      ..drawPicture(ink);
+    ink.dispose();
+    final scaled = recorder.endRecording();
+    final pixels = scaled.toImageSync(width, height);
+    scaled.dispose();
+    canvas.drawImageRect(
+      pixels,
+      Offset.zero & Size(width.toDouble(), height.toDouble()),
+      Offset.zero & Size(width / scale, height / scale),
+      Paint()
+        ..filterQuality = FilterQuality.low
+        // Kept as pixels, the highlighter still darkens what it lies on.
+        ..blendMode = layer == InkLayer.beneath
+            ? BlendMode.multiply
+            : BlendMode.srcOver,
+    );
+    pixels.dispose();
   }
 
   /// The element's strokes on this layer, recorded once. Elements are
@@ -210,40 +268,29 @@ class InkPainter extends CustomPainter {
 
     final paint = Paint()
       ..color = Color(stroke.color)
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true;
 
-    final pressureVaries =
-        stroke.tool != InkTool.marker &&
-        StrokeGeometry.hasPressureVariation(stroke);
-
-    if (!pressureVaries) {
-      paint.strokeWidth = stroke.width;
-      canvas.drawPath(StrokeGeometry.smoothPath(stroke), paint);
+    if (stroke.tool != InkTool.marker &&
+        StrokeGeometry.hasPressureVariation(stroke)) {
+      canvas.drawPath(StrokeGeometry.pressurePath(stroke), paint);
       return;
     }
 
-    // Variable width needs one segment per sample; a single path can only
-    // carry one stroke width.
-    for (var i = 0; i < stroke.pointCount - 1; i++) {
-      paint.strokeWidth =
-          (StrokeGeometry.widthAt(stroke, i) +
-              StrokeGeometry.widthAt(stroke, i + 1)) /
-          2;
-      canvas.drawLine(
-        Offset(stroke.xAt(i), stroke.yAt(i)),
-        Offset(stroke.xAt(i + 1), stroke.yAt(i + 1)),
-        paint,
-      );
-    }
+    canvas.drawPath(
+      StrokeGeometry.smoothPath(stroke),
+      paint
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..strokeWidth = stroke.width,
+    );
   }
 
   @override
   bool shouldRepaint(InkPainter old) =>
       old.viewport != viewport ||
       old.layer != layer ||
+      old.pixelsPerUnit != pixelsPerUnit ||
       !identical(old.elements, elements);
 }
 
@@ -268,25 +315,21 @@ enum InkLayer {
 /// widgets untouched. That is what keeps the line under the pen from lagging
 /// on a page that already holds a lot of content.
 class WetInkPainter extends CustomPainter {
-  WetInkPainter({
-    required this.points,
-    required this.pen,
-    required this.viewport,
-    super.repaint,
-  });
+  WetInkPainter({required this.controller, required this.viewport})
+    : super(repaint: controller.wetInk);
 
-  /// Flat `[x, y, pressure, tilt]` samples in page space.
-  final List<double> points;
-
-  /// The instrument the stroke is being drawn with.
-  final PenSettings pen;
+  /// Where the stroke's samples, as flat `[x, y, pressure, tilt]` in page
+  /// space, and the instrument it is drawn with come from.
+  final CanvasController controller;
 
   final CanvasViewport viewport;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final points = controller.wetPoints;
     if (points.length < InkStroke.stride) return;
 
+    final pen = controller.pen;
     final stroke = InkStroke(
       tool: pen.tool,
       color: pen.strokeColor,
@@ -303,9 +346,7 @@ class WetInkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(WetInkPainter old) =>
-      old.points.length != points.length ||
-      old.viewport != viewport ||
-      old.pen != pen;
+      old.controller != controller || old.viewport != viewport;
 }
 
 /// Draws the selection box, its handles and the marquee.
@@ -316,16 +357,20 @@ class WetInkPainter extends CustomPainter {
 /// and right sides, a picture its corners and all four sides — because a
 /// handle that does nothing is worse than none.
 class SelectionPainter extends CustomPainter {
-  const SelectionPainter({
+  SelectionPainter({
     required this.selected,
-    required this.viewport,
+    required this.view,
     required this.accent,
     this.marquee,
     this.showHandles = true,
-  });
+  }) : super(repaint: view);
 
   final List<NoteElement> selected;
-  final CanvasViewport viewport;
+
+  /// The view, which the painter follows by itself.
+  final ValueListenable<CanvasViewport> view;
+
+  CanvasViewport get viewport => view.value;
   final Color accent;
 
   /// The rubber-band rectangle being dragged, in page space.
@@ -435,7 +480,7 @@ class SelectionPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(SelectionPainter old) =>
-      old.viewport != viewport ||
+      old.view != view ||
       old.marquee != marquee ||
       old.accent != accent ||
       old.showHandles != showHandles ||

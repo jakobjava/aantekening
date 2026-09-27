@@ -58,7 +58,8 @@ general-purpose surface while the app decides what an element looks like.
 
 1. The editor mutates its `CanvasController`, producing a **new**
    `PageDocument` — documents are immutable, so an edit is a reference swap.
-2. The controller rebuilds its spatial index and notifies listeners.
+2. The controller rebuilds its spatial index and tells what shows the page
+   its contents changed; moving the view it reports apart (ADR 21).
 3. Only the affected painted layer repaints; the element widgets are untouched.
 4. A debounced timer fires ~700 ms later and calls `PageRepository.saveDocument`.
 5. That one transaction writes the body, the page row, the FTS entry and the
@@ -93,18 +94,26 @@ Speed here is structural rather than the result of micro-optimisation:
 | --- | --- |
 | Opening a notebook | Page metadata and page bodies are separate tables, so listing never touches multi-megabyte blobs. |
 | Painting a large page | A uniform-grid `SpatialIndex` makes paint cost track what is visible, not how much the page holds. |
+| Scrolling and zooming | The page's layers are laid out in page units and shown through one transform; moving the view changes the transform, building and painting nothing (ADR 21). |
+| Drawing handwriting | A pressure-varying stroke is one filled outline, recorded once per element; the page's map keeps its ink as pixels. |
 | Ink latency | The stroke in progress lives in its own layer; a new sample repaints only that. |
 | Handwriting volume | Samples are one flat `Float32List`; consecutive strokes join one element. |
 | Search | FTS5 with `bm25` ranking, keyed by `pages.rowid` so re-indexing is a primary-key delete plus insert. |
 | Reordering | Sibling order is a `REAL` fractional index, so a drag writes one row. |
 | Repeat queries | Prepared statements are cached on the connection. |
+| Saving handwriting | Each element's JSON is kept with it, so a save writes out only what changed, and handwriting's numbers are written without a general encoder; pages are gzipped at a level four times as fast as the default. |
+| Opening and saving a long page | Past 128 KiB, a page is decompressed and parsed, compressed and written to the notes folder on an isolate of its own, so the window never waits on it. |
+| An idle laptop | Nothing wakes the app while nothing happens: the notes folder is written when something is queued, not polled, and the caret stops blinking after ten seconds. |
 | Save latency | WAL journalling, so reads proceed while a save is in flight. |
 
 ## Concurrency
 
 Every repository method is `async` even though `sqlite3` is synchronous. The API
 is shaped now for the isolate-backed connection it will get later, so that move
-will not be a breaking change. See `docs/roadmap.md`.
+will not be a breaking change. See `docs/roadmap.md`. Meanwhile the work on a
+long page that needs no database — parsing it, compressing it — already runs on
+an isolate of its own (`away`), and saves are queued so that one finishing
+early never lands after a later one.
 
 ## Platforms
 

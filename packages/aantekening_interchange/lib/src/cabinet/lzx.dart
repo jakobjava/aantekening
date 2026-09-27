@@ -85,10 +85,15 @@ final class LzxDecoder {
       _blockRemaining -= advanced;
     }
 
+    // The frame as it lies in the window, which it may run off the end of
+    // and on at the start.
     final output = Uint8List(outputLength);
-    for (var i = 0; i < outputLength; i++) {
-      output[i] = _window[(frameStart + i) & (_window.length - 1)];
-    }
+    final first = _window.length - frameStart < outputLength
+        ? _window.length - frameStart
+        : outputLength;
+    output
+      ..setRange(0, first, _window, frameStart)
+      ..setRange(first, outputLength, _window);
     if (_translationSize != 0 &&
         outputLength > 10 &&
         _framesOffset < 0x40000000) {
@@ -320,75 +325,72 @@ enum _BlockType { verbatim, aligned, stored }
 
 /// Bits read most significant first from 16-bit little-endian words, as
 /// LZX writes them; and, within stored blocks, bytes read directly.
+///
+/// Words are taken into a buffer a few at a time, so that looking at the
+/// next bits and taking them is a shift and a mask, not a loop.
 final class _BitReader {
   _BitReader(this._bytes);
 
   final Uint8List _bytes;
+
+  /// Where the next word not yet in [_buffer] starts.
   int _position = 0;
-  int _word = 0;
-  int _left = 0;
 
-  int _wordAt(int position) => position + 1 < _bytes.length
-      ? _bytes[position] | (_bytes[position + 1] << 8)
-      : 0;
+  /// The bits taken in and not yet read: the low [_count] bits.
+  int _buffer = 0;
+  int _count = 0;
 
-  void _advance() {
-    // Past the end, zeros: the last code of a frame may be followed by
-    // fewer padding bits than the widest code a tree has.
-    _word = _wordAt(_position);
-    _position += 2;
-    _left = 16;
+  /// Takes in words until at least [count] bits wait. Past the end, zeros:
+  /// the last code of a frame may be followed by fewer padding bits than
+  /// the widest code a tree has.
+  void _fill(int count) {
+    while (_count < count) {
+      final word = _position + 1 < _bytes.length
+          ? _bytes[_position] | (_bytes[_position + 1] << 8)
+          : 0;
+      _position += 2;
+      _buffer = (_buffer << 16) | word;
+      _count += 16;
+    }
+  }
+
+  void _skip(int count) {
+    _count -= count;
+    _buffer &= (1 << _count) - 1;
   }
 
   /// Reads [count] bits, up to 32.
   int read(int count) {
-    if (count > 16) {
-      final high = read(16);
-      return (high << (count - 16)) | read(count - 16);
-    }
-    var value = 0;
-    var wanted = count;
-    while (wanted > 0) {
-      if (_left == 0) _advance();
-      final take = wanted < _left ? wanted : _left;
-      final shift = _left - take;
-      value = (value << take) | ((_word >> shift) & ((1 << take) - 1));
-      _left -= take;
-      wanted -= take;
-    }
+    if (count == 0) return 0;
+    _fill(count);
+    final value = _buffer >> (_count - count);
+    _skip(count);
     return value;
   }
 
-  /// The next [count] bits, up to 16, without reading them.
+  /// The next [count] bits, up to 32, without reading them.
   int peek(int count) {
-    var value = 0;
-    var wanted = count;
-    var word = _word;
-    var left = _left;
-    var position = _position;
-    while (wanted > 0) {
-      if (left == 0) {
-        word = _wordAt(position);
-        position += 2;
-        left = 16;
-      }
-      final take = wanted < left ? wanted : left;
-      final shift = left - take;
-      value = (value << take) | ((word >> shift) & ((1 << take) - 1));
-      left -= take;
-      wanted -= take;
-    }
-    return value;
+    _fill(count);
+    return _buffer >> (_count - count);
   }
 
   /// Moves to the start of the next word: a stored block's header is
   /// followed by one to sixteen bits of padding, never none.
   void alignToWord() {
-    if (_left == 0) {
+    final partial = _count % 16;
+    if (partial == 0) {
       read(16);
     } else {
-      _left = 0;
+      _skip(partial);
     }
+  }
+
+  /// Gives back the whole words taken in and not read, for bytes to be
+  /// read from where the bits stopped. Only at the start of a word.
+  void _giveBack() {
+    _position -= _count ~/ 8;
+    _buffer = 0;
+    _count = 0;
   }
 
   /// A 32-bit little-endian value from the next two words.
@@ -397,17 +399,23 @@ final class _BitReader {
     return low | (read(16) << 16);
   }
 
-  int get remainingRawBytes =>
-      _position < _bytes.length ? _bytes.length - _position : 0;
+  int get remainingRawBytes {
+    _giveBack();
+    return _position < _bytes.length ? _bytes.length - _position : 0;
+  }
 
   int readRawByte() {
+    _giveBack();
     if (_position >= _bytes.length) {
       throw FormatDamage('An LZX stored block is cut short');
     }
     return _bytes[_position++];
   }
 
-  void skipRawByte() => _position++;
+  void skipRawByte() {
+    _giveBack();
+    _position++;
+  }
 }
 
 /// A canonical Huffman code, decoded by looking up as many bits as its
@@ -447,7 +455,7 @@ final class _HuffmanTable {
 
   int decode(_BitReader reader) {
     final symbol = _table[reader.peek(_bits)];
-    reader.read(_lengths[symbol]);
+    reader._skip(_lengths[symbol]);
     return symbol;
   }
 }

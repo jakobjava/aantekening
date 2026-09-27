@@ -89,8 +89,9 @@ navigating and searching thousands of pages stays instant.
   syntax (`sum_(i=1)^n i^2`, `(a+b)/c`, `sqrt(x)`, `vec(1, 2, 3)`,
   `mat(1, 2; 3, 4)`, `cases(…)`), parsed by a real grammar. Formulas are
   stored as LaTeX either way, and switching syntax translates the formula.
-  A formula takes the size and colour of the text it is written in. The
-  **Math** tab has structures (fractions, roots, integrals, sums, brackets,
+  A formula takes the size and colour of the text it is written in; one
+  alone on its line sits at its start, and ending it with `#` centres it.
+  The **Math** tab has structures (fractions, roots, integrals, sums, brackets,
   bras and kets, accents, matrices) and symbols to click in, and a cheat
   sheet of the Simple syntax beside the page: click an example to write it.
 * **Spelling** — words spelled wrongly are underlined with a wavy line as
@@ -166,8 +167,10 @@ navigating and searching thousands of pages stays instant.
   as a notebook of its own, with every name and date kept:
   * a **OneNote** notebook (`.onepkg`) or section (`.one`), read from its file
     format with nothing else installed. Every text box stays one text box in
-    its place, with its typefaces, sizes, colours, alignment, spacing,
-    bullets and to-dos; tables keep their cells, shading and borders;
+    its place, as wide as it was or, if never resized, as its text, with its
+    typefaces, sizes, colours, alignment, spacing, bullets and to-dos — text
+    in Calibri is drawn in Carlito, which comes with the app and sets lines
+    to the same measure; tables keep their cells, shading and borders;
     equations become formulas you can edit; pictures, attached files and
     handwriting stay where they were; subpages stay subpages;
   * **Xournal++** documents (`.xopp`) or a folder of them, with their
@@ -283,7 +286,9 @@ Arrowing into a typeset formula, or clicking it, shows its source again with
 the caret in it; arrowing off either end goes back to the text beside it and
 typesets it. In a formula, Tab moves to the next place a structure left to
 fill in, Enter or Esc finishes it, and Ctrl+Shift+M switches between Simple
-and LaTeX. Backspace after a formula selects it before deleting it.
+and LaTeX. Backspace after a formula selects it before deleting it. A
+formula alone on its line is typeset large, at the start of the line; end it
+with `#` to centre it, and take the `#` away to put it back.
 
 Simple syntax, in short: `x^2`, `x_i`, `a/b`, `sqrt(x)`, `root(3, x)`,
 `sum_(i=1)^n`, `prod`, `int_a^b`, `lim_(x->0)`, `vec(v)` (arrow) and

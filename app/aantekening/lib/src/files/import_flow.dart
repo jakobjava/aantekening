@@ -30,47 +30,49 @@ const List<NotesImporter> importers = <NotesImporter>[
 /// Asks for what [importer] reads, reads it, and stores it where it goes:
 /// notebooks by themselves, sections in the notebook open, pages in the
 /// section open.
-Future<void> importNotes(
-  BuildContext context,
-  WidgetRef ref,
-  NotesImporter importer,
-) async {
+///
+/// What it shows and what it refreshes go through the window's own
+/// navigator and providers, not [context]'s: the settings it is started
+/// from may be closed or rebuilt while an import runs.
+Future<void> importNotes(BuildContext context, NotesImporter importer) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final window = Navigator.of(context, rootNavigator: true).context;
   final paths = await _choose(importer);
-  if (paths.isEmpty || !context.mounted) return;
-  final tab = ref.read(tabsProvider).current;
+  if (paths.isEmpty || !window.mounted) return;
+  final tab = container.read(tabsProvider).current;
   if (importer.target == ImportTarget.section && tab.sectionId == null) {
-    _say(context, 'Open the section the pages should go into first.');
+    _say(window, 'Open the section the pages should go into first.');
     return;
   }
 
   final work = await Directory.systemTemp.createTemp('aantekening-import-');
   try {
-    if (!context.mounted) return;
+    if (!window.mounted) return;
     final draft = await showDialog<NotesDraft>(
-      context: context,
+      context: window,
       barrierDismissible: false,
       builder: (_) =>
           _ImportProgress(importer: importer, paths: paths, work: work),
     );
-    if (draft == null || !context.mounted) return;
+    if (draft == null || !window.mounted) return;
     if (draft.isEmpty) {
-      await _report(context, 'Nothing could be read.', draft.warnings);
+      await _report(window, 'Nothing could be read.', draft.warnings);
       return;
     }
     if (draft.sections.isNotEmpty && tab.notebookId == null ||
         draft.pages.isNotEmpty && tab.sectionId == null) {
-      _say(context, 'Open the notebook or section they should go into first.');
+      _say(window, 'Open the notebook or section they should go into first.');
       return;
     }
-    final store = await ref.read(storeProvider.future);
+    final store = await container.read(storeProvider.future);
     final stored = await store.drafts.store(
       draft,
       notebookId: tab.notebookId,
       sectionId: tab.sectionId,
     );
-    ref.read(libraryRevisionProvider.notifier).bump();
+    container.read(libraryRevisionProvider.notifier).bump();
     if (stored.firstPage case final first?) {
-      ref
+      container
           .read(libraryActionsProvider)
           .openPage(
             notebookId: first.notebookId,
@@ -78,17 +80,17 @@ Future<void> importNotes(
             pageId: first.pageId,
           );
     }
-    if (!context.mounted) return;
+    if (!window.mounted) return;
     final pages = draft.pageCount;
     await _report(
-      context,
+      window,
       '${pages == 1 ? 'One page was' : '$pages pages were'} brought over '
       'from ${importer.name}.',
       draft.warnings,
     );
   } on Object catch (error) {
-    if (context.mounted) {
-      await _report(context, 'The import failed.', <String>['$error']);
+    if (window.mounted) {
+      await _report(window, 'The import failed.', <String>['$error']);
     }
   } finally {
     unawaited(

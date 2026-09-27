@@ -68,12 +68,16 @@ class InterfaceScale extends StatelessWidget {
   }
 }
 
-/// Registers the licence of the typefaces the interface is set in.
+/// Registers the licences of the typefaces the app carries: the
+/// interface's, and Carlito, which text set in Calibri is drawn in.
 void registerFontLicence() => LicenseRegistry.addLicense(() async* {
   yield LicenseEntryWithLineBreaks(<String>[
     InterfaceFont.sans.family,
     InterfaceFont.mono.family,
   ], await rootBundle.loadString('fonts/OFL.txt'));
+  yield LicenseEntryWithLineBreaks(<String>[
+    'Carlito',
+  ], await rootBundle.loadString('fonts/Carlito-OFL.txt'));
 });
 
 class _AppScrollBehavior extends MaterialScrollBehavior {
