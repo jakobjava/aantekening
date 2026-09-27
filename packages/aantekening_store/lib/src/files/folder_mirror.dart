@@ -673,8 +673,10 @@ final class FolderMirror {
     _settle?.cancel();
     await _watch?.cancel();
     await flush();
-    await _changes.close();
-    await _status.close();
+    // Not waited for: a stream's close finishes only once every listener
+    // has heard it, and one paused — a screen not showing — never does.
+    unawaited(_changes.close());
+    unawaited(_status.close());
   }
 }
 

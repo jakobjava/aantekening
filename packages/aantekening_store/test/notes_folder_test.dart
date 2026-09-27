@@ -391,6 +391,14 @@ void main() {
     }
   });
 
+  test('closing does not wait for a screen that stopped listening', () async {
+    final store = await computer('a');
+    // As the app pauses what a screen no longer shows is listening to.
+    store.mirror!.statuses.listen((_) {}).pause();
+    store.mirror!.changes.listen((_) {}).pause();
+    await store.close().timeout(const Duration(seconds: 5));
+  });
+
   test('an index opens in write-ahead mode and syncs every commit', () async {
     final store = await computer('a');
     addTearDown(store.close);
