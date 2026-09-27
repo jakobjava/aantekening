@@ -46,7 +46,12 @@ nothing. What it has to become:
   back to that provider as it came and ignored by others. What a model can
   do (`ModelCapabilities`: images, tools, native citations, native web
   search, reasoning, context length) decides how it is asked, never which
-  model it is.
+  model it is. It is read from the provider where it says: an
+  OpenAI-compatible service's list of models often does, each in its own
+  words, and what a server of one's own runs a model with can be set. How
+  much of the notes goes with a question is the person's to choose, 40k
+  tokens unless set, and never more than a third of the model's context,
+  so it has room to read on and answer.
 * **Nothing goes anywhere by default.** No provider is set up until the
   person adds one; the settings say for each whether the notes stay on this
   machine. API keys live in the system keychain, never in a file.

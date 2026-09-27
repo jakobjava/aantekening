@@ -59,14 +59,14 @@ class AiSettingsPage extends ConsumerWidget {
                 menuChildren: <Widget>[
                   const _MenuHeading('On this computer'),
                   for (final preset in ProviderPreset.values)
-                    if (preset.local || preset == ProviderPreset.custom)
+                    if (preset.ownServer)
                       MenuItemButton(
                         onPressed: () => add(preset),
                         child: Text(preset.label),
                       ),
                   const _MenuHeading('Online'),
                   for (final preset in ProviderPreset.values)
-                    if (!preset.local && preset != ProviderPreset.custom)
+                    if (!preset.ownServer)
                       MenuItemButton(
                         onPressed: () => add(preset),
                         child: Text(preset.label),
@@ -250,10 +250,8 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
           ),
           const SizedBox(height: 10),
           _modelPicker(tones),
-          if (config.kind == ProviderKind.ollama) ...<Widget>[
-            const SizedBox(height: 12),
-            _howItRuns(config, note),
-          ],
+          const SizedBox(height: 12),
+          _howItRuns(config, note),
           if (_open) ...<Widget>[
             const SizedBox(height: 12),
             TextField(
@@ -306,10 +304,12 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
     );
   }
 
-  /// How a runtime that is told it runs the model: with how much room,
-  /// and whether it thinks first.
+  /// How the model is asked: with how much of the notes and, where the
+  /// app says or is told it, how much room; and whether a runtime that is
+  /// told it thinks first.
   Widget _howItRuns(ProviderConfig config, TextStyle note) {
-    final room = config.contextTokens ?? OllamaProvider.defaultContextTokens;
+    final ollama = config.kind == ProviderKind.ollama;
+    String tokensLabel(int tokens) => '${tokens ~/ 1024}k';
     Widget explained(String label, Widget control, String explanation) =>
         Padding(
           padding: const EdgeInsets.only(bottom: 10),
@@ -336,48 +336,85 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        explained(
-          'Room',
-          ChoiceRow<int>(
-            choices: OllamaProvider.contextChoices,
-            selected: room,
-            labelOf: (tokens) => '${tokens ~/ 1024}k',
-            onSelected: (tokens) =>
-                _save(config.copyWith(contextTokens: tokens)),
-          ),
-          'Tokens for the notes, the model’s thinking and its answer '
-              'together. More room fits more notes and longer thinking, and '
-              'takes more memory.',
-        ),
-        explained(
-          'Think for at most',
-          ChoiceRow<int>(
-            choices: <int>[
-              for (final time in OllamaProvider.thinkingChoices)
-                time?.inSeconds ?? 0,
-            ],
-            selected: config.thinkingTime?.inSeconds ?? 0,
-            labelOf: (seconds) =>
-                seconds == 0 ? 'No limit' : '${seconds ~/ 60} min',
-            onSelected: (seconds) => _save(
-              config.copyWith(
-                thinkingTime: () =>
-                    seconds == 0 ? null : Duration(seconds: seconds),
+        if (ollama)
+          explained(
+            'Room',
+            ChoiceRow<int>(
+              choices: OllamaProvider.contextChoices,
+              selected:
+                  config.contextTokens ?? OllamaProvider.defaultContextTokens,
+              labelOf: tokensLabel,
+              onSelected: (tokens) =>
+                  _save(config.copyWith(contextTokens: () => tokens)),
+            ),
+            'Tokens for the notes, the model’s thinking and its answer '
+                'together. More room fits more notes and longer thinking, '
+                'and takes more memory.',
+          )
+        else if (config.preset.ownServer)
+          explained(
+            'Room',
+            ChoiceRow<int>(
+              choices: const <int>[0, ...OpenAiCompatibleProvider.roomChoices],
+              selected: config.contextTokens ?? 0,
+              labelOf: (tokens) =>
+                  tokens == 0 ? 'Automatic' : tokensLabel(tokens),
+              onSelected: (tokens) => _save(
+                config.copyWith(
+                  contextTokens: () => tokens == 0 ? null : tokens,
+                ),
               ),
             ),
+            'How many tokens the model has where it runs, so that the notes '
+                'fit. Automatic takes what the server says, and '
+                '${tokensLabel(config.presumedContextTokens)} where it says '
+                'nothing.',
           ),
-          'Then the model is stopped and answers from what it has worked '
-              'out — so a model going round in circles still answers.',
+        explained(
+          'Notes per question',
+          ChoiceRow<int>(
+            choices: ContextBudget.notesChoices,
+            selected: config.notesTokens,
+            labelOf: (tokens) => '${tokens ~/ 1000}k',
+            onSelected: (tokens) => _save(config.copyWith(notesTokens: tokens)),
+          ),
+          'Tokens of your notes sent with a question, at most — and never '
+              'more than a third of what the model can take, to leave it '
+              'room to read on and answer. More lets it take in a whole '
+              'notebook at once, and costs more where each token is paid '
+              'for.',
         ),
-        CheckRow(
-          title: 'Think before answering',
-          description:
-              'Better answers, but without a graphics card it can take '
-              'minutes. Some models always think; an “instruct” model never '
-              'does.',
-          value: config.think,
-          onChanged: (on) => _save(config.copyWith(think: on)),
-        ),
+        if (ollama) ...<Widget>[
+          explained(
+            'Think for at most',
+            ChoiceRow<int>(
+              choices: <int>[
+                for (final time in OllamaProvider.thinkingChoices)
+                  time?.inSeconds ?? 0,
+              ],
+              selected: config.thinkingTime?.inSeconds ?? 0,
+              labelOf: (seconds) =>
+                  seconds == 0 ? 'No limit' : '${seconds ~/ 60} min',
+              onSelected: (seconds) => _save(
+                config.copyWith(
+                  thinkingTime: () =>
+                      seconds == 0 ? null : Duration(seconds: seconds),
+                ),
+              ),
+            ),
+            'Then the model is stopped and answers from what it has worked '
+                'out — so a model going round in circles still answers.',
+          ),
+          CheckRow(
+            title: 'Think before answering',
+            description:
+                'Better answers, but without a graphics card it can take '
+                'minutes. Some models always think; an “instruct” model never '
+                'does.',
+            value: config.think,
+            onChanged: (on) => _save(config.copyWith(think: on)),
+          ),
+        ],
       ],
     );
   }

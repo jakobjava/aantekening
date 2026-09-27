@@ -4,6 +4,7 @@ library;
 import 'package:http/http.dart' as http;
 
 import 'anthropic_provider.dart';
+import 'note_context.dart';
 import 'ollama_provider.dart';
 import 'openai_compatible_provider.dart';
 import 'provider.dart';
@@ -96,6 +97,10 @@ enum ProviderPreset {
 
   /// The model to start with, where there is an obvious one.
   final String model;
+
+  /// Whether it is a server of one's own: a runtime on this machine, or
+  /// one set up anywhere.
+  bool get ownServer => local || this == custom;
 }
 
 /// A provider the person has set up, and the model of it they use.
@@ -107,6 +112,7 @@ class ProviderConfig {
     required this.baseUrl,
     this.model = '',
     this.contextTokens,
+    this.notesTokens = ContextBudget.defaultNotesTokens,
     this.think = true,
     this.thinkingTime = OllamaProvider.defaultThinkingTime,
   });
@@ -127,9 +133,14 @@ class ProviderConfig {
   final String baseUrl;
   final String model;
 
-  /// For a runtime that is told it, how many tokens a model runs with; null
-  /// for its own choice.
+  /// How many tokens a model has: for a runtime that is told it, what it
+  /// runs with; for another server of one's own, what it takes, over what
+  /// the server says. Null for the runtime's choice, or what the server
+  /// says.
   final int? contextTokens;
+
+  /// How many tokens of the notes go with a question, at most.
+  final int notesTokens;
 
   /// For a runtime that is told it, whether a model that can think before
   /// it answers does.
@@ -150,6 +161,11 @@ class ProviderConfig {
         host == '127.0.0.1' ||
         host == '::1';
   }
+
+  /// How many tokens a model on an OpenAI-compatible server is taken to
+  /// have where neither the person nor the server says: runtimes on this
+  /// machine often run with a short context.
+  int get presumedContextTokens => local ? 8192 : 128000;
 
   /// A provider that talks to it, with [apiKey].
   ChatProvider create({String? apiKey, http.Client? client}) => switch (kind) {
@@ -173,9 +189,9 @@ class ProviderConfig {
       defaults: ModelCapabilities(
         vision: true,
         tools: true,
-        // Runtimes on this machine often run with a short context.
-        contextTokens: local ? 8192 : 128000,
+        contextTokens: presumedContextTokens,
       ),
+      room: contextTokens,
       client: client,
     ),
   };
@@ -184,7 +200,8 @@ class ProviderConfig {
     String? name,
     String? baseUrl,
     String? model,
-    int? contextTokens,
+    int? Function()? contextTokens,
+    int? notesTokens,
     bool? think,
     Duration? Function()? thinkingTime,
   }) => ProviderConfig(
@@ -193,7 +210,8 @@ class ProviderConfig {
     name: name ?? this.name,
     baseUrl: baseUrl ?? this.baseUrl,
     model: model ?? this.model,
-    contextTokens: contextTokens ?? this.contextTokens,
+    contextTokens: contextTokens == null ? this.contextTokens : contextTokens(),
+    notesTokens: notesTokens ?? this.notesTokens,
     think: think ?? this.think,
     thinkingTime: thinkingTime == null ? this.thinkingTime : thinkingTime(),
   );
@@ -205,6 +223,8 @@ class ProviderConfig {
     'baseUrl': baseUrl,
     'model': model,
     if (contextTokens != null) 'contextTokens': contextTokens,
+    if (notesTokens != ContextBudget.defaultNotesTokens)
+      'notesTokens': notesTokens,
     if (!think) 'think': false,
     'thinkingSeconds': thinkingTime?.inSeconds ?? 0,
   };
@@ -220,6 +240,8 @@ class ProviderConfig {
       baseUrl: json['baseUrl'] as String? ?? preset.baseUrl,
       model: json['model'] as String? ?? '',
       contextTokens: json['contextTokens'] as int?,
+      notesTokens:
+          json['notesTokens'] as int? ?? ContextBudget.defaultNotesTokens,
       think: json['think'] as bool? ?? true,
       thinkingTime: switch (json['thinkingSeconds']) {
         0 => null,

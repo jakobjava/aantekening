@@ -26,6 +26,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
     required this.baseUrl,
     this.apiKey,
     this.defaults = const ModelCapabilities(vision: true, tools: true),
+    this.room,
     http.Client? client,
   }) : client = client ?? http.Client(),
        _ownsClient = client == null;
@@ -40,6 +41,14 @@ class OpenAiCompatibleProvider implements ChatProvider {
   /// What a model is taken to be able to do, where the provider does not
   /// say.
   final ModelCapabilities defaults;
+
+  /// How many tokens a model takes, as the person set it: over what the
+  /// provider says, which is what the model could take, not how a server
+  /// of one's own runs it. Null for what the provider says.
+  final int? room;
+
+  /// The room a model on a server of one's own can be set to have.
+  static const List<int> roomChoices = <int>[8192, 16384, 32768, 65536, 131072];
 
   /// What requests go through.
   @protected
@@ -72,13 +81,76 @@ class OpenAiCompatibleProvider implements ChatProvider {
     final body = jsonDecode(response.body) as Map<String, Object?>;
     return <ModelInfo>[
       for (final entry in (body['data'] as List<Object?>?) ?? const [])
-        if (entry case {'id': final String id})
-          ModelInfo(id: id, capabilities: defaults),
+        if (entry
+            case final Map<String, Object?> model && {'id': final String id})
+          ModelInfo(id: id, capabilities: _capabilities(model)),
     ]..sort((a, b) => a.id.compareTo(b.id));
   }
 
+  /// What each model is listed as able to do, once asked; none if the
+  /// list could not be had.
+  Future<Map<String, ModelCapabilities>>? _listed;
+
   @override
-  Future<ModelCapabilities> capabilitiesOf(String model) async => defaults;
+  Future<ModelCapabilities> capabilitiesOf(String model) async {
+    final listed = _listed ??= listModels().then(
+      (models) => <String, ModelCapabilities>{
+        for (final model in models) model.id: model.capabilities,
+      },
+      onError: (Object _) => const <String, ModelCapabilities>{},
+    );
+    return (await listed)[model] ?? _capabilities(const <String, Object?>{});
+  }
+
+  /// What the model listed as [entry] can do: what the listing says, and
+  /// [defaults] where it does not — in [room], if it is set.
+  ///
+  /// Each service says it its own way: Requesty with `supports_…` flags,
+  /// OpenRouter with the parameters and inputs a model takes, Mistral with
+  /// its capabilities; and how many tokens a model takes as
+  /// `context_window` (Requesty, Groq), `context_length` (OpenRouter),
+  /// `max_context_length` (Mistral) or `max_model_len` (vLLM).
+  ModelCapabilities _capabilities(Map<String, Object?> entry) {
+    bool? said(Object? answer) => answer is bool ? answer : null;
+    bool? among(Object? list, String item) =>
+        list is List ? list.contains(item) : null;
+    final parameters = entry['supported_parameters'];
+    final modalities = switch (entry['architecture']) {
+      {'input_modalities': final Object? list} => list,
+      _ => null,
+    };
+    final abilities = switch (entry['capabilities']) {
+      final Map<String, Object?> map => map,
+      _ => const <String, Object?>{},
+    };
+    return ModelCapabilities(
+      vision:
+          said(entry['supports_vision']) ??
+          among(modalities, 'image') ??
+          said(abilities['vision']) ??
+          defaults.vision,
+      tools:
+          said(entry['supports_tool_calling']) ??
+          among(parameters, 'tools') ??
+          said(abilities['function_calling']) ??
+          defaults.tools,
+      reasoning:
+          said(entry['supports_reasoning']) ??
+          among(parameters, 'reasoning') ??
+          defaults.reasoning,
+      nativeCitations: defaults.nativeCitations,
+      nativeWebSearch: defaults.nativeWebSearch,
+      contextTokens:
+          room ??
+          <Object?>[
+            entry['context_window'],
+            entry['context_length'],
+            entry['max_context_length'],
+            entry['max_model_len'],
+          ].whereType<int>().firstOrNull ??
+          defaults.contextTokens,
+    );
+  }
 
   /// The request body for [request]: its sources numbered to be cited by,
   /// and its messages as [userMessage], [toolCall] and [toolMessage] write

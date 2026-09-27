@@ -496,6 +496,66 @@ void main() {
         ),
       );
     });
+
+    test('takes what a model can do from its listing, in the words of '
+        'each service, and the room it is given over it', () async {
+      final client = MockClient(
+        (request) async => http.Response(
+          jsonEncode(<String, Object?>{
+            'data': <Object?>[
+              <String, Object?>{
+                'id': 'xiaomi/mimo-v2.5-pro',
+                'context_window': 1048576,
+                'supports_vision': false,
+                'supports_tool_calling': true,
+                'supports_reasoning': true,
+              },
+              <String, Object?>{
+                'id': 'qwen/qwen3-32b',
+                'context_length': 40960,
+                'architecture': <String, Object?>{
+                  'input_modalities': <String>['text'],
+                },
+                'supported_parameters': <String>['tools', 'reasoning'],
+              },
+              <String, Object?>{'id': 'local-model'},
+            ],
+          }),
+          200,
+        ),
+      );
+      final models = <String, ModelCapabilities>{
+        for (final model in await provider(client).listModels())
+          model.id: model.capabilities,
+      };
+      final requesty = models['xiaomi/mimo-v2.5-pro']!;
+      expect(requesty.contextTokens, 1048576);
+      expect(requesty.vision, isFalse);
+      expect(requesty.tools && requesty.reasoning, isTrue);
+      final openRouter = models['qwen/qwen3-32b']!;
+      expect(openRouter.contextTokens, 40960);
+      expect(openRouter.vision, isFalse);
+      expect(openRouter.tools && openRouter.reasoning, isTrue);
+      final unsaid = models['local-model']!;
+      expect(unsaid.contextTokens, 32000, reason: 'as taken to be');
+      expect(unsaid.vision && unsaid.tools, isTrue);
+
+      final roomed = OpenAiCompatibleProvider(
+        name: 'LM Studio',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        room: 8192,
+        client: client,
+      );
+      expect(
+        (await roomed.capabilitiesOf('qwen/qwen3-32b')).contextTokens,
+        8192,
+      );
+      expect((await roomed.capabilitiesOf('other')).contextTokens, 8192);
+      final unlisted = provider(
+        MockClient((request) async => http.Response('', 404)),
+      );
+      expect((await unlisted.capabilitiesOf('m')).tools, isTrue);
+    });
   });
 
   group('Ollama', () {

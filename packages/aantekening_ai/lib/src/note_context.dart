@@ -14,14 +14,29 @@ import 'provider.dart';
 class ContextBudget {
   const ContextBudget({required this.characters, required this.images});
 
-  /// For a model that can do [capabilities]: a third of its context, and
-  /// no more than about forty thousand tokens, so a question costs what it
-  /// needs to and not what the model could take.
-  factory ContextBudget.forModel(ModelCapabilities capabilities) =>
-      ContextBudget(
-        characters: math.min(capabilities.contextTokens * 4 ~/ 3, 160000),
-        images: capabilities.vision ? 6 : 0,
-      );
+  /// For a model that can do [capabilities]: [notesTokens] of the notes,
+  /// and no more than a third of its context.
+  factory ContextBudget.forModel(
+    ModelCapabilities capabilities, {
+    int notesTokens = defaultNotesTokens,
+  }) => ContextBudget(
+    characters: math.min(capabilities.contextTokens * 4 ~/ 3, notesTokens * 4),
+    images: capabilities.vision ? 6 : 0,
+  );
+
+  /// About forty thousand tokens, so a question costs what it needs to and
+  /// not what the model could take.
+  static const int defaultNotesTokens = 40000;
+
+  /// How many tokens of the notes can go with a question, to choose from:
+  /// less for a quick question, more to read a notebook at once.
+  static const List<int> notesChoices = <int>[
+    10000,
+    40000,
+    100000,
+    200000,
+    400000,
+  ];
 
   final int characters;
   final int images;

@@ -483,9 +483,13 @@ void main() {
       find.textContaining('Sends the notes you ask about to api.anthropic.com'),
       findsOneWidget,
     );
+    expect(find.text('Room'), findsNothing, reason: 'the service says it');
+    await tester.tap(find.text('100k'));
+    await tester.pumpAndSettle();
     final saved = AiSettings.fromJson(preferences['ai']);
     expect(saved.active!.preset, ProviderPreset.anthropic);
     expect(saved.active!.model, AnthropicProvider.defaultModel);
+    expect(saved.active!.notesTokens, 100000);
     expect(
       preferences['ai'].toString(),
       isNot(contains('sk-')),

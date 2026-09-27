@@ -87,14 +87,23 @@ class NoteAgent {
     required this.model,
     required this.reader,
     this.webSearch,
+    this.notesTokens = ContextBudget.defaultNotesTokens,
   });
 
   final ChatProvider provider;
   final String model;
   final NoteReader reader;
 
+  /// How many tokens of the notes go with a question, at most.
+  final int notesTokens;
+
   /// The web, searched by the app, for a provider that cannot search it.
   final WebSearch? webSearch;
+
+  /// How much of the notes goes with a question to a model that can do
+  /// [capabilities].
+  ContextBudget _budget(ModelCapabilities capabilities) =>
+      ContextBudget.forModel(capabilities, notesTokens: notesTokens);
 
   /// The most rounds of tools one question runs before answering with
   /// what it has.
@@ -174,7 +183,7 @@ class NoteAgent {
     final given = history.isEmpty
         ? await context.build(
             scope,
-            budget: ContextBudget.forModel(capabilities),
+            budget: _budget(capabilities),
             question: question,
           )
         : null;
@@ -291,7 +300,7 @@ class NoteAgent {
     final capabilities = await provider.capabilitiesOf(model);
     final given = await NoteContext(
       reader,
-    ).build(scope, budget: ContextBudget.forModel(capabilities));
+    ).build(scope, budget: _budget(capabilities));
     sources = given.sources;
     if (sources.isEmpty) {
       throw AiException(

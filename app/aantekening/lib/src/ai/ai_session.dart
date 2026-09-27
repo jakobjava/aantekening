@@ -388,6 +388,7 @@ class AiSession extends Notifier<AiSessionState> {
       model: model.config.model,
       reader: reader,
       webSearch: web,
+      notesTokens: model.config.notesTokens,
     );
     await _follow(
       agent.ask(
@@ -436,6 +437,7 @@ class AiSession extends Notifier<AiSessionState> {
       provider: model.provider,
       model: model.config.model,
       reader: reader,
+      notesTokens: model.config.notesTokens,
     );
     await _follow(
       agent.make(kind, scope: info),

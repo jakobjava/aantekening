@@ -330,7 +330,11 @@ model that thinks longer than **Think for at most** (three minutes unless
 you change it) is stopped and answers from what it has worked out.
 
 Or add a provider under *Online* with its API key, which is kept in your
-system's keychain. For web search with providers other than Anthropic,
+system's keychain. **Notes per question** sets how much of your notes goes
+with a question — 40k tokens unless you change it, and never more than a
+third of what the model can take, which is read from the provider where it
+says. For a server of your own that does not say, such as LM Studio, set
+its **Room**. For web search with providers other than Anthropic,
 which searches itself, point the settings at a
 [SearXNG](https://docs.searxng.org) you run, or a Brave Search API key.
 Nothing is contacted until you ask something.

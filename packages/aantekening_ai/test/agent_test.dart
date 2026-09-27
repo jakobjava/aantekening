@@ -398,6 +398,17 @@ void main() {
     expect(built.overview, contains('not given here'));
   });
 
+  test('as much of the notes goes with a question as is chosen, and no '
+      'more than a third of what the model takes', () {
+    int characters(int context, [int? notes]) => ContextBudget.forModel(
+      ModelCapabilities(contextTokens: context),
+      notesTokens: notes ?? ContextBudget.defaultNotesTokens,
+    ).characters;
+    expect(characters(1048576), 160000, reason: '40k tokens unless chosen');
+    expect(characters(1048576, 200000), 800000);
+    expect(characters(16384, 200000), 21845, reason: 'a third of 16k');
+  });
+
   test('a worksheet is written out with its visual named once, and the '
       'answer typed onto it saying so', () {
     final digest = PageDigest.of(
