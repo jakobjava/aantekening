@@ -1,6 +1,6 @@
 # 2. One SQLite database per workspace
 
-**Status:** accepted
+**Status:** accepted — revised by ADR 19: the notes are a folder of files, and the database their index beside the app
 
 ## Context
 

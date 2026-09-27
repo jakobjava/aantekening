@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../command_menu.dart';
 import '../commands/app_command.dart';
 import '../commands/shortcuts.dart';
+import '../files/bin_view.dart';
 import '../look/controls.dart';
 import '../look/marks.dart';
 import '../look/tones.dart';
@@ -69,6 +70,7 @@ class _LibraryPaneState extends ConsumerState<LibraryPane> {
                   'New notebook',
                   () => createNamedNotebook(context, ref),
                 ),
+                MenuCommand('Bin', () => unawaited(showBin(context))),
               ],
               child: notebooks.when(
                 loading: () => const Loading(),
@@ -101,6 +103,8 @@ class _LibraryPaneState extends ConsumerState<LibraryPane> {
               ),
             ),
           ),
+          const Divider(height: 1),
+          const _BinRow(),
         ],
       ),
     );
@@ -303,4 +307,25 @@ class PaneBackgroundMenu extends StatelessWidget {
     ),
     child: child,
   );
+}
+
+/// The bin, at the foot of the notebooks: what was deleted, and how much.
+class _BinRow extends ConsumerWidget {
+  const _BinRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(binProvider).value?.length ?? 0;
+    return RowTile(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      title: const Text('Bin'),
+      trailing: count == 0
+          ? null
+          : Text(
+              '$count',
+              style: TextStyle(fontSize: 11.5, color: context.tones.muted),
+            ),
+      onTap: () => unawaited(showBin(context)),
+    );
+  }
 }

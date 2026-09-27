@@ -17,6 +17,9 @@ import '../command_menu.dart';
 import '../commands/app_command.dart';
 import '../commands/editor_keys.dart';
 import '../commands/shortcuts.dart';
+import '../files/attached_files.dart';
+import '../files/notes_keeper.dart';
+import '../files/notes_location.dart';
 import '../look/controls.dart';
 import '../look/tones.dart';
 import '../providers.dart';
@@ -164,6 +167,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   AantekeningStore? _store;
   late final LibraryRevision _libraryRevision;
   late final VoidCallback _unregisterCommands;
+  late final VoidCallback _unregisterSave;
 
   @override
   void initState() {
@@ -172,6 +176,11 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _unregisterCommands = ref
         .read(commandHandlersProvider)
         .register(_pageCommands);
+    _unregisterSave = ref.read(openSavesProvider).register(_saveOpenPage);
+    ref.listenManual<AsyncValue<FolderChanges>>(
+      folderChangesProvider,
+      (_, next) => _onChangedElsewhere(next.value),
+    );
     _controller.addListener(_onCanvasChanged);
     _stopTracingView = traceViewOf(_controller);
     _textController.formula.addListener(_onFormulaChanged);
@@ -211,6 +220,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   @override
   void dispose() {
     _unregisterCommands();
+    _unregisterSave();
     _autosave?.cancel();
     _controller.removeListener(_onCanvasChanged);
     _stopTracingView();
@@ -347,6 +357,61 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _autosave = Timer(_autosaveDelay, () {
       unawaited(_persist(pageId, _controller.document));
     });
+  }
+
+  Future<void> _openFile(BlockEmbed file) async {
+    final store = _store;
+    if (store == null) return;
+    if (!await openAttachedFile(store, file) && mounted) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text('The file could not be opened.')),
+      );
+    }
+  }
+
+  Future<void> _saveFile(BlockEmbed file) async {
+    final store = _store;
+    if (store != null) await saveAttachedFile(store, file);
+  }
+
+  /// Saves the open page now, if it has changes, finishing when it has: as
+  /// the app does before it stops.
+  Future<void> _saveOpenPage() async {
+    final pageId = widget.pageId;
+    if (pageId == null || !_ready || !_controller.isDirty) return;
+    _autosave?.cancel();
+    await _persist(pageId, _controller.document);
+  }
+
+  /// Takes in a change another computer made to the open page: shows it,
+  /// if nothing has been changed here; otherwise keeps it as a page of its
+  /// own before this one's changes are saved over it, and says so.
+  Future<void> _onChangedElsewhere(FolderChanges? changes) async {
+    final pageId = widget.pageId;
+    if (changes == null || pageId == null || !changes.pages.contains(pageId)) {
+      return;
+    }
+    if (!_ready || !_controller.isDirty) {
+      _views[pageId] = _controller.viewport;
+      await _load();
+      return;
+    }
+    final store = _store;
+    if (store == null) return;
+    final kept = await store.pages.keepVersion(
+      pageId,
+      note: 'changed elsewhere',
+    );
+    _libraryRevision.bump();
+    if (!mounted || kept == null) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          'This page was changed on another computer while you were '
+          'editing it. Their version is kept as “${kept.title}”.',
+        ),
+      ),
+    );
   }
 
   /// Saves the open page now, as Ctrl+S does.
@@ -1382,6 +1447,8 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       onPasteElements: _pasteFromBox,
       onEmbedToBackground: (block, local) =>
           _embedToBackground(id, block, local),
+      onOpenFile: (file) => unawaited(_openFile(file)),
+      onSaveFile: (file) => unawaited(_saveFile(file)),
       pageId: widget.pageId,
       onOpenLink: (uri) => unawaited(ref.read(noteLinksProvider).open(uri)),
     );

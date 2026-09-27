@@ -69,13 +69,17 @@ class AssetStore {
     return asset;
   }
 
-  /// Imports the contents of [file].
-  Future<AssetRef> importFile(File file, {String? mimeType}) async {
+  /// Imports the contents of [file], named [name] — its own name, if not.
+  Future<AssetRef> importFile(
+    File file, {
+    String? mimeType,
+    String? name,
+  }) async {
     final bytes = await file.readAsBytes();
     return importBytes(
       bytes,
       mimeType: mimeType ?? mimeTypeForPath(file.path),
-      originalName: p.basename(file.path),
+      originalName: name ?? p.basename(file.path),
     );
   }
 
@@ -99,7 +103,10 @@ class AssetStore {
   ///
   /// Returned rather than its bytes so that callers can stream a large PDF into
   /// the renderer instead of holding it in memory.
-  File fileFor(AssetRef asset) => File(_pathForHash(asset.sha256));
+  File fileFor(AssetRef asset) => fileForHash(asset.sha256);
+
+  /// The file holding the bytes whose SHA-256 is [sha256Hex].
+  File fileForHash(String sha256Hex) => File(_pathForHash(sha256Hex));
 
   /// Reads an asset's bytes, or null when it is unknown or its file is missing.
   Future<Uint8List?> readBytes(String assetId) async {
@@ -110,18 +117,17 @@ class AssetStore {
     return file.readAsBytes();
   }
 
-  /// Deletes assets that no live page references any more.
+  /// Deletes assets that no page references any more — none, not even a
+  /// page in the bin, which may yet be restored.
   ///
-  /// Returns the number of assets removed. Called after emptying the recycle
-  /// bin, never on a hot path.
+  /// Returns the number of assets removed. Called after emptying the bin,
+  /// never on a hot path.
   Future<int> collectGarbage() async {
     final rows = _db.select('''
       SELECT a.id AS id, a.sha256 AS sha256
       FROM assets a
       WHERE NOT EXISTS (
-        SELECT 1 FROM page_assets pa
-        JOIN pages p ON p.id = pa.page_id
-        WHERE pa.asset_id = a.id AND p.deleted_at IS NULL
+        SELECT 1 FROM page_assets pa WHERE pa.asset_id = a.id
       )
     ''');
 

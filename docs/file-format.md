@@ -1,8 +1,9 @@
 # The page format
 
-A page is a JSON document. It is stored as the `body` blob of `page_bodies`
-(gzipped above 4 KiB) and is byte-identical to what `Export page` writes to
-disk. There is no second, private representation.
+A page is a JSON document. It is the `document` of the page's file in the
+notes folder (see [The notes folder](#the-notes-folder)), the `body` blob of
+`page_bodies` in the index (gzipped above 4 KiB), and byte-identical to what
+`Export page` writes to disk. There is no second, private representation.
 
 ```jsonc
 {
@@ -71,6 +72,9 @@ A text box's `blocks` are its paragraphs, in order. A block is either text:
   "indent": 1,            // nesting depth, omitted when 0
   "checked": true,        // to-dos only, omitted when false
   "bullet": "dash",       // bulleted lists only, omitted for the default disc
+  "marker": "➢",          // a bullet as written elsewhere, drawn instead
+  "align": "center",      // start (omitted), center or end
+  "spacing": { "before": 4, "after": 0, "line": 14 }, // as written elsewhere
   "runs": [
     { "text": "area " },
     { "text": "\\pi r^2", "math": "latex" }, // a formula
@@ -98,8 +102,11 @@ merged with neighbouring runs. A formula alone in its block is typeset in
 display style.
 
 `marks` holds only the formatting that is set: `bold`, `italic`,
-`underline`, `strikethrough`, `code`, `color`, `highlight`, `link`, and `size`
-(in points; 11 is the body size). A formula's marks carry only `color` and
+`underline`, `strikethrough`, `code`, `color`, `highlight`, `link`, `size`
+(in points; 11 is the body size), `font` (a typeface's family name, kept from
+the program the text was written in and drawn in a typeface of the same
+measure where it is not installed) and `script` (`superscript` or
+`subscript`). A formula's marks carry only `color` and
 `size`: it is typeset by its own rules, so bold or underline mean nothing to
 it. A highlight on a formula, whole or in part, is in its LaTeX, as
 `\colorbox{#FFEF9D}{$…$}`, in the highlight's colour as it looks on the white
@@ -108,7 +115,16 @@ paper.
 A bulleted block's `bullet` is the mark before its items: `disc`, the default,
 which nests as a disc, then a circle, then a square, or `dash`, which stays a
 dash at every level. Typing `* ` starts a list of discs and `- ` one of dashes,
-as Word does.
+as Word does. A `marker` is a bullet as another program wrote it — `○`,
+`▪`, `➢` — drawn as its shape where the page draws one, and as the character
+otherwise; `bullet` still says which list it is.
+
+`spacing` lays a paragraph out as the program it came from did: `before` and
+`after` are the space above and below it and `line` the height of its lines,
+all in points; without `line`, lines are as high as the typeface sets them.
+A block without `spacing` is laid out as the page lays out what is typed
+on it. Imported text keeps it, so handwriting over the text still falls on
+its lines.
 
 **Tables** are runs of blocks, each with a `cell` naming the cell it is a
 line of, in reading order, as Word keeps tables:
@@ -122,15 +138,19 @@ Rows and columns count from zero. Several blocks in a row with the same cell
 are its lines; a cell that comes before the one above it in reading order
 begins another table. `width` is the column's width in page units, where its
 line was dragged, carried by every cell of the column; without it the column
-fits its text. A build that does not know tables shows the cells as
+fits its text. A cell may carry `shading`, its background as an ARGB
+colour, and `"borders": false` when its lines were hidden; the editor then
+draws them faint, so the table can still be seen. A build that does not know tables shows the cells as
 paragraphs, one after another. Readers repair a table missing cells by adding
 them empty.
 
 A text box with `"autoWidth": true` widens to fit its longest line, up to a
 limit, as a new OneNote container does; resizing it by hand clears the flag.
 
-**Embeds** are pictures (`"kind": "image"`) and PDF pages (`"pdfPage"`, with
-a zero-based `page`) from the asset store. `width` and `height` are the
+**Embeds** are pictures (`"kind": "image"`), PDF pages (`"pdfPage"`, with
+a zero-based `page`) and attached files (`"file"`, with the file's `name`)
+from the asset store. A file is shown as its name, type and size, and
+opened with whatever opens it on the computer. `width` and `height` are the
 preferred size in page units, as the handles at its corners set them; a box
 narrower than that shows the object scaled down to fit. `text` is indexed for search — a PDF page's text layer, or a
 picture's description.
@@ -190,9 +210,60 @@ The format is designed to be read by builds that did not write it:
 These rules exist because the alternative — refusing to open a file — locks
 someone out of their own notes.
 
-## What is *not* in the page file
+## What is *not* in the page document
 
-Titles, the date shown beneath a title (`pages.created_at`), position among
-siblings, the search index, tags and embeddings live in SQLite, because they
-are properties of how a page sits in a workspace rather than of its contents. Attachments live in the content-addressed asset store;
+Titles, the date shown beneath a title (`created_at`), position among
+siblings and tags are properties of how a page sits among the notes rather
+than of its contents: they are the page's file's `page` and `tags`, beside
+its document. The search index and embeddings are the index's own, made
+again from the files. Attachments live in the content-addressed asset store;
 the page refers to them by `assetId`.
+
+## The notes folder
+
+The notes are a folder of files, one for each thing, so a service that
+syncs folders can keep them on several computers (ADR 19):
+
+```
+aantekening.json          {"workspace": "<ULID>", …} — which notes these are
+notebooks/<id>.json       sections/<id>.json
+pages/<id>.json.gz        conversations/<id>.json   kept/<id>.json
+assets/<ab>/<sha-256>     pictures, PDFs and files, by their contents
+```
+
+Every file is JSON — a page's gzipped — beginning with its `kind` and
+`format`:
+
+```jsonc
+{ "kind": "page", "format": 1,
+  "page": { "id": "01J…", "sectionId": "01J…", "title": "…", "createdAt": … },
+  "tags": ["exam"],
+  "assets": [ { "id": "01J…", "sha256": "…", "mimeType": "image/png", … } ],
+  "document": { "formatVersion": 1, … } }   // the page document above
+```
+
+A notebook's file holds `notebook`, a section's `section`; a conversation's
+and a kept item's hold its `row` and `children` as the index has them. A
+page's `assets` name the files in `assets/` its document refers to by
+`assetId`, so another computer can find them by their SHA-256.
+
+A notebook, section or page in the bin has `deletedAt` set, and is
+restored by clearing it. A thing deleted for good leaves a **tombstone** where its file was —
+`{"kind": "page", "format": 1, "id": "01J…", "purgedAt": 1758…}` — so every
+computer lets it go. A file that is missing deletes nothing. A file of a
+`format` above this build's, or one that cannot be read, is left alone.
+
+Files are written beside where they go (a name starting with `.`), flushed
+and moved over it. A sync service's copy of a page's file — any name that is
+not an identity — becomes a page of its own and is removed.
+
+## Exports and backups
+
+**An export** (`.aantekening`) is a zip of the files of what was exported,
+laid out as in the notes folder, with `aantekening-export.json` naming the
+notebooks, sections and pages in it at its root instead of
+`aantekening.json`. Importing one gives the notes back, pages keeping their
+identity.
+
+**A backup** is a zip of the whole notes folder as it was, restored into a
+folder of its own as notes of their own.

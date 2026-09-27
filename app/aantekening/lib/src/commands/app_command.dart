@@ -157,7 +157,13 @@ enum AppCommand {
   deletePage(
     'Delete page',
     CommandGroup.library,
-    'Asks first; its subpages go with it',
+    'Moves it to the bin; its subpages go with it',
+    <KeyChord>[],
+  ),
+  bin(
+    'Bin',
+    CommandGroup.library,
+    'What was deleted, to restore or delete for good',
     <KeyChord>[],
   ),
   save(
@@ -248,6 +254,24 @@ enum AppCommand {
     'Spelling dictionaries',
     CommandGroup.app,
     'The languages spelling is checked in',
+    <KeyChord>[],
+  ),
+  files(
+    'Files and backups',
+    CommandGroup.app,
+    'Where the notes are kept, backups, importing and exporting',
+    <KeyChord>[],
+  ),
+  importNotes(
+    'Import notes…',
+    CommandGroup.app,
+    'From OneNote, Xournal++ or an export of this app',
+    <KeyChord>[],
+  ),
+  backUpNow(
+    'Back up now',
+    CommandGroup.app,
+    'Every note, picture and file, in one zip',
     <KeyChord>[],
   );
 

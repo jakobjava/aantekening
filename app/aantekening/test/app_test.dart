@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:aantekening/src/editor/page_title.dart';
+import 'package:aantekening/src/files/bin_view.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/text/block_paragraph.dart';
 import 'package:aantekening/src/graph/graph_panel.dart';
@@ -515,24 +516,57 @@ void main() {
       expect(await store.search.search('newtons'), hasLength(2));
     });
 
-    testWidgets('deleting a section asks first', (tester) async {
+    testWidgets('deleting a section moves it to the bin, and Undo brings '
+        'it back', (tester) async {
       await openPage(tester);
 
       await rightClick(tester, find.text('Mechanics'));
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
-      expect(find.text('Delete the section “Mechanics”?'), findsOneWidget);
-      await tester.tap(
-        find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.text('Delete'),
-        ),
-      );
-      await tester.pumpAndSettle();
 
       expect(find.text('Mechanics'), findsNothing);
       expect(find.text('Select a section'), findsOneWidget);
-      expect(find.text('Go to a page'), findsOneWidget);
+      expect(find.text('“Mechanics” is in the bin.'), findsOneWidget);
+      expect((await store.bin.list()).single.title, 'Mechanics');
+
+      await tester.tap(
+        find.descendant(of: find.byType(SnackBar), matching: find.text('Undo')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Mechanics'), findsOneWidget);
+      expect(await store.bin.list(), isEmpty);
+    });
+
+    testWidgets('the bin restores what was deleted, and deletes it for good '
+        'once asked', (tester) async {
+      Future<void> deleteMechanics() async {
+        await rightClick(tester, find.text('Mechanics'));
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+      }
+
+      await openPage(tester);
+      await deleteMechanics();
+      await tester.tap(find.text('Bin'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BinView), findsOneWidget);
+      await tester.tap(find.text('Restore'));
+      await tester.pumpAndSettle();
+      expect(find.text('The bin is empty.'), findsOneWidget);
+      await tester.tap(find.byTooltip('Close  (Esc)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Mechanics'), findsOneWidget);
+
+      await deleteMechanics();
+      await tester.tap(find.text('Bin'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Empty the bin'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete for good'));
+      await tester.pumpAndSettle();
+      expect(find.text('The bin is empty.'), findsOneWidget);
+      expect(await store.pages.listAllPages(), isEmpty);
+      expect(await store.bin.list(), isEmpty);
     });
   });
 

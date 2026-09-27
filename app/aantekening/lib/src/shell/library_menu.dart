@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
+import '../files/export_flow.dart';
 import 'library_actions.dart';
 
 /// The name shown for [node], which for a page without a title is a
@@ -46,9 +47,7 @@ Future<void> showLibraryMenu(
     if (title != null) await actions.rename(node, title);
   }
 
-  Future<void> delete() async {
-    if (await confirmDeletion(context, node)) await actions.delete(node);
-  }
+  Future<void> delete() => deleteToBin(context, ref, node);
 
   final create = switch (node) {
     Notebook(:final id) => <MenuCommand>[
@@ -118,6 +117,9 @@ Future<void> showLibraryMenu(
       ],
       paste,
     ],
+    <MenuCommand>[
+      MenuCommand('Export…', () => unawaited(exportNotes(context, ref, node))),
+    ],
     <MenuCommand>[MenuCommand('Rename', rename), MenuCommand('Delete', delete)],
   ]);
 }
@@ -178,33 +180,27 @@ String _kindOf(TreeNode node) => switch (node) {
   _ => 'page',
 };
 
-/// Asks whether to delete [node] and everything in it.
-Future<bool> confirmDeletion(BuildContext context, TreeNode node) async {
-  final kind = _kindOf(node);
-  final contents = switch (node) {
-    Notebook() => 'Its sections and pages are deleted with it.',
-    Section() => 'Its pages and subsections are deleted with it.',
-    _ => 'Any subpages are deleted with it.',
-  };
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text('Delete the $kind “${displayTitle(node)}”?'),
-      content: Text(contents),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
+/// Moves [node], and everything in it, to the bin, saying so, with a way
+/// to put it back. Nothing is lost by deleting, so nothing asks first.
+Future<void> deleteToBin(
+  BuildContext context,
+  WidgetRef ref,
+  TreeNode node,
+) async {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  final actions = ref.read(libraryActionsProvider);
+  await actions.delete(node);
+  messenger
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text('“${displayTitle(node)}” is in the bin.'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () => unawaited(actions.restore(node)),
         ),
-        FilledButton(
-          autofocus: true,
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Delete'),
-        ),
-      ],
-    ),
-  );
-  return confirmed ?? false;
+      ),
+    );
 }
 
 /// The dialog behind [promptForName].

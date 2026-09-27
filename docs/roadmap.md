@@ -55,8 +55,18 @@ what the AI is given with a question, which today is chosen by full-text search.
 * Tabs keep each page's view, but not its undo history: going to another
   page, in a tab or not, starts that page's history afresh.
 * Colours picked with the colour picker are remembered for the session only.
-* Deleted notebooks, sections and pages stay in the workspace and the store can
-  restore them, but there is no recycle bin in the app to do it from yet.
+* Pages changed on two computers before either has written to the notes
+  folder are kept as two pages, not merged (ADR 19); a notebook or section
+  renamed on both keeps the name written last.
+* OneNote files in the format OneNote keeps notebooks in online (the
+  FSSHTTP packaging) are recognised but not read; a notebook exported from
+  OneNote on a computer, as a `.onepkg`, is. OneNote's handwriting inside a
+  line of text is placed where its outline begins rather than in the line,
+  and audio recordings come over as attached files (ADR 20).
+* Superscript and subscript show as the typeface draws them; a typeface
+  without its own raised figures shows them on the line.
+* Settings choose the notes folder on the desktop; on Android the notes stay
+  in the app's own folder.
 * Pages and sections move and copy by cut, copy and paste; they cannot yet be
   dragged about the panes.
 * The graph shows how notes nest, not how they refer to one another: pages
@@ -82,16 +92,18 @@ what the AI is given with a question, which today is chosen by full-text search.
    before workspaces get large, not before.
 2. **Touch editing and the Android build.**
 3. **Paste and drop** for pictures and PDFs.
-4. **Import and export.** The page format is stable and documented;
-   `.enex`/OneNote import and Markdown/PDF export sit on top of it.
+4. **More importers and exporters.** OneNote, Xournal++ and this app's own
+   exports are read (ADR 20); Evernote's `.enex`, OneNote's online format,
+   and Markdown and PDF export sit on the same `NotesImporter` and drafts.
 5. **Embedding indexer** running in the background, then hybrid search.
-6. **Sync.** Deliberately last. Pages are immutable, revision-numbered
-   documents with ULID identifiers, which is the shape CRDT or
-   operational-transform sync needs — but choosing a sync model before the
-   editing model has settled would constrain the wrong layer first.
+6. **Merging edits.** The notes folder already keeps every computer's notes
+   in step through a sync service, keeping both versions of a page changed
+   on two at once (ADR 19). Merging such edits element by element is what is
+   left; pages are revision-numbered documents with ULID identifiers, the
+   shape that needs.
 
 ## Deliberately out of scope
 
 * A hosted account, a server, or telemetry.
-* Real-time collaborative editing (see sync, above).
+* Real-time collaborative editing (see merging edits, above).
 * A plugin system, until the internal boundaries have stopped moving.

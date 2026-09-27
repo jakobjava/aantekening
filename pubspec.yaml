@@ -10,6 +10,7 @@ workspace:
   - packages/aantekening_ai
   - packages/aantekening_canvas
   - packages/aantekening_core
+  - packages/aantekening_interchange
   - packages/aantekening_math
   - packages/aantekening_spell
   - packages/aantekening_store

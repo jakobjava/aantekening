@@ -1,0 +1,19 @@
+name: aantekening_interchange
+description: Reading notes from other programs into aantekening, and writing them out again.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  aantekening_core: ^0.1.0
+  aantekening_store: ^0.1.0
+  archive: ^4.3.0
+  path: ^1.9.1
+  xml: ^7.0.1
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0

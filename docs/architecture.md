@@ -2,16 +2,17 @@
 
 ## Shape of the system
 
-`aantekening` is a pub workspace: one Flutter application over six Dart
+`aantekening` is a pub workspace: one Flutter application over seven Dart
 packages. Dependencies point in one direction only.
 
 ```
                  app/aantekening             Flutter app: shell, panes, editor
                          │
-     ┌───────────┬───────┼────────┬──────────┐
-     ▼           ▼       ▼        ▼          ▼
- _canvas     _store    _math     _ai      _spell   feature packages
-     │           │       │        │
+     ┌───────────┬───────┼────────┬──────────┬──────────┐
+     ▼           │       ▼        ▼          ▼          ▼
+ _canvas         │     _math     _ai      _spell   _interchange   feature
+     │           ▼       │        │                     │          packages
+     │        _store ◄───┼────────┼─────────────────────┘
      └───────────┴───┬───┴────────┘
                      ▼
                   _core                     pure Dart: model + page format
@@ -22,8 +23,15 @@ packages. Dependencies point in one direction only.
   links to notes, and pages taken apart for machines to read (`PageDigest`).
   It runs anywhere: in the UI, in the store, in a background isolate, in tests,
   and in any future command-line importer.
-* **`aantekening_store`** — SQLite, full-text search, embeddings, the
-  content-addressed asset store, and what the AI makes, in tables of its own.
+* **`aantekening_store`** — the notes folder (a file for each notebook,
+  section and page, ADR 19) and the SQLite index beside it that keeps them
+  in step both ways; full-text search, embeddings, the content-addressed
+  asset store, the bin, backups, exports, and what the AI makes, in tables
+  of its own.
+* **`aantekening_interchange`** — pure Dart: reading notes kept by other
+  programs into drafts the store keeps whole (ADR 20). OneNote's `.onepkg`
+  cabinets (LZX), its revision store and object model, OfficeMath as LaTeX;
+  Xournal++ documents; this app's own exports.
 * **`aantekening_canvas`** — the infinite canvas, running right and down from
   a page's top-left corner: viewport, spatial index, ink capture and the
   painted layers. Knows nothing about maths or PDFs.
@@ -54,7 +62,12 @@ general-purpose surface while the app decides what an element looks like.
 3. Only the affected painted layer repaints; the element widgets are untouched.
 4. A debounced timer fires ~700 ms later and calls `PageRepository.saveDocument`.
 5. That one transaction writes the body, the page row, the FTS entry and the
-   asset links. The index can never describe a page that is not on disk.
+   asset links — and, by trigger, puts the page in the notes folder's
+   outbox. The index can never describe a page that is not on disk.
+6. Once the page has been still a moment, `FolderMirror.flush` writes the
+   page's file to the notes folder, whole or not at all, and takes it out of
+   the outbox. A crash between 5 and 6 leaves it in the outbox, and it is
+   written the next time the app starts.
 
 ## Data flow for a question to the AI
 
@@ -96,7 +109,7 @@ will not be a breaking change. See `docs/roadmap.md`.
 ## Platforms
 
 Linux, Windows and Android share all Dart code. The only platform-specific
-pieces are the workspace directory and the directory for the preferences
+pieces are the notes folder and the index beside the app, the directory for the preferences
 and spelling dictionaries (`path_provider`), and the SQLite and
 PDFium libraries, which `package:sqlite3` and `pdfrx` fetch prebuilt for each
 platform as the app is built — SQLite with FTS5. Nothing in the codebase

@@ -9,6 +9,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'database.dart';
+import 'files/entity_files.dart';
 import 'row_read.dart';
 
 /// How a page body is stored in the `page_bodies` table.
@@ -113,6 +114,12 @@ class PageRepository {
       _readDocument(pageId);
 
   PageDocument? _readDocument(String pageId) {
+    final source = _readSource(pageId);
+    return source == null ? null : PageDocument.decode(source);
+  }
+
+  /// A page's contents as the JSON they are kept as.
+  String? _readSource(String pageId) {
     final rows = _db.select(
       'SELECT encoding, body FROM page_bodies WHERE page_id = ?',
       <Object?>[pageId],
@@ -122,12 +129,11 @@ class PageRepository {
     final row = rows.first;
     final bytes = row['body'] as List<int>;
     final encoding = str(row, 'encoding');
-    final source = switch (encoding) {
+    return switch (encoding) {
       BodyEncoding.gzippedJson => utf8.decode(gzip.decode(bytes)),
       BodyEncoding.json => utf8.decode(bytes),
       _ => throw PageFormatException('Unknown body encoding "$encoding"'),
     };
-    return PageDocument.decode(source);
   }
 
   /// Saves [document] as the contents of [pageId].
@@ -145,7 +151,7 @@ class PageRepository {
     String? title,
   }) async {
     final text = document.extractSearchText();
-    final preview = _buildPreview(text);
+    final preview = previewOf(text);
     final now = _now;
 
     return _db.transaction(() {
@@ -289,6 +295,42 @@ class PageRepository {
     });
   }
 
+  /// Keeps the page [pageId] as it is now as a page of its own, beside it,
+  /// named with [note] after its title; returns the new page.
+  ///
+  /// For a version of a page that is about to be written over — changed on
+  /// another computer while it was being edited on this one — so that
+  /// neither version is lost.
+  Future<PageRef?> keepVersion(String pageId, {required String note}) async =>
+      _db.transaction(() {
+        final page = _findPage(pageId);
+        if (page == null) return null;
+        final copy = PageRef(
+          id: Ulid.generate(),
+          sectionId: page.sectionId,
+          parentId: page.parentId,
+          title: '${page.title} ($note)',
+          position: _positionFor(page.sectionId, page.parentId, page.id),
+          preview: page.preview,
+          revision: page.revision,
+          color: page.color,
+          createdAt: page.createdAt,
+          updatedAt: _now,
+        );
+        _insert(copy);
+        final document = _readDocument(pageId) ?? PageDocument.empty();
+        final body = PageDocument(
+          id: copy.id,
+          revision: document.revision,
+          canvas: document.canvas,
+          elements: document.elements,
+        );
+        _writeBody(copy.id, body);
+        _reindex(copy.id, copy.title, body.extractSearchText());
+        _syncAssets(copy.id, body.referencedAssetIds);
+        return copy;
+      });
+
   /// Moves a page and its subpages to the recycle bin and drops them out of
   /// search results. Returns the pages it deleted.
   Future<List<String>> deletePage(String pageId) async => _db.transaction(() {
@@ -342,6 +384,136 @@ class PageRepository {
       }
       // page_bodies, page_assets, page_tags and embeddings cascade.
       _db.run('DELETE FROM pages WHERE id = ?', <Object?>[pageId]);
+    });
+  }
+
+  // ------------------------------------------------------------- as files
+
+  /// Page [pageId] whole, as the notes folder keeps it, or null if there is
+  /// no such page.
+  PageFile? pageFile(String pageId) {
+    final page = _findPage(pageId);
+    if (page == null) return null;
+    final source = _readSource(pageId);
+    final assets = <AssetRef>[
+      for (final row in _db.select(
+        'SELECT a.* FROM assets a JOIN page_assets pa ON pa.asset_id = a.id '
+        'WHERE pa.page_id = ? ORDER BY a.id',
+        <Object?>[pageId],
+      ))
+        AssetRef(
+          id: str(row, 'id'),
+          sha256: str(row, 'sha256'),
+          mimeType: str(row, 'mime_type'),
+          byteSize: integer(row, 'byte_size'),
+          createdAt: integer(row, 'created_at'),
+          originalName: strOrNull(row, 'original_name'),
+        ),
+    ];
+    return PageFile(
+      page: page,
+      document: source == null
+          ? PageDocument.empty(id: pageId)
+          : PageDocument.decode(source),
+      documentJson: source,
+      assets: assets,
+      tags: <String>[
+        for (final row in _db.select(
+          'SELECT t.name AS name FROM tags t '
+          'JOIN page_tags pt ON pt.tag_id = t.id WHERE pt.page_id = ? '
+          'ORDER BY t.name',
+          <Object?>[pageId],
+        ))
+          str(row, 'name'),
+      ],
+    );
+  }
+
+  /// Puts [file] in place of the page it keeps, or adds it: everything
+  /// about it — where it is, its contents, the pictures it shows, its tags
+  /// — as the file has it, re-indexed for search. Pictures it shows that
+  /// are stored here under another name already are shown by that name.
+  ///
+  /// Synchronous, so that it can be part of a larger transaction.
+  void putPage(PageFile file) {
+    _db.transaction(() {
+      final renamed = <String, String>{};
+      for (final asset in file.assets) {
+        final same = _db.select(
+          'SELECT id FROM assets WHERE sha256 = ?',
+          <Object?>[asset.sha256],
+        );
+        if (same.isNotEmpty) {
+          final id = str(same.first, 'id');
+          if (id != asset.id) renamed[asset.id] = id;
+          continue;
+        }
+        _db.run(
+          'INSERT OR IGNORE INTO assets '
+          '(id, sha256, mime_type, byte_size, original_name, created_at) '
+          'VALUES (?, ?, ?, ?, ?, ?)',
+          <Object?>[
+            asset.id,
+            asset.sha256,
+            asset.mimeType,
+            asset.byteSize,
+            asset.originalName,
+            asset.createdAt,
+          ],
+        );
+      }
+      final document = renamed.isEmpty
+          ? file.document
+          : file.document.withAssetsRenamed(renamed);
+      final page = file.page;
+      _db.run(
+        'INSERT INTO pages '
+        '(id, section_id, parent_id, title, position, preview, revision, '
+        ' color, created_at, updated_at, deleted_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
+        'ON CONFLICT(id) DO UPDATE SET section_id = excluded.section_id, '
+        '  parent_id = excluded.parent_id, title = excluded.title, '
+        '  position = excluded.position, preview = excluded.preview, '
+        '  revision = excluded.revision, color = excluded.color, '
+        '  created_at = excluded.created_at, '
+        '  updated_at = excluded.updated_at, '
+        '  deleted_at = excluded.deleted_at',
+        <Object?>[
+          page.id,
+          page.sectionId,
+          page.parentId,
+          page.title,
+          page.position,
+          page.preview,
+          page.revision,
+          page.color,
+          page.createdAt,
+          page.updatedAt,
+          page.deletedAt,
+        ],
+      );
+      _writeBody(page.id, document);
+      if (page.isDeleted) {
+        final rowId = _rowIdOf(page.id);
+        if (rowId != null) {
+          _db.run('DELETE FROM page_search WHERE rowid = ?', <Object?>[rowId]);
+        }
+      } else {
+        _reindex(page.id, page.title, document.extractSearchText());
+      }
+      _syncAssets(page.id, document.referencedAssetIds);
+      _db.run('DELETE FROM page_tags WHERE page_id = ?', <Object?>[page.id]);
+      for (final name in file.tags) {
+        _db.run(
+          'INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)',
+          <Object?>[Ulid.generate(), name],
+        );
+        _db.run(
+          'INSERT OR IGNORE INTO page_tags (page_id, tag_id) '
+          'SELECT ?, id FROM tags WHERE name = ?',
+          <Object?>[page.id, name],
+        );
+      }
     });
   }
 
@@ -537,7 +709,8 @@ class PageRepository {
         parentId,
       ]);
 
-  static String _buildPreview(String text) {
+  /// The start of [text], as the page list shows it.
+  static String previewOf(String text) {
     final collapsed = text.replaceAll(RegExp(r'\s+'), ' ').trim();
     return collapsed.length <= previewLength
         ? collapsed

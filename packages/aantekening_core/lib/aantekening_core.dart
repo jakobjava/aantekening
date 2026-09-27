@@ -14,6 +14,7 @@ export 'src/document/rich_text.dart';
 export 'src/document/rich_text_editing.dart';
 export 'src/document/table_editing.dart';
 export 'src/document/text_tables.dart';
+export 'src/interchange/drafts.dart';
 export 'src/link/note_link.dart';
 export 'src/search/search_terms.dart';
 export 'src/tree/hierarchy.dart';

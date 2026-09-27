@@ -3,9 +3,10 @@
 A note-taking application for Linux, Windows and Android, built with Flutter.
 
 An infinite canvas with moveable text boxes, pen and drawing support, imported
-images and PDFs to annotate, and first-class mathematics — with everything held
-in a local SQLite workspace so that navigating and searching thousands of pages
-stays instant.
+images and PDFs to annotate, and first-class mathematics — with every note a
+file of its own in a folder you choose, so a service such as OneDrive can keep
+it on each of your computers, and a local SQLite index beside the app so that
+navigating and searching thousands of pages stays instant.
 
 > **Status: groundwork.** The architecture, the page format, the storage and
 > search layer, the canvas engine, the maths engine and a working application
@@ -18,8 +19,8 @@ stays instant.
   subpages, each joined to what it is in by a line. Click a line, or the
   chevron beside a name, to fold away what lies beneath; the panes remember
   what is folded. Right-click any of them (or long-press) to add to it, cut,
-  copy, paste, rename or delete it. Deleting asks first; what is deleted stays
-  in the workspace and can be restored.
+  copy, paste, rename or delete it. What is deleted goes to the **bin**, with
+  Undo straight after.
 * **Ribbon** — OneNote-style tabs (Home, Insert, Draw, Math, Review, View)
   across the top of the window, each in named sections. It stays put while
   you work; a tool's shortcut brings its tab forward, and any button can be
@@ -144,6 +145,36 @@ stays instant.
   provider you choose (Anthropic, OpenAI, Gemini, OpenRouter, Mistral,
   Groq, DeepSeek, or any OpenAI-compatible server); nothing is sent
   anywhere until you ask.
+* **Saving** — every note is a file of its own in the notes folder, written
+  whole or not at all, so a crash, a full disk or a sync service copying it
+  mid-write cannot leave one half-written. Choose the folder in **Settings →
+  Files** — your OneDrive, Dropbox or Syncthing folder, say — and the notes
+  move there; choose one another computer already keeps notes in and they
+  open. Changes another computer makes appear as they arrive. Nothing is lost
+  to a clash: a page changed on two computers at once, or a sync service's
+  conflicting copy, is kept as a page of its own beside it, and a file gone
+  missing is written again rather than taken as deleted. Every open page is
+  saved before the window closes.
+* **Bin** — deleting a notebook, section or page puts it in the bin, with all
+  it holds, until it is restored where it was or deleted for good; the foot
+  of the notebooks pane opens it, and **Settings → Files** empties it.
+* **Backups** — a zip of every note, picture and file, made daily (or weekly,
+  or never) into a folder you choose, checked before it is kept, the newest
+  ten kept; **Back up now** makes one at once, and any backup restores into a
+  folder of its own.
+* **Import** — **Settings → Files** brings in notes from other programs, each
+  as a notebook of its own, with every name and date kept:
+  * a **OneNote** notebook (`.onepkg`) or section (`.one`), read from its file
+    format with nothing else installed. Every text box stays one text box in
+    its place, with its typefaces, sizes, colours, alignment, spacing,
+    bullets and to-dos; tables keep their cells, shading and borders;
+    equations become formulas you can edit; pictures, attached files and
+    handwriting stay where they were; subpages stay subpages;
+  * **Xournal++** documents (`.xopp`) or a folder of them, with their
+    handwriting, text, pictures, TeX formulas and the PDFs they annotate;
+  * an **export** of this app.
+* **Export** — any notebook, section or page, from its menu, as an
+  `.aantekening` file another copy of the app imports whole.
 * **Links** — copy a link to any notebook, section, page or paragraph from
   its menu; paste it into a text box and Ctrl+click it to go there.
 
@@ -162,7 +193,8 @@ flutter run -d linux            # or: -d windows, or an Android device
 `lib/main.dart` and platform folders live; the repository root only holds the
 workspace definition.
 
-Point the workspace somewhere else with `AANTEKENING_HOME=/path/to/dir`.
+The notes are kept wherever **Settings → Files** says;
+`AANTEKENING_HOME=/path/to/dir` keeps them in another folder for one session.
 
 ### On Windows
 
@@ -187,9 +219,10 @@ needs, and can be moved anywhere. Every push to `master` also builds one on
 GitHub: open the latest run under the repository's **Actions** tab and
 download **aantekening-windows**.
 
-Notes are kept in `%APPDATA%\dev.aantekening\aantekening\workspace`;
+Notes are kept in `%APPDATA%\dev.aantekening\aantekening\workspace` until
+**Settings → Files** chooses another folder;
 `$env:AANTEKENING_HOME = 'D:\Notes'` before starting the app puts them
-elsewhere.
+elsewhere for that session.
 
 ### Using it
 
@@ -306,7 +339,9 @@ Nothing is contacted until you ask something.
 
 ```
 packages/aantekening_core     model + page format   (pure Dart)
-packages/aantekening_store    SQLite, search, assets
+packages/aantekening_store    the notes folder, the SQLite index, search,
+                              assets, the bin, backups
+packages/aantekening_interchange  importing from OneNote and Xournal++
 packages/aantekening_canvas   infinite canvas engine
 packages/aantekening_math     Simple syntax ⇄ LaTeX, typesetting
 packages/aantekening_ai       AI providers, citations, the note agent
@@ -324,11 +359,11 @@ bearing choices is in [`docs/adr/`](docs/adr/).
 Flutter and Dart (BSD-3), SQLite (public domain), `sqlite3.dart` (MIT),
 Riverpod (MIT), `flutter_math_fork` (MIT/Apache-2.0), `pdfrx` (MIT) over
 PDFium (BSD-3/Apache-2.0), `file_selector`, `http`, `path`, `crypto` and
-`path_provider` (BSD-3). `aantekening_spell` is in large part a port of
+`path_provider` and `url_launcher` (BSD-3), `archive` (MIT), `xml` (MIT). `aantekening_spell` is in large part a port of
 [Hunspell](https://hunspell.github.io) 1.7.3 and those files are under
 Hunspell's licence, MPL 1.1, GPL 2 or LGPL 2.1 — see its `LICENSE`. The
 spelling dictionaries are not part of the app: they are downloaded from
 [wooorm/dictionaries](https://github.com/wooorm/dictionaries) when a language
 is first chosen, each under its own licence, which is saved beside it. The
-note format is plain JSON in a plain SQLite file — both readable without this
+notes are plain JSON files in a plain folder — readable without this
 application.

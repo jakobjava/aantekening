@@ -1,5 +1,5 @@
-/// Pictures and PDF pages, wherever they appear: on the canvas by themselves
-/// or inside a text box.
+/// Pictures, PDF pages and attached files, wherever they appear: on the
+/// canvas by themselves or inside a text box.
 library;
 
 import 'dart:async';
@@ -316,6 +316,79 @@ final pdfDocumentProvider = FutureProvider.autoDispose
       ref.onDispose(document.dispose);
       return document;
     });
+
+/// A file attached to a page: its name, what kind of file it is and how
+/// big, on a card of its own. Double-clicking it, or its menu, opens it.
+class AttachedFileView extends ConsumerWidget {
+  const AttachedFileView({required this.embed, super.key});
+
+  final BlockEmbed embed;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final asset = ref.watch(assetRefProvider(embed.assetId)).value;
+    final name = embed.name ?? asset?.originalName ?? 'Attached file';
+    final dot = name.lastIndexOf('.');
+    final kind = dot > 0 ? name.substring(dot + 1).toUpperCase() : 'FILE';
+    final size = asset == null ? '' : '  ·  ${fileSize(asset.byteSize)}';
+    final type = RichTextStyles.paperType;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Tones.paper,
+        border: Border.all(color: RichTextStyles.tableRule),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                border: Border.all(color: RichTextStyles.inkMuted),
+              ),
+              child: Text(
+                kind,
+                style: type.copyWith(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: RichTextStyles.inkMuted,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              name,
+              style: type.copyWith(fontSize: 13, color: RichTextStyles.ink),
+            ),
+            Text(
+              size,
+              style: type.copyWith(
+                fontSize: 12,
+                color: RichTextStyles.inkMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// [bytes] as a person reads a file's size: 12 KB, 3.4 MB.
+String fileSize(int bytes) {
+  if (bytes < 1024) return '$bytes bytes';
+  const units = <String>['KB', 'MB', 'GB'];
+  var size = bytes / 1024;
+  var unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit++;
+  }
+  return '${size < 10 ? size.toStringAsFixed(1) : size.round()} ${units[unit]}';
+}
 
 /// A grey stand-in for media that is loading or missing.
 class MediaPlaceholder extends StatelessWidget {

@@ -133,6 +133,17 @@ abstract final class RichTextStyles {
     };
   }
 
+  /// The style of [block], before its runs' own formatting: its kind's,
+  /// its lines as high as its spacing says if it has any.
+  static TextStyle blockStyleOf(TextBlock block, TextStyle base) {
+    final style = blockStyle(
+      block.isEmbed ? TextBlockKind.paragraph : block.kind,
+      base,
+    );
+    final spacing = block.spacing;
+    return spacing == null ? style : spacedStyle(style, spacing);
+  }
+
   /// The style a run's marks add on top of its block's style, or null for an
   /// unformatted run. Linked text with no colour of its own is drawn in
   /// [link] — the interface's mark on paper, `Tones.paperEmphasis`.
@@ -152,8 +163,81 @@ abstract final class RichTextStyles {
           : null,
       backgroundColor: marks.highlight != null ? Color(marks.highlight!) : null,
       fontSize: marks.size != null ? marks.size! * unitsPerPoint : null,
+      fontFamily: marks.font,
+      fontFamilyFallback: marks.font == null ? null : typefacesFor(marks.font!),
+      fontFeatures: switch (marks.script) {
+        TextScript.superscript => const <FontFeature>[
+          FontFeature.superscripts(),
+        ],
+        TextScript.subscript => const <FontFeature>[FontFeature.subscripts()],
+        null => null,
+      },
     );
     return marks.code ? style.merge(monospace) : style;
+  }
+
+  /// The typefaces text set in [font] is drawn in where [font] is not
+  /// installed: those drawn to the same measure — Carlito for Calibri,
+  /// Liberation for Arial, Times and Courier — so a page brought from
+  /// elsewhere keeps its lines where they were, then ones of its kind.
+  static List<String> typefacesFor(String font) =>
+      _substitutes[font.toLowerCase()] ?? const <String>[];
+
+  static const Map<String, List<String>> _substitutes = <String, List<String>>{
+    'calibri': <String>['Carlito'],
+    'calibri light': <String>['Carlito'],
+    'cambria': <String>['Caladea', 'Liberation Serif'],
+    'cambria math': <String>['Caladea', 'Liberation Serif'],
+    'arial': <String>['Liberation Sans', 'Arimo', 'Helvetica'],
+    'helvetica': <String>['Liberation Sans', 'Arimo', 'Arial'],
+    'times new roman': <String>['Liberation Serif', 'Tinos', 'Times'],
+    'courier new': <String>['Liberation Mono', 'Cousine', 'monospace'],
+    'consolas': <String>[
+      'Inconsolata',
+      'DejaVu Sans Mono',
+      'Liberation Mono',
+      'monospace',
+    ],
+    'segoe ui': <String>['Selawik', 'Open Sans', 'Noto Sans'],
+    'verdana': <String>['DejaVu Sans', 'Noto Sans'],
+    'georgia': <String>['Gelasio', 'Liberation Serif'],
+    'comic sans ms': <String>['Comic Neue'],
+    'sans': <String>['Noto Sans', 'DejaVu Sans'],
+    'serif': <String>['Noto Serif', 'DejaVu Serif'],
+  };
+
+  /// [style] with no line height of its own: lines as high as its typeface
+  /// sets them, as the program a page came from set them.
+  static TextStyle withNaturalHeight(TextStyle style) => TextStyle(
+    color: style.color,
+    fontSize: style.fontSize,
+    fontWeight: style.fontWeight,
+    fontStyle: style.fontStyle,
+    letterSpacing: style.letterSpacing,
+    wordSpacing: style.wordSpacing,
+    textBaseline: style.textBaseline,
+    locale: style.locale,
+    fontFamily: style.fontFamily,
+    fontFamilyFallback: style.fontFamilyFallback,
+    decoration: style.decoration,
+  );
+
+  /// How the lines of [block] sit across its box.
+  static TextAlign alignOf(TextBlock block) => switch (block.align) {
+    BlockAlign.start => TextAlign.start,
+    BlockAlign.center => TextAlign.center,
+    BlockAlign.end => TextAlign.end,
+  };
+
+  /// [style] for a block laid out with [spacing]: its lines as high as the
+  /// spacing says, or as its typeface sets them.
+  static TextStyle spacedStyle(TextStyle style, BlockSpacing spacing) {
+    final natural = withNaturalHeight(style);
+    final line = spacing.line;
+    final size = style.fontSize ?? bodySize;
+    return line == null
+        ? natural
+        : natural.copyWith(height: line * unitsPerPoint / size);
   }
 
   /// The source of the formula being edited: code-like, in [accent] — that

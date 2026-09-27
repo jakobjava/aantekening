@@ -43,10 +43,10 @@ class AantekeningDatabase {
       // WAL lets reads proceed while a save is in flight, which is what keeps
       // typing responsive during an autosave.
       _db.execute('PRAGMA journal_mode = WAL;');
-      // NORMAL only risks losing the most recent transactions on an OS crash
-      // (not on an app crash), which is the right trade for an autosaving
-      // editor that writes constantly.
-      _db.execute('PRAGMA synchronous = NORMAL;');
+      // Every committed change reaches the disk before the commit returns,
+      // so not even a power cut loses what was saved: the notes folder is
+      // written from here, and must not be written from what then vanishes.
+      _db.execute('PRAGMA synchronous = FULL;');
       _db.execute('PRAGMA mmap_size = 268435456;'); // 256 MiB
     }
     _db.execute('PRAGMA foreign_keys = ON;');
@@ -147,6 +147,30 @@ class AantekeningDatabase {
       _transactionDepth = depth;
     }
   }
+
+  /// Whether the app that last had the database open closed it, rather
+  /// than stopping with it open.
+  bool get closedCleanly {
+    final rows = select("SELECT value FROM meta WHERE key = 'session'");
+    return rows.isEmpty || rows.first['value'] != 'open';
+  }
+
+  /// Whether SQLite finds the database whole. Slow on a large one: asked
+  /// only after it was not closed cleanly.
+  bool get isIntact {
+    final rows = _db.select('PRAGMA quick_check;');
+    return rows.length == 1 && rows.first.values.first == 'ok';
+  }
+
+  void markOpen() => _db.execute(
+    "INSERT INTO meta (key, value) VALUES ('session', 'open') "
+    'ON CONFLICT (key) DO UPDATE SET value = excluded.value;',
+  );
+
+  void markClosed() => _db.execute(
+    "INSERT INTO meta (key, value) VALUES ('session', 'closed') "
+    'ON CONFLICT (key) DO UPDATE SET value = excluded.value;',
+  );
 
   /// Reclaims space and rebuilds statistics.
   ///

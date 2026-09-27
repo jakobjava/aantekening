@@ -67,6 +67,8 @@ class TextBoxEditor extends StatefulWidget {
     this.onEmbedToBackground,
     this.pageId,
     this.onOpenLink,
+    this.onOpenFile,
+    this.onSaveFile,
   });
 
   final TextElement element;
@@ -131,6 +133,12 @@ class TextBoxEditor extends StatefulWidget {
   /// Opens a link in the text, clicked with Ctrl held or opened from the
   /// menu: to a note, or on the web.
   final ValueChanged<String>? onOpenLink;
+
+  /// Opens an attached file, double-clicked or opened from the menu.
+  final ValueChanged<BlockEmbed>? onOpenFile;
+
+  /// Saves a copy of an attached file somewhere, from the menu.
+  final ValueChanged<BlockEmbed>? onSaveFile;
 
   /// Height of the band along the top edge that moves the box when dragged.
   static const double grabBand = 12;
@@ -2241,6 +2249,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
     if (!mounted) return;
     final selected = !_selection.isCollapsed;
     final picture = hit != null && hit.embed ? hit.position.block : null;
+    final file = picture == null ? null : _fileAt(picture);
     final table = hit == null
         ? null
         : TextTables.tableAt(_blocks, hit.position.block);
@@ -2306,7 +2315,18 @@ class TextBoxEditorState extends State<TextBoxEditor>
             ),
         ],
       if (table != null) ..._tableCommands(table, hit!.position.block),
-      if (picture != null && widget.onEmbedToBackground != null)
+      if (file != null)
+        <MenuCommand>[
+          MenuCommand(
+            'Open file',
+            widget.onOpenFile == null ? null : () => widget.onOpenFile!(file),
+          ),
+          MenuCommand(
+            'Save a copy…',
+            widget.onSaveFile == null ? null : () => widget.onSaveFile!(file),
+          ),
+        ]
+      else if (picture != null && widget.onEmbedToBackground != null)
         <MenuCommand>[
           MenuCommand(
             'Set picture as background',
@@ -2314,6 +2334,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
           ),
         ],
     ]);
+  }
+
+  /// The file block [index] holds, or null if it holds none.
+  BlockEmbed? _fileAt(int index) {
+    final embed = _blocks[index].embed;
+    return embed?.kind == EmbedKind.file ? embed : null;
   }
 
   /// What can be done to [table] from the cell block [index] is in: adding
@@ -2595,6 +2621,8 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
 
     switch (_clickCount) {
+      case 2 when hit.embed && _fileAt(hit.position.block) != null:
+        widget.onOpenFile?.call(_fileAt(hit.position.block)!);
       case 2:
         _selectWordAt(hit);
       case 3:
@@ -3444,9 +3472,14 @@ class TextBoxEditorState extends State<TextBoxEditor>
     bool focused,
   ) {
     final cells = <Widget>[];
+    final shading = <int, Color>{};
     var i = table.start;
     while (i < table.end) {
       final cell = TextTables.cellAt(_blocks, i);
+      final place = _blocks[i].cell!;
+      if (place.shading case final color?) {
+        shading[place.row * table.columns + place.column] = Color(color);
+      }
       cells.add(
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3468,7 +3501,14 @@ class TextBoxEditorState extends State<TextBoxEditor>
         child: TextTableView(
           columns: table.columns,
           widths: TextTables.widthsOf(_blocks, table),
-          lineColor: RichTextStyles.tableRule,
+          // A table laid out without lines shows them faintly only while it
+          // is being typed in, to show where its cells are.
+          lineColor: _blocks[table.start].cell!.borders
+              ? RichTextStyles.tableRule
+              : widget.isEditing
+              ? RichTextStyles.tableRule.withValues(alpha: 0.35)
+              : const Color(0x00000000),
+          shading: shading,
           selected: <int>{
             for (var i = table.start; i < table.end; i++)
               if (_cellSelected(i))
@@ -3518,7 +3558,8 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
 
     final view = _viewFor(index);
-    final blockStyle = RichTextStyles.blockStyle(block.kind, base);
+    final spacing = block.spacing;
+    final blockStyle = RichTextStyles.blockStyleOf(block, base);
     final paragraph = BlockParagraph(
       key: _contentKeys[index],
       decoration: _decorationFor(index, view, focused),
@@ -3526,7 +3567,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
       caretVisible: _caretVisible,
       child: RichText(
         text: view.span(base: base, mark: context.tones.paperEmphasis),
-        textAlign: view.isDisplayFormula ? TextAlign.center : TextAlign.start,
+        textAlign: view.isDisplayFormula
+            ? TextAlign.center
+            : RichTextStyles.alignOf(block),
         textScaler: TextScaler.noScaling,
         // A box sizing itself to its text measures its longest line; a box of
         // fixed width gives every paragraph the full width, so a lone formula
@@ -3577,7 +3620,17 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
     return KeyedSubtree(
       key: _rowKeys[index],
-      child: Padding(padding: const EdgeInsets.only(bottom: 2), child: row),
+      child: Padding(
+        // A block laid out as it was elsewhere keeps the space it had there,
+        // in place of the page's own.
+        padding: spacing == null
+            ? const EdgeInsets.only(bottom: 2)
+            : EdgeInsets.only(
+                top: spacing.before * RichTextStyles.unitsPerPoint,
+                bottom: spacing.after * RichTextStyles.unitsPerPoint,
+              ),
+        child: row,
+      ),
     );
   }
 }

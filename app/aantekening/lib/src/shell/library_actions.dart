@@ -303,7 +303,7 @@ class LibraryActions {
     _changed();
   }
 
-  /// Deletes a notebook, section or page, and everything in it.
+  /// Moves a notebook, section or page, and everything in it, to the bin.
   Future<void> delete(TreeNode node) async {
     final store = await _store;
     final List<String> deleted;
@@ -328,6 +328,18 @@ class LibraryActions {
     if (clip != null && deleted.contains(clip.node.id)) {
       _ref.read(libraryClipboardProvider.notifier).clear();
     }
+    _changed();
+  }
+
+  /// Puts [node] back from the bin, where it was.
+  Future<void> restore(TreeNode node) async {
+    final store = await _store;
+    final kind = switch (node) {
+      Notebook() => BinKind.notebook,
+      Section() => BinKind.section,
+      _ => BinKind.page,
+    };
+    await store.bin.restoreItem(kind, node.id);
     _changed();
   }
 

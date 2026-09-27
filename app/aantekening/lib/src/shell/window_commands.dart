@@ -11,6 +11,8 @@ import '../commands/app_command.dart';
 import '../commands/command_palette.dart';
 import '../commands/shortcuts.dart';
 import '../editor/page_minimap.dart';
+import '../files/backup_settings.dart';
+import '../files/bin_view.dart';
 import '../look/appearance.dart';
 import '../providers.dart';
 import '../settings/settings_view.dart';
@@ -49,7 +51,7 @@ Map<AppCommand, CommandAction> windowCommands(
     if (pageId == null) return;
     final page = await ref.read(pageProvider(pageId).future);
     if (page == null || !context.mounted) return;
-    if (await confirmDeletion(context, page)) await library().delete(page);
+    await deleteToBin(context, ref, page);
   }
 
   return <AppCommand, CommandAction>{
@@ -149,5 +151,11 @@ Map<AppCommand, CommandAction> windowCommands(
     AppCommand.keyboardShortcuts: settings(SettingsPage.keyboard),
     AppCommand.aiSettings: settings(SettingsPage.ai),
     AppCommand.dictionaries: settings(SettingsPage.spelling),
+    AppCommand.files: settings(SettingsPage.files),
+    AppCommand.importNotes: settings(SettingsPage.files),
+    AppCommand.bin: CommandAction(() => unawaited(showBin(context))),
+    AppCommand.backUpNow: CommandAction(
+      () => unawaited(ref.read(backupsProvider.notifier).backUpNow()),
+    ),
   };
 }

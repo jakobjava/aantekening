@@ -29,6 +29,7 @@ class TextTableView extends MultiChildRenderObjectWidget {
     required super.children,
     this.selected = const <int>{},
     this.selectionColor = const Color(0x00000000),
+    this.shading = const <int, Color>{},
     super.key,
   });
 
@@ -43,6 +44,10 @@ class TextTableView extends MultiChildRenderObjectWidget {
   final Set<int> selected;
   final Color selectionColor;
 
+  /// The cells with a background of their own, each by its place in
+  /// reading order.
+  final Map<int, Color> shading;
+
   @override
   RenderTextTable createRenderObject(BuildContext context) => RenderTextTable(
     columns: columns,
@@ -50,6 +55,7 @@ class TextTableView extends MultiChildRenderObjectWidget {
     lineColor: lineColor,
     selected: selected,
     selectionColor: selectionColor,
+    shading: shading,
   );
 
   @override
@@ -59,7 +65,8 @@ class TextTableView extends MultiChildRenderObjectWidget {
       ..widths = widths
       ..lineColor = lineColor
       ..selected = selected
-      ..selectionColor = selectionColor;
+      ..selectionColor = selectionColor
+      ..shading = shading;
   }
 }
 
@@ -76,6 +83,7 @@ class RenderTextTable extends RenderBox
     required this._lineColor,
     required this._selected,
     required this._selectionColor,
+    required this._shading,
   });
 
   /// The narrowest a column fitted to its text is drawn where there is room:
@@ -118,6 +126,13 @@ class RenderTextTable extends RenderBox
   set selected(Set<int> value) {
     if (setEquals(value, _selected)) return;
     _selected = value;
+    markNeedsPaint();
+  }
+
+  Map<int, Color> _shading;
+  set shading(Map<int, Color> value) {
+    if (mapEquals(value, _shading)) return;
+    _shading = value;
     markNeedsPaint();
   }
 
@@ -382,14 +397,16 @@ class RenderTextTable extends RenderBox
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    if (_selected.isNotEmpty) {
-      final fill = Paint()..color = _selectionColor;
+    // Each cell's own background, then the selection over it.
+    for (final (cells, color) in <(bool Function(int), Color? Function(int))>[
+      (_shading.containsKey, (cell) => _shading[cell]),
+      (_selected.contains, (_) => _selectionColor),
+    ]) {
       var y = line;
       for (var row = 0; row < _rows; row++) {
-        for (final column in <int>[
-          for (var c = 0; c < _columns; c++)
-            if (_selected.contains(row * _columns + c)) c,
-        ]) {
+        for (var column = 0; column < _columns; column++) {
+          final cell = row * _columns + column;
+          if (!cells(cell)) continue;
           context.canvas.drawRect(
             Rect.fromLTWH(
               columnStart(column) + line / 2,
@@ -397,7 +414,7 @@ class RenderTextTable extends RenderBox
               _columnWidths[column],
               _rowHeights[row],
             ).shift(offset),
-            fill,
+            Paint()..color = color(cell)!,
           );
         }
         y += _rowHeights[row] + line;

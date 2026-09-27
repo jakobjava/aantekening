@@ -1,6 +1,6 @@
 /// The settings: how the app looks, how it is laid out, its shortcuts, the
-/// languages spelling is checked in and the AI's models, each on a page of
-/// its own.
+/// languages spelling is checked in, the AI's models and where the notes
+/// are kept, each on a page of its own.
 library;
 
 import 'package:flutter/material.dart';
@@ -12,6 +12,7 @@ import '../look/tones.dart';
 import 'about_settings.dart';
 import 'ai_settings.dart';
 import 'appearance_settings.dart';
+import 'files_settings.dart';
 import 'keyboard_settings.dart';
 import 'layout_settings.dart';
 import 'spelling_settings.dart';
@@ -23,7 +24,8 @@ enum SettingsPage {
   keyboard('Keyboard', 'Every shortcut, and changing them'),
   spelling('Spelling', 'Languages, dictionaries and your own words'),
   ai('AI models', 'Which models questions go to, and the web'),
-  about('About', 'Where your notes are kept');
+  files('Files', 'Where your notes are, backups, the bin, import and export'),
+  about('About', 'What the app is');
 
   const SettingsPage(this.label, this.description);
 
@@ -235,6 +237,7 @@ class _PageBody extends StatelessWidget {
         SettingsPage.keyboard => const KeyboardSettings(),
         SettingsPage.spelling => const SpellingSettingsPage(),
         SettingsPage.ai => const AiSettingsPage(),
+        SettingsPage.files => const FilesSettings(),
         SettingsPage.about => const AboutSettings(),
       },
     ],

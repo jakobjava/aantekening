@@ -33,6 +33,12 @@ enum TextBlockKind {
 /// discs, which turn into circles and then squares as lists nest.
 enum BulletStyle { disc, dash }
 
+/// Text raised above the line or lowered below it, smaller.
+enum TextScript { superscript, subscript }
+
+/// How a paragraph's lines sit across the box.
+enum BlockAlign { start, center, end }
+
 /// Inline formatting applied to a [TextRun].
 ///
 /// Marks serialise only the fields that differ from the default, which keeps
@@ -48,6 +54,8 @@ class TextMarks {
     this.highlight,
     this.link,
     this.size,
+    this.font,
+    this.script,
   });
 
   /// Formatting-free marks, shared so that plain runs allocate nothing.
@@ -72,6 +80,13 @@ class TextMarks {
   /// Font size in points, or null for the block's own size.
   final double? size;
 
+  /// The typeface's family name, or null for the page's own: text brought
+  /// from elsewhere keeps the typeface it was written in.
+  final String? font;
+
+  /// Whether the text is raised or lowered, or neither.
+  final TextScript? script;
+
   bool get isEmpty =>
       !bold &&
       !italic &&
@@ -81,7 +96,9 @@ class TextMarks {
       color == null &&
       highlight == null &&
       link == null &&
-      size == null;
+      size == null &&
+      font == null &&
+      script == null;
 
   TextMarks copyWith({
     bool? bold,
@@ -93,6 +110,8 @@ class TextMarks {
     int? highlight,
     String? link,
     double? size,
+    String? font,
+    TextScript? script,
   }) => TextMarks(
     bold: bold ?? this.bold,
     italic: italic ?? this.italic,
@@ -103,6 +122,8 @@ class TextMarks {
     highlight: highlight ?? this.highlight,
     link: link ?? this.link,
     size: size ?? this.size,
+    font: font ?? this.font,
+    script: script ?? this.script,
   );
 
   /// A copy with the text colour set, or cleared with null.
@@ -117,6 +138,12 @@ class TextMarks {
   /// A copy linking to [link], or to nothing with null.
   TextMarks withLink(String? link) => _with(link: () => link);
 
+  /// A copy in the typeface [font], or in the page's own with null.
+  TextMarks withFont(String? font) => _with(font: () => font);
+
+  /// A copy raised or lowered as [script] says, or on the line with null.
+  TextMarks withScript(TextScript? script) => _with(script: () => script);
+
   /// Only the marks a formula can carry: colour and size. Formulas are
   /// typeset by their own rules, so bold or underline mean nothing to them,
   /// and a highlight on one is part of its LaTeX, whole or in part.
@@ -127,6 +154,8 @@ class TextMarks {
     int? Function()? highlight,
     double? Function()? size,
     String? Function()? link,
+    String? Function()? font,
+    TextScript? Function()? script,
   }) => TextMarks(
     bold: bold,
     italic: italic,
@@ -137,6 +166,8 @@ class TextMarks {
     highlight: highlight == null ? this.highlight : highlight(),
     link: link == null ? this.link : link(),
     size: size == null ? this.size : size(),
+    font: font == null ? this.font : font(),
+    script: script == null ? this.script : script(),
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -149,6 +180,8 @@ class TextMarks {
     if (highlight != null) 'highlight': highlight,
     if (link != null) 'link': link,
     if (size != null) 'size': size,
+    if (font != null) 'font': font,
+    if (script != null) 'script': script!.name,
   };
 
   static TextMarks fromJson(Map<String, Object?> json) {
@@ -163,6 +196,10 @@ class TextMarks {
       highlight: readIntOrNull(json, 'highlight'),
       link: readStringOrNull(json, 'link'),
       size: readDoubleOrNull(json, 'size'),
+      font: readStringOrNull(json, 'font'),
+      script: json['script'] is String
+          ? readEnum(json, 'script', TextScript.values, TextScript.superscript)
+          : null,
     );
   }
 
@@ -177,7 +214,9 @@ class TextMarks {
       other.color == color &&
       other.highlight == highlight &&
       other.link == link &&
-      other.size == size;
+      other.size == size &&
+      other.font == font &&
+      other.script == script;
 
   @override
   int get hashCode => Object.hash(
@@ -190,6 +229,8 @@ class TextMarks {
     highlight,
     link,
     size,
+    font,
+    script,
   );
 }
 
@@ -265,9 +306,14 @@ enum EmbedKind {
   /// One page of a PDF from the asset store, as OneNote's "file printout"
   /// places it.
   pdfPage,
+
+  /// A file of any kind, attached: shown as its name, and opened with
+  /// whatever opens it.
+  file,
 }
 
-/// An image or PDF page placed inside a text box, on a line of its own.
+/// An image, a PDF page or an attached file placed inside a text box, on a
+/// line of its own.
 ///
 /// Embeds reference assets by identifier, like the free-standing image and PDF
 /// elements do, so the same picture can sit inside a text box on one page and
@@ -280,6 +326,7 @@ class BlockEmbed {
     required this.height,
     this.pageIndex = 0,
     this.text,
+    this.name,
   });
 
   final EmbedKind kind;
@@ -296,6 +343,9 @@ class BlockEmbed {
   /// Searchable text: a PDF page's text layer, or an image's description.
   final String? text;
 
+  /// The file's name, for an attached file.
+  final String? name;
+
   double get aspectRatio => height > 0 ? width / height : 1;
 
   BlockEmbed copyWith({double? width, double? height, String? text}) =>
@@ -306,7 +356,19 @@ class BlockEmbed {
         height: height ?? this.height,
         pageIndex: pageIndex,
         text: text ?? this.text,
+        name: name,
       );
+
+  /// This embed showing the asset [assetId] instead.
+  BlockEmbed withAsset(String assetId) => BlockEmbed(
+    kind: kind,
+    assetId: assetId,
+    width: width,
+    height: height,
+    pageIndex: pageIndex,
+    text: text,
+    name: name,
+  );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'kind': kind.name,
@@ -315,6 +377,7 @@ class BlockEmbed {
     'width': width,
     'height': height,
     if (text != null) 'text': text,
+    if (name != null) 'name': name,
   };
 
   static BlockEmbed fromJson(Map<String, Object?> json) => BlockEmbed(
@@ -324,6 +387,7 @@ class BlockEmbed {
     width: readDouble(json, 'width', 320),
     height: readDouble(json, 'height', 240),
     text: readStringOrNull(json, 'text'),
+    name: readStringOrNull(json, 'name'),
   );
 
   @override
@@ -334,11 +398,12 @@ class BlockEmbed {
       other.pageIndex == pageIndex &&
       other.width == width &&
       other.height == height &&
-      other.text == text;
+      other.text == text &&
+      other.name == name;
 
   @override
   int get hashCode =>
-      Object.hash(kind, assetId, pageIndex, width, height, text);
+      Object.hash(kind, assetId, pageIndex, width, height, text, name);
 }
 
 /// Where a block sits in a table: the cell it is in, and how wide that
@@ -350,7 +415,13 @@ class BlockEmbed {
 /// formulas, lists and pictures, be selected, searched and spell-checked.
 /// Several blocks in a row naming the same cell are that cell's lines.
 class TableCell {
-  const TableCell(this.row, this.column, {this.width});
+  const TableCell(
+    this.row,
+    this.column, {
+    this.width,
+    this.shading,
+    this.borders = true,
+  });
 
   /// Zero-based, counted from the table's top-left cell.
   final int row;
@@ -361,6 +432,13 @@ class TableCell {
   /// so the column keeps its width whichever of its rows are removed.
   final double? width;
 
+  /// The cell's background colour as 32-bit ARGB, or null for none.
+  final int? shading;
+
+  /// Whether the cell's lines are drawn: a table laid out without them —
+  /// columns of text side by side — has none on any of its cells.
+  final bool borders;
+
   /// Whether this names the same cell as [other], whatever their widths.
   bool sameCell(TableCell other) => row == other.row && column == other.column;
 
@@ -369,20 +447,26 @@ class TableCell {
       row < other.row || (row == other.row && column < other.column);
 
   /// The cell at [row] and [column], in a column [width] wide.
-  TableCell moved(int row, int column) => TableCell(row, column, width: width);
+  TableCell moved(int row, int column) =>
+      TableCell(row, column, width: width, shading: shading, borders: borders);
 
-  TableCell withWidth(double? width) => TableCell(row, column, width: width);
+  TableCell withWidth(double? width) =>
+      TableCell(row, column, width: width, shading: shading, borders: borders);
 
   Map<String, Object?> toJson() => <String, Object?>{
     'row': row,
     'column': column,
     if (width != null) 'width': width,
+    if (shading != null) 'shading': shading,
+    if (!borders) 'borders': false,
   };
 
   static TableCell fromJson(Map<String, Object?> json) => TableCell(
     readInt(json, 'row'),
     readInt(json, 'column'),
     width: readDoubleOrNull(json, 'width'),
+    shading: readIntOrNull(json, 'shading'),
+    borders: json['borders'] != false,
   );
 
   @override
@@ -390,13 +474,55 @@ class TableCell {
       other is TableCell &&
       other.row == row &&
       other.column == column &&
-      other.width == width;
+      other.width == width &&
+      other.shading == shading &&
+      other.borders == borders;
 
   @override
-  int get hashCode => Object.hash(row, column, width);
+  int get hashCode => Object.hash(row, column, width, shading, borders);
 
   @override
   String toString() => 'TableCell($row, $column)';
+}
+
+/// A paragraph's spacing as the program it came from set it — the space
+/// above and below it, in points, and the height of its lines: exactly
+/// [line] points, or the typeface's own with null.
+///
+/// A block without spacing is laid out as the page lays out what is typed
+/// on it; one with spacing, as it was laid out where it was written, so
+/// that handwriting over it still falls on its lines.
+class BlockSpacing {
+  const BlockSpacing({this.before = 0, this.after = 0, this.line});
+
+  /// Paragraphs set as they were written, with no space between them.
+  static const BlockSpacing tight = BlockSpacing();
+
+  final double before;
+  final double after;
+  final double? line;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    if (before != 0) 'before': before,
+    if (after != 0) 'after': after,
+    if (line != null) 'line': line,
+  };
+
+  static BlockSpacing fromJson(Map<String, Object?> json) => BlockSpacing(
+    before: readDouble(json, 'before'),
+    after: readDouble(json, 'after'),
+    line: readDoubleOrNull(json, 'line'),
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is BlockSpacing &&
+      other.before == before &&
+      other.after == after &&
+      other.line == line;
+
+  @override
+  int get hashCode => Object.hash(before, after, line);
 }
 
 /// One paragraph-level block of rich text, or an embedded object.
@@ -407,6 +533,9 @@ class TextBlock {
     this.indent = 0,
     this.checked = false,
     this.bullet = BulletStyle.disc,
+    this.marker,
+    this.align = BlockAlign.start,
+    this.spacing,
     this.embed,
     this.cell,
   });
@@ -417,12 +546,18 @@ class TextBlock {
     TextBlockKind kind = TextBlockKind.paragraph,
   }) => TextBlock(kind: kind, runs: <TextRun>[TextRun(text)]);
 
-  /// A line holding an image or PDF page.
-  const TextBlock.embedded(BlockEmbed this.embed, {this.indent = 0, this.cell})
-    : kind = TextBlockKind.paragraph,
-      runs = const <TextRun>[],
-      checked = false,
-      bullet = BulletStyle.disc;
+  /// A line holding an image, a PDF page or a file.
+  const TextBlock.embedded(
+    BlockEmbed this.embed, {
+    this.indent = 0,
+    this.align = BlockAlign.start,
+    this.spacing,
+    this.cell,
+  }) : kind = TextBlockKind.paragraph,
+       runs = const <TextRun>[],
+       checked = false,
+       bullet = BulletStyle.disc,
+       marker = null;
 
   final TextBlockKind kind;
   final List<TextRun> runs;
@@ -435,6 +570,17 @@ class TextBlock {
 
   /// The mark before the item, meaningful only for [TextBlockKind.bulleted].
   final BulletStyle bullet;
+
+  /// The mark before a bulleted item as it was written elsewhere — `○`,
+  /// `▪`, `➢` — drawn instead of [bullet], or null for [bullet].
+  final String? marker;
+
+  /// How the block's lines sit across the box.
+  final BlockAlign align;
+
+  /// The spacing the block was written with elsewhere, or null for the
+  /// page's own.
+  final BlockSpacing? spacing;
 
   /// The object this block shows instead of text, if any. An embed block has
   /// no runs.
@@ -470,13 +616,33 @@ class TextBlock {
     int? indent,
     bool? checked,
     BulletStyle? bullet,
+    BlockAlign? align,
   }) => TextBlock(
     kind: kind ?? this.kind,
     runs: runs ?? this.runs,
     indent: indent ?? this.indent,
     checked: checked ?? this.checked,
     bullet: bullet ?? this.bullet,
+    marker: kind == null || kind == this.kind ? marker : null,
+    align: align ?? this.align,
+    spacing: spacing,
     embed: embed,
+    cell: cell,
+  );
+
+  /// A line after this one, as Enter makes: of [kind], holding [runs], at
+  /// the same depth, in the same cell, laid out and marked as this one is.
+  TextBlock following({
+    required TextBlockKind kind,
+    List<TextRun> runs = const <TextRun>[],
+  }) => TextBlock(
+    kind: kind,
+    runs: runs,
+    indent: indent,
+    bullet: bullet,
+    marker: kind == this.kind ? marker : null,
+    align: align,
+    spacing: spacing,
     cell: cell,
   );
 
@@ -487,6 +653,9 @@ class TextBlock {
     indent: indent,
     checked: checked,
     bullet: bullet,
+    marker: marker,
+    align: align,
+    spacing: spacing,
     embed: embed,
     cell: cell,
   );
@@ -497,6 +666,8 @@ class TextBlock {
       return <String, Object?>{
         'embed': embed.toJson(),
         if (indent != 0) 'indent': indent,
+        if (align != BlockAlign.start) 'align': align.name,
+        if (spacing != null) 'spacing': spacing!.toJson(),
         if (cell != null) 'cell': cell!.toJson(),
       };
     }
@@ -506,6 +677,9 @@ class TextBlock {
       if (indent != 0) 'indent': indent,
       if (checked) 'checked': true,
       if (bullet != BulletStyle.disc) 'bullet': bullet.name,
+      if (marker != null) 'marker': marker,
+      if (align != BlockAlign.start) 'align': align.name,
+      if (spacing != null) 'spacing': spacing!.toJson(),
       if (cell != null) 'cell': cell!.toJson(),
     };
   }
@@ -513,11 +687,18 @@ class TextBlock {
   static TextBlock fromJson(Map<String, Object?> json) {
     final cellJson = readObjectOrNull(json, 'cell');
     final cell = cellJson == null ? null : TableCell.fromJson(cellJson);
+    final spacingJson = readObjectOrNull(json, 'spacing');
+    final spacing = spacingJson == null
+        ? null
+        : BlockSpacing.fromJson(spacingJson);
+    final align = readEnum(json, 'align', BlockAlign.values, BlockAlign.start);
     final embed = json['embed'];
     if (embed is Map) {
       return TextBlock.embedded(
         BlockEmbed.fromJson(embed.cast<String, Object?>()),
         indent: readInt(json, 'indent'),
+        align: align,
+        spacing: spacing,
         cell: cell,
       );
     }
@@ -534,6 +715,9 @@ class TextBlock {
       indent: readInt(json, 'indent'),
       checked: readBool(json, 'checked'),
       bullet: readEnum(json, 'bullet', BulletStyle.values, BulletStyle.disc),
+      marker: readStringOrNull(json, 'marker'),
+      align: align,
+      spacing: spacing,
       cell: cell,
     );
   }
@@ -545,6 +729,9 @@ class TextBlock {
         other.indent != indent ||
         other.checked != checked ||
         other.bullet != bullet ||
+        other.marker != marker ||
+        other.align != align ||
+        other.spacing != spacing ||
         other.embed != embed ||
         other.cell != cell ||
         other.runs.length != runs.length) {
@@ -562,6 +749,9 @@ class TextBlock {
     indent,
     checked,
     bullet,
+    marker,
+    align,
+    spacing,
     embed,
     cell,
     Object.hashAll(runs),

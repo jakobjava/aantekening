@@ -488,11 +488,15 @@ class Swatch extends StatelessWidget {
   }
 }
 
-/// That something is being worked on: a short bar running along a line.
+/// That something is being worked on: a short bar running along a line —
+/// or, where how far it has got is known, the line filled that far.
 class Busy extends StatefulWidget {
-  const Busy({this.width = 16, super.key});
+  const Busy({this.width = 16, this.value, super.key});
 
   final double width;
+
+  /// How far the work has got, from 0 to 1, if that is known.
+  final double? value;
 
   @override
   State<Busy> createState() => _BusyState();
@@ -519,7 +523,7 @@ class _BusyState extends State<Busy> with SingleTickerProviderStateMixin {
         width: widget.width,
         height: 2,
         child: CustomPaint(
-          painter: _BusyPainter(_run, tones.emphasis, tones.line),
+          painter: _BusyPainter(_run, tones.emphasis, tones.line, widget.value),
         ),
       ),
     );
@@ -527,15 +531,24 @@ class _BusyState extends State<Busy> with SingleTickerProviderStateMixin {
 }
 
 class _BusyPainter extends CustomPainter {
-  _BusyPainter(this.run, this.color, this.track) : super(repaint: run);
+  _BusyPainter(this.run, this.color, this.track, this.value)
+    : super(repaint: value == null ? run : null);
 
   final Animation<double> run;
   final Color color;
   final Color track;
+  final double? value;
 
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = track);
+    if (value case final done?) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width * done.clamp(0, 1), size.height),
+        Paint()..color = color,
+      );
+      return;
+    }
     final length = size.width * 0.4;
     final start = Curves.easeInOut.transform(run.value) * (size.width + length);
     canvas.drawRect(
@@ -551,7 +564,9 @@ class _BusyPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BusyPainter oldDelegate) =>
-      oldDelegate.color != color || oldDelegate.track != track;
+      oldDelegate.color != color ||
+      oldDelegate.track != track ||
+      oldDelegate.value != value;
 }
 
 /// A message filling a pane or a page: that it is empty, or what went

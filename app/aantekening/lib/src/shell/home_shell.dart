@@ -13,6 +13,7 @@ import '../commands/editor_keys.dart';
 import '../commands/key_chord.dart';
 import '../commands/shortcuts.dart';
 import '../editor/page_editor.dart';
+import '../files/notes_keeper.dart';
 import '../look/controls.dart';
 import '../preferences.dart';
 import '../providers.dart';
@@ -83,23 +84,27 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
     final store = ref.watch(storeProvider);
 
-    return CommandKeys(
-      onChord: _showTab,
-      child: Scaffold(
-        body: store.when(
-          loading: () => const Loading(),
-          error: (error, stack) => EmptyMessage(
-            'The workspace could not be opened.',
-            detail: '$error',
-          ),
-          data: (_) => PageEditor(
-            pageId: ref.watch(selectedPageProvider),
-            aiScope: _aiScope(ref.watch(tabsProvider.select((t) => t.current))),
-            around: (context, page) => Column(
-              children: <Widget>[
-                const TabStrip(),
-                Expanded(child: Sidebar(page: page)),
-              ],
+    return NotesKeeper(
+      child: CommandKeys(
+        onChord: _showTab,
+        child: Scaffold(
+          body: store.when(
+            loading: () => const Loading(),
+            error: (error, stack) => EmptyMessage(
+              'The workspace could not be opened.',
+              detail: '$error',
+            ),
+            data: (_) => PageEditor(
+              pageId: ref.watch(selectedPageProvider),
+              aiScope: _aiScope(
+                ref.watch(tabsProvider.select((t) => t.current)),
+              ),
+              around: (context, page) => Column(
+                children: <Widget>[
+                  const TabStrip(),
+                  Expanded(child: Sidebar(page: page)),
+                ],
+              ),
             ),
           ),
         ),

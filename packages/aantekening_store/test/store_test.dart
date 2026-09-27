@@ -30,8 +30,14 @@ void main() {
       if (directory.existsSync()) directory.deleteSync(recursive: true);
     });
 
+    Future<AantekeningStore> open() => AantekeningStore.open(
+      notesFolder: p.join(directory.path, 'Notes'),
+      indexFolder: p.join(directory.path, 'index'),
+      automatic: false,
+    );
+
     test('creates its files and survives being reopened', () async {
-      final first = await AantekeningStore.open(directory.path);
+      final first = await open();
       final notebook = await first.library.createNotebook(title: 'Persisted');
       final section = await first.library.createSection(
         notebookId: notebook.id,
@@ -44,20 +50,21 @@ void main() {
       );
       await first.close();
 
+      final notes = p.join(directory.path, 'Notes');
+      expect(File(p.join(notes, NotesFolder.markerName)).existsSync(), isTrue);
       expect(
-        File(
-          p.join(directory.path, AantekeningStore.databaseFileName),
-        ).existsSync(),
+        File(p.join(notes, 'pages', '${page.id}.json.gz')).existsSync(),
         isTrue,
       );
+      expect(Directory(p.join(notes, 'assets')).existsSync(), isTrue);
       expect(
         Directory(
-          p.join(directory.path, AantekeningStore.assetsDirectoryName),
-        ).existsSync(),
-        isTrue,
+          p.join(directory.path, 'index'),
+        ).listSync().where((file) => file.path.endsWith('.sqlite')),
+        hasLength(1),
       );
 
-      final second = await AantekeningStore.open(directory.path);
+      final second = await open();
       addTearDown(second.close);
 
       expect((await second.library.listNotebooks()).single.title, 'Persisted');
@@ -69,7 +76,7 @@ void main() {
     });
 
     test('uses write-ahead logging for the persistent database', () async {
-      final store = await AantekeningStore.open(directory.path);
+      final store = await open();
       addTearDown(store.close);
 
       final mode = store.database

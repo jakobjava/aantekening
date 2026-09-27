@@ -696,7 +696,7 @@ abstract final class RichTextEditing {
       final index = before ? position.block : position.block + 1;
       return (
         blocks: _replaceRange(blocks, index, index, <TextBlock>[
-          TextBlock(indent: block.indent, cell: block.cell),
+          block.following(kind: TextBlockKind.paragraph),
         ]),
         selection: RichSelection.collapsed(
           before ? RichPosition(position.block + 1, 0) : RichPosition(index, 0),
@@ -715,22 +715,11 @@ abstract final class RichTextEditing {
     // and leaves an ordinary line above it, rather than a heading-styled blank.
     final atStart = position.offset == 0 && block.length > 0;
     final first = atStart
-        ? TextBlock(
-            indent: block.indent,
-            kind: continuation,
-            bullet: block.bullet,
-            cell: block.cell,
-          )
+        ? block.following(kind: continuation)
         : _withRuns(block, left);
     final second = atStart
         ? block
-        : TextBlock(
-            kind: continuation,
-            indent: block.indent,
-            bullet: block.bullet,
-            runs: normalizeRuns(right),
-            cell: block.cell,
-          );
+        : block.following(kind: continuation, runs: normalizeRuns(right));
 
     return (
       blocks: _replaceRange(

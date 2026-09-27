@@ -24,9 +24,21 @@ Widget? blockMarker(TextBlock block, TextStyle style, Color mark, int ordinal) {
   final lineHeight = fontSize * (style.height ?? 1.4);
   switch (block.kind) {
     case TextBlockKind.bulleted:
+      final marker = block.marker;
+      final shape = marker == null
+          ? _BulletShape.of(block.bullet, block.indent)
+          : _BulletShape.drawing(marker);
+      // A mark written elsewhere that is none of the shapes is set as it
+      // was written.
+      if (shape == null) {
+        return Text(
+          marker!,
+          style: style.copyWith(color: RichTextStyles.inkMuted),
+          textScaler: TextScaler.noScaling,
+        );
+      }
       return _Bullet(
-        level: block.indent,
-        style: block.bullet,
+        shape: shape,
         color: RichTextStyles.inkMuted,
         fontSize: fontSize,
         lineHeight: lineHeight,
@@ -60,20 +72,44 @@ Widget? blockMarker(TextBlock block, TextStyle style, Color mark, int ordinal) {
   }
 }
 
+/// The shapes a bullet is drawn in.
+enum _BulletShape {
+  disc,
+  circle,
+  square,
+  box,
+  dash;
+
+  /// The shape of a list of [style] at depth [level]: discs turn into
+  /// circles and then squares as lists nest; dashes stay dashes.
+  static _BulletShape of(BulletStyle style, int level) =>
+      style == BulletStyle.dash
+      ? dash
+      : const <_BulletShape>[disc, circle, square][level % 3];
+
+  /// The shape of a mark written elsewhere as [marker], if it is one of
+  /// them — drawn, so it looks the same whatever fonts are installed.
+  static _BulletShape? drawing(String marker) => switch (marker) {
+    '•' || '●' || '·' => disc,
+    '○' || '◦' || 'o' => circle,
+    '▪' || '■' || '◾' => square,
+    '□' || '◻' || '❑' => box,
+    '-' || '–' || '—' || '−' => dash,
+    _ => null,
+  };
+}
+
 /// A list bullet, drawn rather than typed so it looks the same whatever fonts
-/// are installed: a disc, then a circle, then a square as lists nest, or a
-/// dash at every level for a list started with one.
+/// are installed.
 class _Bullet extends StatelessWidget {
   const _Bullet({
-    required this.level,
-    required this.style,
+    required this.shape,
     required this.color,
     required this.fontSize,
     required this.lineHeight,
   });
 
-  final int level;
-  final BulletStyle style;
+  final _BulletShape shape;
   final Color color;
   final double fontSize;
   final double lineHeight;
@@ -83,8 +119,7 @@ class _Bullet extends StatelessWidget {
     height: lineHeight,
     child: CustomPaint(
       painter: _BulletPainter(
-        level: level,
-        style: style,
+        shape: shape,
         color: color,
         size: fontSize * 0.34,
       ),
@@ -94,61 +129,61 @@ class _Bullet extends StatelessWidget {
 
 class _BulletPainter extends CustomPainter {
   const _BulletPainter({
-    required this.level,
-    required this.style,
+    required this.shape,
     required this.color,
     required this.size,
   });
 
-  final int level;
-  final BulletStyle style;
+  final _BulletShape shape;
   final Color color;
   final double size;
 
   @override
   void paint(Canvas canvas, Size area) {
     final center = Offset(size, area.height / 2);
-    final paint = Paint()..color = color;
-    if (style == BulletStyle.dash) {
-      canvas.drawRect(
-        Rect.fromCenter(
-          center: center,
-          width: size * 1.4,
-          height: math.max(1, size * 0.2),
-        ),
-        paint,
-      );
-      return;
-    }
-    switch (level % 3) {
-      case 0:
-        canvas.drawCircle(center, size / 2, paint);
-      case 1:
-        canvas.drawCircle(
-          center,
-          size / 2 - 0.5,
-          paint
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.1,
-        );
-      default:
+    final fill = Paint()..color = color;
+    final line = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1;
+    switch (shape) {
+      case _BulletShape.disc:
+        canvas.drawCircle(center, size / 2, fill);
+      case _BulletShape.circle:
+        canvas.drawCircle(center, size / 2 - 0.5, line);
+      case _BulletShape.square:
         canvas.drawRect(
           Rect.fromCenter(
             center: center,
             width: size * 0.85,
             height: size * 0.85,
           ),
-          paint,
+          fill,
+        );
+      case _BulletShape.box:
+        canvas.drawRect(
+          Rect.fromCenter(
+            center: center,
+            width: size * 0.9,
+            height: size * 0.9,
+          ),
+          line,
+        );
+      case _BulletShape.dash:
+        canvas.drawRect(
+          Rect.fromCenter(
+            center: center,
+            width: size * 1.4,
+            height: math.max(1, size * 0.2),
+          ),
+          fill,
         );
     }
   }
 
   @override
   bool shouldRepaint(_BulletPainter old) =>
-      old.level != level ||
-      old.style != style ||
-      old.color != color ||
-      old.size != size;
+      old.shape != shape || old.color != color || old.size != size;
 }
 
 /// The strip along the top of a text box that moves it when dragged.
@@ -343,6 +378,7 @@ class EmbedBlock extends StatelessWidget {
                             assetId: embed.assetId,
                             pageIndex: embed.pageIndex,
                           ),
+                          EmbedKind.file => AttachedFileView(embed: embed),
                         },
                 ),
                 if (selected) ...<Widget>[

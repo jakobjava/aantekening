@@ -10,7 +10,7 @@ import 'package:sqlite3/sqlite3.dart';
 /// same code path.
 abstract final class Schema {
   /// The schema version this build expects.
-  static const int version = 3;
+  static const int version = 4;
 
   /// Migrations indexed by the version they produce.
   ///
@@ -18,7 +18,7 @@ abstract final class Schema {
   /// self-contained; to change an existing table, create the new one, copy the
   /// rows across and drop the old one within the same migration.
   static final List<void Function(Database db)> _migrations =
-      <void Function(Database db)>[_v1, _v2, _v3];
+      <void Function(Database db)>[_v1, _v2, _v3, _v4];
 
   /// Brings [db] up to [version], running only the migrations it still needs.
   ///
@@ -279,4 +279,89 @@ abstract final class Schema {
       ) STRICT;
     ''');
   }
+
+  /// Keeping the notes folder in step with the database ([FolderMirror]).
+  ///
+  /// Every change to what the folder holds a file for — a notebook, a
+  /// section, a page and what is in it, a conversation, a kept item — puts
+  /// that thing in `mirror_outbox`, by trigger, in the same transaction as
+  /// the change. The mirror writes its file and takes it out again, so a
+  /// change is written to the folder even when the app stops before it
+  /// gets there: the outbox is still there the next time.
+  ///
+  /// `mirror_files` remembers each file as it was last written or read, to
+  /// tell a file another device has changed from one this one wrote.
+  /// `mirror_control` pauses the triggers while a file read from the folder
+  /// is put into the database, which must not be written back.
+  static void _v4(Database db) {
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS mirror_outbox (
+        kind TEXT    NOT NULL,
+        id   TEXT    NOT NULL,
+        seq  INTEGER NOT NULL,
+        PRIMARY KEY (kind, id)
+      ) STRICT;
+    ''');
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS mirror_files (
+        path     TEXT    PRIMARY KEY,
+        kind     TEXT    NOT NULL,
+        id       TEXT    NOT NULL,
+        size     INTEGER NOT NULL,
+        modified INTEGER NOT NULL,
+        digest   TEXT    NOT NULL
+      ) STRICT;
+    ''');
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_mirror_files_entity '
+      'ON mirror_files(kind, id);',
+    );
+    db.execute('''
+      CREATE TABLE IF NOT EXISTS mirror_control (
+        key   TEXT    PRIMARY KEY,
+        value INTEGER NOT NULL
+      ) STRICT;
+    ''');
+    db.execute(
+      "INSERT OR IGNORE INTO mirror_control (key, value) VALUES ('paused', 0);",
+    );
+
+    for (final (table, kind, column) in _mirrored) {
+      for (final (event, row) in const <(String, String)>[
+        ('INSERT', 'NEW'),
+        ('UPDATE', 'NEW'),
+        ('DELETE', 'OLD'),
+      ]) {
+        db.execute('''
+          CREATE TRIGGER IF NOT EXISTS mirror_${table}_${event.toLowerCase()}
+          AFTER $event ON $table
+          WHEN (SELECT value FROM mirror_control WHERE key = 'paused') = 0
+          BEGIN
+            INSERT INTO mirror_outbox (kind, id, seq)
+            VALUES (
+              '$kind',
+              $row.$column,
+              (SELECT COALESCE(MAX(seq), 0) + 1 FROM mirror_outbox)
+            )
+            ON CONFLICT (kind, id) DO UPDATE SET seq = excluded.seq;
+          END;
+        ''');
+      }
+    }
+  }
+
+  /// The tables whose rows the notes folder keeps, with the kind of file
+  /// each row is part of and the column naming that file's thing.
+  static const List<(String, String, String)> _mirrored =
+      <(String, String, String)>[
+        ('notebooks', 'notebook', 'id'),
+        ('sections', 'section', 'id'),
+        ('pages', 'page', 'id'),
+        ('page_bodies', 'page', 'page_id'),
+        ('page_tags', 'page', 'page_id'),
+        ('ai_threads', 'thread', 'id'),
+        ('ai_turns', 'thread', 'thread_id'),
+        ('ai_items', 'item', 'id'),
+        ('ai_reviews', 'item', 'item_id'),
+      ];
 }

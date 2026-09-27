@@ -161,7 +161,7 @@ class BlockView {
   /// Builds the span the layout draws, with links and the formula being
   /// edited drawn in [mark].
   InlineSpan span({required TextStyle base, required Color mark}) {
-    final blockStyle = RichTextStyles.blockStyle(block.kind, base);
+    final blockStyle = RichTextStyles.blockStyleOf(block, base);
     final display = isDisplayFormula;
 
     return TextSpan(

@@ -883,8 +883,8 @@ final class GroupElement extends NoteElement {
   );
 }
 
-/// Pictures and PDF pages sit on the page by themselves or in a text box, as
-/// objects in its text; these are the one's terms for the other.
+/// Pictures, PDF pages and files sit on the page by themselves or in a text
+/// box, as objects in its text; these are the one's terms for the other.
 extension EmbedOnPage on BlockEmbed {
   /// This object on the page by itself, in [frame], made at [now].
   NoteElement toElement({required Frame frame, required int now}) =>
@@ -905,6 +905,15 @@ extension EmbedOnPage on BlockEmbed {
           assetId: assetId,
           pageIndex: pageIndex,
           extractedText: text,
+        ),
+        // A file has no element of its own: on the page by itself it is a
+        // text box holding just it.
+        EmbedKind.file => TextElement(
+          id: Ulid.generate(),
+          frame: frame,
+          createdAt: now,
+          updatedAt: now,
+          blocks: <TextBlock>[TextBlock.embedded(this)],
         ),
       };
 }

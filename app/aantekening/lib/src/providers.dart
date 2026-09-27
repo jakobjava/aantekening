@@ -7,27 +7,16 @@ import 'dart:typed_data';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
+import 'files/notes_location.dart';
 import 'shell/tabs.dart';
 
-/// Where the workspace lives on disk.
-///
-/// A single directory holds the database and the attachment store, so the whole
-/// workspace can be copied, synced or backed up as one folder.
-final workspaceDirectoryProvider = FutureProvider<String>((ref) async {
-  final override = Platform.environment['AANTEKENING_HOME'];
-  if (override != null && override.isNotEmpty) return override;
-
-  final base = await getApplicationSupportDirectory();
-  return p.join(base.path, 'workspace');
-});
-
-/// The open workspace.
+/// The notes, open: their folder, and this computer's index of it.
 final storeProvider = FutureProvider<AantekeningStore>((ref) async {
-  final directory = await ref.watch(workspaceDirectoryProvider.future);
-  final store = await AantekeningStore.open(directory);
+  final store = await AantekeningStore.open(
+    notesFolder: await ref.watch(notesFolderProvider.future),
+    indexFolder: await ref.watch(indexFolderProvider.future),
+  );
   ref.onDispose(store.close);
   return store;
 });
@@ -156,6 +145,15 @@ final assetBytesProvider = FutureProvider.family<Uint8List?, String>((
 ) async {
   final store = await ref.watch(storeProvider.future);
   return store.assets.readBytes(assetId);
+});
+
+/// What is known of an imported asset: its name, kind and size.
+final assetRefProvider = FutureProvider.family<AssetRef?, String>((
+  ref,
+  assetId,
+) async {
+  final store = await ref.watch(storeProvider.future);
+  return store.assets.find(assetId);
 });
 
 /// The file holding an imported asset, for renderers that read from disk —

@@ -37,7 +37,7 @@ class LibraryRepository {
           : 'SELECT * FROM notebooks WHERE deleted_at IS NULL '
                 'ORDER BY position, id',
     );
-    return <Notebook>[for (final row in rows) _notebook(row)];
+    return <Notebook>[for (final row in rows) notebookOf(row)];
   }
 
   /// Fetches one notebook, or null when it does not exist.
@@ -45,7 +45,7 @@ class LibraryRepository {
     final rows = _db.select('SELECT * FROM notebooks WHERE id = ?', <Object?>[
       id,
     ]);
-    return rows.isEmpty ? null : _notebook(rows.first);
+    return rows.isEmpty ? null : notebookOf(rows.first);
   }
 
   /// Creates a notebook at the end of the list.
@@ -126,6 +126,28 @@ class LibraryRepository {
     );
   }
 
+  /// Puts [notebook] in place of the one it names, or adds it, exactly as
+  /// it is — as the notes folder has it.
+  void putNotebook(Notebook notebook) => _db.run(
+    'INSERT INTO notebooks '
+    '(id, title, position, color, icon, created_at, updated_at, deleted_at) '
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?) '
+    'ON CONFLICT(id) DO UPDATE SET title = excluded.title, '
+    '  position = excluded.position, color = excluded.color, '
+    '  icon = excluded.icon, created_at = excluded.created_at, '
+    '  updated_at = excluded.updated_at, deleted_at = excluded.deleted_at',
+    <Object?>[
+      notebook.id,
+      notebook.title,
+      notebook.position,
+      notebook.color,
+      notebook.icon,
+      notebook.createdAt,
+      notebook.updatedAt,
+      notebook.deletedAt,
+    ],
+  );
+
   // ----------------------------------------------------------------- sections
 
   /// Lists the direct children of [parentId] within [notebookId], or the
@@ -147,7 +169,7 @@ class LibraryRepository {
             '$deletedClause ORDER BY position, id',
             <Object?>[notebookId, parentId],
           );
-    return <Section>[for (final row in rows) _section(row)];
+    return <Section>[for (final row in rows) sectionOf(row)];
   }
 
   /// Lists every section in [notebookId] at any depth.
@@ -165,7 +187,7 @@ class LibraryRepository {
       'ORDER BY position, id',
       <Object?>[notebookId],
     );
-    return <Section>[for (final row in rows) _section(row)];
+    return <Section>[for (final row in rows) sectionOf(row)];
   }
 
   /// Fetches one section, or null when it does not exist.
@@ -315,6 +337,31 @@ class LibraryRepository {
     });
   }
 
+  /// Puts [section] in place of the one it names, or adds it, exactly as it
+  /// is — as the notes folder has it.
+  void putSection(Section section) => _db.run(
+    'INSERT INTO sections '
+    '(id, notebook_id, parent_id, title, position, color, created_at, '
+    ' updated_at, deleted_at) '
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) '
+    'ON CONFLICT(id) DO UPDATE SET notebook_id = excluded.notebook_id, '
+    '  parent_id = excluded.parent_id, title = excluded.title, '
+    '  position = excluded.position, color = excluded.color, '
+    '  created_at = excluded.created_at, updated_at = excluded.updated_at, '
+    '  deleted_at = excluded.deleted_at',
+    <Object?>[
+      section.id,
+      section.notebookId,
+      section.parentId,
+      section.title,
+      section.position,
+      section.color,
+      section.createdAt,
+      section.updatedAt,
+      section.deletedAt,
+    ],
+  );
+
   void _insertSection(Section section) => _db.run(
     'INSERT INTO sections '
     '(id, notebook_id, parent_id, title, position, color, created_at, '
@@ -336,7 +383,7 @@ class LibraryRepository {
     final rows = _db.select('SELECT * FROM sections WHERE id = ?', <Object?>[
       id,
     ]);
-    return rows.isEmpty ? null : _section(rows.first);
+    return rows.isEmpty ? null : sectionOf(rows.first);
   }
 
   /// [sectionId] and the sections beneath it; see
@@ -361,7 +408,7 @@ class LibraryRepository {
         'ORDER BY position, id',
         <Object?>[source.id],
       ))
-        _section(row),
+        sectionOf(row),
     ];
     final now = _now;
     final copy = Section(
@@ -401,7 +448,7 @@ class LibraryRepository {
   double _nextNotebookPosition() =>
       _db.nextPosition('notebooks', '1', const <Object?>[]);
 
-  static Notebook _notebook(Row row) => Notebook(
+  static Notebook notebookOf(Row row) => Notebook(
     id: str(row, 'id'),
     title: str(row, 'title'),
     position: real(row, 'position'),
@@ -412,7 +459,7 @@ class LibraryRepository {
     icon: strOrNull(row, 'icon'),
   );
 
-  static Section _section(Row row) => Section(
+  static Section sectionOf(Row row) => Section(
     id: str(row, 'id'),
     notebookId: str(row, 'notebook_id'),
     title: str(row, 'title'),

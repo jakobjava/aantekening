@@ -193,6 +193,25 @@ class PageDocument {
     for (final element in elements) ...element.assetIds,
   };
 
+  /// This page referring to each asset in [ids] by the identifier it maps
+  /// to — as a page brought in from elsewhere does once its pictures and
+  /// files are stored here.
+  PageDocument withAssetsRenamed(Map<String, String> ids) {
+    Object? rename(Object? value) => switch (value) {
+      Map<String, Object?>() => <String, Object?>{
+        for (final entry in value.entries)
+          entry.key: entry.key == 'assetId' && entry.value is String
+              ? ids[entry.value] ?? entry.value
+              : rename(entry.value),
+      },
+      List<Object?>() => <Object?>[for (final item in value) rename(item)],
+      _ => value,
+    };
+    return PageDocument.fromJson(
+      jsonDecode(jsonEncode(rename(toJson()))) as Map<String, Object?>,
+    );
+  }
+
   /// Looks up an element by identifier, or null when it is not on this page.
   NoteElement? elementById(String elementId) {
     for (final element in elements) {
