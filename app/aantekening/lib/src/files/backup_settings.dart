@@ -156,10 +156,16 @@ class BackupsController extends Notifier<BackupSettings> {
         Backups.prune(into, keep: keep);
         return made;
       });
-      _save(state.copyWith(running: false, last: DateTime.now()));
+      // The app may have closed while the backup was made, leaving no
+      // settings to note it in.
+      if (ref.mounted) {
+        _save(state.copyWith(running: false, last: DateTime.now()));
+      }
       return path;
     } on Object catch (error) {
-      state = state.copyWith(running: false, problem: () => '$error');
+      if (ref.mounted) {
+        state = state.copyWith(running: false, problem: () => '$error');
+      }
       return null;
     }
   }

@@ -52,6 +52,22 @@ void main() {
       expect(odd.interval, BackupInterval.daily);
       expect(odd.keep, 10);
     });
+
+    test('being made when the app closes end quietly', () async {
+      final container = ProviderContainer(
+        overrides: [
+          preferencesProvider.overrideWith(
+            (ref) async => Preferences.inMemory(),
+          ),
+        ],
+      );
+      await container.read(preferencesProvider.future);
+      final backups = container.read(backupsProvider.notifier);
+
+      final made = backups.backUpNow();
+      container.dispose();
+      expect(await made, isNull);
+    });
   });
 
   test('says when, as a person says it', () {
