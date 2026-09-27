@@ -156,10 +156,10 @@ class TreeRow extends StatelessWidget {
   /// How far each level is indented, and so how far apart the lines are.
   static const double indent = 18;
 
-  /// How far the row's content is inset from where it starts, so the line
-  /// branching to it ends just short of its icon.
+  /// How far the row's content is inset from where it starts: clear of
+  /// the line branching to it, and of the edge marking it chosen.
   static const EdgeInsetsGeometry tilePadding = EdgeInsetsDirectional.fromSTEB(
-    4,
+    8,
     5,
     8,
     5,

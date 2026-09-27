@@ -194,7 +194,7 @@ class _SectionRows extends ConsumerWidget {
             ),
           Padding(
             padding: const EdgeInsetsDirectional.only(
-              start: TreeRow.indent * 2 - 2,
+              start: TreeRow.indent * 2 + 2,
               top: 2,
               bottom: 6,
             ),
