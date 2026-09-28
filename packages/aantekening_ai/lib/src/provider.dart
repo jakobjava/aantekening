@@ -5,6 +5,63 @@ import 'dart:convert';
 
 import 'conversation.dart';
 
+/// How closely a provider can hold a model to the form of answer asked
+/// for.
+enum StructuredOutput {
+  /// Not at all: the model is only asked, in words.
+  none,
+
+  /// To JSON, of whatever shape.
+  json,
+
+  /// To JSON of the shape a schema gives.
+  schema,
+}
+
+/// What a model costs, in US dollars: per million tokens it reads and
+/// writes, and per web search.
+class ModelPrice {
+  const ModelPrice({
+    required this.input,
+    required this.output,
+    double? cacheRead,
+    double? cacheWrite,
+    this.webSearch = 0,
+  }) : cacheRead = cacheRead ?? input,
+       cacheWrite = cacheWrite ?? input;
+
+  /// What a model on this computer, or one's own server, costs.
+  static const ModelPrice free = ModelPrice(input: 0, output: 0);
+
+  /// Per million tokens read afresh.
+  final double input;
+
+  /// Per million tokens written, its reasoning with its answer.
+  final double output;
+
+  /// Per million tokens read from what the provider kept of an earlier
+  /// request: as [input], where it is not said.
+  final double cacheRead;
+
+  /// Per million tokens kept for a later request to read: as [input],
+  /// where it is not said.
+  final double cacheWrite;
+
+  /// Per search of the web.
+  final double webSearch;
+
+  bool get isFree => input == 0 && output == 0 && webSearch == 0;
+
+  /// What [usage] costs at these prices.
+  double of(Usage usage) =>
+      (usage.input * input +
+              usage.output * output +
+              usage.cacheRead * cacheRead +
+              usage.cacheWrite * cacheWrite) /
+          1e6 +
+      usage.webSearches * webSearch;
+}
+
 /// What a model can do, which decides how it is asked.
 class ModelCapabilities {
   const ModelCapabilities({
@@ -13,7 +70,9 @@ class ModelCapabilities {
     this.nativeCitations = false,
     this.nativeWebSearch = false,
     this.reasoning = false,
+    this.structuredOutput = StructuredOutput.none,
     this.contextTokens = 32000,
+    this.price,
   });
 
   /// Whether it can look at images: a PDF page with writing over it.
@@ -34,9 +93,15 @@ class ModelCapabilities {
   /// slow computer, many minutes before the first word.
   final bool reasoning;
 
+  /// How closely it can be held to the JSON asked for.
+  final StructuredOutput structuredOutput;
+
   /// How much it can be given at once, in tokens: what it is given, what
   /// it thinks and what it answers, together.
   final int contextTokens;
+
+  /// What it costs, or null where the provider does not say.
+  final ModelPrice? price;
 }
 
 /// A model a provider has, and what it can do.
@@ -85,6 +150,7 @@ class ChatRequest {
     required this.messages,
     this.tools = const <ToolSpec>[],
     this.webSearch = false,
+    this.answerSchema,
     this.maxTokens,
     this.stop,
   });
@@ -98,6 +164,11 @@ class ChatRequest {
 
   /// Whether the provider may search the web itself, where it can.
   final bool webSearch;
+
+  /// The JSON Schema the answer is to follow, or null for prose. The
+  /// system prompt asks for it in words as well: a provider holds the
+  /// model to it only as closely as it can ([StructuredOutput]).
+  final Map<String, Object?>? answerSchema;
   final int? maxTokens;
 
   /// Completes once the answer is no longer wanted, which breaks the
@@ -204,33 +275,63 @@ enum StopReason {
   paused,
 }
 
-/// What a request cost, in tokens.
+/// What a request cost: the tokens it took, and, where the provider says,
+/// the money.
 class Usage {
   const Usage({
     this.input = 0,
     this.output = 0,
     this.cacheRead = 0,
+    this.cacheWrite = 0,
     this.webSearches = 0,
+    this.cost,
   });
 
+  /// Tokens read afresh.
   final int input;
   final int output;
+
+  /// Tokens read from what the provider kept of an earlier request.
   final int cacheRead;
+
+  /// Tokens kept for a later request to read.
+  final int cacheWrite;
   final int webSearches;
+
+  /// What the provider charged, in US dollars, where it says.
+  final double? cost;
+
+  bool get isEmpty => input + output + cacheRead + cacheWrite == 0;
+
+  /// What it cost: as the provider said, or at [price] — null where
+  /// neither is known.
+  double? costAt(ModelPrice? price) => cost ?? price?.of(this);
 
   Usage operator +(Usage other) => Usage(
     input: input + other.input,
     output: output + other.output,
     cacheRead: cacheRead + other.cacheRead,
+    cacheWrite: cacheWrite + other.cacheWrite,
     webSearches: webSearches + other.webSearches,
+    cost: cost == null && other.cost == null
+        ? null
+        : (cost ?? 0) + (other.cost ?? 0),
   );
 }
 
 /// A provider failing: unreachable, refusing the key, overloaded.
 class AiException implements Exception {
-  const AiException(this.message, {this.retryable = false, this.cause});
+  const AiException(
+    this.message, {
+    this.retryable = false,
+    this.cause,
+    this.status,
+  });
 
   final String message;
+
+  /// The HTTP status the provider refused the request with, if it did.
+  final int? status;
 
   /// Whether trying again later may work.
   final bool retryable;

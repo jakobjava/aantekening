@@ -48,6 +48,7 @@ class AgentProgress {
     this.written = 0,
     this.messages = const <ChatMessage>[],
     this.usage = const Usage(),
+    this.cost,
     this.study,
   });
 
@@ -73,6 +74,11 @@ class AgentProgress {
   /// for the next.
   final List<ChatMessage> messages;
   final Usage usage;
+
+  /// What it has cost so far, in US dollars: once [done], as the provider
+  /// counted it; before, reckoned from what the model was sent and has
+  /// written. Null where the model's price is not known.
+  final double? cost;
 
   bool get done => stage == AgentStage.done;
 }
@@ -169,6 +175,7 @@ class NoteAgent {
 
     yield progress(AgentStage.gathering, 'Gathering your notes');
     final capabilities = await provider.capabilitiesOf(model);
+    answering.price = capabilities.price;
     final context = NoteContext(reader);
     final web = searchWeb && !capabilities.nativeWebSearch ? webSearch : null;
     final tools = NoteTools(
@@ -205,7 +212,6 @@ class NoteAgent {
       ]),
     ];
 
-    var usage = const Usage();
     // What the model was sent before: most runtimes keep what they read of
     // it, so only what is new is read again.
     var sent = 0;
@@ -235,7 +241,6 @@ class NoteAgent {
       );
       yield* answering.run(provider, request);
       final done = answering.done!;
-      usage = usage + (done.usage ?? const Usage());
       messages.add(done.message);
       sent = messages.length;
 
@@ -277,13 +282,18 @@ class NoteAgent {
       answer: builder.answer,
       written: answering.written,
       messages: messages.sublist(history.length),
-      usage: usage,
+      usage: answering.usage,
+      cost: answering.cost,
     );
   }
 
   /// Makes a study set of [kind] from the notes of [scope]: the notes
   /// given whole, their passages numbered, the set asked for as JSON — and
   /// shown as far as it is written, while it is written.
+  ///
+  /// Whatever the model: what it writes is read however it wrote it
+  /// ([StudySet.reading]); what cannot all be read, it is asked once more
+  /// to put in order; and a set once shown is never taken away.
   Stream<AgentProgress> make(StudyKind kind, {required ScopeInfo scope}) =>
       _stoppable((stop) => _make(kind, scope: scope, stop: stop));
 
@@ -294,10 +304,11 @@ class NoteAgent {
   }) async* {
     var sources = const <Source>[];
     final answering = _Answering(
-      draft: (text) => StudySet.read(kind, text, sources, draft: true),
+      draft: (text) => StudySet.read(kind, text, sources),
     );
     yield answering.progress(AgentStage.gathering, 'Gathering your notes');
     final capabilities = await provider.capabilitiesOf(model);
+    answering.price = capabilities.price;
     final given = await NoteContext(
       reader,
     ).build(scope, budget: _budget(capabilities));
@@ -321,6 +332,7 @@ class NoteAgent {
           ),
         ]),
       ],
+      answerSchema: kind.schema,
       stop: stop,
     );
     yield answering.progress(
@@ -333,32 +345,90 @@ class NoteAgent {
     );
     yield* answering.run(provider, request);
 
-    final done = answering.done!;
-    final text = answering.builder.answer.markdown;
-    final cutOff = done.stop == StopReason.maxTokens;
-    // A set cut off is kept as far as it goes.
-    final set =
-        StudySet.read(kind, text, sources) ??
-        (cutOff ? StudySet.read(kind, text, sources, draft: true) : null);
-    if (set == null) {
-      throw AiException(
-        cutOff
-            ? _cutOff(
-                answered: false,
-                thought: answering.reasoning.isNotEmpty,
-                room: capabilities.contextTokens,
-              ).replaceAll('*', '')
-            : 'The model did not write the ${kind.label.toLowerCase()} in a '
-                  'form the app can read. Try again, or choose another model.',
+    final cutOff = answering.done!.stop == StopReason.maxTokens;
+    final thought = answering.reasoning.toString();
+    final written = answering.builder.answer.markdown;
+    // A model whose reasoning its runtime did not tell apart may have
+    // written the set into it.
+    final made =
+        StudySet.reading(kind, written, sources) ??
+        StudySet.reading(kind, thought, sources);
+    final material = written.trim().isEmpty ? thought : written;
+    StudySet? again;
+    if ((made == null || made.lost) && !cutOff && material.trim().isNotEmpty) {
+      yield answering.progress(
+        AgentStage.reading,
+        '$model is putting the ${kind.label.toLowerCase()} in order',
       );
+      answering.draftFrom = written.length;
+      try {
+        yield* answering.run(
+          provider,
+          _inOrder(kind, scope: scope, written: material, stop: stop),
+        );
+        again = StudySet.read(kind, answering.draftText, sources);
+      } on AiException {
+        // What was read before is kept.
+      }
+    }
+    // The fullest of what was read, then and again, and of what was shown
+    // as it came.
+    final set = <StudySet?>[made?.set, again, answering.study].fold<StudySet?>(
+      null,
+      (fullest, set) =>
+          set != null && set.holdsMoreThan(fullest) ? set : fullest,
+    );
+    if (set == null) {
+      throw AiException(switch (material.trim()) {
+        _ when cutOff => _cutOff(
+          answered: false,
+          thought: thought.isNotEmpty,
+          room: capabilities.contextTokens,
+        ).replaceAll('*', ''),
+        '' =>
+          'The model answered with nothing. Try again, or choose another '
+              'model.',
+        _ =>
+          'The model did not write the ${kind.label.toLowerCase()} in a form '
+              'the app can read, even when asked again. Try again, or choose '
+              'another model.',
+      });
     }
     yield AgentProgress(
       answer: answering.builder.answer,
       written: answering.written,
-      usage: done.usage ?? const Usage(),
+      usage: answering.usage,
+      cost: answering.cost,
       study: set,
     );
   }
+
+  /// Asks for the set of [kind] a model [written] — not in the form asked
+  /// for, or not all of it readable — again in that form: without the
+  /// notes, which it has drawn on already.
+  ChatRequest _inOrder(
+    StudyKind kind, {
+    required ScopeInfo scope,
+    required String written,
+    required Future<void> stop,
+  }) => ChatRequest(
+    model: model,
+    system: studyPrompt(scope),
+    messages: <ChatMessage>[
+      ChatMessage.user(<ChatPart>[
+        TextPart(
+          'What follows was written as the ${kind.label.toLowerCase()} of the '
+          '${scope.kindName}, but not in the form asked for, or not all of it '
+          'can be read. Write it again in that form: keep everything it says '
+          'and every passage number it names, and add nothing.\n\n'
+          '<written>\n$written\n</written>\n\n'
+          '${kind.instructions(scope.kindName)}',
+        ),
+      ]),
+    ],
+    answerSchema: kind.schema,
+    stop: stop,
+  );
 
   /// Why an answer stopped short, when the model ran out of [room]: long
   /// as it was, or, before it [answered], all of it [thought] away.
@@ -463,17 +533,43 @@ class _Answering {
   /// Reads a study set from what is written so far, for a set being made.
   final StudySet? Function(String text)? draft;
 
+  /// Where the text [draft] reads starts: past what was written before
+  /// the set was asked for again.
+  int draftFrom = 0;
+
+  String get draftText => builder.answer.markdown.substring(draftFrom);
+
   /// What the model has reasoned in the request going on.
   StringBuffer reasoning = StringBuffer();
 
   /// How much the model has written, its reasoning with its answer.
   int written = 0;
 
-  /// The study set as far as it is written.
+  /// The study set as far as it is written: the fullest yet, so a set
+  /// asked for again does not take the place of more until it has more.
   StudySet? study;
 
   /// How the last request ended, once it has.
   MessageDone? done;
+
+  /// What the model costs, once known.
+  ModelPrice? price;
+
+  /// What the requests done took, as the provider counted them — or, where
+  /// it did not, as reckoned.
+  Usage usage = const Usage();
+
+  /// What the request going on has taken so far, reckoned: what it was
+  /// sent, and what has been written since, at four characters a token.
+  Usage Function()? _going;
+
+  /// What the answer has cost so far, in US dollars, or null where the
+  /// model's price is not known.
+  double? get cost {
+    final price = this.price;
+    if (price == null) return usage.cost;
+    return usage.costAt(price)! + price.of(_going?.call() ?? const Usage());
+  }
 
   AgentProgress progress(AgentStage stage, String activity) => AgentProgress(
     answer: builder.answer,
@@ -481,6 +577,7 @@ class _Answering {
     activity: activity,
     reasoning: '$reasoning',
     written: written,
+    cost: cost,
     study: study,
   );
 
@@ -494,6 +591,14 @@ class _Answering {
   Stream<AgentProgress> run(ChatProvider provider, ChatRequest request) async* {
     reasoning = StringBuffer();
     done = null;
+    final sent = PromptSize.of(
+      request.messages,
+      system: request.system,
+      tools: request.tools,
+    ).tokens;
+    final writtenBefore = written;
+    Usage going() => Usage(input: sent, output: (written - writtenBefore) ~/ 4);
+    _going = going;
     await for (final event in provider.chat(request)) {
       builder.add(event);
       switch (event) {
@@ -503,8 +608,9 @@ class _Answering {
           yield progress(AgentStage.thinking, 'Thinking');
         case TextDelta(:final text):
           written += text.length;
-          if (draft case final read?) {
-            study = read(builder.answer.markdown) ?? study;
+          if (draft?.call(draftText) case final read?
+              when !(study?.holdsMoreThan(read) ?? false)) {
+            study = read;
           }
           yield progress(AgentStage.writing, _writing);
         case CitedSpan():
@@ -515,8 +621,12 @@ class _Answering {
           done = event;
       }
     }
+    _going = null;
     if (done == null) {
+      usage = usage + going();
       throw const AiException('The answer broke off. Try again.');
     }
+    final counted = done!.usage ?? const Usage();
+    usage = usage + (counted.isEmpty ? going() : counted);
   }
 }

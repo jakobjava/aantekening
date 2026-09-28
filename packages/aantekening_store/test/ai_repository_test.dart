@@ -119,6 +119,30 @@ void main() {
     expect(await workspace.store.search.search('x'), isEmpty);
   });
 
+  test('keeps what making a set cost, and what making it again did', () async {
+    const scope = NoteLink.page('p');
+    final set = await ai.addItem(
+      scope,
+      kind: 'summary',
+      title: 'Summary',
+      body: const <String, Object?>{},
+      provider: 'p',
+      model: 'm',
+      usage: const <String, Object?>{'dollars': 0.0013},
+    );
+    expect((await ai.itemsAbout(scope)).single.usage, {'dollars': 0.0013});
+    await ai.updateItem(set.id, body: const <String, Object?>{'a': 1});
+    expect((await ai.itemsAbout(scope)).single.usage, {
+      'dollars': 0.0013,
+    }, reason: 'a card edited is not made again');
+    await ai.updateItem(
+      set.id,
+      body: const <String, Object?>{},
+      usage: const <String, Object?>{'dollars': 0.002},
+    );
+    expect((await ai.itemsAbout(scope)).single.usage, {'dollars': 0.002});
+  });
+
   test('keeps how each card of a set is learnt apart from the set, and '
       'forgets it with the set or the card', () async {
     const scope = NoteLink.page('p');

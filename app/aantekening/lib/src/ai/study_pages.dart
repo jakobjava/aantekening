@@ -17,6 +17,7 @@ import '../look/tones.dart';
 import 'ai_session.dart';
 import 'ai_state.dart';
 import 'answer_progress.dart';
+import 'money.dart';
 import 'flashcards_view.dart';
 import 'glossary_view.dart';
 import 'quiz_view.dart';
@@ -80,6 +81,7 @@ class StudySetPage extends ConsumerWidget {
             sizeOf(set),
             'made ${whenOf(item.updatedAt)}'
                 '${item.model.isEmpty ? '' : ' by ${item.model}'}',
+            ?costNote(AiSession.costOf(item.usage)),
           ].join('  ·  '),
           actions: <Widget>[
             SmallButton(

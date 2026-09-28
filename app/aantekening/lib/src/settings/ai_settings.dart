@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../ai/ai_state.dart';
+import '../ai/money.dart';
 import '../look/controls.dart';
 import '../look/marks.dart';
 import '../look/tones.dart';
@@ -456,6 +457,17 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
                               label: model.capabilities.reasoning
                                   ? '${model.name}  · thinks first'
                                   : model.name,
+                              trailingIcon: switch (model.capabilities.price) {
+                                final price? when !price.isFree => Text(
+                                  '${dollars(price.input)} / '
+                                  '${dollars(price.output)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: tones.faint,
+                                  ),
+                                ),
+                                _ => null,
+                              },
                             ),
                         ],
                         onSelected: (model) {
@@ -483,11 +495,33 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
                 error is AiException ? error.message : '$error',
                 style: TextStyle(fontSize: 12, color: tones.text),
               ),
-            ),
+            )
+          else if (models
+                  .where((model) => model.id == widget.config.model)
+                  .firstOrNull
+              case final chosen?)
+            ?_priceNote(chosen.capabilities.price, tones),
         ],
       );
     },
   );
+
+  /// What the chosen model costs, as its provider lists it; nothing for a
+  /// model that costs nothing.
+  Widget? _priceNote(ModelPrice? price, Tones tones) {
+    if (price != null && price.isFree) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        price == null
+            ? 'Its price is not listed, so what answers cost is not shown.'
+            : 'Costs ${dollars(price.input)} a million tokens read, '
+                  '${dollars(price.output)} a million written: what each '
+                  'answer and study set cost is shown with it.',
+        style: TextStyle(fontSize: 12, color: tones.faint),
+      ),
+    );
+  }
 }
 
 /// Whether questions search the web, and how, for providers that cannot

@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:http/http.dart' as http;
@@ -82,6 +83,38 @@ class AnthropicProvider implements ChatProvider {
         nativeWebSearch: true,
         contextTokens:
             context ?? (model.startsWith('claude-haiku') ? 200000 : 1000000),
+        price: _prices.entries
+            .where((entry) => model.startsWith(entry.key))
+            .firstOrNull
+            ?.value,
+      );
+
+  /// What each model costs, which Anthropic's listing does not say: its
+  /// list prices as of June 2026, by the start of its name, the most
+  /// particular first. Reading what was kept costs a tenth of reading
+  /// afresh on most, keeping it for five minutes a quarter more, and a
+  /// search of the web a cent.
+  static final Map<String, ModelPrice> _prices = <String, ModelPrice>{
+    'claude-fable-5-1': _price(10, 50, cacheRead: 0.25),
+    'claude-mythos-5-1': _price(10, 50, cacheRead: 0.25),
+    'claude-fable-5': _price(10, 50),
+    'claude-opus-5-5': _price(4, 20, cacheRead: 0.2),
+    'claude-opus-5': _price(5, 25),
+    'claude-opus-4-8': _price(5, 25),
+    'claude-opus-4-7': _price(5, 25),
+    'claude-opus-4-6': _price(5, 25),
+    'claude-sonnet-5': _price(2, 10),
+    'claude-sonnet-4': _price(3, 15),
+    'claude-haiku-4-5': _price(1, 5),
+  };
+
+  static ModelPrice _price(double input, double output, {double? cacheRead}) =>
+      ModelPrice(
+        input: input,
+        output: output,
+        cacheRead: cacheRead ?? input / 10,
+        cacheWrite: input * 1.25,
+        webSearch: 0.01,
       );
 
   /// Whether [model] declines by refusal, and so is asked with a fallback
@@ -310,7 +343,7 @@ class AnthropicProvider implements ChatProvider {
         case 'message_delta':
           final delta = (data['delta']! as Map).cast<String, Object?>();
           stop = _stop(delta['stop_reason'] as String?);
-          usage = usage + _usage(data['usage']);
+          usage = _counted(usage, _usage(data['usage']));
         case 'error':
           final error = (data['error']! as Map).cast<String, Object?>();
           throw AiException(
@@ -455,6 +488,16 @@ class AnthropicProvider implements ChatProvider {
     _ => StopReason.done,
   };
 
+  /// [usage] as [later] counts it: a message's counts so far, not more
+  /// on top of them, each as high as either says.
+  static Usage _counted(Usage usage, Usage later) => Usage(
+    input: math.max(usage.input, later.input),
+    output: math.max(usage.output, later.output),
+    cacheRead: math.max(usage.cacheRead, later.cacheRead),
+    cacheWrite: math.max(usage.cacheWrite, later.cacheWrite),
+    webSearches: math.max(usage.webSearches, later.webSearches),
+  );
+
   static Usage _usage(Object? json) {
     if (json is! Map) return const Usage();
     final server = json['server_tool_use'];
@@ -462,6 +505,7 @@ class AnthropicProvider implements ChatProvider {
       input: json['input_tokens'] as int? ?? 0,
       output: json['output_tokens'] as int? ?? 0,
       cacheRead: json['cache_read_input_tokens'] as int? ?? 0,
+      cacheWrite: json['cache_creation_input_tokens'] as int? ?? 0,
       webSearches: server is Map
           ? server['web_search_requests'] as int? ?? 0
           : 0,

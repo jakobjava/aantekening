@@ -95,9 +95,8 @@ nothing. What it has to become:
   flashcards, a quiz and the key terms (`StudyKind`). Each is asked for as
   JSON (`NoteAgent.make`), from the notes given whole with their sentences
   numbered, every point, card, question and term naming the sentences it
-  comes from; the JSON is read leniently (`StudyJson`: what a model wraps
-  it in, LaTeX whose backslashes it did not double, trailing commas) and
-  read as far as it goes while it streams, so a set is seen growing. Each
+  comes from; the JSON is read however the model wrote it, and as far as
+  it goes while it streams, so a set is seen growing (ADR 22). Each
   set has a view of its own: the summary as a study sheet — the gist,
   numbered parts, formulas in boxes, what goes beyond the notes set apart,
   and the sentences cited quoted beneath; flashcards as cards that turn

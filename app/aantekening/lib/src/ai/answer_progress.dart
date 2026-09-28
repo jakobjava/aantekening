@@ -11,6 +11,7 @@ import '../look/controls.dart';
 import '../look/marks.dart';
 import '../look/tones.dart';
 import 'ai_session.dart';
+import 'money.dart';
 
 /// The steps [pending] has taken, each with how long it took, and the one
 /// it is on, counting up: what the model is reading and how much, what it
@@ -53,7 +54,10 @@ class _AnswerProgressState extends State<AnswerProgress> {
     final took = now.difference(pending.since);
     final faint = TextStyle(fontSize: 12, color: context.tones.faint);
 
-    final speed = _speed(progress.written - pending.writtenBefore, took);
+    final detail = <String>[
+      ?_speed(progress.written - pending.writtenBefore, took),
+      ?costNote(progress.cost),
+    ].join('  ·  ');
     final details = <Widget>[
       if (progress.stage == AgentStage.thinking &&
           progress.reasoning.trim().isNotEmpty)
@@ -80,7 +84,7 @@ class _AnswerProgressState extends State<AnswerProgress> {
           _Row(
             leading: const Busy(width: 12),
             label: '${progress.activity}…',
-            detail: speed,
+            detail: detail.isEmpty ? null : detail,
             took: wholeSeconds(took),
             strong: true,
           ),

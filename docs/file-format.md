@@ -186,14 +186,19 @@ own, beside the notes and never in them:
   its citations, each with the link or web address cited — to the sentence,
   for the notes — its title, whether it is from the notes or the web, and
   the words cited. Flashcards and quizzes in an answer are fenced blocks in
-  the Markdown, marked `flashcards` and `quiz`, holding JSON lists.
+  the Markdown, marked `flashcards` and `quiz`, holding JSON lists. Its
+  `usage` is what it took: the tokens read (`input`, `cacheRead`,
+  `cacheWrite`), written (`output`), the web searches, how long it took
+  (`milliseconds`) and what it cost in US dollars (`dollars`), as the
+  provider said or reckoned from the model's price when it was asked.
 * `ai_items`: what was kept about a scope. A study set — `kind` `summary`,
   `flashcards`, `quiz` or `terms` — holds JSON with `"study"` naming its
   kind: a summary's `title`, `gist`, `sections` of `points`, `formulas` and
   what goes `beyond` the notes; flashcards' `cards`; a quiz's `questions`;
   the key `terms`. Each card, question and point carries the citations it
   comes from, and each card and question an `id`. A kept answer (`kind`
-  `answer`) holds the answer's JSON.
+  `answer`) holds the answer's JSON. A study set's `usage` is what making
+  it last took and cost, as a turn's.
 * `ai_reviews`: how each card of a set of flashcards is learnt — by
   `item_id` and `card_id`, its spaced-repetition state as JSON (when it is
   due, the gap and ease of its reviews, how often it was forgotten) and

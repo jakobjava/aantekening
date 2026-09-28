@@ -155,7 +155,8 @@ void main() {
           <String, Object?>{
             'type': 'message_delta',
             'delta': <String, Object?>{'stop_reason': 'end_turn'},
-            'usage': <String, Object?>{'output_tokens': 7},
+            // Counted so far, the input again with it.
+            'usage': <String, Object?>{'input_tokens': 100, 'output_tokens': 7},
           },
           <String, Object?>{'type': 'message_stop'},
         ]),
@@ -180,12 +181,28 @@ void main() {
       final done = events.whereType<MessageDone>().single;
       expect(done.stop, StopReason.done);
       expect(done.usage!.output, 7);
+      expect(done.usage!.input, 100, reason: 'counted once');
       final native = done.message.parts.whereType<NativePart>().single;
       expect(
         ((native.block['content']! as List).single as Map)['citations'],
         hasLength(1),
       );
     });
+
+    test(
+      'knows what its models cost, which its listing does not say',
+      () async {
+        final provider = AnthropicProvider(apiKey: 'k');
+        final opus = (await provider.capabilitiesOf('claude-opus-5')).price!;
+        expect((opus.input, opus.output, opus.cacheRead), (5, 25, 0.5));
+        expect(opus.cacheWrite, 6.25);
+        final fable = (await provider.capabilitiesOf(
+          'claude-fable-5-1',
+        )).price!;
+        expect(fable.cacheRead, 0.25, reason: 'not the price of Fable 5');
+        expect((await provider.capabilitiesOf('claude-2')).price, isNull);
+      },
+    );
 
     test('asks for tools with the input it streamed', () async {
       final fake = server(
@@ -395,6 +412,49 @@ void main() {
       );
     });
 
+    test('counts what a request took, and what it cost where the service '
+        'says', () async {
+      final fake = server(
+        <String>[
+          'data: ${jsonEncode(<String, Object?>{
+            'choices': <Object?>[
+              <String, Object?>{
+                'delta': <String, Object?>{'content': 'Hi.'},
+                'finish_reason': 'stop',
+              },
+            ],
+          })}\n\n',
+          'data: ${jsonEncode(<String, Object?>{
+            'choices': <Object?>[],
+            'usage': <String, Object?>{
+              'prompt_tokens': 1000,
+              'completion_tokens': 200,
+              'prompt_tokens_details': <String, Object?>{'cached_tokens': 400},
+              'cost': 0.0013,
+            },
+          })}\n\n',
+          'data: [DONE]\n\n',
+        ].join(),
+      );
+      final done = await provider(fake.client)
+          .chat(
+            const ChatRequest(
+              model: 'm',
+              system: '',
+              messages: <ChatMessage>[],
+            ),
+          )
+          .toList();
+      final usage = done.whereType<MessageDone>().single.usage!;
+      expect((usage.input, usage.cacheRead, usage.output), (600, 400, 200));
+      expect(usage.cost, 0.0013);
+      expect(
+        usage.costAt(const ModelPrice(input: 100, output: 100)),
+        0.0013,
+        reason: 'as the service said',
+      );
+    });
+
     test('tells reasoning apart from the answer, given apart or in tags '
         'at its start', () async {
       String chunk(Map<String, Object?> delta) =>
@@ -497,6 +557,76 @@ void main() {
       );
     });
 
+    test('holds a model to the JSON asked for as closely as it can be', () {
+      const schema = <String, Object?>{'type': 'object'};
+      Object? format(StructuredOutput how) => provider(http.Client()).body(
+        const ChatRequest(
+          model: 'm',
+          system: 'Be brief.',
+          messages: <ChatMessage>[],
+          answerSchema: schema,
+        ),
+        structuredOutput: how,
+      )['response_format'];
+      expect(format(StructuredOutput.none), isNull);
+      expect(format(StructuredOutput.json), <String, Object?>{
+        'type': 'json_object',
+      });
+      expect(format(StructuredOutput.schema), <String, Object?>{
+        'type': 'json_schema',
+        'json_schema': <String, Object?>{'name': 'answer', 'schema': schema},
+      });
+    });
+
+    test('asks again in words alone where the form asked for is refused, '
+        'whatever the listing said', () async {
+      final bodies = <Map<String, Object?>>[];
+      final client = MockClient.streaming((request, stream) async {
+        if (request.method == 'GET') {
+          final listing = jsonEncode(<String, Object?>{
+            'data': <Object?>[
+              <String, Object?>{'id': 'm', 'supports_output_json_schema': true},
+            ],
+          });
+          return http.StreamedResponse(Stream.value(utf8.encode(listing)), 200);
+        }
+        final body = (jsonDecode(await stream.bytesToString()) as Map)
+            .cast<String, Object?>();
+        bodies.add(body);
+        if (body.containsKey('response_format')) {
+          return http.StreamedResponse(
+            Stream.value(utf8.encode('{"error": {"message": "no"}}')),
+            400,
+          );
+        }
+        final reply =
+            'data: ${jsonEncode(<String, Object?>{
+              'choices': <Object?>[
+                <String, Object?>{
+                  'delta': <String, Object?>{'content': '{}'},
+                  'finish_reason': 'stop',
+                },
+              ],
+            })}\n\ndata: [DONE]\n\n';
+        return http.StreamedResponse(Stream.value(utf8.encode(reply)), 200);
+      });
+      final events = await provider(client)
+          .chat(
+            const ChatRequest(
+              model: 'm',
+              system: 'Answer in JSON.',
+              messages: <ChatMessage>[],
+              answerSchema: <String, Object?>{'type': 'object'},
+            ),
+          )
+          .toList();
+      expect(bodies.map((b) => b.containsKey('response_format')), <bool>[
+        true,
+        false,
+      ]);
+      expect(events.whereType<TextDelta>().single.text, '{}');
+    });
+
     test('takes what a model can do from its listing, in the words of '
         'each service, and the room it is given over it', () async {
       final client = MockClient(
@@ -509,6 +639,11 @@ void main() {
                 'supports_vision': false,
                 'supports_tool_calling': true,
                 'supports_reasoning': true,
+                'supports_output_json_object': true,
+                'supports_output_json_schema': true,
+                'input_price': 4.35e-07,
+                'output_price': 8.7e-07,
+                'cached_price': 3.6e-09,
               },
               <String, Object?>{
                 'id': 'qwen/qwen3-32b',
@@ -516,7 +651,16 @@ void main() {
                 'architecture': <String, Object?>{
                   'input_modalities': <String>['text'],
                 },
-                'supported_parameters': <String>['tools', 'reasoning'],
+                'supported_parameters': <String>[
+                  'tools',
+                  'reasoning',
+                  'response_format',
+                ],
+                'pricing': <String, Object?>{
+                  'prompt': '0.0000001',
+                  'completion': '0.0000003',
+                  'web_search': '0.004',
+                },
               },
               <String, Object?>{'id': 'local-model'},
             ],
@@ -532,13 +676,23 @@ void main() {
       expect(requesty.contextTokens, 1048576);
       expect(requesty.vision, isFalse);
       expect(requesty.tools && requesty.reasoning, isTrue);
+      expect(requesty.structuredOutput, StructuredOutput.schema);
+      expect(requesty.price!.input, closeTo(0.435, 1e-9));
+      expect(requesty.price!.output, closeTo(0.87, 1e-9));
+      expect(requesty.price!.cacheRead, closeTo(0.0036, 1e-9));
       final openRouter = models['qwen/qwen3-32b']!;
       expect(openRouter.contextTokens, 40960);
       expect(openRouter.vision, isFalse);
       expect(openRouter.tools && openRouter.reasoning, isTrue);
+      expect(openRouter.structuredOutput, StructuredOutput.json);
+      expect(openRouter.price!.output, closeTo(0.3, 1e-9));
+      expect(openRouter.price!.cacheRead, openRouter.price!.input);
+      expect(openRouter.price!.webSearch, 0.004);
       final unsaid = models['local-model']!;
       expect(unsaid.contextTokens, 32000, reason: 'as taken to be');
       expect(unsaid.vision && unsaid.tools, isTrue);
+      expect(unsaid.structuredOutput, StructuredOutput.none);
+      expect(unsaid.price, isNull, reason: 'not said');
 
       final roomed = OpenAiCompatibleProvider(
         name: 'LM Studio',
@@ -653,6 +807,7 @@ void main() {
         'num_batch': 512,
       });
       expect(sent['think'], isFalse);
+      expect(sent.containsKey('format'), isFalse, reason: 'prose asked for');
       final messages = (sent['messages']! as List).cast<Map<String, Object?>>();
       expect(messages[1]['content'], contains('[1.1] Speed is distance'));
       expect(messages[1]['images'], hasLength(1));
@@ -667,6 +822,26 @@ void main() {
         'content': 'The page.\n',
         'tool_name': 'read_page',
       });
+    });
+
+    test('holds any model to the JSON Schema asked for', () async {
+      final fake = ollama(<Map<String, Object?>>[
+        <String, Object?>{
+          'message': <String, Object?>{'content': '{}'},
+          'done': true,
+        },
+      ]);
+      await fake.provider
+          .chat(
+            ChatRequest(
+              model: 'qwen3-vl:4b',
+              system: 'Answer in JSON.',
+              messages: const <ChatMessage>[],
+              answerSchema: StudyKind.terms.schema,
+            ),
+          )
+          .drain<void>();
+      expect(fake.chats.single['format'], StudyKind.terms.schema);
     });
 
     test('streams thinking apart from the answer, and says when the room '

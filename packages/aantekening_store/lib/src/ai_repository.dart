@@ -75,6 +75,7 @@ class AiItem {
     required this.createdAt,
     required this.updatedAt,
     this.turnId,
+    this.usage,
   });
 
   final String id;
@@ -94,6 +95,9 @@ class AiItem {
   final String? turnId;
   final String provider;
   final String model;
+
+  /// What making it took and cost, as a turn's [AiTurn.usage].
+  final Map<String, Object?>? usage;
   final double position;
   final int createdAt;
   final int updatedAt;
@@ -252,12 +256,15 @@ class AiRepository {
     messages: jsonDecode(str(row, 'messages')) as List<Object?>,
     provider: str(row, 'provider'),
     model: str(row, 'model'),
-    usage: switch (strOrNull(row, 'usage')) {
-      final String json => (jsonDecode(json) as Map).cast<String, Object?>(),
-      null => null,
-    },
+    usage: _json(strOrNull(row, 'usage')),
     createdAt: integer(row, 'created_at'),
   );
+
+  /// The object kept as [json], if there is one.
+  static Map<String, Object?>? _json(String? json) => switch (json) {
+    final String json => (jsonDecode(json) as Map).cast<String, Object?>(),
+    null => null,
+  };
 
   // ------------------------------------------------------------------- items
 
@@ -280,6 +287,7 @@ class AiRepository {
     required String provider,
     required String model,
     String? turnId,
+    Map<String, Object?>? usage,
   }) async {
     final now = _now;
     final whole = scope.whole;
@@ -299,14 +307,15 @@ class AiRepository {
       turnId: turnId,
       provider: provider,
       model: model,
+      usage: usage,
       position: first == null ? 0 : (first as num).toDouble() - 1,
       createdAt: now,
       updatedAt: now,
     );
     _db.run(
       'INSERT INTO ai_items (id, scope_kind, scope_id, kind, title, body, '
-      'turn_id, provider, model, position, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'turn_id, provider, model, usage, position, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       <Object?>[
         item.id,
         ..._scopeArgs(whole),
@@ -316,6 +325,7 @@ class AiRepository {
         turnId,
         provider,
         model,
+        usage == null ? null : jsonEncode(usage),
         item.position,
         now,
         now,
@@ -325,15 +335,23 @@ class AiRepository {
   }
 
   /// Replaces what kept thing [id] holds with [body], and, if given, its
-  /// [title] — when a card of it is edited, say.
+  /// [title] — when a card of it is edited, say — and what making it took
+  /// and cost, when it is made again.
   Future<void> updateItem(
     String id, {
     required Map<String, Object?> body,
     String? title,
+    Map<String, Object?>? usage,
   }) async => _db.run(
     'UPDATE ai_items SET body = ?, title = COALESCE(?, title), '
-    'updated_at = ? WHERE id = ?',
-    <Object?>[jsonEncode(body), title, _now, id],
+    'usage = COALESCE(?, usage), updated_at = ? WHERE id = ?',
+    <Object?>[
+      jsonEncode(body),
+      title,
+      usage == null ? null : jsonEncode(usage),
+      _now,
+      id,
+    ],
   );
 
   Future<void> renameItem(String id, String title) async => _db.run(
@@ -407,6 +425,7 @@ class AiRepository {
     turnId: strOrNull(row, 'turn_id'),
     provider: str(row, 'provider'),
     model: str(row, 'model'),
+    usage: _json(strOrNull(row, 'usage')),
     position: real(row, 'position'),
     createdAt: integer(row, 'created_at'),
     updatedAt: integer(row, 'updated_at'),

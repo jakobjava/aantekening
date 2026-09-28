@@ -100,7 +100,10 @@ minutes by default). Give a model more **Room** if it runs out before it
 answers; LM Studio and other servers that do not say how much they take need
 it set.
 
-Online providers keep their API key in the system's keychain. **Notes per
+Online providers keep their API key in the system's keychain. What each
+answer and study set cost is shown with it, reckoned from the model's price
+where the provider lists it (Requesty, OpenRouter, Anthropic); the model
+chooser shows each model's price a million tokens read and written. **Notes per
 question** sets how much of your notes goes with each question: 40k tokens by
 default, and never more than a third of what the model can take. Web search
 works by itself with Anthropic; with other providers, point the settings at a

@@ -190,6 +190,7 @@ class ProviderConfig {
         vision: true,
         tools: true,
         contextTokens: presumedContextTokens,
+        price: local ? ModelPrice.free : null,
       ),
       room: contextTokens,
       client: client,

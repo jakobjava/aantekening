@@ -10,7 +10,7 @@ import 'package:sqlite3/sqlite3.dart';
 /// same code path.
 abstract final class Schema {
   /// The schema version this build expects.
-  static const int version = 4;
+  static const int version = 5;
 
   /// Migrations indexed by the version they produce.
   ///
@@ -18,7 +18,7 @@ abstract final class Schema {
   /// self-contained; to change an existing table, create the new one, copy the
   /// rows across and drop the old one within the same migration.
   static final List<void Function(Database db)> _migrations =
-      <void Function(Database db)>[_v1, _v2, _v3, _v4];
+      <void Function(Database db)>[_v1, _v2, _v3, _v4, _v5];
 
   /// Brings [db] up to [version], running only the migrations it still needs.
   ///
@@ -364,4 +364,10 @@ abstract final class Schema {
         ('ai_items', 'item', 'id'),
         ('ai_reviews', 'item', 'item_id'),
       ];
+
+  /// What making a kept study set took and cost, as a turn keeps it: the
+  /// tokens, and the dollars.
+  static void _v5(Database db) {
+    db.execute('ALTER TABLE ai_items ADD COLUMN usage TEXT;');
+  }
 }

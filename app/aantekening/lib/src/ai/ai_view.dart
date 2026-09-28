@@ -21,6 +21,7 @@ import 'ai_session.dart';
 import 'ai_state.dart';
 import 'answer_progress.dart';
 import 'answer_view.dart';
+import 'money.dart';
 import 'study_pages.dart';
 
 /// The AI of [scope], in place of the page: what was kept about it and its
@@ -462,6 +463,7 @@ class _Conversation extends ConsumerWidget {
               turn.provider,
               turn.model,
               if (AiSession.tookOf(turn) case final took?) wholeSeconds(took),
+              ?costNote(AiSession.costOf(turn.usage)),
             ].join(' · '),
             onOpen: onOpen,
             kept: session.isKept(turn),

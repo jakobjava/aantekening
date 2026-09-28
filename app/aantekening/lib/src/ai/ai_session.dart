@@ -451,6 +451,7 @@ class AiSession extends Notifier<AiSessionState> {
             set,
             provider: model.config.name,
             model: model.config.model,
+            usage: _usageOf(progress),
           );
         }
       },
@@ -526,6 +527,7 @@ class AiSession extends Notifier<AiSessionState> {
     StudySet set, {
     required String provider,
     required String model,
+    Map<String, Object?>? usage,
   }) async {
     final store = await _store;
     final earlier = state.setOf(set.kind);
@@ -538,6 +540,7 @@ class AiSession extends Notifier<AiSessionState> {
         body: set.toJson(),
         provider: provider,
         model: model,
+        usage: usage,
       );
       await _shown(set.kind, item.id);
       return;
@@ -553,7 +556,7 @@ class AiSession extends Notifier<AiSessionState> {
         keep: <String>{for (final card in cards.cards) card.id},
       );
     }
-    await store.ai.updateItem(earlier.id, body: kept.toJson());
+    await store.ai.updateItem(earlier.id, body: kept.toJson(), usage: usage);
     ref.invalidate(cardReviewsProvider(earlier.id));
     await _shown(set.kind, earlier.id);
   }
@@ -647,13 +650,7 @@ class AiSession extends Notifier<AiSessionState> {
       messages: <Object?>[for (final m in progress.messages) m.toJson()],
       provider: config.name,
       model: config.model,
-      usage: <String, Object?>{
-        'input': progress.usage.input,
-        'output': progress.usage.output,
-        'cacheRead': progress.usage.cacheRead,
-        'webSearches': progress.usage.webSearches,
-        if (took != null) _tookKey: took.inMilliseconds,
-      },
+      usage: _usageOf(progress, took: took),
     );
     state = state.copyWith(pending: () => null);
     await _load(threadId: threadId);
@@ -678,13 +675,34 @@ class AiSession extends Notifier<AiSessionState> {
   /// Whether the answer to [turn] is kept already.
   bool isKept(AiTurn turn) => state.items.any((item) => item.turnId == turn.id);
 
+  /// What [progress] took, done — and what it cost, and how long it
+  /// [took], where that is known — as a turn or a kept set keeps it.
+  static Map<String, Object?> _usageOf(
+    AgentProgress progress, {
+    Duration? took,
+  }) => <String, Object?>{
+    'input': progress.usage.input,
+    'output': progress.usage.output,
+    'cacheRead': progress.usage.cacheRead,
+    'cacheWrite': progress.usage.cacheWrite,
+    'webSearches': progress.usage.webSearches,
+    _costKey: ?progress.cost,
+    if (took != null) _tookKey: took.inMilliseconds,
+  };
+
   /// How long [turn] took to answer, if that was kept.
   static Duration? tookOf(AiTurn turn) => switch (turn.usage?[_tookKey]) {
     final int ms => Duration(milliseconds: ms),
     _ => null,
   };
 
+  /// What a turn or a kept set with [usage] cost, in US dollars, if that
+  /// was kept.
+  static double? costOf(Map<String, Object?>? usage) =>
+      (usage?[_costKey] as num?)?.toDouble();
+
   static const String _tookKey = 'milliseconds';
+  static const String _costKey = 'dollars';
 
   /// Where a turn's answer says which [AiAction] asked it.
   static const String _actionKey = 'action';

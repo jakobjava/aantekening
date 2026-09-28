@@ -40,7 +40,11 @@ class FakeProvider implements ChatProvider {
 
   @override
   Future<ModelCapabilities> capabilitiesOf(String model) async =>
-      const ModelCapabilities(tools: true, contextTokens: 100000);
+      const ModelCapabilities(
+        tools: true,
+        contextTokens: 100000,
+        price: ModelPrice(input: 1, output: 4),
+      );
 
   @override
   Stream<ChatEvent> chat(ChatRequest request) async* {
@@ -261,6 +265,9 @@ void main() {
       () => store.ai.threadsAbout(NoteLink.page(page.id)),
     );
     expect(threads, hasLength(1));
+
+    // What it cost is said with who answered, reckoned from the price.
+    expect(find.textContaining(RegExp(r' · ≈ \$0\.0')), findsOneWidget);
   });
 
   testWidgets('shows how an answer is coming along: each step, how long '
@@ -428,6 +435,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(SummarySheet), findsOneWidget);
+    expect(
+      find.textContaining(RegExp(r'by \S+  ·  ≈ \$0\.000')),
+      findsOneWidget,
+    );
     expect(find.text('BEYOND YOUR NOTES'), findsOneWidget);
     expect(find.byType(FootnoteMark), findsNWidgets(2));
     expect(find.text('FROM YOUR NOTES'), findsOneWidget);

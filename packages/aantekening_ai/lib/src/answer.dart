@@ -116,26 +116,25 @@ abstract final class AnswerBlocks {
 
   /// The cards in a `flashcards` block's [body], or null if it holds none.
   static List<StudyCard>? cardsIn(String body) =>
-      switch (_read(StudyKind.flashcards, 'cards', body)) {
+      switch (_read(StudyKind.flashcards, body)) {
         FlashcardSet(:final cards) => cards,
         _ => null,
       };
 
   /// The questions in a `quiz` block's [body], or null if it holds none.
   static List<QuizQuestion>? questionsIn(String body) =>
-      switch (_read(StudyKind.quiz, 'questions', body)) {
+      switch (_read(StudyKind.quiz, body)) {
         QuizSet(:final questions) => questions,
         _ => null,
       };
 
-  /// The set of [kind] a block's [body] holds as a JSON list, under [key],
-  /// citation markers left out.
-  static StudySet? _read(StudyKind kind, String key, String body) =>
-      StudySet.read(
-        kind,
-        '{"$key": ${body.replaceAll(AiAnswer.marker, '')}}',
-        const <Source>[],
-      );
+  /// The set of [kind] a block's [body] holds, citation markers left
+  /// out.
+  static StudySet? _read(StudyKind kind, String body) => StudySet.read(
+    kind,
+    body.replaceAll(AiAnswer.marker, ''),
+    const <Source>[],
+  );
 
   /// The word of the first structured block in [markdown] this build
   /// understands, or null for an answer that is only prose.

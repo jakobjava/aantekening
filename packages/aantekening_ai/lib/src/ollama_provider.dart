@@ -30,7 +30,11 @@ class OllamaProvider extends OpenAiCompatibleProvider {
        root = baseUrl.replaceFirst(RegExp(r'(/v1)?/*$'), ''),
        super(
          baseUrl: '${baseUrl.replaceFirst(RegExp(r'(/v1)?/*$'), '')}/v1',
-         defaults: ModelCapabilities(contextTokens: contextTokens),
+         defaults: ModelCapabilities(
+           contextTokens: contextTokens,
+           structuredOutput: StructuredOutput.schema,
+           price: ModelPrice.free,
+         ),
        );
 
   /// Room enough for a page or two of notes, a model's thinking, and its
@@ -144,6 +148,9 @@ class OllamaProvider extends OpenAiCompatibleProvider {
       vision: can.contains('vision'),
       tools: can.contains('tools'),
       reasoning: can.contains('thinking'),
+      // Ollama holds any model to a schema, as it writes.
+      structuredOutput: StructuredOutput.schema,
+      price: ModelPrice.free,
       contextTokens: trained == null || trained > contextTokens
           ? contextTokens
           : trained,
@@ -168,6 +175,13 @@ class OllamaProvider extends OpenAiCompatibleProvider {
     // Said only to a model that thinks: any other refuses to be told.
     if (_known[request.model]?.reasoning ?? false) 'think': think,
   };
+
+  @override
+  Map<String, Object?>? answerFormat(
+    Map<String, Object?> schema,
+    StructuredOutput how,
+  ) =>
+      how == StructuredOutput.none ? null : <String, Object?>{'format': schema};
 
   @override
   Map<String, Object?> userMessage(List<ChatPart> content) => <String, Object?>{
@@ -213,9 +227,12 @@ class OllamaProvider extends OpenAiCompatibleProvider {
   /// answers.
   @override
   Stream<ChatEvent> chat(ChatRequest request) async* {
-    await capabilitiesOf(request.model);
+    final capabilities = await capabilitiesOf(request.model);
     final answer = StreamedAnswer(sourcesIn(request.messages));
-    final body = this.body(request);
+    final body = this.body(
+      request,
+      structuredOutput: capabilities.structuredOutput,
+    );
     final reply = _Reply();
     final room =
         contextTokens -

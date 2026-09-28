@@ -105,9 +105,10 @@ class OpenAiCompatibleProvider implements ChatProvider {
   /// What the model listed as [entry] can do: what the listing says, and
   /// [defaults] where it does not — in [room], if it is set.
   ///
-  /// Each service says it its own way: Requesty with `supports_…` flags,
-  /// OpenRouter with the parameters and inputs a model takes, Mistral with
-  /// its capabilities; and how many tokens a model takes as
+  /// Each service says it its own way: Requesty with `supports_…` flags
+  /// and prices, OpenRouter with the parameters and inputs a model takes
+  /// and its pricing, Mistral with its capabilities; and how many tokens a
+  /// model takes as
   /// `context_window` (Requesty, Groq), `context_length` (OpenRouter),
   /// `max_context_length` (Mistral) or `max_model_len` (vLLM).
   ModelCapabilities _capabilities(Map<String, Object?> entry) {
@@ -119,6 +120,8 @@ class OpenAiCompatibleProvider implements ChatProvider {
       {'input_modalities': final Object? list} => list,
       _ => null,
     };
+    bool takes(String flag, String parameter) =>
+        said(entry[flag]) ?? among(parameters, parameter) ?? false;
     final abilities = switch (entry['capabilities']) {
       final Map<String, Object?> map => map,
       _ => const <String, Object?>{},
@@ -138,8 +141,15 @@ class OpenAiCompatibleProvider implements ChatProvider {
           said(entry['supports_reasoning']) ??
           among(parameters, 'reasoning') ??
           defaults.reasoning,
+      structuredOutput:
+          takes('supports_output_json_schema', 'structured_outputs')
+          ? StructuredOutput.schema
+          : takes('supports_output_json_object', 'response_format')
+          ? StructuredOutput.json
+          : defaults.structuredOutput,
       nativeCitations: defaults.nativeCitations,
       nativeWebSearch: defaults.nativeWebSearch,
+      price: _priceOf(entry) ?? defaults.price,
       contextTokens:
           room ??
           <Object?>[
@@ -152,10 +162,45 @@ class OpenAiCompatibleProvider implements ChatProvider {
     );
   }
 
+  /// What the model listed as [entry] costs, where the listing says: in
+  /// dollars a token, as Requesty's `input_price` and `output_price`, or
+  /// OpenRouter's `pricing` — dollars a search for its `web_search`.
+  static ModelPrice? _priceOf(Map<String, Object?> entry) {
+    double? dollars(Object? price) => switch (price) {
+      final num n => n.toDouble(),
+      final String s => double.tryParse(s),
+      _ => null,
+    };
+    double? perMillion(Object? price) => switch (dollars(price)) {
+      final perToken? => perToken * 1e6,
+      null => null,
+    };
+    final pricing = switch (entry['pricing']) {
+      final Map<Object?, Object?> map => map,
+      _ => const <Object?, Object?>{},
+    };
+    final input = perMillion(entry['input_price'] ?? pricing['prompt']);
+    final output = perMillion(entry['output_price'] ?? pricing['completion']);
+    if (input == null || output == null) return null;
+    return ModelPrice(
+      input: input,
+      output: output,
+      cacheRead: perMillion(
+        entry['cached_price'] ?? pricing['input_cache_read'],
+      ),
+      cacheWrite: perMillion(pricing['input_cache_write']),
+      webSearch: dollars(pricing['web_search']) ?? 0,
+    );
+  }
+
   /// The request body for [request]: its sources numbered to be cited by,
-  /// and its messages as [userMessage], [toolCall] and [toolMessage] write
-  /// them.
-  Map<String, Object?> body(ChatRequest request) {
+  /// its messages as [userMessage], [toolCall] and [toolMessage] write
+  /// them, and the form of its answer as [answerFormat] asks for it, held
+  /// to it as [structuredOutput] can be.
+  Map<String, Object?> body(
+    ChatRequest request, {
+    StructuredOutput structuredOutput = StructuredOutput.none,
+  }) {
     var next = 1;
     String numbered(List<Source> sources) {
       final given = sources.where((s) => s.passages.isNotEmpty).toList();
@@ -223,18 +268,41 @@ class OpenAiCompatibleProvider implements ChatProvider {
       ];
       if (content.isNotEmpty) messages.add(userMessage(content));
     }
-    return requestBody(request, messages, <Map<String, Object?>>[
-      for (final tool in request.tools)
-        <String, Object?>{
-          'type': 'function',
-          'function': <String, Object?>{
-            'name': tool.name,
-            'description': tool.description,
-            'parameters': tool.schema,
+    return <String, Object?>{
+      ...requestBody(request, messages, <Map<String, Object?>>[
+        for (final tool in request.tools)
+          <String, Object?>{
+            'type': 'function',
+            'function': <String, Object?>{
+              'name': tool.name,
+              'description': tool.description,
+              'parameters': tool.schema,
+            },
           },
-        },
-    ]);
+      ]),
+      if (request.answerSchema case final schema?)
+        ...?answerFormat(schema, structuredOutput),
+    };
   }
+
+  /// What asks for an answer following [schema], as closely as [how]
+  /// allows; null to ask in words alone.
+  @protected
+  Map<String, Object?>? answerFormat(
+    Map<String, Object?> schema,
+    StructuredOutput how,
+  ) => switch (how) {
+    StructuredOutput.none => null,
+    StructuredOutput.json => <String, Object?>{
+      'response_format': <String, Object?>{'type': 'json_object'},
+    },
+    StructuredOutput.schema => <String, Object?>{
+      'response_format': <String, Object?>{
+        'type': 'json_schema',
+        'json_schema': <String, Object?>{'name': 'answer', 'schema': schema},
+      },
+    },
+  };
 
   /// The body of a request for [request], of [messages] and [tools].
   @protected
@@ -307,9 +375,10 @@ class OpenAiCompatibleProvider implements ChatProvider {
   @override
   Stream<ChatEvent> chat(ChatRequest request) async* {
     final answer = StreamedAnswer(sourcesIn(request.messages));
+    final capabilities = await capabilitiesOf(request.model);
     final response = await send(
       _uri('/chat/completions'),
-      body(request),
+      body(request, structuredOutput: capabilities.structuredOutput),
       stop: request.stop,
     );
 
@@ -324,10 +393,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
         throw AiException('$name stopped: ${error['message']}');
       }
       if (data['usage'] case final Map<Object?, Object?> used) {
-        usage = Usage(
-          input: used['prompt_tokens'] as int? ?? 0,
-          output: used['completion_tokens'] as int? ?? 0,
-        );
+        usage = _usage(used);
       }
       final choices = data['choices'] as List<Object?>?;
       if (choices == null || choices.isEmpty) continue;
@@ -388,6 +454,24 @@ class OpenAiCompatibleProvider implements ChatProvider {
     );
   }
 
+  /// What a request took, as [used] says: its prompt's tokens, of them
+  /// those read from what was kept (`prompt_tokens_details`), its
+  /// completion's, and what it cost, where the service says (OpenRouter's
+  /// `cost`).
+  static Usage _usage(Map<Object?, Object?> used) {
+    final prompt = used['prompt_tokens'] as int? ?? 0;
+    final kept = switch (used['prompt_tokens_details']) {
+      {'cached_tokens': final int tokens} => tokens,
+      _ => 0,
+    };
+    return Usage(
+      input: prompt - kept,
+      cacheRead: kept,
+      output: used['completion_tokens'] as int? ?? 0,
+      cost: (used['cost'] as num?)?.toDouble(),
+    );
+  }
+
   static Map<String, Object?> _parseArguments(String json) {
     if (json.trim().isEmpty) return const <String, Object?>{};
     try {
@@ -403,9 +487,37 @@ class OpenAiCompatibleProvider implements ChatProvider {
   static const String invalidInputKey = '__invalid_json';
 
   /// Posts [body] to [uri], for the response streamed back — the request
-  /// broken off as soon as [stop] completes.
+  /// broken off as soon as [stop] completes. A server that will not hold
+  /// the model to the form of answer [body] asks for, whatever its
+  /// listing said, is asked again without, the form asked for in words
+  /// alone.
   @protected
   Future<http.StreamedResponse> send(
+    Uri uri,
+    Map<String, Object?> body, {
+    Future<void>? stop,
+  }) async {
+    try {
+      return await _post(uri, body, stop: stop);
+    } on AiException catch (error) {
+      // Where the body asks for the form of its answer, as [answerFormat]
+      // writes it.
+      final format = <String>{
+        for (final how in StructuredOutput.values)
+          ...?answerFormat(const <String, Object?>{}, how)?.keys,
+      };
+      if (!format.any(body.containsKey) ||
+          !(error.status == 400 || error.status == 422)) {
+        rethrow;
+      }
+      return _post(uri, <String, Object?>{
+        for (final entry in body.entries)
+          if (!format.contains(entry.key)) entry.key: entry.value,
+      }, stop: stop);
+    }
+  }
+
+  Future<http.StreamedResponse> _post(
     Uri uri,
     Map<String, Object?> body, {
     Future<void>? stop,
@@ -460,7 +572,10 @@ class OpenAiCompatibleProvider implements ChatProvider {
         '$name had a problem${message == null ? '' : ': $message'}',
         retryable: true,
       ),
-      _ => AiException('$name refused the request: ${message ?? status}'),
+      _ => AiException(
+        '$name refused the request: ${message ?? status}',
+        status: status,
+      ),
     };
   }
 

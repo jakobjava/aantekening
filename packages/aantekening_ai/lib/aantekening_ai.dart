@@ -10,6 +10,7 @@ export 'src/ai_settings.dart';
 export 'src/answer.dart';
 export 'src/anthropic_provider.dart';
 export 'src/citation_markers.dart';
+export 'src/loose_json.dart';
 export 'src/conversation.dart';
 export 'src/note_agent.dart';
 export 'src/note_context.dart';
