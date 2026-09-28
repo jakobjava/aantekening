@@ -49,6 +49,7 @@ class BoxFormatting implements TextEditorCommands {
       },
       blockKind: first.kind,
       fontSize: sample.size ?? RichTextStyles.defaultPointsFor(first),
+      font: sample.font,
       textColor: sample.color,
       highlight: sample.highlight,
     );
@@ -105,6 +106,10 @@ class BoxFormatting implements TextEditorCommands {
   @override
   void setFontSize(double points) =>
       _changeMarks((marks) => marks.withSize(points));
+
+  @override
+  void setFont(String? family) =>
+      _changeMarks((marks) => marks.withFont(family));
 
   @override
   void setTextColor(int? color) =>

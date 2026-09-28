@@ -2,10 +2,11 @@ import 'dart:io';
 
 import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon_items.dart'
-    show RibbonButton, mathGalleryOf;
+    show RibbonButton, RibbonLargeButton, mathGalleryOf;
 import 'package:aantekening/src/editor/ribbon/ribbon_layout.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon_state.dart';
 import 'package:aantekening/src/editor/text/math_templates.dart';
+import 'package:aantekening/src/editor/text/typefaces.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
@@ -224,6 +225,148 @@ void main() {
     await tester.tap(find.byTooltip('Highlighter: 40 pt'));
     await tester.pumpAndSettle();
     expect(canvas.highlighterSettings.width, 40);
+  });
+
+  testWidgets('a shape chosen on the Draw tab is dragged out in the pen', (
+    tester,
+  ) async {
+    await openEditor(tester, store, pageId);
+    final canvas = _commands(tester).canvas;
+    await tester.tap(find.text('Draw'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byWidgetPredicate(
+        (widget) => widget is RibbonLargeButton && widget.label == 'Shapes',
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Axes in 3D'));
+    await tester.pumpAndSettle();
+    expect(canvas.tool, CanvasTool.shape);
+    expect(canvas.shapeKind, ShapeKind.axes3d);
+
+    // A colour leaves the shape tool in hand: the inverse of what is
+    // beneath among them.
+    await tester.tap(find.byTooltip('Pen colour: Inverted'));
+    await tester.pumpAndSettle();
+    expect(canvas.tool, CanvasTool.shape);
+    expect(canvas.penSettings.color, NoteColors.inverse);
+
+    await tester.dragFrom(
+      const Offset(500, 400),
+      const Offset(240, 200),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    final axes = canvas.document.elements.whereType<InkElement>().single;
+    expect(axes.bounds.width, greaterThan(200));
+    expect(
+      axes.strokes.every((stroke) => stroke.color == NoteColors.inverse),
+      isTrue,
+    );
+
+    await press(tester, LogicalKeyboardKey.keyV);
+    await press(tester, LogicalKeyboardKey.keyS);
+    await tester.pumpAndSettle();
+    expect(canvas.tool, CanvasTool.shape);
+    expect(_ribbon(tester).tab, RibbonTab.draw);
+  });
+
+  testWidgets('a font chosen on the ribbon sets the text in it, and stays '
+      'through other formatting', (tester) async {
+    await tester.runAsync(() async {
+      final page = PageDocument.empty(id: pageId).withElementAdded(
+        const TextElement(
+          id: 'note',
+          frame: Frame(x: 100, y: 100, width: 300, height: 60),
+          createdAt: 0,
+          updatedAt: 0,
+          blocks: <TextBlock>[
+            TextBlock(runs: <TextRun>[TextRun('a few words')]),
+          ],
+        ),
+      );
+      await store.pages.saveDocument(pageId, page);
+    });
+    await openEditor(
+      tester,
+      store,
+      pageId,
+      overrides: [
+        installedTypefacesProvider.overrideWith(
+          (ref) async => <String>['DejaVu Sans'],
+        ),
+      ],
+    );
+    final canvas = _commands(tester).canvas;
+    TextMarks marks() => (canvas.document.elementById('note')! as TextElement)
+        .blocks
+        .single
+        .runs
+        .single
+        .marks;
+    canvas.select('note');
+    await tester.pumpAndSettle();
+
+    Future<void> choose(String font) async {
+      await tester.tap(find.byTooltip('Font'), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(font).last);
+      await tester.pumpAndSettle();
+    }
+
+    await tester.tap(find.byTooltip('Font'), kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    expect(find.text('ON THIS COMPUTER'), findsOneWidget);
+    expect(find.text('DejaVu Sans'), findsOneWidget);
+    await tester.tap(find.text('IBM Plex Mono'));
+    await tester.pumpAndSettle();
+    expect(marks().font, 'IBM Plex Mono');
+    expect(find.text('IBM Plex Mono'), findsOneWidget, reason: 'its name');
+
+    await tester.tap(find.byTooltip(_bold), kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    expect(marks().bold, isTrue);
+    expect(marks().font, 'IBM Plex Mono');
+
+    await choose('Default');
+    expect(marks().font, isNull);
+  });
+
+  testWidgets('text can be the inverse of what is beneath it', (tester) async {
+    await tester.runAsync(() async {
+      final page = PageDocument.empty(id: pageId).withElementAdded(
+        const TextElement(
+          id: 'note',
+          frame: Frame(x: 100, y: 100, width: 300, height: 60),
+          createdAt: 0,
+          updatedAt: 0,
+          blocks: <TextBlock>[
+            TextBlock(runs: <TextRun>[TextRun('over a picture')]),
+          ],
+        ),
+      );
+      await store.pages.saveDocument(pageId, page);
+    });
+    await openEditor(tester, store, pageId);
+    final canvas = _commands(tester).canvas;
+    canvas.select('note');
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byTooltip('Text colour: choose'),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Inverted'));
+    await tester.pumpAndSettle();
+    final box = canvas.document.elementById('note')! as TextElement;
+    expect(box.blocks.single.runs.single.marks.color, NoteColors.inverse);
+    expect(
+      find.byTooltip('Text colour\nText colour: Inverted'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('formatting a selected box formats all of it, undone at once', (

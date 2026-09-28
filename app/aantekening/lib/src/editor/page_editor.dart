@@ -1070,6 +1070,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
         (AppCommand.selectTool, CanvasTool.select),
         (AppCommand.pen, CanvasTool.pen),
         (AppCommand.highlighter, CanvasTool.highlighter),
+        (AppCommand.shapes, CanvasTool.shape),
         (AppCommand.eraser, CanvasTool.eraser),
       ];
 

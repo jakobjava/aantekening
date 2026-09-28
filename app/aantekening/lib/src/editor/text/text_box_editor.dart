@@ -1364,6 +1364,10 @@ class TextBoxEditorState extends State<TextBoxEditor>
       _changeMarks((marks) => marks.withSize(points));
 
   @override
+  void setFont(String? family) =>
+      _changeMarks((marks) => marks.withFont(family));
+
+  @override
   void setTextColor(int? color) =>
       _changeMarks((marks) => marks.withColor(color));
 
@@ -1543,6 +1547,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
         blockKind: block.isEmbed ? TextBlockKind.paragraph : block.kind,
         inFormula: formula != null,
         fontSize: sample.size ?? RichTextStyles.defaultPointsFor(block),
+        font: sample.font,
         textColor: sample.color,
         highlight: sample.highlight,
       ),

@@ -11,10 +11,13 @@ thousands of pages instant.
 ## Features
 
 - **Pages that run on without end.** Type anywhere, and text boxes form
-  around what you type. Draw with a pressure-sensitive pen or highlighter.
-  Move, resize and rotate anything.
-- **Rich text.** Headings, lists, to-dos, tables, code, colours and Markdown
-  shortcuts, with spell checking in several languages at once.
+  around what you type. Draw with a pressure-sensitive pen or highlighter;
+  hold the pen still and a stroke becomes the shape it was drawn as, or drag
+  out shapes, axes and solids from the Draw tab. Move, resize and rotate
+  anything.
+- **Rich text.** Headings, lists, to-dos, tables, code, fonts, colours —
+  one of them the inverse of whatever is beneath — and Markdown shortcuts,
+  with spell checking in several languages at once.
 - **Mathematics in the line.** Type a formula in LaTeX or a simple syntax
   (`sum_(i=1)^n i^2`, `mat(1, 2; 3, 4)`) and it is typeset as you write.
 - **PDFs and pictures.** Insert them to annotate. PDFs stay sharp at any

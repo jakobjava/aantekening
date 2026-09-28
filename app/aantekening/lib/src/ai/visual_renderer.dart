@@ -146,11 +146,13 @@ class VisualRenderer {
       layer: InkLayer.beneath,
     ).paint(canvas, size);
     if (text != null) canvas.drawImage(text.image, Offset.zero, Paint());
-    InkPainter(
-      elements: ink,
-      viewport: viewport,
-      layer: InkLayer.above,
-    ).paint(canvas, size);
+    for (final layer in const <InkLayer>[InkLayer.above, InkLayer.inverting]) {
+      InkPainter(
+        elements: ink,
+        viewport: viewport,
+        layer: layer,
+      ).paint(canvas, size);
+    }
 
     final picture = recorder.endRecording();
     try {

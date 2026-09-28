@@ -144,11 +144,19 @@ abstract final class RichTextStyles {
     return spacing == null ? style : spacedStyle(style, spacing);
   }
 
+  /// How what is in [NoteColors.inverse] is drawn: white, laid on what lies
+  /// beneath it so that it shows that inverted. One paint for all of it, so
+  /// styles holding it are equal.
+  static final Paint inverse = Paint()
+    ..color = const Color(0xFFFFFFFF)
+    ..blendMode = BlendMode.difference;
+
   /// The style a run's marks add on top of its block's style, or null for an
   /// unformatted run. Linked text with no colour of its own is drawn in
   /// [link] — the interface's mark on paper, `Tones.paperEmphasis`.
   static TextStyle? runStyle(TextMarks marks, {Color link = ink}) {
     if (marks.isEmpty) return null;
+    final inverted = marks.color == NoteColors.inverse;
     final style = TextStyle(
       fontWeight: marks.bold ? FontWeight.w700 : null,
       fontStyle: marks.italic ? FontStyle.italic : null,
@@ -156,11 +164,14 @@ abstract final class RichTextStyles {
         if (marks.underline || marks.link != null) TextDecoration.underline,
         if (marks.strikethrough) TextDecoration.lineThrough,
       ]),
-      color: marks.color != null
+      color: inverted
+          ? null
+          : marks.color != null
           ? Color(marks.color!)
           : marks.link != null
           ? link
           : null,
+      foreground: inverted ? inverse : null,
       backgroundColor: marks.highlight != null ? Color(marks.highlight!) : null,
       fontSize: marks.size != null ? marks.size! * unitsPerPoint : null,
       fontFamily: marks.font,

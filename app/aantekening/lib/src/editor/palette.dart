@@ -2,6 +2,7 @@
 /// text highlights, plus a picker for any other colour.
 library;
 
+import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 
 import '../look/colour_picker.dart';
@@ -28,6 +29,17 @@ abstract final class NotePalette {
         (color: 0xFF795548, name: 'Brown'),
       ];
 
+  /// No colour but the inverse of what lies beneath, offered for text and
+  /// the pen.
+  static const ({int color, String name}) inverse = (
+    color: NoteColors.inverse,
+    name: 'Inverted',
+  );
+
+  /// [color] as it is kept: opaque, unless it is [inverse].
+  static int opaque(int color) =>
+      color == NoteColors.inverse ? color : color | 0xFF000000;
+
   /// Colours picked with the colour picker this session, most recent first,
   /// offered alongside the presets.
   static final ValueNotifier<List<int>> recent = ValueNotifier<List<int>>(
@@ -48,12 +60,42 @@ abstract final class NotePalette {
 
   /// The name of a preset colour, or its hex code.
   static String nameOf(int color) {
+    if (color == NoteColors.inverse) return inverse.name;
     final opaque = color | 0xFF000000;
     for (final preset in presets) {
       if (preset.color == opaque) return preset.name;
     }
     return '#${(opaque & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
   }
+}
+
+/// A swatch of a colour on a page, [NoteColors.inverse] among them.
+class NoteSwatch extends StatelessWidget {
+  const NoteSwatch({
+    required this.color,
+    required this.name,
+    required this.selected,
+    required this.onTap,
+    this.size = 20,
+    super.key,
+  });
+
+  final int color;
+  final String name;
+  final bool selected;
+  final VoidCallback? onTap;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => color == NoteColors.inverse
+      ? Swatch.inverse(name: name, selected: selected, onTap: onTap, size: size)
+      : Swatch(
+          color: Color(color | 0xFF000000),
+          name: name,
+          selected: selected,
+          onTap: onTap,
+          size: size,
+        );
 }
 
 /// A grid of the palette's colours, the recently picked ones, and a way to
@@ -66,10 +108,14 @@ class ColorSwatchPanel extends StatelessWidget {
     this.noneLabel,
     this.onNone,
     this.onPickerOpened,
+    this.offersInverse = false,
   });
 
   /// The current colour, marked in the grid; compared without alpha.
   final int? selected;
+
+  /// Whether [NotePalette.inverse] is offered, beneath [noneLabel].
+  final bool offersInverse;
 
   final ValueChanged<int> onSelected;
 
@@ -85,10 +131,12 @@ class ColorSwatchPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selectedOpaque = selected == null ? null : selected! | 0xFF000000;
+    final selectedOpaque = selected == null
+        ? null
+        : NotePalette.opaque(selected!);
 
-    Widget swatch(int color, String name) => Swatch(
-      color: Color(color | 0xFF000000),
+    Widget swatch(int color, String name) => NoteSwatch(
+      color: color,
       name: name,
       selected: color == selectedOpaque,
       onTap: () => onSelected(color),
@@ -109,6 +157,16 @@ class ColorSwatchPanel extends StatelessWidget {
                   title: noneLabel,
                   value: selected == null,
                   onChanged: (_) => onNone?.call(),
+                ),
+              ),
+            if (offersInverse)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: CheckRow(
+                  title: NotePalette.inverse.name,
+                  description: 'The opposite of what is beneath',
+                  value: selected == NoteColors.inverse,
+                  onChanged: (_) => onSelected(NoteColors.inverse),
                 ),
               ),
             Wrap(

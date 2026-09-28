@@ -190,6 +190,13 @@ enum AppCommand {
   highlighter('Highlighter', CommandGroup.tools, null, <KeyChord>[
     KeyChord(LogicalKeyboardKey.keyH),
   ]),
+  shapes(
+    'Shapes',
+    CommandGroup.tools,
+    'Drag out the shape chosen on the Draw tab; or hold the pen still at '
+        'the end of a stroke to make it the shape it was drawn as',
+    <KeyChord>[KeyChord(LogicalKeyboardKey.keyS)],
+  ),
   eraser('Eraser', CommandGroup.tools, 'Removes whole strokes', <KeyChord>[
     KeyChord(LogicalKeyboardKey.keyE),
   ]),

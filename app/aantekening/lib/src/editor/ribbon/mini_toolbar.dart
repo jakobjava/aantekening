@@ -15,7 +15,11 @@ class MiniToolbar extends StatelessWidget {
   final RibbonCommands commands;
 
   static const List<List<RibbonItem>> _rows = <List<RibbonItem>>[
-    <RibbonItem>[RibbonItem.fontSize, RibbonItem.paragraphStyle],
+    <RibbonItem>[
+      RibbonItem.font,
+      RibbonItem.fontSize,
+      RibbonItem.paragraphStyle,
+    ],
     <RibbonItem>[
       RibbonItem.bold,
       RibbonItem.italic,

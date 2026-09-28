@@ -1,6 +1,8 @@
 /// The buttons, menus and galleries the ribbon is made of.
 library;
 
+import 'dart:math' as math;
+
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
@@ -25,8 +27,10 @@ import '../text/math_syntax.dart';
 import '../text/math_templates.dart';
 import '../text/text_box_controller.dart';
 import '../text/text_styles.dart';
+import '../text/typefaces.dart';
 import 'ribbon_layout.dart';
 import 'ribbon_state.dart';
+import 'shape_glyph.dart';
 
 /// What the ribbon's buttons act on: the page, the text being edited, and
 /// the page editor's commands.
@@ -233,6 +237,11 @@ class RibbonItemView extends ConsumerWidget {
           onPressed: can ? canvas.redo : null,
         ),
       ),
+      RibbonItem.font => _TextCommand(
+        text: text,
+        builder: (state, enabled) =>
+            _FontMenu(controller: text, enabled: enabled),
+      ),
       RibbonItem.fontSize => _TextCommand(
         text: text,
         builder: (state, enabled) =>
@@ -270,6 +279,7 @@ class RibbonItemView extends ConsumerWidget {
           current: state.textColor,
           fallback: 0xFFD93025,
           noneLabel: 'Automatic (black)',
+          offersInverse: true,
           enabled: enabled,
           onChanged: text.setTextColor,
         ),
@@ -381,6 +391,11 @@ class RibbonItemView extends ConsumerWidget {
         select: () => canvas.highlighterSettings.color,
         builder: (context, color) =>
             tool(CanvasTool.highlighter, AppCommand.highlighter, colour: color),
+      ),
+      RibbonItem.shapes => _ShapesGallery(
+        commands: commands,
+        label: item.label,
+        tooltip: bindings.tooltip(AppCommand.shapes, describe: true),
       ),
       RibbonItem.inkColour => _InkColourGallery(commands: commands),
       RibbonItem.inkThickness => _InkThicknessGallery(commands: commands),
@@ -695,7 +710,8 @@ class ColourBar extends StatelessWidget {
         height: 4,
         margin: const EdgeInsets.only(top: 1),
         decoration: BoxDecoration(
-          color: Color(color | 0xFF000000),
+          color: color == NoteColors.inverse ? null : Color(color | 0xFF000000),
+          gradient: color == NoteColors.inverse ? Swatch.inverseFill : null,
           border: Border.all(color: context.tones.line, width: 0.5),
         ),
       ),
@@ -798,6 +814,97 @@ class _FontSizeMenu extends StatelessWidget {
   }
 }
 
+/// The typeface: the page's own, those the app brings, and those installed
+/// on this computer, each named in itself.
+class _FontMenu extends ConsumerWidget {
+  const _FontMenu({required this.controller, required this.enabled});
+
+  final TextBoxEditorController controller;
+  final bool enabled;
+
+  static const String _default = 'Default';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = controller.state.font;
+    final installed = ref.watch(installedTypefacesProvider).value;
+    final others = <String>[
+      for (final family in installed ?? Typefaces.common)
+        if (!Typefaces.bundled.contains(family)) family,
+    ];
+    final sections = <(String, List<String>)>[
+      if (current != null &&
+          !Typefaces.bundled.contains(current) &&
+          !others.contains(current))
+        ('In this text', <String>[current]),
+      ('In the app', Typefaces.bundled),
+      (installed == null ? 'Common' : 'On this computer', others),
+    ];
+    // One list, headings among the families, built as it is scrolled: a
+    // computer can have hundreds.
+    final rows = <({String? heading, String? family})>[
+      (heading: null, family: null),
+      for (final (heading, families) in sections) ...[
+        (heading: heading, family: null),
+        for (final family in families) (heading: null, family: family),
+      ],
+    ];
+
+    return MenuAnchor(
+      builder: (context, menu, _) => _MenuButton(
+        label: current ?? _default,
+        width: 92,
+        tooltip: 'Font',
+        onPressed: enabled
+            ? () => menu.isOpen ? menu.close() : menu.open()
+            : null,
+      ),
+      menuChildren: <Widget>[
+        SizedBox(
+          width: 260,
+          height: math.min(420, rows.length * _rowHeight),
+          child: ListView.builder(
+            // The menu scrolls itself; this list scrolls apart from it.
+            primary: false,
+            itemCount: rows.length,
+            itemExtent: _rowHeight,
+            itemBuilder: (context, index) {
+              final (:heading, :family) = rows[index];
+              if (heading != null) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  child: SmallCaps(heading),
+                );
+              }
+              return MenuItemButton(
+                onPressed: () => controller.setFont(family),
+                trailingIcon: family == current
+                    ? Mark(MarkShape.check, color: context.tones.emphasis)
+                    : null,
+                child: Text(
+                  family ?? _default,
+                  overflow: TextOverflow.ellipsis,
+                  style: family == null
+                      ? null
+                      : TextStyle(
+                          fontFamily: family,
+                          fontFamilyFallback: RichTextStyles.typefacesFor(
+                            family,
+                          ),
+                          fontSize: 14,
+                        ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  static const double _rowHeight = 32;
+}
+
 /// A drop-down's face: its current value and an arrow, in a box.
 class _MenuButton extends StatelessWidget {
   const _MenuButton({
@@ -852,6 +959,7 @@ class _ColorButton extends StatefulWidget {
     required this.noneLabel,
     required this.enabled,
     required this.onChanged,
+    this.offersInverse = false,
   });
 
   /// The letters shown over the colour.
@@ -870,6 +978,9 @@ class _ColorButton extends StatefulWidget {
   final String noneLabel;
   final bool enabled;
 
+  /// Whether the inverse of what is beneath is offered too.
+  final bool offersInverse;
+
   /// Called with the chosen colour, opaque, or null for [noneLabel].
   final ValueChanged<int?> onChanged;
 
@@ -882,7 +993,7 @@ class _ColorButtonState extends State<_ColorButton> {
   late int _last = widget.fallback;
 
   void _apply(int? color) {
-    if (color != null) setState(() => _last = color | 0xFF000000);
+    if (color != null) setState(() => _last = NotePalette.opaque(color));
     _menu.close();
     widget.onChanged(color);
   }
@@ -895,6 +1006,7 @@ class _ColorButtonState extends State<_ColorButton> {
         ColorSwatchPanel(
           selected: widget.current,
           onSelected: _apply,
+          offersInverse: widget.offersInverse,
           noneLabel: widget.noneLabel,
           onNone: () => _apply(null),
           onPickerOpened: _menu.close,
@@ -989,14 +1101,146 @@ PenSettings _inkSettings(RibbonCommands commands) =>
     : commands.canvas.penSettings;
 
 /// Changes the pen or highlighter and takes it up, as picking a pen colour in
-/// OneNote does.
+/// OneNote does — unless the shape tool, which draws in the pen's ink, is in
+/// hand.
 void _changeInk(RibbonCommands commands, PenSettings settings) {
   commands.canvas.setPen(settings);
+  if (commands.canvas.tool == CanvasTool.shape &&
+      settings.tool != InkTool.highlighter) {
+    return;
+  }
   commands.onToolSelected(
     settings.tool == InkTool.highlighter
         ? CanvasTool.highlighter
         : CanvasTool.pen,
   );
+}
+
+/// The shapes: the one the shape tool drags out, which the button takes
+/// up, and every shape, family by family, to choose another.
+class _ShapesGallery extends StatefulWidget {
+  const _ShapesGallery({
+    required this.commands,
+    required this.label,
+    required this.tooltip,
+  });
+
+  final RibbonCommands commands;
+  final String label;
+  final String tooltip;
+
+  @override
+  State<_ShapesGallery> createState() => _ShapesGalleryState();
+}
+
+class _ShapesGalleryState extends State<_ShapesGallery> {
+  final MenuController _menu = MenuController();
+
+  static const double _tile = 40;
+  static const int _columns = 6;
+
+  void _choose(ShapeKind kind) {
+    _menu.close();
+    widget.commands.canvas.setShapeKind(kind);
+    widget.commands.onToolSelected(CanvasTool.shape);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canvas = widget.commands.canvas;
+    return _CanvasSelect<(CanvasTool, ShapeKind)>(
+      canvas: canvas,
+      select: () => (canvas.tool, canvas.shapeKind),
+      builder: (context, value) {
+        final (tool, chosen) = value;
+        final inHand = tool == CanvasTool.shape;
+        return MenuAnchor(
+          controller: _menu,
+          menuChildren: <Widget>[
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: SizedBox(
+                width: _tile * _columns,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    for (final family in ShapeFamily.values) ...<Widget>[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
+                        child: SmallCaps(family.label),
+                      ),
+                      Wrap(
+                        children: <Widget>[
+                          for (final kind in ShapeKind.of(family))
+                            _ShapeTile(
+                              kind: kind,
+                              size: _tile,
+                              selected: inHand && kind == chosen,
+                              onTap: () => _choose(kind),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+          child: RibbonLargeButton(
+            glyph: ShapeGlyph(chosen, size: 22),
+            label: widget.label,
+            tooltip:
+                '${widget.tooltip}\nShift keeps it square, or its '
+                'lines to steps of 15°',
+            selected: inHand,
+            onPressed: () => _menu.isOpen ? _menu.close() : _menu.open(),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One shape in the gallery, drawn as it is drawn on the page.
+class _ShapeTile extends StatelessWidget {
+  const _ShapeTile({
+    required this.kind,
+    required this.size,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ShapeKind kind;
+  final double size;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tones = context.tones;
+    return Tooltip(
+      message: kind.label,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: size,
+          height: size,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? tones.selection : null,
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? tones.emphasis : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: ShapeGlyph(kind, size: size - 14),
+        ),
+      ),
+    );
+  }
 }
 
 /// The palette, for the pen or highlighter in hand.
@@ -1021,13 +1265,14 @@ class _InkColourGallery extends StatelessWidget {
               ? 'Highlighter'
               : 'Pen';
           final colours = <({int color, String name})>[
+            if (settings.tool != InkTool.highlighter) NotePalette.inverse,
             ...NotePalette.presets,
             for (final color in recent.take(_recent))
               (color: color, name: NotePalette.nameOf(color)),
           ];
           void pick(int color) => _changeInk(
             commands,
-            settings.copyWith(color: color | 0xFF000000),
+            settings.copyWith(color: NotePalette.opaque(color)),
           );
 
           return SizedBox(
@@ -1040,11 +1285,11 @@ class _InkColourGallery extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: <Widget>[
                       for (final entry in colours.skip(i).take(2))
-                        Swatch(
-                          color: Color(entry.color | 0xFF000000),
+                        NoteSwatch(
+                          color: entry.color,
                           name: '$owner colour: ${entry.name}',
                           selected:
-                              entry.color == (settings.color | 0xFF000000),
+                              entry.color == NotePalette.opaque(settings.color),
                           size: 18,
                           onTap: () => pick(entry.color),
                         ),
@@ -1129,6 +1374,8 @@ class _WidthChoice extends StatelessWidget {
     final tones = context.tones;
     final shown = highlighter
         ? Color(color | 0xFF000000).withValues(alpha: 0.45)
+        : color == NoteColors.inverse
+        ? tones.text
         : Color(color | 0xFF000000);
     final points = width.toStringAsFixed(width % 1 == 0 ? 0 : 1);
     // Each drawn as the stroke it makes: the pen's a line that thick, the

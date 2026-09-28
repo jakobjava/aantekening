@@ -6,6 +6,7 @@ import 'dart:collection';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'shrink_to_width.dart';
 import 'text_styles.dart';
@@ -208,17 +209,51 @@ class BlockView {
         ],
       );
     }
-    final marks = RichTextStyles.runStyle(run.marks, link: mark);
+    // A formula in the inverse of what is beneath is typeset white, and
+    // laid on what is beneath as text in it is.
+    final inverted = run.marks.color == NoteColors.inverse;
+    final marks = RichTextStyles.runStyle(
+      inverted ? run.marks.withColor(null) : run.marks,
+      link: mark,
+    );
+    final style = marks == null ? blockStyle : blockStyle.merge(marks);
+    final formula = TypesetFormulas.of(
+      run.text,
+      run.math!,
+      display,
+      inverted ? style.copyWith(color: RichTextStyles.inverse.color) : style,
+    );
     return WidgetSpan(
       alignment: PlaceholderAlignment.baseline,
       baseline: TextBaseline.alphabetic,
-      child: TypesetFormulas.of(
-        run.text,
-        run.math!,
-        display,
-        marks == null ? blockStyle : blockStyle.merge(marks),
-      ),
+      child: inverted ? _Inverting(child: formula) : formula,
     );
+  }
+}
+
+/// Lays its child, drawn white, on what lies beneath it with
+/// [RichTextStyles.inverse], so that it shows that inverted.
+class _Inverting extends SingleChildRenderObjectWidget {
+  const _Inverting({required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderInverting();
+}
+
+class _RenderInverting extends RenderProxyBox {
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final child = this.child;
+    if (child == null) return;
+    // What paints into a layer of its own cannot be gathered into one
+    // here, and is drawn as it is.
+    if (child.needsCompositing) {
+      context.paintChild(child, offset);
+      return;
+    }
+    context.canvas.saveLayer(offset & size, RichTextStyles.inverse);
+    context.paintChild(child, offset);
+    context.canvas.restore();
   }
 }
 

@@ -1,7 +1,8 @@
 # 5. Ink is painted; everything else is a widget
 
 **Status:** accepted; its last consequence superseded by
-[ADR 21](0021-the-page-follows-the-view-as-one-transform.md)
+[ADR 21](0021-the-page-follows-the-view-as-one-transform.md), and a layer
+added over the pen's by [ADR 23](0023-shapes-fonts-and-the-inverse-colour.md)
 
 ## Context
 

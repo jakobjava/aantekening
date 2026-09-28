@@ -173,8 +173,12 @@ class InkPainter extends CustomPainter {
   /// The most pixels the ink is kept in; beyond that it is drawn as strokes.
   static const int _maxPixels = 4096 * 4096;
 
-  static final Expando<ui.Picture> _beneath = Expando<ui.Picture>('beneath');
-  static final Expando<ui.Picture> _above = Expando<ui.Picture>('above');
+  /// Each element's strokes on each layer, recorded once.
+  static final Map<InkLayer, Expando<ui.Picture>> _pictures =
+      <InkLayer, Expando<ui.Picture>>{
+        for (final layer in InkLayer.values)
+          layer: Expando<ui.Picture>(layer.name),
+      };
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -203,9 +207,23 @@ class InkPainter extends CustomPainter {
     if (scale == null || width * height > _maxPixels) {
       canvas
         ..save()
-        ..transform(viewport.toMatrix().storage)
-        ..drawPicture(ink)
-        ..restore();
+        ..transform(viewport.toMatrix().storage);
+      // Inverting ink is drawn as one, so where two strokes cross the
+      // crossing is inverted once, as the rest of them is.
+      if (layer == InkLayer.inverting) {
+        canvas.saveLayer(
+          Rect.fromLTRB(
+            visible.left,
+            visible.top,
+            visible.right,
+            visible.bottom,
+          ),
+          Paint()..blendMode = layer.blendMode,
+        );
+      }
+      canvas.drawPicture(ink);
+      if (layer == InkLayer.inverting) canvas.restore();
+      canvas.restore();
       ink.dispose();
       return;
     }
@@ -225,10 +243,9 @@ class InkPainter extends CustomPainter {
       Offset.zero & Size(width / scale, height / scale),
       Paint()
         ..filterQuality = FilterQuality.low
-        // Kept as pixels, the highlighter still darkens what it lies on.
-        ..blendMode = layer == InkLayer.beneath
-            ? BlendMode.multiply
-            : BlendMode.srcOver,
+        // Kept as pixels, the highlighter still darkens what it lies on, and
+        // inverting ink still inverts it.
+        ..blendMode = layer.blendMode,
     );
     pixels.dispose();
   }
@@ -236,21 +253,20 @@ class InkPainter extends CustomPainter {
   /// The element's strokes on this layer, recorded once. Elements are
   /// immutable, so an edited element is a new object with a new picture.
   ui.Picture? _pictureOf(InkElement element) {
-    final cache = layer == InkLayer.beneath ? _beneath : _above;
+    final cache = _pictures[layer]!;
     final cached = cache[element];
     if (cached != null) return cached;
-    if (!element.strokes.any((stroke) => layer.accepts(stroke.tool))) {
-      return null;
-    }
+    if (!element.strokes.any(layer.accepts)) return null;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     for (final stroke in element.strokes) {
-      if (layer.accepts(stroke.tool)) paintStroke(canvas, stroke);
+      if (layer.accepts(stroke)) paintStroke(canvas, stroke);
     }
     return cache[element] = recorder.endRecording();
   }
 
-  /// Paints one stroke in page space.
+  /// Paints one stroke in page space. Inverting ink is painted white, to
+  /// be laid on what is beneath with [InkLayer.inverting]'s blend.
   static void paintStroke(Canvas canvas, InkStroke stroke) {
     if (stroke.tool == InkTool.highlighter) {
       canvas.drawPath(
@@ -267,7 +283,9 @@ class InkPainter extends CustomPainter {
     }
 
     final paint = Paint()
-      ..color = Color(stroke.color)
+      ..color = stroke.color == NoteColors.inverse
+          ? const Color(0xFFFFFFFF)
+          : Color(stroke.color)
       ..isAntiAlias = true;
 
     if (stroke.tool != InkTool.marker &&
@@ -297,18 +315,30 @@ class InkPainter extends CustomPainter {
 /// Which strokes an [InkPainter] draws.
 enum InkLayer {
   /// Highlighter, drawn beneath the element widgets.
-  beneath,
+  beneath(BlendMode.multiply),
 
   /// Pen, pencil and marker, drawn above them.
-  above;
+  above(BlendMode.srcOver),
 
-  bool accepts(InkTool tool) => switch (this) {
-    InkLayer.beneath => tool == InkTool.highlighter,
-    InkLayer.above => tool != InkTool.highlighter,
+  /// Ink in the inverse of what is beneath it ([NoteColors.inverse]),
+  /// drawn over everything else, since it is the inverse of all of it.
+  inverting(BlendMode.difference);
+
+  const InkLayer(this.blendMode);
+
+  /// How the layer is laid over what is beneath it: a white stroke
+  /// differenced from what it covers is its inverse.
+  final BlendMode blendMode;
+
+  bool accepts(InkStroke stroke) => switch (this) {
+    InkLayer.inverting => stroke.color == NoteColors.inverse,
+    _ when stroke.color == NoteColors.inverse => false,
+    InkLayer.beneath => stroke.tool == InkTool.highlighter,
+    InkLayer.above => stroke.tool != InkTool.highlighter,
   };
 }
 
-/// Draws the stroke currently under the pointer.
+/// Draws the stroke currently under the pointer, or the shape it became.
 ///
 /// The in-progress stroke lives in its own layer so that each new sample
 /// repaints only this painter, leaving the committed ink and the element
@@ -318,29 +348,30 @@ class WetInkPainter extends CustomPainter {
   WetInkPainter({required this.controller, required this.viewport})
     : super(repaint: controller.wetInk);
 
-  /// Where the stroke's samples, as flat `[x, y, pressure, tilt]` in page
-  /// space, and the instrument it is drawn with come from.
+  /// Where the strokes in progress come from.
   final CanvasController controller;
 
   final CanvasViewport viewport;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final points = controller.wetPoints;
-    if (points.length < InkStroke.stride) return;
-
-    final pen = controller.pen;
-    final stroke = InkStroke(
-      tool: pen.tool,
-      color: pen.strokeColor,
-      width: pen.width,
-      points: Float32List.fromList(points),
-    );
-
+    final strokes = controller.wetStrokes;
+    if (strokes.isEmpty) return;
+    final inverting = strokes.first.color == NoteColors.inverse;
     canvas
       ..save()
       ..transform(viewport.toMatrix().storage);
-    InkPainter.paintStroke(canvas, stroke);
+    if (inverting) {
+      final visible = viewport.visibleBounds(size);
+      canvas.saveLayer(
+        Rect.fromLTRB(visible.left, visible.top, visible.right, visible.bottom),
+        Paint()..blendMode = InkLayer.inverting.blendMode,
+      );
+    }
+    for (final stroke in strokes) {
+      InkPainter.paintStroke(canvas, stroke);
+    }
+    if (inverting) canvas.restore();
     canvas.restore();
   }
 

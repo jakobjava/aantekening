@@ -17,7 +17,7 @@ Commands are on the ribbon:
 | --- | --- |
 | **Home** | Text formatting |
 | **Insert** | Pictures, PDFs, files and formulas |
-| **Draw** | The pens, their colours and widths |
+| **Draw** | The pens, shapes, their colours and widths |
 | **Math** | Structures, symbols and the cheat sheet, while a formula is open |
 | **Review** | Spelling and its languages |
 | **View** | Zoom, the page preview, resetting the ribbon |
@@ -25,6 +25,35 @@ Commands are on the ribbon:
 Formatting a selected text box (rather than typing in it) formats all of it.
 Drag a ribbon button to move it; hold it over another tab's name to open that
 tab.
+
+## Drawing and shapes
+
+Hold the pen still for half a second at the end of a stroke, without
+lifting it, and the stroke becomes the shape it was drawn as: a line, an
+arrow, lines joined at corners, a triangle or other outline of straight
+sides, a rectangle or square, an ellipse or circle. A stroke that is none of
+these stays as it was written; a highlighter's is only ever straightened.
+Keep the pen down and move it to reshape what it became: a line's far end
+follows the pen, a corner of a rectangle or ellipse is pulled while the one
+across from it stays, a corner of a triangle moves by itself. Lines settle
+on level, upright and 45°, and a side nearly level is made so.
+
+**Shapes** on the Draw tab (S) holds shapes to drag out on the page: lines
+and arrows; outlines; graphs — axes, in one quadrant, four or in 3D, a
+number line and a grid, ticked every square of the page's grid; and solids,
+their hidden edges dashed. A click puts one down at its usual size. Shift
+keeps a box square and a line to steps of 15°. Shapes are drawn in the
+pen's colour and width, and are ink once drawn: picked, moved, resized,
+turned and erased as handwriting is.
+
+## Colours and fonts
+
+**Inverted**, in the text colour's menu and first among the pen's colours,
+is no colour of its own but the opposite of what is beneath: black on the
+paper, white over a dark picture or highlight, so it can be read on
+either. The **Font** menu on the Home tab sets text in the page's own
+typeface, one the app brings — which looks the same on every computer — or
+any installed on this one.
 
 ## Keyboard
 
@@ -42,7 +71,7 @@ commands can be changed; those of typing are fixed.
 | Ctrl+Shift+E / Ctrl+F / Ctrl+Shift+G | Notebooks / search / graph; Ctrl+\ hides or shows the panel |
 | Ctrl+J | The AI of what is showing, and back |
 | Ctrl+, / Ctrl+Shift+D / Ctrl+F1 | Settings / light or dark / collapse the ribbon |
-| V or T, P, H, E | Type-and-select, pen, highlighter, eraser |
+| V or T, P, H, S, E | Type-and-select, pen, highlighter, shapes, eraser |
 | Ctrl+B / I / U | Bold, italic, underline |
 | Ctrl+− / Ctrl+E / Ctrl+Shift+H | Strikethrough, inline code, highlight |
 | Ctrl+. / Ctrl+/ / Ctrl+1 | Bullets, numbering, to-do (Ctrl+Enter ticks it) |

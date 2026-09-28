@@ -60,6 +60,12 @@ class CanvasController extends ChangeNotifier {
   /// Samples of the stroke currently being drawn, as `[x, y, pressure, tilt]`.
   final List<double> _wetPoints = <double>[];
 
+  /// The shape the stroke in progress became, or is being dragged out as,
+  /// while the pointer drawing it is down.
+  _ShapeDraft? _draft;
+
+  ShapeKind _shapeKind = ShapeKind.rectangle;
+
   /// The ink element new strokes are appended to.
   ///
   /// Consecutive strokes join one element instead of each becoming their own,
@@ -127,6 +133,36 @@ class CanvasController extends ChangeNotifier {
   /// The in-progress stroke's samples, for the wet-ink overlay.
   List<double> get wetPoints => List<double>.unmodifiable(_wetPoints);
 
+  /// The stroke in progress as it would be kept now: as it is being drawn,
+  /// or as the shape it became.
+  List<InkStroke> get wetStrokes {
+    final settings = pen;
+    final draft = _draft;
+    if (draft != null) {
+      return draft.shape.strokes(
+        tool: settings.tool,
+        color: settings.strokeColor,
+        width: settings.width,
+      );
+    }
+    if (_wetPoints.length < InkStroke.stride) return const <InkStroke>[];
+    return <InkStroke>[
+      InkStroke(
+        tool: settings.tool,
+        color: settings.strokeColor,
+        width: settings.width,
+        points: Float32List.fromList(_wetPoints),
+      ),
+    ];
+  }
+
+  /// Whether the stroke in progress is a shape now, reshaped as the
+  /// pointer moves rather than drawn on.
+  bool get isShaping => _draft != null;
+
+  /// The shape the shape tool drags out.
+  ShapeKind get shapeKind => _shapeKind;
+
   bool get canUndo => _undoStack.isNotEmpty;
 
   bool get canRedo => _redoStack.isNotEmpty;
@@ -140,6 +176,7 @@ class CanvasController extends ChangeNotifier {
     _redoStack.clear();
     _selection.clear();
     _wetPoints.clear();
+    _draft = null;
     _wetInk.signal();
     _activeInkElementId = null;
     _drawing = false;
@@ -255,6 +292,13 @@ class CanvasController extends ChangeNotifier {
     // fresh element rather than joining strokes made with a different pen.
     _activeInkElementId = null;
     if (value != CanvasTool.select) _selection.clear();
+    _changed();
+  }
+
+  /// Chooses the shape the shape tool drags out.
+  void setShapeKind(ShapeKind value) {
+    if (_shapeKind == value) return;
+    _shapeKind = value;
     _changed();
   }
 
@@ -581,6 +625,7 @@ class CanvasController extends ChangeNotifier {
   /// Begins a stroke at a page-space point.
   void beginStroke(Offset page, {double pressure = 1, double tilt = 0}) {
     _drawing = true;
+    _draft = null;
     _wetPoints
       ..clear()
       ..addAll(<double>[page.dx, page.dy, _pressure(pressure), tilt]);
@@ -588,13 +633,69 @@ class CanvasController extends ChangeNotifier {
     _changed();
   }
 
-  /// Adds a sample to the stroke in progress.
+  /// Begins dragging out a [shapeKind] from a page-space point.
+  void beginShape(Offset page) {
+    final at = Vec2(page.dx, page.dy);
+    final shape = InkShape.begin(_shapeKind, at);
+    _drawing = true;
+    _wetPoints.clear();
+    _draft = _ShapeDraft(shape, shape.draggedHandle, at, dragged: true);
+    _wetInk.signal();
+    _changed();
+  }
+
+  /// Makes the stroke in progress the shape it was drawn as, if it clearly
+  /// is one — a highlighter's only a straight line — and returns whether
+  /// it did. The shape is then held by its handle nearest the pointer,
+  /// which reshapes it as it moves, until it lifts.
+  bool snapToShape() {
+    if (!_drawing || _draft != null) return false;
+    final points = <Vec2>[
+      for (var i = 0; i < _wetPoints.length; i += InkStroke.stride)
+        Vec2(_wetPoints[i], _wetPoints[i + 1]),
+    ];
+    if (points.isEmpty) return false;
+    final shape = ShapeRecognizer.recognize(
+      points,
+      linesOnly: pen.tool == InkTool.highlighter,
+    );
+    if (shape == null) return false;
+    final pointer = points.last;
+    final handles = shape.handles;
+    var nearest = 0;
+    for (var i = 1; i < handles.length; i++) {
+      if (handles[i].distanceTo(pointer) <
+          handles[nearest].distanceTo(pointer)) {
+        nearest = i;
+      }
+    }
+    _draft = _ShapeDraft(shape, nearest, pointer);
+    _wetInk.signal();
+    notifyListeners();
+    return true;
+  }
+
+  /// Adds a sample to the stroke in progress, or, once it is a shape,
+  /// reshapes it: [constrain] keeps a box square and a line on steps of
+  /// 15°.
   ///
   /// Samples closer together than a fraction of a page unit are dropped: a
   /// stylus can report faster than the display refreshes, and keeping every
   /// sample would inflate the stored page without changing what is drawn.
-  void extendStroke(Offset page, {double pressure = 1, double tilt = 0}) {
+  void extendStroke(
+    Offset page, {
+    double pressure = 1,
+    double tilt = 0,
+    bool constrain = false,
+  }) {
     if (!_drawing) return;
+    final draft = _draft;
+    if (draft != null) {
+      draft.reach(Vec2(page.dx, page.dy), constrain: constrain);
+      _wetInk.signal();
+      notifyListeners();
+      return;
+    }
     final length = _wetPoints.length;
     if (length >= 4) {
       final dx = page.dx - _wetPoints[length - 4];
@@ -613,23 +714,19 @@ class CanvasController extends ChangeNotifier {
   InkElement? endStroke() {
     if (!_drawing) return null;
     _drawing = false;
-
-    if (_wetPoints.length < 4) {
-      _wetPoints.clear();
-      _wetInk.signal();
+    final draft = _draft;
+    final strokes = draft == null ? wetStrokes : const <InkStroke>[];
+    // What was drawn goes with the stroke, the samples of one that became
+    // a shape too, or the overlay goes on showing them.
+    _draft = null;
+    _wetPoints.clear();
+    _wetInk.signal();
+    if (draft != null) return _endShape(draft);
+    if (strokes.isEmpty) {
       _changed();
       return null;
     }
-
-    final settings = pen;
-    final stroke = InkStroke(
-      tool: settings.tool,
-      color: settings.strokeColor,
-      width: settings.width,
-      points: Float32List.fromList(_wetPoints),
-    );
-    _wetPoints.clear();
-    _wetInk.signal();
+    final stroke = strokes.single;
 
     final clock = DateTime.now();
     final now = clock.millisecondsSinceEpoch;
@@ -649,23 +746,54 @@ class CanvasController extends ChangeNotifier {
       _apply(_document.withElementReplaced(merged));
       return merged;
     }
+    final element = _newInk(<InkStroke>[stroke], now);
+    _activeInkElementId = element.id;
+    return element;
+  }
 
+  /// Commits the shape [draft] holds, as an element of its own, which
+  /// the writing after it does not join: it is picked and moved by itself.
+  /// A shape dragged out no further than a click is put down at its usual
+  /// size.
+  InkElement? _endShape(_ShapeDraft draft) {
+    var shape = draft.shape;
+    if (draft.dragged && shape.extent < _smallestShape) {
+      shape = InkShape.placed(shape.kind, draft.grip);
+    }
+    if (shape.extent < _smallestShape) {
+      _changed();
+      return null;
+    }
+    final settings = pen;
+    _activeInkElementId = null;
+    return _newInk(
+      shape.strokes(
+        tool: settings.tool,
+        color: settings.strokeColor,
+        width: settings.width,
+      ),
+      DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  /// Adds an ink element of [strokes], made at [now].
+  InkElement _newInk(List<InkStroke> strokes, int now) {
     final element = InkElement(
       id: Ulid.generate(),
       frame: const Frame(x: 0, y: 0, width: 0, height: 0),
       createdAt: now,
       updatedAt: now,
-    ).withStrokes(<InkStroke>[stroke]);
-    _activeInkElementId = element.id;
+    ).withStrokes(strokes);
     _apply(_document.withElementAdded(element));
     return element;
   }
 
   /// Discards the stroke in progress.
   void cancelStroke() {
-    if (!_drawing && _wetPoints.isEmpty) return;
+    if (!_drawing && _wetPoints.isEmpty && _draft == null) return;
     _drawing = false;
     _wetPoints.clear();
+    _draft = null;
     _wetInk.signal();
     _changed();
   }
@@ -753,6 +881,9 @@ class CanvasController extends ChangeNotifier {
   /// Minimum squared distance between kept samples, in page units.
   static const double _minSampleDistanceSquared = 0.5 * 0.5;
 
+  /// How far across, in page units, a shape has to reach to be kept.
+  static const double _smallestShape = 4;
+
   double _pressure(double reported) =>
       pen.pressureSensitive ? reported.clamp(0.0, 1.0) : 1.0;
 
@@ -793,6 +924,34 @@ class CanvasController extends ChangeNotifier {
       _byId.remove(id);
       _index.remove(id);
     }
+  }
+}
+
+/// A shape being drawn: as it was when the pointer took hold of it, by
+/// which handle, and where the pointer was then.
+class _ShapeDraft {
+  _ShapeDraft(this.held, this.handle, this.grip, {this.dragged = false})
+    : shape = held;
+
+  final InkShape held;
+  final int handle;
+  final Vec2 grip;
+
+  /// Whether it is being dragged out with the shape tool, rather than a
+  /// stroke that became it.
+  final bool dragged;
+
+  /// The shape as it is now.
+  InkShape shape;
+
+  /// Moves the handle held as far as the pointer, now at [pointer], has
+  /// moved since it took hold: measured from there, so nothing drifts.
+  void reach(Vec2 pointer, {required bool constrain}) {
+    shape = held.withHandle(
+      handle,
+      held.handles[handle] + (pointer - grip),
+      constrain: constrain,
+    );
   }
 }
 

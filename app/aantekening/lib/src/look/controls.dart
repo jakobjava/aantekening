@@ -447,7 +447,7 @@ class CheckRow extends StatelessWidget {
 /// A colour to pick: a square, ringed when it is the one chosen.
 class Swatch extends StatelessWidget {
   const Swatch({
-    required this.color,
+    required Color this.color,
     required this.name,
     required this.selected,
     required this.onTap,
@@ -455,7 +455,27 @@ class Swatch extends StatelessWidget {
     super.key,
   });
 
-  final Color color;
+  /// The swatch of no colour but the inverse of what lies beneath: half
+  /// white, half black.
+  const Swatch.inverse({
+    required this.name,
+    required this.selected,
+    required this.onTap,
+    this.size = 20,
+    super.key,
+  }) : color = null;
+
+  /// How the inverse of what lies beneath is shown: black on white paper,
+  /// white on black.
+  static const Gradient inverseFill = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    stops: <double>[0.5, 0.5],
+    colors: <Color>[Color(0xFFFFFFFF), Color(0xFF000000)],
+  );
+
+  /// The colour, or null for the inverse of what lies beneath.
+  final Color? color;
   final String name;
   final bool selected;
   final VoidCallback? onTap;
@@ -481,6 +501,7 @@ class Swatch extends StatelessWidget {
             height: size,
             decoration: BoxDecoration(
               color: color,
+              gradient: color == null ? inverseFill : null,
               border: Border.all(color: tones.line),
             ),
           ),

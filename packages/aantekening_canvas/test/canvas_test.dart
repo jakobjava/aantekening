@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
@@ -242,6 +244,139 @@ void main() {
 
       expect(controller.document.elements, isEmpty);
       expect(controller.isDrawing, isFalse);
+    });
+  });
+
+  group('CanvasController shapes', () {
+    /// A stroke drawn from [points], left down.
+    CanvasController drawing(List<Offset> points, {CanvasTool? tool}) {
+      final controller = CanvasController();
+      if (tool != null) controller.setTool(tool);
+      controller.beginStroke(points.first);
+      for (final point in points.skip(1)) {
+        controller.extendStroke(point);
+      }
+      return controller;
+    }
+
+    List<Offset> straight(Offset from, Offset to) => <Offset>[
+      for (var i = 0; i <= 40; i++) Offset.lerp(from, to, i / 40)!,
+    ];
+
+    test('a stroke held still becomes a line, whose far end then follows '
+        'the pointer', () {
+      final controller = drawing(
+        straight(const Offset(100, 100), const Offset(300, 101)),
+      );
+
+      expect(controller.snapToShape(), isTrue);
+      expect(controller.isShaping, isTrue);
+      controller.extendStroke(const Offset(300, 161));
+      final ink = controller.endStroke()!;
+
+      final stroke = ink.strokes.single;
+      expect(stroke.xAt(0), closeTo(100, 0.5));
+      expect(stroke.yAt(0), closeTo(100.5, 0.5));
+      expect(stroke.xAt(stroke.pointCount - 1), closeTo(300, 0.5));
+      expect(stroke.yAt(stroke.pointCount - 1), closeTo(160.5, 0.5));
+      expect(controller.isShaping, isFalse);
+      // Nothing of the stroke as it was drawn is left showing.
+      expect(controller.wetStrokes, isEmpty);
+      expect(controller.wetPoints, isEmpty);
+    });
+
+    test('a stroke that is no shape stays as it was written', () {
+      final controller = drawing(<Offset>[
+        for (var x = 0.0; x <= 300; x += 3) Offset(x, 20 * math.sin(x / 30)),
+      ]);
+
+      expect(controller.snapToShape(), isFalse);
+      controller.extendStroke(const Offset(320, 40));
+      expect(
+        controller.endStroke()!.strokes.single.pointCount,
+        greaterThan(90),
+      );
+    });
+
+    test('a highlighter is only ever straightened', () {
+      final square = <Offset>[
+        ...straight(Offset.zero, const Offset(100, 0)),
+        ...straight(const Offset(100, 0), const Offset(100, 100)),
+        ...straight(const Offset(100, 100), const Offset(0, 100)),
+        ...straight(const Offset(0, 100), Offset.zero),
+      ];
+      expect(drawing(square).snapToShape(), isTrue);
+      expect(
+        drawing(square, tool: CanvasTool.highlighter).snapToShape(),
+        isFalse,
+      );
+      expect(
+        drawing(
+          straight(Offset.zero, const Offset(200, 0)),
+          tool: CanvasTool.highlighter,
+        ).snapToShape(),
+        isTrue,
+      );
+    });
+
+    test('a shape is picked by itself: writing after it starts anew', () {
+      final controller = drawing(
+        straight(const Offset(0, 0), const Offset(200, 0)),
+      )..snapToShape();
+      final line = controller.endStroke()!;
+      controller
+        ..beginStroke(const Offset(10, 10))
+        ..extendStroke(const Offset(20, 20));
+      final writing = controller.endStroke()!;
+
+      expect(writing.id, isNot(line.id));
+      expect(controller.document.elements, hasLength(2));
+    });
+
+    test('the shape tool drags out the shape chosen, square with Shift', () {
+      final controller = CanvasController()
+        ..setTool(CanvasTool.shape)
+        ..setShapeKind(ShapeKind.rectangle)
+        ..beginShape(const Offset(10, 10))
+        ..extendStroke(const Offset(110, 60));
+      expect(controller.endStroke()!.bounds.width, closeTo(102, 3));
+
+      controller
+        ..beginShape(const Offset(10, 200))
+        ..extendStroke(const Offset(110, 260), constrain: true);
+      final square = controller.endStroke()!;
+      expect(square.bounds.height, closeTo(square.bounds.width, 1e-6));
+    });
+
+    test('a click with the shape tool puts the shape down at its usual '
+        'size', () {
+      final controller = CanvasController()
+        ..setTool(CanvasTool.shape)
+        ..setShapeKind(ShapeKind.circle)
+        ..beginShape(const Offset(40, 40));
+      final circle = controller.endStroke()!;
+
+      // Ink's bounds reach half the pen's width, and a unit, past it.
+      final pad = PenSettings.defaultPen.width / 2 + 1;
+      expect(circle.bounds.width, closeTo(InkShape.usualWidth + 2 * pad, 1));
+      expect(circle.bounds.left, closeTo(40 - pad, 1));
+    });
+
+    test('draws with the pen, the inverse of what is beneath included', () {
+      final controller = CanvasController()
+        ..setPen(PenSettings.defaultPen.copyWith(color: NoteColors.inverse))
+        ..setTool(CanvasTool.shape)
+        ..beginShape(Offset.zero)
+        ..extendStroke(const Offset(100, 100));
+      final strokes = controller.wetStrokes;
+      final ink = controller.endStroke()!;
+
+      expect(strokes, isNotEmpty);
+      for (final stroke in ink.strokes) {
+        expect(stroke.color, NoteColors.inverse);
+        expect(InkLayer.inverting.accepts(stroke), isTrue);
+        expect(InkLayer.above.accepts(stroke), isFalse);
+      }
     });
   });
 

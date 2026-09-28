@@ -21,11 +21,15 @@ enum CanvasTool {
   /// Highlight with a translucent chisel nib, beneath text and ink.
   highlighter,
 
+  /// Drag out the shape chosen ([CanvasController.shapeKind]) in the pen's
+  /// ink.
+  shape,
+
   /// Remove whole strokes under the pointer.
   eraser;
 
   /// Whether this tool lays down ink.
-  bool get draws => this == pen || this == highlighter;
+  bool get draws => this == pen || this == highlighter || this == shape;
 }
 
 /// The settings of an inking tool.
@@ -67,7 +71,9 @@ class PenSettings {
   /// Whether stylus pressure modulates the stroke width.
   final bool pressureSensitive;
 
-  /// The colour strokes are stored with.
+  /// The colour strokes are stored with. A pen can draw in the inverse of
+  /// what is beneath it ([NoteColors.inverse]); a highlighter cannot, and
+  /// is made translucent.
   int get strokeColor => tool == InkTool.highlighter
       ? (color & 0x00FFFFFF) | (highlighterAlpha << 24)
       : color;

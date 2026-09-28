@@ -15,7 +15,8 @@ enum RibbonTab {
   /// Adding things to the page.
   insert('Insert'),
 
-  /// Handwriting: the pens, their colours and widths, and the eraser.
+  /// Handwriting: the pens, shapes, their colours and widths, and the
+  /// eraser.
   draw('Draw'),
 
   /// Writing formulas: structures and symbols to put in, and the syntax.
@@ -37,6 +38,7 @@ enum RibbonTab {
 enum RibbonItem {
   undo('Undo'),
   redo('Redo'),
+  font('Font'),
   fontSize('Font size'),
   bold('Bold'),
   italic('Italic'),
@@ -62,6 +64,7 @@ enum RibbonItem {
   eraser('Eraser', large: true),
   pen('Pen', large: true),
   highlighter('Highlighter', large: true),
+  shapes('Shapes', large: true),
   inkColour('Ink colour', large: true),
   inkThickness('Thickness', large: true),
   zoomIn('Zoom in'),
@@ -104,6 +107,7 @@ enum RibbonGroup implements ArrangementGroup<RibbonItem> {
     RibbonItem.redo,
   ]),
   font(RibbonTab.home, 'Font', <RibbonItem>[
+    RibbonItem.font,
     RibbonItem.fontSize,
     RibbonItem.bold,
     RibbonItem.italic,
@@ -136,6 +140,7 @@ enum RibbonGroup implements ArrangementGroup<RibbonItem> {
     RibbonItem.pen,
     RibbonItem.highlighter,
   ]),
+  shapes(RibbonTab.draw, 'Shapes', <RibbonItem>[RibbonItem.shapes]),
   colour(RibbonTab.draw, 'Colour', <RibbonItem>[RibbonItem.inkColour]),
   thickness(RibbonTab.draw, 'Thickness', <RibbonItem>[RibbonItem.inkThickness]),
   formulaSyntax(RibbonTab.math, 'Syntax', <RibbonItem>[

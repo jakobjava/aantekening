@@ -1,6 +1,7 @@
 /// The canvas widget: input handling and the layer stack.
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:aantekening_core/aantekening_core.dart';
@@ -51,9 +52,9 @@ class CanvasHeader {
 /// An infinitely pannable, zoomable page.
 ///
 /// Layers are stacked so each repaints independently: paper, highlighter ink,
-/// the element widgets, pen ink, the stroke in progress, and the selection
-/// overlay. A new ink sample therefore repaints only the thin wet-ink layer
-/// rather than the whole page.
+/// the element widgets, pen ink, inverting ink, the stroke in progress, and
+/// the selection overlay. A new ink sample therefore repaints only the thin
+/// wet-ink layer rather than the whole page.
 class InfiniteCanvas extends StatefulWidget {
   const InfiniteCanvas({
     required this.controller,
@@ -244,6 +245,16 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   Offset? _marqueeAnchor;
   Aabb? _marquee;
 
+  /// Where the pen came to rest while drawing, and the wait for it to stay
+  /// there long enough for the stroke to become a shape.
+  Offset _restingAt = Offset.zero;
+  Timer? _hold;
+
+  /// How long the pen is held still to make a stroke a shape, and how far,
+  /// in screen pixels, it may tremble meanwhile.
+  static const Duration _holdToShape = Duration(milliseconds: 500);
+  static const double _holdSlop = 5;
+
   /// Touch pointers currently down, by pointer id, at their latest position.
   final Map<int, Offset> _touches = <int, Offset>{};
   VelocityTracker? _touchVelocity;
@@ -284,6 +295,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   @override
   void dispose() {
+    _hold?.cancel();
     _motion.dispose();
     _stopListening(_controller);
     super.dispose();
@@ -336,12 +348,15 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     _action = _resolveAction(event, page);
 
     switch (_action) {
+      case _PointerAction.draw when _controller.tool == CanvasTool.shape:
+        _controller.beginShape(page);
       case _PointerAction.draw:
         _controller.beginStroke(
           page,
           pressure: _normalizedPressure(event),
           tilt: event.tilt,
         );
+        _restAt(event.localPosition);
       case _PointerAction.erase:
         _controller.eraseAt(page, radius: _eraserRadius);
       case _PointerAction.marquee:
@@ -400,7 +415,15 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
           page,
           pressure: _normalizedPressure(event),
           tilt: event.tilt,
+          constrain: HardwareKeyboard.instance.isShiftPressed,
         );
+        // Moved on from where it rested, the pen is waited for anew — a
+        // stroke that was no shape where it paused may be one further on.
+        if (!_controller.isShaping &&
+            _controller.tool != CanvasTool.shape &&
+            (event.localPosition - _restingAt).distance > _holdSlop) {
+          _restAt(event.localPosition);
+        }
       case _PointerAction.erase:
         _controller.eraseAt(page, radius: _eraserRadius);
       case _PointerAction.pan:
@@ -489,7 +512,25 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     _resetPointer();
   }
 
+  /// Starts waiting for the pen, come to rest at [screen], to stay there.
+  void _restAt(Offset screen) {
+    _restingAt = screen;
+    _hold?.cancel();
+    _hold = Timer(_holdToShape, _heldStill);
+  }
+
+  /// The pen held still: the stroke becomes the shape it was drawn as, if
+  /// it is one, and the pen then reshapes it.
+  void _heldStill() {
+    _hold = null;
+    if (_action == _PointerAction.draw && _controller.snapToShape()) {
+      HapticFeedback.selectionClick();
+    }
+  }
+
   void _resetPointer() {
+    _hold?.cancel();
+    _hold = null;
     _motion.settle();
     setState(() {
       _action = _PointerAction.none;
@@ -537,6 +578,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     switch (_controller.tool) {
       case CanvasTool.pen:
       case CanvasTool.highlighter:
+      case CanvasTool.shape:
         _pressed(null);
         return _PointerAction.draw;
       case CanvasTool.eraser:
@@ -1127,6 +1169,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   static MouseCursor _cursorFor(CanvasTool tool) => switch (tool) {
     CanvasTool.pen ||
     CanvasTool.highlighter ||
+    CanvasTool.shape ||
     CanvasTool.eraser => SystemMouseCursors.precise,
     CanvasTool.select => SystemMouseCursors.basic,
   };
@@ -1172,8 +1215,8 @@ class CanvasPreview extends StatelessWidget {
 }
 
 /// The page's own layers, from the bottom up: the pictures and PDF pages
-/// set as its background, highlighter, the element widgets, pen ink and the
-/// stroke in progress; laid out in page units over the part of the page
+/// set as its background, highlighter, the element widgets, pen ink, ink
+/// inverting what is beneath it, and the stroke in progress; laid out in page units over the part of the page
 /// around what [view] sees in a view of [size], and shown as it sees it.
 ///
 /// It follows the view without being built again until the view moves out
@@ -1299,14 +1342,18 @@ class _PageContentState extends State<_PageContent> {
               ),
             ),
             RepaintBoundary(child: layer(false, header: widget.header)),
-            paint(
-              InkPainter(
-                elements: ink,
-                viewport: fromOrigin,
-                layer: InkLayer.above,
-                pixelsPerUnit: pixelsPerUnit,
+            for (final above in const <InkLayer>[
+              InkLayer.above,
+              InkLayer.inverting,
+            ])
+              paint(
+                InkPainter(
+                  elements: ink,
+                  viewport: fromOrigin,
+                  layer: above,
+                  pixelsPerUnit: pixelsPerUnit,
+                ),
               ),
-            ),
             if (!widget.still)
               paint(
                 WetInkPainter(controller: controller, viewport: fromOrigin),

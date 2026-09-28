@@ -17,7 +17,31 @@ class Vec2 {
   Vec2 operator *(double factor) => Vec2(x * factor, y * factor);
   Vec2 operator /(double divisor) => Vec2(x / divisor, y / divisor);
 
+  Vec2 operator -() => Vec2(-x, -y);
+
   double get length => math.sqrt(x * x + y * y);
+
+  /// The direction it points in, in radians from the x axis.
+  double get angle => math.atan2(y, x);
+
+  double dot(Vec2 other) => x * other.x + y * other.y;
+
+  /// The z of the cross product: positive where [other] turns clockwise
+  /// from this on the page, whose y axis points down.
+  double cross(Vec2 other) => x * other.y - y * other.x;
+
+  /// This turned by [radians], clockwise on the page.
+  Vec2 rotated(double radians) {
+    final cos = math.cos(radians);
+    final sin = math.sin(radians);
+    return Vec2(x * cos - y * sin, x * sin + y * cos);
+  }
+
+  /// This scaled to a length of one, or itself where it has none.
+  Vec2 get unit {
+    final length = this.length;
+    return length == 0 ? this : this / length;
+  }
 
   double distanceTo(Vec2 other) {
     final dx = x - other.x;

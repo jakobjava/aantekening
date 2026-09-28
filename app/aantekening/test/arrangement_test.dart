@@ -29,8 +29,9 @@ void main() {
     test('moves a button along its own section', () {
       final layout = _defaults;
       // Italic in front of bold, then bold to the end.
-      final swapped = layout.move(RibbonItem.italic, RibbonGroup.font, 1);
-      expect(swapped.itemsIn(RibbonGroup.font).take(3), <RibbonItem>[
+      final swapped = layout.move(RibbonItem.italic, RibbonGroup.font, 2);
+      expect(swapped.itemsIn(RibbonGroup.font).take(4), <RibbonItem>[
+        RibbonItem.font,
         RibbonItem.fontSize,
         RibbonItem.italic,
         RibbonItem.bold,

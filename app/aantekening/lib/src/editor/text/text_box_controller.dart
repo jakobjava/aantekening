@@ -30,21 +30,18 @@ extension MarkKinds on MarkKind {
     MarkKind.highlight => marks.highlight != null,
   };
 
-  /// [marks] with this formatting turned on or off. Turning the highlight on
-  /// uses yellow.
-  TextMarks setIn(TextMarks marks, {required bool on}) => TextMarks(
-    bold: this == MarkKind.bold ? on : marks.bold,
-    italic: this == MarkKind.italic ? on : marks.italic,
-    underline: this == MarkKind.underline ? on : marks.underline,
-    strikethrough: this == MarkKind.strikethrough ? on : marks.strikethrough,
-    code: this == MarkKind.code ? on : marks.code,
-    color: marks.color,
-    highlight: this == MarkKind.highlight
-        ? (on ? RichTextStyles.highlightYellow : null)
-        : marks.highlight,
-    link: marks.link,
-    size: marks.size,
-  );
+  /// [marks] with this formatting turned on or off, and the rest of it as
+  /// it was. Turning the highlight on uses yellow.
+  TextMarks setIn(TextMarks marks, {required bool on}) => switch (this) {
+    MarkKind.bold => marks.copyWith(bold: on),
+    MarkKind.italic => marks.copyWith(italic: on),
+    MarkKind.underline => marks.copyWith(underline: on),
+    MarkKind.strikethrough => marks.copyWith(strikethrough: on),
+    MarkKind.code => marks.copyWith(code: on),
+    MarkKind.highlight => marks.withHighlight(
+      on ? RichTextStyles.highlightYellow : null,
+    ),
+  };
 }
 
 /// What the toolbar shows about the text under the caret.
@@ -55,6 +52,7 @@ class TextFormatState {
     this.blockKind = TextBlockKind.paragraph,
     this.inFormula = false,
     this.fontSize = 11,
+    this.font,
     this.textColor,
     this.highlight,
   });
@@ -73,6 +71,9 @@ class TextFormatState {
   /// The font size under the caret, in points.
   final double fontSize;
 
+  /// The typeface under the caret, or null for the page's own.
+  final String? font;
+
   /// The text colour under the caret, or null for the default black.
   final int? textColor;
 
@@ -86,6 +87,7 @@ class TextFormatState {
       other.blockKind == blockKind &&
       other.inFormula == inFormula &&
       other.fontSize == fontSize &&
+      other.font == font &&
       other.textColor == textColor &&
       other.highlight == highlight;
 
@@ -95,6 +97,7 @@ class TextFormatState {
     blockKind,
     inFormula,
     fontSize,
+    font,
     textColor,
     highlight,
   );
@@ -145,6 +148,9 @@ abstract interface class TextEditorCommands {
 
   /// Sets the font size, in points.
   void setFontSize(double points);
+
+  /// Sets the typeface, or returns it to the page's own with null.
+  void setFont(String? family);
 
   /// Sets the text colour, or returns it to the default with null.
   void setTextColor(int? color);
@@ -327,6 +333,9 @@ class TextBoxEditorController extends ChangeNotifier
 
   @override
   void setFontSize(double points) => _target?.setFontSize(points);
+
+  @override
+  void setFont(String? family) => _target?.setFont(family);
 
   @override
   void setTextColor(int? color) => _target?.setTextColor(color);

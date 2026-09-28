@@ -331,6 +331,55 @@ void main() {
   });
 
   group('InfiniteCanvas selecting', () {
+    testWidgets('a stroke held still becomes the shape it was drawn as, '
+        'reshaped until the pen lifts', (tester) async {
+      final controller = CanvasController()..setTool(CanvasTool.pen);
+      await tester.pumpWidget(_host(controller));
+
+      final pen = await tester.startGesture(
+        const Offset(100, 100),
+        kind: PointerDeviceKind.stylus,
+      );
+      for (var i = 0; i < 20; i++) {
+        await pen.moveBy(const Offset(10, 0));
+      }
+      // A pause shorter than the hold leaves the stroke a stroke.
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(controller.isShaping, isFalse);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(controller.isShaping, isTrue);
+
+      await pen.moveBy(const Offset(0, 80));
+      await pen.up();
+      final line = controller.document.elements.single as InkElement;
+      final stroke = line.strokes.single;
+      expect(stroke.pointCount, 2);
+      expect(stroke.xAt(1), closeTo(300, 0.5));
+      expect(stroke.yAt(1), closeTo(180, 0.5));
+    });
+
+    testWidgets('writing that pauses mid-stroke carries on as writing', (
+      tester,
+    ) async {
+      final controller = CanvasController()..setTool(CanvasTool.pen);
+      await tester.pumpWidget(_host(controller));
+
+      final pen = await tester.startGesture(
+        const Offset(100, 100),
+        kind: PointerDeviceKind.stylus,
+      );
+      for (var x = 0.0; x <= 200; x += 5) {
+        await pen.moveTo(Offset(100 + x, 100 + 20 * math.sin(x / 20)));
+      }
+      await tester.pump(const Duration(seconds: 1));
+      await pen.moveBy(const Offset(10, 10));
+      await pen.up();
+
+      expect(controller.isShaping, isFalse);
+      final ink = controller.document.elements.single as InkElement;
+      expect(ink.strokes.single.pointCount, greaterThan(30));
+    });
+
     testWidgets('a press let go of after the canvas has gone does nothing', (
       tester,
     ) async {

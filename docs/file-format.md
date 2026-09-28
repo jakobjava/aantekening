@@ -56,6 +56,12 @@ text box the first time it is double-clicked.
 A highlighter stroke's `width` is the height of its chisel nib, and its
 translucency is in its `color`'s alpha.
 
+A `color` of `16777215` (`0x00FFFFFF`, transparent white), on a stroke or in
+text's marks, is no colour but the inverse of what lies beneath: drawn white
+and laid on the page by difference. A build that does not know it draws
+nothing there, rather than a colour it never was. Shapes have no type of
+their own: they are ink, their corners sampled twice so they stay sharp.
+
 `points` is a flat array of `[x, y, pressure, tilt]` tuples, rounded to two
 decimals. Flat rather than nested because a handwritten page holds hundreds of
 thousands of samples, and this is both smaller on disk and loadable straight
