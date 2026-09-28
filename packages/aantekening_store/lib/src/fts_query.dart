@@ -23,7 +23,12 @@ abstract final class FtsQuery {
     bool prefixLastTerm = true,
     bool matchAny = false,
   }) {
-    final terms = SearchTerms.parse(input, prefixLastTerm: prefixLastTerm);
+    // SQLite reads the query only as far as a NUL, which pasted text may
+    // hold: it would end the query inside a term's quotes.
+    final terms = SearchTerms.parse(
+      input.replaceAll('\u0000', ' '),
+      prefixLastTerm: prefixLastTerm,
+    );
     if (terms.isEmpty) return null;
     return <String>[
       for (final term in terms.terms)

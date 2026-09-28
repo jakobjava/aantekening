@@ -28,6 +28,8 @@ class AantekeningApp extends ConsumerWidget {
       themeMode: appearance.mode,
       theme: AppTheme.build(appearance, Brightness.light),
       darkTheme: AppTheme.build(appearance, Brightness.dark),
+      // A new accent or light and dark take over at once, too.
+      themeAnimationStyle: AnimationStyle.noAnimation,
       // Scroll behaviour is widened so that the canvas and the navigation panes
       // respond to a trackpad and a stylus, not only to a mouse wheel.
       scrollBehavior: const _AppScrollBehavior(),

@@ -3,6 +3,8 @@
 /// swatches, labels, shortcuts and a sign of work going on.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'marks.dart';
@@ -506,7 +508,29 @@ class _BusyState extends State<Busy> with SingleTickerProviderStateMixin {
   late final AnimationController _run = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1100),
-  )..repeat();
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _runWhileUnknown();
+  }
+
+  @override
+  void didUpdateWidget(Busy old) {
+    super.didUpdateWidget(old);
+    _runWhileUnknown();
+  }
+
+  /// The bar runs only while how far the work has got is not known: a line
+  /// filled so far stays still, and asks for no frames.
+  void _runWhileUnknown() {
+    if (widget.value != null) {
+      _run.stop();
+    } else if (!_run.isAnimating) {
+      unawaited(_run.repeat());
+    }
+  }
 
   @override
   void dispose() {

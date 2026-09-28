@@ -161,7 +161,7 @@ final class Suggester {
     final list = <String>[];
     if (word.length >= 300) return (list, false, 0, CapType.none);
     final converted = _rules.inputConversion?.convert(word) ?? word;
-    var (scw, abbreviation) = _clean(converted);
+    final (scw, abbreviation) = _clean(converted);
     if (scw.isEmpty) return (list, false, 0, CapType.none);
     final capType = Casing.of(scw);
     var capitalise = false;

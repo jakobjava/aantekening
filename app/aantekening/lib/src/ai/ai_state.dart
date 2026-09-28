@@ -94,16 +94,21 @@ final aiModelProvider = FutureProvider<AiModel?>((ref) async {
 
 /// Where the web is searched from for a provider that cannot, or null.
 final webSearchProvider = FutureProvider<WebSearch?>((ref) async {
-  final settings = ref.watch(aiSettingsProvider);
-  switch (settings.webBackend) {
+  final (backend, searxngUrl) = ref.watch(
+    aiSettingsProvider.select((s) => (s.webBackend, s.searxngUrl)),
+  );
+  final WebSearch? search;
+  switch (backend) {
     case WebSearchBackend.none:
       return null;
     case WebSearchBackend.searxng:
-      return SearxngSearch(settings.searxngUrl);
+      search = SearxngSearch(searxngUrl);
     case WebSearchBackend.brave:
       final key = await ref.watch(aiSecretsProvider).read(braveKeyName);
-      return key == null || key.isEmpty ? null : BraveSearch(key);
+      search = key == null || key.isEmpty ? null : BraveSearch(key);
   }
+  if (search != null) ref.onDispose(search.close);
+  return search;
 });
 
 /// What the AI is being asked about in a tab: the page it has open, or else

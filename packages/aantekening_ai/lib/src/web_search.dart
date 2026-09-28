@@ -25,15 +25,25 @@ enum WebSearchBackend {
 /// Searches the web, giving back what it found as sources to cite.
 abstract interface class WebSearch {
   Future<List<Source>> search(String query, {int count = 6});
+
+  /// Lets go of its connections; it searches no more.
+  void close();
 }
 
 /// Web search through a SearXNG instance's JSON API.
 class SearxngSearch implements WebSearch {
   SearxngSearch(this.baseUrl, {http.Client? client})
-    : _http = client ?? http.Client();
+    : _http = client ?? http.Client(),
+      _ownsClient = client == null;
 
   final String baseUrl;
   final http.Client _http;
+  final bool _ownsClient;
+
+  @override
+  void close() {
+    if (_ownsClient) _http.close();
+  }
 
   @override
   Future<List<Source>> search(String query, {int count = 6}) async {
@@ -58,10 +68,17 @@ class SearxngSearch implements WebSearch {
 /// Web search through Brave's search API.
 class BraveSearch implements WebSearch {
   BraveSearch(this.apiKey, {http.Client? client})
-    : _http = client ?? http.Client();
+    : _http = client ?? http.Client(),
+      _ownsClient = client == null;
 
   final String apiKey;
   final http.Client _http;
+  final bool _ownsClient;
+
+  @override
+  void close() {
+    if (_ownsClient) _http.close();
+  }
 
   @override
   Future<List<Source>> search(String query, {int count = 6}) async {

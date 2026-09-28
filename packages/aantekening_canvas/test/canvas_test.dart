@@ -133,6 +133,25 @@ void main() {
       expect(controller.isDirty, isTrue);
     });
 
+    test('stays unsaved after a change made while it was saved', () {
+      final controller = CanvasController();
+      controller
+        ..beginStroke(Offset.zero)
+        ..extendStroke(const Offset(10, 10))
+        ..endStroke();
+      final saving = controller.document;
+
+      controller
+        ..beginStroke(const Offset(0, 400))
+        ..extendStroke(const Offset(10, 410))
+        ..endStroke()
+        ..markSaved(saving);
+      expect(controller.isDirty, isTrue);
+
+      controller.markSaved(controller.document);
+      expect(controller.isDirty, isFalse);
+    });
+
     test('appends consecutive strokes to the same element', () {
       final controller = CanvasController();
 
@@ -419,6 +438,31 @@ void main() {
       final visible = controller.visibleElements(const Size(800, 600));
 
       expect(visible.map((e) => e.id), <String>['near']);
+    });
+  });
+
+  group('InkPainter', () {
+    test('repaints only when the ink itself changed', () {
+      final controller = CanvasController()
+        ..beginStroke(Offset.zero)
+        ..extendStroke(const Offset(10, 10))
+        ..endStroke();
+      List<InkElement> ink() =>
+          controller.document.elements.whereType<InkElement>().toList();
+      InkPainter painter(List<InkElement> elements) => InkPainter(
+        elements: elements,
+        viewport: const CanvasViewport(),
+        layer: InkLayer.above,
+      );
+      final before = painter(ink());
+
+      expect(painter(ink()).shouldRepaint(before), isFalse);
+
+      controller
+        ..beginStroke(const Offset(0, 400))
+        ..extendStroke(const Offset(10, 410))
+        ..endStroke();
+      expect(painter(ink()).shouldRepaint(before), isTrue);
     });
   });
 

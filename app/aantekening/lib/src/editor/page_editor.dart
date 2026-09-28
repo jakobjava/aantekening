@@ -161,12 +161,15 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   bool _loading = false;
   bool _ready = false;
   bool _disposed = false;
-  Object? _error;
+
+  /// What went wrong opening or saving the page, said above it.
+  String? _error;
 
   /// Held in fields rather than read through `ref` when saving, because the
   /// final save runs from [dispose], where `ref` may no longer be used.
   AantekeningStore? _store;
-  late final LibraryRevision _libraryRevision;
+  late final Revision _libraryRevision;
+  late final Revision _contentsRevision;
   late final VoidCallback _unregisterCommands;
   late final VoidCallback _unregisterSave;
 
@@ -174,6 +177,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   void initState() {
     super.initState();
     _libraryRevision = ref.read(libraryRevisionProvider.notifier);
+    _contentsRevision = ref.read(pageContentsRevisionProvider.notifier);
     _unregisterCommands = ref
         .read(commandHandlersProvider)
         .register(_pageCommands);
@@ -278,7 +282,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     } on Object catch (error) {
       if (!mounted || pageId != widget.pageId) return;
       setState(() {
-        _error = error;
+        _error = 'This page could not be opened: $error';
         _loading = false;
       });
     }
@@ -434,12 +438,18 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     if (!_disposed) _saving.value = true;
     try {
       await store.pages.saveDocument(pageId, document);
-      if (!_disposed && pageId == widget.pageId) _controller.markSaved();
-      // The page list shows titles and previews derived from the body, so it
-      // has to be refreshed once the save lands.
-      _libraryRevision.bump();
+      if (!_disposed && pageId == widget.pageId) {
+        _controller.markSaved(document);
+        // A save that failed before has now been made good.
+        if (_error != null) setState(() => _error = null);
+      }
+      // The page list shows previews derived from the body, so it has to be
+      // refreshed once the save lands.
+      _contentsRevision.bump();
     } on Object catch (error) {
-      if (!_disposed) setState(() => _error = error);
+      if (!_disposed) {
+        setState(() => _error = 'This page could not be saved: $error');
+      }
     } finally {
       if (!_disposed) _saving.value = false;
     }
@@ -1219,7 +1229,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     if (_loading) return const Loading();
     return Column(
       children: <Widget>[
-        if (_error != null) _ErrorBanner(error: _error!),
+        if (_error case final error?) _ErrorBanner(error: error),
         if (_ready) Expanded(child: _scrolled(_pageArea(pageId, highlight))),
       ],
     );
@@ -1523,7 +1533,7 @@ class _NoPageSelected extends ConsumerWidget {
 class _ErrorBanner extends StatelessWidget {
   const _ErrorBanner({required this.error});
 
-  final Object error;
+  final String error;
 
   @override
   Widget build(BuildContext context) {
@@ -1535,7 +1545,7 @@ class _ErrorBanner extends StatelessWidget {
         border: Border(bottom: BorderSide(color: tones.strongLine)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Text('$error', style: TextStyle(fontSize: 12, color: tones.text)),
+      child: Text(error, style: TextStyle(fontSize: 12, color: tones.text)),
     );
   }
 }

@@ -40,12 +40,17 @@ class Preferences {
   final Map<String, Object?> _values;
   Future<void> _writing = Future<void>.value();
 
+  /// Whether a write is waiting for the one before it to finish; it writes
+  /// whatever has been set by then.
+  bool _waiting = false;
+
   Object? operator [](String key) => _values[key];
 
   /// Sets [key], or removes it with null, and writes the file.
   ///
   /// Writes happen one after another, each replacing the file whole, so a
-  /// crash mid-write leaves the previous version rather than half of one.
+  /// crash mid-write leaves the previous version rather than half of one;
+  /// what is set while one is being written is written together, once.
   Future<void> set(String key, Object? value) {
     if (value == null) {
       _values.remove(key);
@@ -54,8 +59,12 @@ class Preferences {
     }
     final file = _file;
     if (file == null) return Future<void>.value();
-    final contents = const JsonEncoder.withIndent('  ').convert(_values);
-    return _writing = _writing.then((_) => _write(file, contents));
+    if (_waiting) return _writing;
+    _waiting = true;
+    return _writing = _writing.then((_) {
+      _waiting = false;
+      return _write(file, const JsonEncoder.withIndent('  ').convert(_values));
+    });
   }
 
   static Future<void> _write(File file, String contents) async {

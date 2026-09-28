@@ -291,7 +291,7 @@ class InkPainter extends CustomPainter {
       old.viewport != viewport ||
       old.layer != layer ||
       old.pixelsPerUnit != pixelsPerUnit ||
-      !identical(old.elements, elements);
+      !_sameElements(old.elements, elements);
 }
 
 /// Which strokes an [InkPainter] draws.
@@ -485,12 +485,15 @@ class SelectionPainter extends CustomPainter {
       old.accent != accent ||
       old.showHandles != showHandles ||
       !_sameElements(old.selected, selected);
+}
 
-  static bool _sameElements(List<NoteElement> a, List<NoteElement> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (!identical(a[i], b[i])) return false;
-    }
-    return true;
+/// Whether [a] and [b] hold the very same elements in the same order: a
+/// list made again of what has not changed draws nothing new.
+bool _sameElements(List<NoteElement> a, List<NoteElement> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (!identical(a[i], b[i])) return false;
   }
+  return true;
 }

@@ -7,10 +7,10 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import 'canvas_controller.dart';
+import 'canvas_motion.dart';
 import 'canvas_painters.dart';
 import 'canvas_scope.dart';
 import 'canvas_viewport.dart';
@@ -185,6 +185,11 @@ class _TrackpadGesture {
 
   bool zoomed = false;
 
+  /// How fast the fingers have lately been moving, in pixels per second,
+  /// and when they were last seen to.
+  double speed = 0;
+  Duration? lastMoved;
+
   /// Recent pan steps, for the momentum when the fingers lift.
   final List<(Duration, Offset)> steps = <(Duration, Offset)>[];
 }
@@ -201,17 +206,13 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   /// How far a press may wander, in screen pixels, and still count as a click.
   static const double _mouseTapSlop = 4;
 
-  /// How quickly a fling slows down: its speed falls by a factor of e every
-  /// this many seconds, so it coasts about this many seconds' worth of its
-  /// starting speed.
-  static const double _flingDecay = 0.25;
-
-  /// Flings slower than this, in pixels per second, are not worth animating.
-  static const double _minFlingSpeed = 150;
-
-  /// The fastest a fling starts, in pixels per second: a hard flick coasts
-  /// about half a screen, never out of sight of where it was.
-  static const double _maxFlingSpeed = 2400;
+  /// How much faster than the fingers a touchpad scroll goes as they speed
+  /// up: not at all below the first speed, in pixels per second, and at the
+  /// most by the factor, from the second on. Slow scrolling is placed
+  /// exactly; a quick swipe crosses a long page.
+  static const double _slowSwipe = 400;
+  static const double _fastSwipe = 2400;
+  static const double _swipeGain = 2.5;
 
   /// The largest pan, in pixels, one trackpad event can plausibly carry.
   /// Events arrive dozens of times a second, so even a fast swipe moves a few
@@ -249,9 +250,12 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   _TrackpadGesture? _trackpad;
 
-  late final Ticker _fling = createTicker(_onFlingTick);
-  Offset _flingVelocity = Offset.zero;
-  Duration _lastFlingTick = Duration.zero;
+  late final CanvasMotion _motion = CanvasMotion(() => _controller, this);
+
+  /// How fast the view was coasting when a touchpad gesture caught it: a
+  /// flick the same way adds to it, as flicking a list on a phone again
+  /// does.
+  Offset _caught = Offset.zero;
 
   MouseCursor _hoverCursor = MouseCursor.defer;
 
@@ -280,7 +284,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   @override
   void dispose() {
-    _fling.dispose();
+    _motion.dispose();
     _stopListening(_controller);
     super.dispose();
   }
@@ -300,7 +304,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   // ----------------------------------------------------------------- pointer
 
   void _onPointerDown(PointerDownEvent event) {
-    _stopFling();
+    _motion.brake();
     if (event.kind == PointerDeviceKind.mouse) {
       _mousePosition = event.localPosition;
       if (event.buttons & kSecondaryMouseButton != 0) {
@@ -401,7 +405,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
         _controller.eraseAt(page, radius: _eraserRadius);
       case _PointerAction.pan:
       case _PointerAction.panOrTap:
-        _controller.panBy(screenDelta);
+        _controller.stretchBy(screenDelta);
       case _PointerAction.move:
         if (screenDelta == Offset.zero) break;
         _controller.translateSelection(
@@ -459,7 +463,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
           widget.onEmptyTap?.call(page);
         } else if (event is PointerUpEvent) {
           final velocity = _touchVelocity?.getVelocity().pixelsPerSecond;
-          if (velocity != null) _startFling(velocity);
+          if (velocity != null) _motion.fling(velocity);
         }
       case _PointerAction.erase:
       case _PointerAction.move:
@@ -486,6 +490,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   }
 
   void _resetPointer() {
+    _motion.settle();
     setState(() {
       _action = _PointerAction.none;
       _activePointer = null;
@@ -764,16 +769,16 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     final beforeSpan = (before[0] - before[1]).distance;
     final afterSpan = (after[0] - after[1]).distance;
 
-    _controller.panBy(afterCenter - beforeCenter);
+    _controller.stretchBy(afterCenter - beforeCenter);
     if (beforeSpan > 0 && afterSpan > 0) {
-      _controller.zoomBy(afterSpan / beforeSpan, afterCenter);
+      _controller.stretchZoomBy(afterSpan / beforeSpan, afterCenter);
     }
   }
 
   // ------------------------------------------------------------------ scroll
 
   void _onPointerSignal(PointerSignalEvent event) {
-    _stopFling();
+    _motion.brake();
     switch (event) {
       case PointerScrollEvent():
         if (_isZoomModifierPressed) {
@@ -792,7 +797,8 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   }
 
   void _onPanZoomStart(PointerPanZoomStartEvent event) {
-    _stopFling();
+    _caught = _motion.velocity;
+    _motion.stop();
     final current = _trackpad;
     // A start while a gesture is under way is the other stream beginning —
     // on Linux a pinch starting before the scroll has reported its end. The
@@ -803,7 +809,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   /// A trackpad gesture: two-finger scrolling and pinching.
   void _onPanZoomUpdate(PointerPanZoomUpdateEvent event) {
     if (!mounted) return;
-    _stopFling();
+    _motion.stop();
     final gesture = _trackpad;
     if (gesture == null) {
       // An update without a start: one stream ended the gesture while the
@@ -817,10 +823,14 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     // sits in the window: measured from the zero a gesture starts at, the
     // page jumped by the width of the sidebars and the height of the ribbon
     // at the start of every scroll.
-    final pan = PointerEvent.transformDeltaViaPositions(
-      transform: event.transform,
-      untransformedEndPosition: event.position,
-      untransformedDelta: _panStep(gesture, event.pan),
+    final pan = _accelerated(
+      gesture,
+      PointerEvent.transformDeltaViaPositions(
+        transform: event.transform,
+        untransformedEndPosition: event.position,
+        untransformedDelta: _panStep(gesture, event.pan),
+      ),
+      event.timeStamp,
     );
     // An event whose own scale moves is zooming: its pan is what zooming
     // about the fingers moved, as Windows reports a pinch, and the page is
@@ -838,10 +848,10 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     }
     if (scale != 1) {
       gesture.zoomed = true;
-      _controller.zoomBy(scale, focus);
+      _controller.stretchZoomBy(scale, focus);
     }
     if (pan != Offset.zero && !zooming) {
-      _controller.panBy(pan);
+      _controller.stretchBy(pan);
       gesture.steps.add((event.timeStamp, pan));
       while (gesture.steps.length > 12) {
         gesture.steps.removeAt(0);
@@ -860,6 +870,29 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     gesture.lastPan = total;
     return step.distance > _maxPanStep ? Offset.zero : step;
   }
+
+  /// [pan] made faster the faster the fingers are moving, from [_slowSwipe]
+  /// on; not past an edge, which the fingers pull against as they are.
+  Offset _accelerated(_TrackpadGesture gesture, Offset pan, Duration time) {
+    final last = gesture.lastMoved;
+    if (pan == Offset.zero) return pan;
+    gesture.lastMoved = time;
+    if (last == null) return pan;
+    final seconds = (time - last).inMicroseconds / 1e6;
+    // Events delivered together say nothing of the speed; a pause says it
+    // starts again from rest.
+    if (seconds > 0.001) {
+      final speed = seconds > 0.1 ? 0.0 : pan.distance / seconds;
+      // Smoothed, as events come unevenly spaced.
+      gesture.speed = gesture.speed * 0.6 + speed * 0.4;
+    }
+    return _controller.isStretched ? pan : pan * _gain(gesture.speed);
+  }
+
+  static double _gain(double speed) =>
+      1 +
+      (_swipeGain - 1) *
+          ((speed - _slowSwipe) / (_fastSwipe - _slowSwipe)).clamp(0.0, 1.0);
 
   /// How much this event zooms by, as a factor.
   double _scaleStep(_TrackpadGesture gesture, double total, Offset pan) {
@@ -895,14 +928,25 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     if (!mounted) return;
     final gesture = _trackpad;
     _trackpad = null;
-    if (gesture == null || gesture.zoomed || gesture.steps.length < 3) return;
+    final flick = gesture == null ? Offset.zero : _flick(gesture, event);
+    final caught = _caught;
+    _caught = Offset.zero;
+    // Flicked again the way it was coasting, it goes faster still.
+    final same = flick.dx * caught.dx + flick.dy * caught.dy > 0;
+    _motion.fling(same ? flick + caught : flick);
+  }
 
-    // Momentum from the last moments of a two-finger scroll, as scrolling
-    // elsewhere on the desktop has; a pinch ends where the fingers leave it.
+  /// How fast the fingers were moving as they lifted from a two-finger
+  /// scroll, in pixels per second, for it to coast on as scrolling elsewhere
+  /// on the desktop does; nothing, if they were not moving, or pinched.
+  Offset _flick(_TrackpadGesture gesture, PointerPanZoomEndEvent event) {
+    if (gesture.zoomed || gesture.steps.length < 3) return Offset.zero;
     final last = gesture.steps.last.$1;
     // A pause before lifting the fingers means the scroll was placed, not
     // thrown.
-    if (event.timeStamp - last > const Duration(milliseconds: 60)) return;
+    if (event.timeStamp - last > const Duration(milliseconds: 60)) {
+      return Offset.zero;
+    }
     var distance = Offset.zero;
     Duration? first;
     var count = 0;
@@ -914,16 +958,11 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       first = time;
       count++;
     }
-    if (first == null || count < 3) return;
+    if (first == null || count < 3) return Offset.zero;
     // Measured over at least a few frames, so two events delivered together
     // cannot make a tiny movement look like a very fast one.
     final seconds = (last - first).inMicroseconds / 1e6;
-    if (seconds < 0.02) return;
-    var velocity = distance / seconds;
-    if (velocity.distance > _maxFlingSpeed) {
-      velocity = velocity * (_maxFlingSpeed / velocity.distance);
-    }
-    _startFling(velocity);
+    return seconds < 0.02 ? Offset.zero : distance / seconds;
   }
 
   void _zoomByScroll(double scrollDelta, Offset focus) {
@@ -934,33 +973,6 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   bool get _isZoomModifierPressed =>
       HardwareKeyboard.instance.isControlPressed ||
       HardwareKeyboard.instance.isMetaPressed;
-
-  // ------------------------------------------------------------------- fling
-
-  void _startFling(Offset velocity) {
-    if (velocity.distance < _minFlingSpeed) return;
-    _flingVelocity = velocity;
-    _lastFlingTick = Duration.zero;
-    _fling
-      ..stop()
-      ..start();
-  }
-
-  void _stopFling() {
-    if (_fling.isActive) _fling.stop();
-  }
-
-  void _onFlingTick(Duration elapsed) {
-    final seconds = (elapsed - _lastFlingTick).inMicroseconds / 1e6;
-    _lastFlingTick = elapsed;
-    if (seconds <= 0) return;
-    // The exact distance an exponentially slowing fling covers in this time,
-    // so it goes as far at 30 frames a second as at 120.
-    final decay = math.exp(-seconds / _flingDecay);
-    _controller.panBy(_flingVelocity * (_flingDecay * (1 - decay)));
-    _flingVelocity *= decay;
-    if (_flingVelocity.distance < 20) _fling.stop();
-  }
 
   // ------------------------------------------------------------------- hover
 

@@ -54,20 +54,6 @@ class SpatialIndex {
     });
   }
 
-  /// Empties the index.
-  void clear() {
-    _cells.clear();
-    _bounds.clear();
-  }
-
-  /// Replaces the whole index with [elements].
-  void rebuild(Iterable<NoteElement> elements) {
-    clear();
-    for (final element in elements) {
-      insert(element.id, element.bounds);
-    }
-  }
-
   /// Returns the identifiers whose bounds intersect [region].
   ///
   /// Bucketing is conservative, so results are filtered against the precise

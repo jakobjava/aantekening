@@ -168,6 +168,28 @@ void main() {
     }
   });
 
+  group('preferences', () {
+    test('keeps every value set at once, when read again', () async {
+      final folder = await Directory.systemTemp.createTemp('preferences_');
+      addTearDown(() => folder.delete(recursive: true));
+      final file = File(p.join(folder.path, 'preferences.json'));
+      final preferences = await Preferences.open(file);
+
+      await Future.wait(<Future<void>>[
+        preferences.set('a', 1),
+        preferences.set('b', 2),
+        preferences.set('c', 3),
+        preferences.set('a', null),
+      ]);
+
+      final again = await Preferences.open(file);
+      expect(
+        <Object?>[again['a'], again['b'], again['c']],
+        <Object?>[null, 2, 3],
+      );
+    });
+  });
+
   group('text brought from elsewhere', () {
     late Directory assets;
     late AantekeningStore store;

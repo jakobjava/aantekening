@@ -439,11 +439,12 @@ class AiSession extends Notifier<AiSessionState> {
       reader: reader,
       notesTokens: model.config.notesTokens,
     );
+    StreamSubscription<AgentProgress>? making;
     await _follow(
       agent.make(kind, scope: info),
       read: () => state.making[kind],
       write: write,
-      started: (subscription) => _makers[kind] = subscription,
+      started: (subscription) => _makers[kind] = making = subscription,
       onDone: (progress) async {
         if (progress.study case final set?) {
           await _keepSet(
@@ -454,7 +455,8 @@ class AiSession extends Notifier<AiSessionState> {
         }
       },
     );
-    _makers.remove(kind);
+    // Another may have been started once this one was kept.
+    if (identical(_makers[kind], making)) _makers.remove(kind);
   }
 
   /// Stops making the set of [kind], keeping the one made before, if any.

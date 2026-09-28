@@ -99,7 +99,8 @@ final class FolderMirror {
       StreamController<MirrorStatus>.broadcast();
 
   Timer? _ticker;
-  StreamSubscription<FileSystemEvent>? _watch;
+  final List<StreamSubscription<String>> _watches =
+      <StreamSubscription<String>>[];
   Timer? _settle;
   int _lastSeq = -1;
   DateTime? _lastWritten;
@@ -157,25 +158,59 @@ final class FolderMirror {
         .listen((_) => _wake());
     _wake();
     _looker ??= Timer.periodic(every, (_) => unawaited(scan()));
-    try {
-      _watch ??= folder.directory
-          .watch(recursive: true)
-          .where((event) => NotesFolder.looksLikeEntity(event.path))
-          .listen((_) {
-            _settle?.cancel();
-            // Sync services write in bursts; they are read once they settle.
-            _settle = Timer(
-              const Duration(seconds: 2),
-              () => unawaited(scan()),
-            );
-          }, onError: (Object _) {});
-    } on FileSystemException {
-      // Where the folder cannot be watched, it is looked at every minute.
+    // Each kind's folder is watched by itself: not every system can watch
+    // a folder and all the folders in it at once.
+    if (_watches.isEmpty) {
+      for (final kind in EntityKind.values) {
+        try {
+          final directory = folder.folderOf(kind)..createSync(recursive: true);
+          _watches.add(
+            directory
+                .watch()
+                .map(
+                  // A file written beside where it goes and moved there, as
+                  // sync services write, arrives where it is moved to.
+                  (event) => event is FileSystemMoveEvent
+                      ? event.destination ?? event.path
+                      : event.path,
+                )
+                .where(NotesFolder.looksLikeEntity)
+                .listen(_touch, onError: (Object _) {}),
+          );
+        } on FileSystemException {
+          // Where the folder cannot be watched, it is looked at every minute.
+        }
+      }
     }
+  }
+
+  /// Notes that [path] changed in the folder, to be read once changes
+  /// settle: sync services write in bursts.
+  void _touch(String path) {
+    _touched.add(path);
+    _settle?.cancel();
+    _settle = Timer(const Duration(seconds: 2), () {
+      final touched = List.of(_touched);
+      _touched.clear();
+      // Files this copy of the notes wrote itself need no looking at.
+      if (!touched.every(_known)) unawaited(scan());
+    });
   }
 
   Timer? _looker;
   StreamSubscription<SqliteUpdate>? _queued;
+
+  /// The files changed in the folder since it was last looked at for them.
+  final Set<String> _touched = <String>{};
+
+  /// Whether the file at [path] is as it was last written or read here.
+  bool _known(String path) {
+    try {
+      return _matches(_record(path), File(path).statSync());
+    } on FileSystemException {
+      return false;
+    }
+  }
 
   /// Starts checking each second for what waits to be written.
   void _wake() {
@@ -187,6 +222,10 @@ final class FolderMirror {
   /// few seconds; stops checking once nothing waits.
   void _tick() {
     if (_closed) return;
+    if (_resting > 0) {
+      _resting--;
+      return;
+    }
     final rows = _db.select(
       'SELECT COALESCE(MAX(seq), 0) AS seq, COUNT(*) AS n FROM mirror_outbox',
     );
@@ -207,6 +246,10 @@ final class FolderMirror {
 
   int _waited = 0;
 
+  /// How many more checks go by before writing is tried again, after the
+  /// folder could not be written to: a drive taken out stays out a while.
+  int _resting = 0;
+
   /// Runs [work] after whatever flush or scan is running.
   Future<T> _serially<T>(Future<T> Function() work) {
     final result = _running.then((_) => work());
@@ -219,37 +262,36 @@ final class FolderMirror {
   /// Writes every change waiting to the folder.
   ///
   /// A file that cannot be written now — the folder is on a drive taken
-  /// out, or locked by a sync service — stays waiting, and is tried again.
+  /// out, or locked by a sync service — stays waiting, and is tried again
+  /// in a while. One that cannot be written as it is waits instead until it
+  /// changes, rather than being tried again and again.
   Future<void> flush() => _serially(() async {
+    String? problem;
     while (true) {
       final rows = _db.select(
         'SELECT kind, id, seq FROM mirror_outbox ORDER BY seq LIMIT 64',
       );
       if (rows.isEmpty) break;
-      var wrote = false;
       for (final row in rows) {
         final kind = EntityKind.named(str(row, 'kind'));
         final id = str(row, 'id');
-        final seq = integer(row, 'seq');
         try {
           if (kind != null) await _write(kind, id);
-          _db.run(
-            'DELETE FROM mirror_outbox WHERE kind = ? AND id = ? AND seq = ?',
-            <Object?>[str(row, 'kind'), id, seq],
-          );
-          wrote = true;
         } on FileSystemException catch (error) {
+          _resting = 30;
           _report('Could not write to the notes folder: ${error.message}');
           return;
         } on Object catch (error) {
-          // Something that cannot be written as it is; the rest still can.
-          _report('Could not write $kind $id to the notes folder: $error');
+          problem = 'Could not write $kind $id to the notes folder: $error';
         }
+        _db.run(
+          'DELETE FROM mirror_outbox WHERE kind = ? AND id = ? AND seq = ?',
+          <Object?>[str(row, 'kind'), id, integer(row, 'seq')],
+        );
       }
-      if (!wrote) break;
     }
     _lastWritten = _clock();
-    _report(null);
+    _report(problem);
   });
 
   void _report(String? problem) {
@@ -594,7 +636,7 @@ final class FolderMirror {
     Map<String, Object?> row, {
     bool replace = false,
   }) {
-    final columns = <String>{
+    final columns = _columns[table] ??= <String>{
       for (final info in _db.select('PRAGMA table_info($table)'))
         str(info, 'name'),
     };
@@ -606,6 +648,9 @@ final class FolderMirror {
       <Object?>[for (final key in keys) row[key]],
     );
   }
+
+  /// The columns of each table rows have been put into.
+  final Map<String, Set<String>> _columns = <String, Set<String>>{};
 
   /// Reads a copy a sync service made of a file: a page that differs from
   /// the page is kept as a page of its own; then the copy goes.
@@ -698,7 +743,9 @@ final class FolderMirror {
     await _queued?.cancel();
     _looker?.cancel();
     _settle?.cancel();
-    await _watch?.cancel();
+    for (final watch in _watches) {
+      await watch.cancel();
+    }
     await flush();
     // Not waited for: a stream's close finishes only once every listener
     // has heard it, and one paused — a screen not showing — never does.

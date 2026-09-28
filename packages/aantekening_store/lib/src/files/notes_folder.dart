@@ -100,14 +100,17 @@ final class NotesFolder {
     );
   }
 
+  /// The folder the files of [kind] are kept in.
+  Directory folderOf(EntityKind kind) => Directory(p.join(path, kind.folder));
+
   String pathFor(EntityKind kind, String id) =>
-      p.join(path, kind.folder, kind.fileName(id));
+      p.join(folderOf(kind).path, kind.fileName(id));
 
   /// Every file of [kinds] in the folder, copies among them.
   List<FolderEntry> entries([List<EntityKind> kinds = EntityKind.values]) {
     final found = <FolderEntry>[];
     for (final kind in kinds) {
-      final folder = Directory(p.join(path, kind.folder));
+      final folder = folderOf(kind);
       if (!folder.existsSync()) continue;
       for (final entity in folder.listSync()) {
         if (entity is! File) continue;
@@ -169,7 +172,7 @@ final class NotesFolder {
   void removeLeftovers({Duration age = const Duration(hours: 1)}) {
     final before = DateTime.now().subtract(age);
     for (final kind in EntityKind.values) {
-      final folder = Directory(p.join(path, kind.folder));
+      final folder = folderOf(kind);
       if (!folder.existsSync()) continue;
       for (final entity in folder.listSync()) {
         final name = p.basename(entity.path);

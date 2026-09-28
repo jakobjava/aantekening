@@ -148,9 +148,10 @@ class CanvasController extends ChangeNotifier {
     _changed();
   }
 
-  /// Marks the current document as persisted.
-  void markSaved() {
-    if (!_dirty) return;
+  /// Marks the page as persisted, if [saved] — what was written — is still
+  /// what it holds: a change made while it was being written is not.
+  void markSaved(PageDocument saved) {
+    if (!_dirty || !identical(saved, _document)) return;
     _dirty = false;
     _changed();
   }
@@ -174,14 +175,21 @@ class CanvasController extends ChangeNotifier {
   /// Moves the view, stopping it at the page's top and left edges.
   set viewport(CanvasViewport value) {
     final origin = value.origin;
-    final kept = origin.dx >= 0 && origin.dy >= 0
-        ? value
-        : CanvasViewport(
-            origin: Offset(math.max(0, origin.dx), math.max(0, origin.dy)),
-            zoom: value.zoom,
-          );
-    if (viewport == kept) return;
-    _view.value = kept;
+    stretchTo(
+      origin.dx >= 0 && origin.dy >= 0
+          ? value
+          : CanvasViewport(
+              origin: Offset(math.max(0, origin.dx), math.max(0, origin.dy)),
+              zoom: value.zoom,
+            ),
+    );
+  }
+
+  /// Moves the view to [value] as it is, even past the page's top and left
+  /// edges: a scroll stretched beyond them, on its way back.
+  void stretchTo(CanvasViewport value) {
+    if (viewport == value) return;
+    _view.value = value;
     notifyListeners();
   }
 
@@ -768,16 +776,23 @@ class CanvasController extends ChangeNotifier {
     _changed();
   }
 
+  /// Brings the lookups up to date with the document: only the elements
+  /// changed, added or removed, so a keystroke in one box of a page full
+  /// of handwriting does not index all of it again.
   void _reindex() {
     _contentBounds = null;
-    _byId
-      ..clear()
-      ..addEntries(
-        _document.elements.map(
-          (element) => MapEntry<String, NoteElement>(element.id, element),
-        ),
-      );
-    _index.rebuild(_document.elements);
+    final gone = _byId.keys.toSet();
+    for (final element in _document.elements) {
+      final id = element.id;
+      gone.remove(id);
+      if (identical(_byId[id], element)) continue;
+      _byId[id] = element;
+      _index.insert(id, element.bounds);
+    }
+    for (final id in gone) {
+      _byId.remove(id);
+      _index.remove(id);
+    }
   }
 }
 

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../look/motion.dart';
 import '../look/tones.dart';
 import '../providers.dart';
 import '../shell/library_actions.dart';
@@ -135,11 +136,13 @@ class _PageTitleState extends ConsumerState<PageTitle> {
   }
 
   Future<void> _pickDate(DateTime date) async {
-    final picked = await showDatePicker(
+    final picked = await showPlainDialog<DateTime>(
       context: context,
-      initialDate: date,
-      firstDate: DateTime(1900),
-      lastDate: DateTime(2200),
+      builder: (_) => DatePickerDialog(
+        initialDate: date,
+        firstDate: DateTime(1900),
+        lastDate: DateTime(2200),
+      ),
     );
     if (picked == null) return;
     await _actions.setPageDate(
@@ -149,9 +152,10 @@ class _PageTitleState extends ConsumerState<PageTitle> {
   }
 
   Future<void> _pickTime(DateTime date) async {
-    final picked = await showTimePicker(
+    final picked = await showPlainDialog<TimeOfDay>(
       context: context,
-      initialTime: TimeOfDay.fromDateTime(date),
+      builder: (_) =>
+          TimePickerDialog(initialTime: TimeOfDay.fromDateTime(date)),
     );
     if (picked == null) return;
     await _actions.setPageDate(

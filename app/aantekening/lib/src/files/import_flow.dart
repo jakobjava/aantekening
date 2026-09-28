@@ -216,12 +216,15 @@ class _ImportProgressState extends State<_ImportProgress> {
   }
 
   Future<void> _start() async {
-    _isolate = await Isolate.spawn(_read, (
+    final isolate = await Isolate.spawn(_read, (
       widget.importer,
       widget.paths,
       widget.work.path,
       _port.sendPort,
-    ));
+    ), onExit: _port.sendPort);
+    // Stopped while it was starting.
+    if (!mounted) return isolate.kill(priority: Isolate.immediate);
+    _isolate = isolate;
   }
 
   void _onMessage(Object? message) {
@@ -233,6 +236,10 @@ class _ImportProgressState extends State<_ImportProgress> {
         Navigator.of(context).pop(draft);
       case ImportFailure(:final message):
         setState(() => _failure = message);
+      // It ended without a word, as when it ran out of memory: what it sends
+      // as it ends always comes before this.
+      case null when _failure == null:
+        setState(() => _failure = 'The import stopped before it was done.');
     }
   }
 

@@ -53,10 +53,12 @@ class AssetStore {
       createdAt: _clock().millisecondsSinceEpoch,
       originalName: originalName,
     );
+    // The same bytes imported twice at once are stored once, under the id
+    // the first to get here gave them.
     _db.run(
       'INSERT INTO assets '
       '(id, sha256, mime_type, byte_size, original_name, created_at) '
-      'VALUES (?, ?, ?, ?, ?, ?)',
+      'VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (sha256) DO NOTHING',
       <Object?>[
         asset.id,
         asset.sha256,
@@ -66,7 +68,7 @@ class AssetStore {
         asset.createdAt,
       ],
     );
-    return asset;
+    return (await findByHash(digest))!;
   }
 
   /// Imports the contents of [file], named [name] — its own name, if not.

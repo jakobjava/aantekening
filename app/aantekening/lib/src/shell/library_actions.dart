@@ -391,9 +391,9 @@ class LibraryActions {
     if (clip == null) return;
     final store = await _store;
     switch ((clip.node, target)) {
-      case (PageRef page, Section section):
+      case (final PageRef page, final Section section):
         await _pastePage(store, clip, page, section.notebookId, section.id);
-      case (PageRef page, PageRef after):
+      case (final PageRef page, final PageRef after):
         final section = await store.library.findSection(after.sectionId);
         if (section == null) return;
         await _pastePage(
@@ -405,9 +405,9 @@ class LibraryActions {
           parentId: after.parentId,
           after: after.id,
         );
-      case (Section section, Notebook notebook):
+      case (final Section section, final Notebook notebook):
         await _pasteSection(store, clip, section, notebook.id);
-      case (Section section, Section parent):
+      case (final Section section, final Section parent):
         await _pasteSection(
           store,
           clip,

@@ -148,7 +148,11 @@ class AantekeningDatabase {
       _db.execute(depth == 0 ? 'COMMIT' : 'RELEASE $savepoint');
       return result;
     } catch (_) {
-      _db.execute(depth == 0 ? 'ROLLBACK' : 'ROLLBACK TO $savepoint');
+      // Rolling back to a savepoint keeps it open; it is released too, so
+      // the enclosing transaction goes on as it was before it.
+      _db.execute(
+        depth == 0 ? 'ROLLBACK' : 'ROLLBACK TO $savepoint; RELEASE $savepoint',
+      );
       rethrow;
     } finally {
       _transactionDepth = depth;
@@ -178,15 +182,6 @@ class AantekeningDatabase {
     "INSERT INTO meta (key, value) VALUES ('session', 'closed') "
     'ON CONFLICT (key) DO UPDATE SET value = excluded.value;',
   );
-
-  /// Reclaims space and rebuilds statistics.
-  ///
-  /// Worth running occasionally after bulk deletions; it rewrites the file, so
-  /// it is never on a hot path.
-  void compact() {
-    _db.execute('PRAGMA incremental_vacuum;');
-    _db.execute('ANALYZE;');
-  }
 
   /// Closes the connection and disposes every cached statement.
   void close() {

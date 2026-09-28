@@ -653,6 +653,18 @@ class PageRepository {
   /// the page [after], before whichever came next, or else at the end.
   double _positionFor(String sectionId, String? parentId, String? after) {
     if (after == null) return _nextPagePosition(sectionId, parentId);
+    var (previous, next) = _around(after, sectionId, parentId);
+    if (next != null && FractionalIndex.needsRebalance(previous, next)) {
+      // So many went in at one place that there is no room left between.
+      _renumber(sectionId, parentId);
+      (previous, next) = _around(after, sectionId, parentId);
+    }
+    return FractionalIndex.insert(previous: previous, next: next);
+  }
+
+  /// The positions of the page [after] and of whichever page comes next
+  /// among the pages of [sectionId] under [parentId], if one does.
+  (double, double?) _around(String after, String sectionId, String? parentId) {
     final anchor = _findPage(after);
     if (anchor == null) {
       throw ArgumentError.value(after, 'after', 'no such page');
@@ -663,10 +675,27 @@ class PageRepository {
       <Object?>[sectionId, parentId, anchor.position],
     );
     final next = rows.first['m'];
-    return FractionalIndex.insert(
-      previous: anchor.position,
-      next: next == null ? null : (next as num).toDouble(),
-    );
+    return (anchor.position, next == null ? null : (next as num).toDouble());
+  }
+
+  /// Spaces the pages of [sectionId] under [parentId] evenly again, in the
+  /// order they are in — those in the bin too, to go back where they were.
+  void _renumber(String sectionId, String? parentId) {
+    final ids = <String>[
+      for (final row in _db.select(
+        'SELECT id FROM pages WHERE section_id = ? AND parent_id IS ? '
+        'ORDER BY position, id',
+        <Object?>[sectionId, parentId],
+      ))
+        str(row, 'id'),
+    ];
+    final positions = FractionalIndex.rebalanced(ids.length);
+    for (var i = 0; i < ids.length; i++) {
+      _db.run('UPDATE pages SET position = ? WHERE id = ?', <Object?>[
+        positions[i],
+        ids[i],
+      ]);
+    }
   }
 
   /// Copies [source] and its live subpages to [sectionId], under [parentId]

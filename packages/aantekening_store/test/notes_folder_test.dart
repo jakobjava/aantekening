@@ -136,6 +136,30 @@ void main() {
     await until(() => written() == 'p = mv');
   });
 
+  test('sees at once what another computer writes to the folder', () async {
+    final watching = await AantekeningStore.open(
+      notesFolder: notes,
+      indexFolder: p.join(root.path, 'index-a'),
+    );
+    addTearDown(watching.close);
+    final (_, pageId) = await seed(watching);
+    await watching.mirror!.flush();
+    final other = await computer('b');
+    addTearDown(other.close);
+
+    final arrived = watching.mirror!.changes.first;
+    await other.pages.saveDocument(pageId, documentWithText(pageId, 'p = mv'));
+    await other.mirror!.flush();
+
+    // Read as the file is moved into place, long before the folder is next
+    // looked at by the minute.
+    expect(
+      (await arrived.timeout(const Duration(seconds: 10))).pages,
+      contains(pageId),
+    );
+    expect(await textOf(watching, pageId), 'p = mv');
+  });
+
   test('another computer sharing the folder sees the notes, and its '
       'changes come back', () async {
     final first = await computer('a');

@@ -553,6 +553,37 @@ void main() {
       );
     });
 
+    test('keeps the order of pages put after one page many times', () async {
+      final sectionId = await workspace.seedSection();
+      await store.pages.createPage(sectionId: sectionId, title: 'First');
+      final second = await store.pages.createPage(
+        sectionId: sectionId,
+        title: 'Second',
+      );
+      await store.pages.createPage(sectionId: sectionId, title: 'Last');
+      for (var i = 100; i > 0; i--) {
+        final page = await store.pages.createPage(
+          sectionId: sectionId,
+          title: '$i',
+        );
+        await store.pages.movePage(
+          page.id,
+          sectionId: sectionId,
+          after: second.id,
+        );
+      }
+
+      expect(
+        (await store.pages.listPages(sectionId)).map((p) => p.title),
+        <String>[
+          'First',
+          'Second',
+          for (var i = 1; i <= 100; i++) '$i',
+          'Last',
+        ],
+      );
+    });
+
     test('copies a page with its subpages under a new identity', () async {
       final sectionId = await workspace.seedSection();
       final page = await store.pages.createPage(
@@ -682,6 +713,13 @@ void main() {
 
       expect(hits.map((h) => h.title), <String>['Lecture 3']);
       expect(hits.single.snippet, contains('residue'));
+    });
+
+    test('takes a pasted NUL as a space rather than failing', () async {
+      await addPage('Lecture 3', 'the residue theorem');
+
+      expect((await store.search.search('resi\u0000due "')).length, 0);
+      expect((await store.search.search('residue\u0000theo')).length, 1);
     });
 
     test('matches a prefix so results appear while typing', () async {
@@ -832,6 +870,18 @@ void main() {
       );
 
       expect(second.id, first.id);
+      expect(await store.assets.totalBytes(), 64);
+    });
+
+    test('keeps one copy of content imported twice at once', () async {
+      final bytes = Uint8List.fromList(List<int>.generate(64, (i) => i));
+
+      final both = await Future.wait(<Future<AssetRef>>[
+        store.assets.importBytes(bytes, mimeType: 'image/png'),
+        store.assets.importBytes(bytes, mimeType: 'image/png'),
+      ]);
+
+      expect(both.last.id, both.first.id);
       expect(await store.assets.totalBytes(), 64);
     });
 

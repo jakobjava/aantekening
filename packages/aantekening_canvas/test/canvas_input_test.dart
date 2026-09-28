@@ -536,6 +536,7 @@ void main() {
       await tester.pumpWidget(_host(controller));
 
       await tester.dragFrom(const Offset(300, 300), const Offset(150, 100));
+      await tester.pumpAndSettle();
       expect(controller.viewport.origin, Offset.zero);
 
       // Zooming out about a point far from the corner keeps the corner.
@@ -955,7 +956,6 @@ void main() {
         trackpad.panZoomEnd(timeStamp: const Duration(milliseconds: 100)),
       );
       final lifted = controller.viewport.origin.dy;
-      expect(lifted, 120);
 
       await tester.pump(const Duration(milliseconds: 16));
       await tester.pump(const Duration(milliseconds: 200));
@@ -964,7 +964,120 @@ void main() {
       expect(controller.viewport.origin.dy, greaterThan(lifted + 50));
     });
 
-    testWidgets('a hard flick coasts a bounded distance', (tester) async {
+    testWidgets('a slow scroll follows the fingers exactly, a quick one '
+        'goes further', (tester) async {
+      final controller = CanvasController();
+      await tester.pumpWidget(_host(controller));
+      final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+      const at = Offset(400, 300);
+
+      /// Scrolls 200 pixels down in ten steps [step] apart, and says how far
+      /// the page went before it could coast.
+      Future<double> scroll(Duration step) async {
+        final before = controller.viewport.origin.dy;
+        await tester.sendEventToBinding(trackpad.panZoomStart(at));
+        for (var i = 1; i <= 10; i++) {
+          await tester.sendEventToBinding(
+            trackpad.panZoomUpdate(
+              at,
+              pan: Offset(0, -20.0 * i),
+              timeStamp: step * i,
+            ),
+          );
+        }
+        final moved = controller.viewport.origin.dy - before;
+        await tester.sendEventToBinding(
+          trackpad.panZoomEnd(timeStamp: step * 20),
+        );
+        await tester.pumpAndSettle();
+        return moved;
+      }
+
+      expect(await scroll(const Duration(milliseconds: 100)), 200);
+      expect(await scroll(const Duration(milliseconds: 8)), greaterThan(400));
+    });
+
+    testWidgets('scrolled past the top, the page gives a little and springs '
+        'back', (tester) async {
+      final controller = CanvasController();
+      await tester.pumpWidget(_host(controller));
+      final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+      const at = Offset(400, 300);
+
+      await tester.sendEventToBinding(trackpad.panZoomStart(at));
+      for (var i = 1; i <= 10; i++) {
+        await tester.sendEventToBinding(
+          trackpad.panZoomUpdate(
+            at,
+            pan: Offset(0, 20.0 * i),
+            timeStamp: Duration(milliseconds: 100 * i),
+          ),
+        );
+      }
+      final stretched = controller.viewport.origin.dy;
+      expect(stretched, lessThan(-40), reason: 'it gives');
+      expect(stretched, greaterThan(-100), reason: 'less than the fingers');
+
+      // Pulled on and on, it goes hardly any further.
+      for (var i = 11; i <= 60; i++) {
+        await tester.sendEventToBinding(
+          trackpad.panZoomUpdate(
+            at,
+            pan: Offset(0, 20.0 * i),
+            timeStamp: Duration(milliseconds: 100 * i),
+          ),
+        );
+      }
+      final furthest = controller.viewport.origin.dy;
+      expect(furthest, lessThan(stretched));
+      expect(furthest, greaterThan(-100), reason: 'however hard it is pulled');
+
+      await tester.sendEventToBinding(
+        trackpad.panZoomEnd(timeStamp: const Duration(seconds: 7)),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 50));
+      final returning = controller.viewport.origin.dy;
+      expect(returning, greaterThan(stretched));
+      await tester.pumpAndSettle();
+      expect(controller.viewport.origin, Offset.zero);
+    });
+
+    testWidgets('a flick up the page stops at the top and springs back', (
+      tester,
+    ) async {
+      final controller = CanvasController()
+        ..viewport = const CanvasViewport(origin: Offset(0, 300));
+      await tester.pumpWidget(_host(controller));
+      final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+      const at = Offset(400, 300);
+
+      await tester.sendEventToBinding(trackpad.panZoomStart(at));
+      for (var i = 1; i <= 8; i++) {
+        await tester.sendEventToBinding(
+          trackpad.panZoomUpdate(
+            at,
+            pan: Offset(0, 30.0 * i),
+            timeStamp: Duration(milliseconds: 8 * i),
+          ),
+        );
+      }
+      await tester.sendEventToBinding(
+        trackpad.panZoomEnd(timeStamp: const Duration(milliseconds: 70)),
+      );
+      var furthest = 0.0;
+      for (var i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        furthest = math.min(furthest, controller.viewport.origin.dy);
+      }
+      expect(furthest, lessThan(0), reason: 'it went past the top');
+      await tester.pumpAndSettle();
+      expect(controller.viewport.origin, Offset.zero);
+    });
+
+    testWidgets('a hard flick coasts far, but a bounded distance', (
+      tester,
+    ) async {
       final controller = CanvasController();
       await tester.pumpWidget(_host(controller));
 
@@ -987,7 +1100,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
       await tester.pumpAndSettle();
 
-      expect(controller.viewport.origin.dy - lifted, lessThan(700));
+      final coasted = controller.viewport.origin.dy - lifted;
+      expect(coasted, greaterThan(1500));
+      expect(coasted, lessThan(4100));
     });
 
     testWidgets('a pan scale brings touchpad deltas back to finger distance', (

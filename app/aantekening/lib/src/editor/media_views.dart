@@ -107,8 +107,8 @@ int shownPixels(BuildContext context, double extent) {
 /// zooming in re-renders it sharply instead of magnifying a small bitmap.
 /// Resolutions come in steps, and rendered pages are cached, so panning and
 /// small zoom changes never re-render. Zoomed in further than the whole page
-/// can be rendered sharp at, the part of it about the view is rendered sharp
-/// over it, where the page knows where it lies ([frame]).
+/// can be rendered sharp at, the tiles of it about the view are rendered
+/// sharp over it, where the page knows where it lies ([frame]).
 class PdfPageView extends ConsumerWidget {
   const PdfPageView({
     required this.assetId,
@@ -123,6 +123,9 @@ class PdfPageView extends ConsumerWidget {
   /// Where the page lies on the canvas, in page units, if it lies there by
   /// itself rather than in a text box.
   final Frame? frame;
+
+  /// The side of a tile, in device pixels.
+  static const int _tileSide = 1024;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -146,15 +149,14 @@ class PdfPageView extends ConsumerWidget {
               final width = shownPixels(context, constraints.maxWidth);
               final whole = _Rendered(
                 cacheKey: '$assetId/$pageIndex/$width',
-                render: () => renderPdfPage(doc, pageIndex, width),
-                keepWhileRendering: true,
+                render: (_) => renderPdfPage(doc, pageIndex, width),
               );
-              final detail = _detail(context, doc, constraints.biggest);
-              return detail == null
+              final tiles = _tiles(context, doc, constraints.biggest);
+              return tiles.isEmpty
                   ? whole
                   : Stack(
                       fit: StackFit.expand,
-                      children: <Widget>[whole, detail],
+                      children: <Widget>[whole, ...tiles],
                     );
             },
           );
@@ -163,47 +165,95 @@ class PdfPageView extends ConsumerWidget {
     );
   }
 
-  /// The part of the page about the view, rendered sharp over the whole
-  /// of it, where that is too large to be rendered sharp; null otherwise.
-  Widget? _detail(BuildContext context, PdfDocument document, Size size) {
+  /// The tiles of the page about the view, rendered sharp over the whole of
+  /// it, where that is too large to be rendered sharp; none otherwise.
+  ///
+  /// They lie on a grid fixed for each resolution, so scrolling renders only
+  /// the tiles coming into view, and a tile shows its own part of the page
+  /// wherever the view has gone while it rendered.
+  List<Widget> _tiles(BuildContext context, PdfDocument document, Size size) {
     final frame = this.frame;
     final region = CanvasScope.regionOf(context);
-    if (frame == null || region == null || frame.rotation != 0) return null;
+    if (frame == null || region == null || frame.rotation != 0) {
+      return const <Widget>[];
+    }
     final pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
     final wanted = size.width * CanvasScope.zoomOf(context) * pixelRatio;
-    if (wanted <= _pixelSteps.last) return null;
+    if (wanted <= _pixelSteps.last) return const <Widget>[];
     var fullWidth = _pixelSteps.last.toDouble();
     while (fullWidth < wanted) {
       fullWidth *= 1.5;
     }
     final page = document.pages[pageIndex];
     final fullHeight = fullWidth * page.height / page.width;
-    // What of the page the region takes in, in whole pixels of the page
-    // rendered [fullWidth] wide, and so where on the page that lies.
-    final pixels = Rect.fromLTRB(
-      ((region.left - frame.x) / frame.width * fullWidth).floorToDouble(),
-      ((region.top - frame.y) / frame.height * fullHeight).floorToDouble(),
-      ((region.right - frame.x) / frame.width * fullWidth).ceilToDouble(),
-      ((region.bottom - frame.y) / frame.height * fullHeight).ceilToDouble(),
-    ).intersect(Offset.zero & Size(fullWidth, fullHeight));
-    if (pixels.isEmpty) return null;
-    final scale = size.width / fullWidth;
+    // The region in pixels of the page rendered [fullWidth] wide, and the
+    // tiles it takes in.
+    final full = Offset.zero & Size(fullWidth, fullHeight);
+    final seen = Rect.fromLTRB(
+      (region.left - frame.x) / frame.width * fullWidth,
+      (region.top - frame.y) / frame.height * fullHeight,
+      (region.right - frame.x) / frame.width * fullWidth,
+      (region.bottom - frame.y) / frame.height * fullHeight,
+    ).intersect(full);
+    if (seen.isEmpty) return const <Widget>[];
+    final toBox = Size(size.width / fullWidth, size.height / fullHeight);
+    return <Widget>[
+      for (
+        var row = seen.top ~/ _tileSide;
+        row * _tileSide < seen.bottom;
+        row++
+      )
+        for (
+          var column = seen.left ~/ _tileSide;
+          column * _tileSide < seen.right;
+          column++
+        )
+          _tile(document, page, fullWidth, full, column, row, toBox),
+    ];
+  }
+
+  /// The tile at [column] and [row] of the page rendered as [full], shown
+  /// scaled by [toBox] in the page's box.
+  Widget _tile(
+    PdfDocument document,
+    PdfPage page,
+    double fullWidth,
+    Rect full,
+    int column,
+    int row,
+    Size toBox,
+  ) {
+    final side = _tileSide.toDouble();
+    final pixels = Rect.fromLTWH(
+      column * side,
+      row * side,
+      side,
+      side,
+    ).intersect(full);
     return Positioned.fromRect(
+      key: ValueKey<String>('$fullWidth/$column/$row'),
       rect: Rect.fromLTRB(
-        pixels.left * scale,
-        pixels.top * size.height / fullHeight,
-        pixels.right * scale,
-        pixels.bottom * size.height / fullHeight,
+        pixels.left * toBox.width,
+        pixels.top * toBox.height,
+        pixels.right * toBox.width,
+        pixels.bottom * toBox.height,
       ),
       child: _Rendered(
-        cacheKey: '$assetId/$pageIndex/$fullWidth/$pixels',
-        render: () => renderPdfPage(
+        cacheKey: '$assetId/$pageIndex/$fullWidth/$column/$row',
+        page: page,
+        render: (cancellation) => renderPdfPage(
           document,
           pageIndex,
           fullWidth.round(),
-          pixels: pixels,
+          // The page's last row of pixels may be only partly on it.
+          pixels: Rect.fromLTRB(
+            pixels.left,
+            pixels.top,
+            pixels.right,
+            pixels.bottom.ceilToDouble(),
+          ),
+          cancellation: cancellation,
         ),
-        keepWhileRendering: false,
       ),
     );
   }
@@ -212,20 +262,18 @@ class PdfPageView extends ConsumerWidget {
 /// The image [render] makes, kept in [RasterCache.pdfPages] as [cacheKey],
 /// drawn filling its box.
 ///
-/// Asked for another, it renders it once the change has rested a moment:
-/// rendering at every step of a pinch would stall it. Meanwhile it goes on
-/// showing the image before, scaled, if [keepWhileRendering] — the same
-/// page at another resolution — or nothing, for another part of the page.
+/// Asked for another, it renders it once the change has rested a moment,
+/// going on showing the one before, scaled: rendering at every step of a
+/// pinch would stall it. Given the [page] rendered, it calls off a render
+/// not yet begun once it is no longer shown: a tile scrolled past before its
+/// turn came.
 class _Rendered extends StatefulWidget {
-  const _Rendered({
-    required this.cacheKey,
-    required this.render,
-    required this.keepWhileRendering,
-  });
+  const _Rendered({required this.cacheKey, required this.render, this.page});
 
   final String cacheKey;
-  final Future<ui.Image?> Function() render;
-  final bool keepWhileRendering;
+  final Future<ui.Image?> Function(PdfPageRenderCancellationToken? cancellation)
+  render;
+  final PdfPage? page;
 
   @override
   State<_Rendered> createState() => _RenderedState();
@@ -237,6 +285,7 @@ class _RenderedState extends State<_Rendered> {
   ui.Image? _image;
   int _requested = 0;
   Timer? _settleTimer;
+  PdfPageRenderCancellationToken? _cancellation;
 
   @override
   void initState() {
@@ -248,12 +297,11 @@ class _RenderedState extends State<_Rendered> {
   void didUpdateWidget(_Rendered old) {
     super.didUpdateWidget(old);
     if (old.cacheKey == widget.cacheKey) return;
+    // Whatever was asked for before is no longer wanted: an image of it
+    // arriving late must not be shown for this one.
+    _requested++;
     _settleTimer?.cancel();
-    if (!widget.keepWhileRendering) {
-      _image?.dispose();
-      _image = null;
-    }
-    if (_image == null && widget.keepWhileRendering) {
+    if (_image == null) {
       _load();
     } else {
       _settleTimer = Timer(_settle, _load);
@@ -263,6 +311,7 @@ class _RenderedState extends State<_Rendered> {
   @override
   void dispose() {
     _settleTimer?.cancel();
+    _cancellation?.cancel();
     _image?.dispose();
     super.dispose();
   }
@@ -270,9 +319,10 @@ class _RenderedState extends State<_Rendered> {
   void _load() {
     if (!mounted) return;
     final request = ++_requested;
+    final cancellation = _cancellation = widget.page?.createCancellationToken();
     unawaited(
       RasterCache.pdfPages
-          .obtain(widget.cacheKey, widget.render)
+          .obtain(widget.cacheKey, () => widget.render(cancellation))
           .then(
             (image) {
               // A newer one may have been asked for while this one rendered.
@@ -366,12 +416,14 @@ class RasterCache {
 }
 
 /// Renders page [pageIndex] of [document], [pixelWidth] pixels wide, on white:
-/// all of it, or only [pixels] of it, in pixels of the page at that width.
+/// all of it, or only [pixels] of it, in pixels of the page at that width;
+/// nothing, if [cancellation] calls it off before it begins.
 Future<ui.Image?> renderPdfPage(
   PdfDocument document,
   int pageIndex,
   int pixelWidth, {
   Rect? pixels,
+  PdfPageRenderCancellationToken? cancellation,
 }) async {
   if (pageIndex >= document.pages.length) return null;
   final page = document.pages[pageIndex];
@@ -384,6 +436,7 @@ Future<ui.Image?> renderPdfPage(
     fullWidth: page.width * scale,
     fullHeight: page.height * scale,
     backgroundColor: 0xFFFFFFFF,
+    cancellationToken: cancellation,
   );
   if (rendered == null) return null;
   try {
@@ -395,9 +448,10 @@ Future<ui.Image?> renderPdfPage(
 
 /// A PDF from the asset store, opened for rendering.
 ///
-/// Closed again once no page of it is on screen.
+/// Closed again a while after no page of it is on screen.
 final pdfDocumentProvider = FutureProvider.autoDispose
     .family<PdfDocument?, String>((ref, assetId) async {
+      ref.keepAWhile();
       final file = await ref.watch(assetFileProvider(assetId).future);
       if (file == null) return null;
       await pdfrxFlutterInitialize();

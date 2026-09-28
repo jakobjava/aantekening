@@ -190,8 +190,9 @@ void _sendDelta(WidgetTester tester, String text) {
   final setClient = tester.testTextInput.log.lastWhere(
     (call) => call.method == 'TextInput.setClient',
   );
-  final client = setClient.arguments[0] as int;
-  final configuration = setClient.arguments[1] as Map<Object?, Object?>;
+  final arguments = setClient.arguments as List<Object?>;
+  final client = arguments[0]! as int;
+  final configuration = arguments[1]! as Map<Object?, Object?>;
 
   // A plain text field, such as the formula panel's, takes whole values.
   if (configuration['enableDeltaModel'] != true) {
