@@ -106,16 +106,23 @@ int shownPixels(BuildContext context, double extent) {
 /// The page is rasterised at a resolution chosen from its size on screen, so
 /// zooming in re-renders it sharply instead of magnifying a small bitmap.
 /// Resolutions come in steps, and rendered pages are cached, so panning and
-/// small zoom changes never re-render.
+/// small zoom changes never re-render. Zoomed in further than the whole page
+/// can be rendered sharp at, the part of it about the view is rendered sharp
+/// over it, where the page knows where it lies ([frame]).
 class PdfPageView extends ConsumerWidget {
   const PdfPageView({
     required this.assetId,
     required this.pageIndex,
+    this.frame,
     super.key,
   });
 
   final String assetId;
   final int pageIndex;
+
+  /// Where the page lies on the canvas, in page units, if it lies there by
+  /// itself rather than in a text box.
+  final Frame? frame;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -135,40 +142,96 @@ class PdfPageView extends ConsumerWidget {
             return const MediaPlaceholder(label: 'PDF is missing');
           }
           return LayoutBuilder(
-            builder: (context, constraints) => _PdfRaster(
-              document: doc,
-              assetId: assetId,
-              pageIndex: pageIndex,
-              pixelWidth: shownPixels(context, constraints.maxWidth),
-            ),
+            builder: (context, constraints) {
+              final width = shownPixels(context, constraints.maxWidth);
+              final whole = _Rendered(
+                cacheKey: '$assetId/$pageIndex/$width',
+                render: () => renderPdfPage(doc, pageIndex, width),
+                keepWhileRendering: true,
+              );
+              final detail = _detail(context, doc, constraints.biggest);
+              return detail == null
+                  ? whole
+                  : Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[whole, detail],
+                    );
+            },
           );
         },
       ),
     );
   }
+
+  /// The part of the page about the view, rendered sharp over the whole
+  /// of it, where that is too large to be rendered sharp; null otherwise.
+  Widget? _detail(BuildContext context, PdfDocument document, Size size) {
+    final frame = this.frame;
+    final region = CanvasScope.regionOf(context);
+    if (frame == null || region == null || frame.rotation != 0) return null;
+    final pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
+    final wanted = size.width * CanvasScope.zoomOf(context) * pixelRatio;
+    if (wanted <= _pixelSteps.last) return null;
+    var fullWidth = _pixelSteps.last.toDouble();
+    while (fullWidth < wanted) {
+      fullWidth *= 1.5;
+    }
+    final page = document.pages[pageIndex];
+    final fullHeight = fullWidth * page.height / page.width;
+    // What of the page the region takes in, in whole pixels of the page
+    // rendered [fullWidth] wide, and so where on the page that lies.
+    final pixels = Rect.fromLTRB(
+      ((region.left - frame.x) / frame.width * fullWidth).floorToDouble(),
+      ((region.top - frame.y) / frame.height * fullHeight).floorToDouble(),
+      ((region.right - frame.x) / frame.width * fullWidth).ceilToDouble(),
+      ((region.bottom - frame.y) / frame.height * fullHeight).ceilToDouble(),
+    ).intersect(Offset.zero & Size(fullWidth, fullHeight));
+    if (pixels.isEmpty) return null;
+    final scale = size.width / fullWidth;
+    return Positioned.fromRect(
+      rect: Rect.fromLTRB(
+        pixels.left * scale,
+        pixels.top * size.height / fullHeight,
+        pixels.right * scale,
+        pixels.bottom * size.height / fullHeight,
+      ),
+      child: _Rendered(
+        cacheKey: '$assetId/$pageIndex/$fullWidth/$pixels',
+        render: () => renderPdfPage(
+          document,
+          pageIndex,
+          fullWidth.round(),
+          pixels: pixels,
+        ),
+        keepWhileRendering: false,
+      ),
+    );
+  }
 }
 
-class _PdfRaster extends StatefulWidget {
-  const _PdfRaster({
-    required this.document,
-    required this.assetId,
-    required this.pageIndex,
-    required this.pixelWidth,
+/// The image [render] makes, kept in [RasterCache.pdfPages] as [cacheKey],
+/// drawn filling its box.
+///
+/// Asked for another, it renders it once the change has rested a moment:
+/// rendering at every step of a pinch would stall it. Meanwhile it goes on
+/// showing the image before, scaled, if [keepWhileRendering] — the same
+/// page at another resolution — or nothing, for another part of the page.
+class _Rendered extends StatefulWidget {
+  const _Rendered({
+    required this.cacheKey,
+    required this.render,
+    required this.keepWhileRendering,
   });
 
-  final PdfDocument document;
-  final String assetId;
-  final int pageIndex;
-  final int pixelWidth;
+  final String cacheKey;
+  final Future<ui.Image?> Function() render;
+  final bool keepWhileRendering;
 
   @override
-  State<_PdfRaster> createState() => _PdfRasterState();
+  State<_Rendered> createState() => _RenderedState();
 }
 
-class _PdfRasterState extends State<_PdfRaster> {
-  /// How long the zoom must rest before a page is re-rendered at a new
-  /// resolution. Re-rendering at every step of a pinch would stall it; the
-  /// page is scaled from its current image in the meantime.
+class _RenderedState extends State<_Rendered> {
   static const Duration _settle = Duration(milliseconds: 180);
 
   ui.Image? _image;
@@ -182,21 +245,18 @@ class _PdfRasterState extends State<_PdfRaster> {
   }
 
   @override
-  void didUpdateWidget(_PdfRaster old) {
+  void didUpdateWidget(_Rendered old) {
     super.didUpdateWidget(old);
-    final samePage =
-        old.pageIndex == widget.pageIndex &&
-        old.assetId == widget.assetId &&
-        old.document == widget.document;
-    if (!samePage) {
+    if (old.cacheKey == widget.cacheKey) return;
+    _settleTimer?.cancel();
+    if (!widget.keepWhileRendering) {
+      _image?.dispose();
+      _image = null;
+    }
+    if (_image == null && widget.keepWhileRendering) {
       _load();
-    } else if (old.pixelWidth != widget.pixelWidth) {
-      _settleTimer?.cancel();
-      if (_image == null) {
-        _load();
-      } else {
-        _settleTimer = Timer(_settle, _load);
-      }
+    } else {
+      _settleTimer = Timer(_settle, _load);
     }
   }
 
@@ -210,19 +270,12 @@ class _PdfRasterState extends State<_PdfRaster> {
   void _load() {
     if (!mounted) return;
     final request = ++_requested;
-    final document = widget.document;
-    final pageIndex = widget.pageIndex;
-    final pixelWidth = widget.pixelWidth;
     unawaited(
       RasterCache.pdfPages
-          .obtain(
-            '${widget.assetId}/$pageIndex/$pixelWidth',
-            () => renderPdfPage(document, pageIndex, pixelWidth),
-          )
+          .obtain(widget.cacheKey, widget.render)
           .then(
             (image) {
-              // A newer size may have been asked for while this one
-              // rendered; the page keeps its previous image until then.
+              // A newer one may have been asked for while this one rendered.
               if (!mounted || request != _requested || image == null) {
                 image?.dispose();
                 return;
@@ -233,7 +286,7 @@ class _PdfRasterState extends State<_PdfRaster> {
               });
             },
             onError: (Object error) {
-              debugPrint('PDF page $pageIndex failed to render: $error');
+              debugPrint('PDF page failed to render: $error');
             },
           ),
     );
@@ -312,16 +365,22 @@ class RasterCache {
   }
 }
 
-/// Renders page [pageIndex] of [document], [pixelWidth] pixels wide, on white.
+/// Renders page [pageIndex] of [document], [pixelWidth] pixels wide, on white:
+/// all of it, or only [pixels] of it, in pixels of the page at that width.
 Future<ui.Image?> renderPdfPage(
   PdfDocument document,
   int pageIndex,
-  int pixelWidth,
-) async {
+  int pixelWidth, {
+  Rect? pixels,
+}) async {
   if (pageIndex >= document.pages.length) return null;
   final page = document.pages[pageIndex];
   final scale = pixelWidth / page.width;
   final rendered = await page.render(
+    x: pixels?.left.round() ?? 0,
+    y: pixels?.top.round() ?? 0,
+    width: pixels?.width.round(),
+    height: pixels?.height.round(),
     fullWidth: page.width * scale,
     fullHeight: page.height * scale,
     backgroundColor: 0xFFFFFFFF,

@@ -83,6 +83,11 @@ identity so links between them still lead there.
   Carlito comes with the app, Calibri being OneNote's own: drawn in any
   other face, its lines stood taller, and a paragraph's text sank further
   below where it was with every line.
+* A file printout is kept by OneNote as a picture of each page, each
+  referring to the file printed and saying which page it shows (properties
+  `0x35C1` and `0x1DF9`, found in its files, not in [MS-ONE]). Its pages
+  come over as pages of that PDF, kept once: its pictures are rendered at
+  96 dots an inch, and blurred as soon as they were zoomed into.
 * A OneNote container never resized by hand is as wide as its text and
   wraps at the width it had (`autoWidth`, `widthLimit`); one resized keeps
   its width. Given their widest width, a word alone filled a box across

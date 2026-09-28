@@ -12,6 +12,7 @@ import '../commands/fuzzy.dart';
 import '../commands/key_chord.dart';
 import '../commands/shortcuts.dart';
 import '../look/controls.dart';
+import '../look/motion.dart';
 import '../look/tones.dart';
 import 'settings_view.dart';
 
@@ -32,7 +33,7 @@ class _KeyboardSettingsState extends ConsumerState<KeyboardSettings> {
       keys.toLowerCase().contains(_filter.toLowerCase());
 
   Future<void> _change(AppCommand command) async {
-    final chord = await showDialog<_Captured>(
+    final chord = await showPlainDialog<_Captured>(
       context: context,
       builder: (context) => _CaptureDialog(command: command),
     );

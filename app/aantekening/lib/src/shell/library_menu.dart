@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
 import '../files/export_flow.dart';
+import '../look/motion.dart';
 import 'library_actions.dart';
 
 /// The name shown for [node], which for a page without a title is a
@@ -164,7 +165,7 @@ Future<String?> promptForName(
   String initial = '',
   String action = 'Create',
 }) async {
-  final name = await showDialog<String>(
+  final name = await showPlainDialog<String>(
     context: context,
     builder: (context) =>
         _NameDialog(title: title, hint: hint, initial: initial, action: action),
@@ -192,7 +193,7 @@ Future<void> deleteToBin(
   await actions.delete(node);
   messenger
     ?..hideCurrentSnackBar()
-    ..showSnackBar(
+    ..showPlainSnackBar(
       SnackBar(
         content: Text('“${displayTitle(node)}” is in the bin.'),
         action: SnackBarAction(

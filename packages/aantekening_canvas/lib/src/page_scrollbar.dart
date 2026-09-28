@@ -122,7 +122,9 @@ class _PageScrollbarState extends State<PageScrollbar> {
               controller: widget.controller,
               axis: _axis,
               track: scheme.surfaceContainerLow,
-              thumb: scheme.onSurface.withValues(alpha: active ? 0.45 : 0.25),
+              // In the accent, where there is one, or the text's colour:
+              // plain to see against the track, and fuller under the hand.
+              thumb: scheme.primary.withValues(alpha: active ? 1 : 0.7),
             ),
           ),
         ),
@@ -165,11 +167,11 @@ class _ScrollbarPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = track);
+    final span = ScrollSpan.of(controller, axis);
+    // All of it in view, there is nothing to scroll to, and no thumb.
+    if (span.lengthFraction >= 1 && span.start <= 0) return;
     final vertical = axis == Axis.vertical;
-    final along = thumbOf(
-      ScrollSpan.of(controller, axis),
-      vertical ? size.height : size.width,
-    );
+    final along = thumbOf(span, vertical ? size.height : size.width);
     const inset = 3.0;
     final rect = vertical
         ? Rect.fromLTRB(inset, along.start, size.width - inset, along.end)

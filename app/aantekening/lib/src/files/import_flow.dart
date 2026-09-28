@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../look/controls.dart';
+import '../look/motion.dart';
 import '../look/tones.dart';
 import '../providers.dart';
 import '../shell/library_actions.dart';
@@ -48,7 +49,7 @@ Future<void> importNotes(BuildContext context, NotesImporter importer) async {
   final work = await Directory.systemTemp.createTemp('aantekening-import-');
   try {
     if (!window.mounted) return;
-    final draft = await showDialog<NotesDraft>(
+    final draft = await showPlainDialog<NotesDraft>(
       context: window,
       barrierDismissible: false,
       builder: (_) =>
@@ -117,7 +118,7 @@ Future<List<String>> _choose(NotesImporter importer) async {
 
 void _say(BuildContext context, String message) =>
     ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(SnackBar(content: Text(message)));
+        ?.showPlainSnackBar(SnackBar(content: Text(message)));
 
 /// Says how an import went, listing what could not be brought over.
 Future<void> _report(
@@ -129,7 +130,7 @@ Future<void> _report(
     _say(context, outcome);
     return Future<void>.value();
   }
-  return showDialog<void>(
+  return showPlainDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(outcome),

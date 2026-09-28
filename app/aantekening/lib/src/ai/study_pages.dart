@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../look/controls.dart';
+import '../look/motion.dart';
 import '../look/tones.dart';
 import 'ai_session.dart';
 import 'ai_state.dart';
@@ -145,7 +146,7 @@ class StudySetPage extends ConsumerWidget {
 }
 
 Future<bool> _confirm(BuildContext context, String title, String body) async =>
-    await showDialog<bool>(
+    await showPlainDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),

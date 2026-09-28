@@ -231,9 +231,8 @@ class TreeRow extends StatelessWidget {
                       label: expanded ? 'Collapse' : 'Expand',
                       child: target(
                         place.id,
-                        child: AnimatedRotation(
-                          turns: expanded ? 0.25 : 0,
-                          duration: const Duration(milliseconds: 150),
+                        child: RotatedBox(
+                          quarterTurns: expanded ? 1 : 0,
                           child: Center(
                             child: Mark(
                               MarkShape.chevronRight,

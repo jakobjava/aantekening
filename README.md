@@ -33,9 +33,10 @@ navigating and searching thousands of pages stays instant.
   going back to a tab finds its page where you left it.
 * **Look** — one colour and its text, for focus: light and dark modes, each
   in a base and text colour of your choosing, and one accent colour or none.
-  No icons, no rounded corners, no shadows; the interface is set in IBM Plex
-  Sans or Mono, at any of five sizes. All in **Settings** (Ctrl+,), with the
-  layout, the shortcuts, spelling and the AI's models.
+  No icons, no rounded corners, no shadows, and nothing that slides, grows
+  or fades: menus, dialogs and pages appear at once. The interface is set
+  in IBM Plex Sans or Mono, at any of five sizes. All in **Settings**
+  (Ctrl+,), with the layout, the shortcuts, spelling and the AI's models.
 * **Keyboard** — Ctrl+P goes to any page, section or notebook by a few
   letters of its name; Ctrl+Shift+P runs any command by name. Alt+arrows step
   through pages and sections and go back and forward; Alt+1–9 shows a tab;
@@ -103,7 +104,8 @@ navigating and searching thousands of pages stays instant.
   files, and lists the words you have added.
 * **Pictures and PDFs** — insert them onto the canvas to annotate, or into a
   text box as a printout, and resize them there by their corners. PDF pages
-  are rendered sharply at any zoom and their text is searchable. Right-click
+  are rendered sharply at any zoom — zoomed in far, the part in view is
+  rendered at full sharpness — and their text is searchable. Right-click
   one and **Set Picture As Background** to write over it: it goes beneath
   all ink and out of the way of clicks, until you right-click it to set it
   free again.
@@ -171,7 +173,8 @@ navigating and searching thousands of pages stays instant.
     typefaces, sizes, colours, alignment, spacing, bullets and to-dos — text
     in Calibri is drawn in Carlito, which comes with the app and sets lines
     to the same measure; tables keep their cells, shading and borders;
-    equations become formulas you can edit; pictures, attached files and
+    equations become formulas you can edit; a printout's pages become pages
+    of the PDF it printed, sharp at any zoom; pictures, attached files and
     handwriting stay where they were; subpages stay subpages;
   * **Xournal++** documents (`.xopp`) or a folder of them, with their
     handwriting, text, pictures, TeX formulas and the PDFs they annotate;

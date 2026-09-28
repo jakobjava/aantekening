@@ -9,6 +9,7 @@ import 'package:aantekening/src/editor/media_views.dart';
 import 'package:aantekening/src/editor/text/cheat_sheet.dart';
 import 'package:aantekening/src/editor/text/table_view.dart';
 import 'package:aantekening/src/editor/text/formula_preview.dart';
+import 'package:aantekening/src/editor/text/shrink_to_width.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/editor/text/text_styles.dart';
 import 'package:aantekening/src/providers.dart';
@@ -70,6 +71,25 @@ void main() {
 
     await type(tester, 'Hello world');
     expect(textOf(tester), 'Hello world');
+  });
+
+  testWidgets('pressing the paper takes the band away with the rest of '
+      'the box\'s marks, before the press ends', (tester) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await type(tester, 'Hello');
+    await tester.pumpAndSettle();
+    bool bandShows() => tester.widget<GrabBand>(find.byType(GrabBand)).visible;
+    expect(bandShows(), isTrue);
+
+    final press = await tester.startGesture(
+      const Offset(900, 600),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    expect(bandShows(), isFalse);
+    await press.up();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('letters that are tool shortcuts are typed, not obeyed', (
@@ -393,6 +413,36 @@ void main() {
         blocksOf(tester).single.runs.single,
         const TextRun.math('x^2', MathMode.latex),
       );
+    });
+
+    testWidgets('a formula wider than its box is made smaller to fit', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final page = PageDocument.empty(id: pageId).withElementAdded(
+          TextElement(
+            id: 'box',
+            frame: const Frame(x: 100, y: 100, width: 60, height: 60),
+            createdAt: 0,
+            updatedAt: 0,
+            blocks: const <TextBlock>[
+              TextBlock(
+                runs: <TextRun>[
+                  TextRun.math(r'a+b+c+d+e+f+g+h+i+j', MathMode.latex),
+                ],
+              ),
+            ],
+          ),
+        );
+        await store.pages.saveDocument(pageId, page);
+      });
+      await openEditor(tester, store, pageId);
+
+      // Nothing overflows, and the formula lies within the box.
+      expect(tester.takeException(), isNull);
+      final box = tester.getRect(find.byType(TextBoxEditor));
+      final formula = tester.getRect(find.byType(ShrinkToWidth));
+      expect(formula.right, lessThanOrEqualTo(box.right));
     });
 
     testWidgets('a formula opened and left unchanged keeps its LaTeX', (

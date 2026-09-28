@@ -270,6 +270,7 @@ final class OneImage extends OnePageItem implements OneContent {
     this.link,
     this.isBackground = false,
     this.recognizedText,
+    this.printout,
   });
 
   final Uint8List? data;
@@ -283,6 +284,21 @@ final class OneImage extends OnePageItem implements OneContent {
 
   /// Text OneNote read in the picture.
   final String? recognizedText;
+
+  /// The page of a PDF the picture shows, where it is one of a file
+  /// printout's pages.
+  final OnePrintout? printout;
+}
+
+/// A page of a PDF printed out onto a page.
+final class OnePrintout {
+  const OnePrintout(this.pdf, this.pageIndex);
+
+  /// The PDF, as OneNote keeps it with the pictures of its pages.
+  final Uint8List pdf;
+
+  /// Which of its pages, counting from 0.
+  final int pageIndex;
 }
 
 /// A file attached to a page, or put in an outline.

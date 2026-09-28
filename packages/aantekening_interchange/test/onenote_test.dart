@@ -487,6 +487,42 @@ void main() {
       expect(block.runs.last.text, r'\pi {r}^{2}');
     });
 
+    test('bring a printout\'s pages as pages of its PDF, kept once', () {
+      final pdf = Uint8List.fromList('%PDF-1.7 the printed file'.codeUnits);
+      OneImage printed(int page) => OneImage(
+        data: Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, page]),
+        extension: null,
+        y: page * 24.0,
+        width: 16,
+        height: 23,
+        isBackground: true,
+        fileName: 'Worksheet_${page + 1}.pdf',
+        recognizedText: 'Page ${page + 1}',
+        printout: OnePrintout(pdf, page),
+      );
+      final draft = convert(<OnePage>[
+        page(<OnePageItem>[printed(0), printed(1)]),
+      ]);
+      final pages = draft
+          .notebooks
+          .single
+          .sections
+          .single
+          .pages
+          .single
+          .document
+          .elements
+          .cast<PdfElement>();
+      expect(pages.map((page) => page.pageIndex), <int>[0, 1]);
+      expect(pages.map((page) => page.assetId).toSet(), hasLength(1));
+      expect(pages.first.locked, isTrue);
+      expect(pages.last.extractedText, 'Page 2');
+      final asset = draft.assets[pages.first.assetId]!;
+      expect(asset.mimeType, 'application/pdf');
+      expect(asset.name, 'Worksheet.pdf');
+      expect(draft.assets, hasLength(1));
+    });
+
     test('keep pictures and attached files in a store of their own', () {
       final draft = convert(<OnePage>[
         page(<OnePageItem>[

@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../look/controls.dart';
+import '../look/motion.dart';
 import '../look/tones.dart';
 import '../spelling/dictionaries.dart';
 import '../spelling/spelling.dart';
@@ -46,7 +47,7 @@ class SpellingSettingsPage extends ConsumerWidget {
       try {
         await action();
       } on Object catch (error) {
-        messenger?.showSnackBar(SnackBar(content: Text('$error')));
+        messenger?.showPlainSnackBar(SnackBar(content: Text('$error')));
       }
     }
 

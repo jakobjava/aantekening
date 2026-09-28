@@ -28,9 +28,7 @@ Future<void> showCommandPalette(
   barrierDismissible: true,
   barrierLabel: 'Close',
   barrierColor: context.tones.text.withValues(alpha: 0.08),
-  transitionDuration: const Duration(milliseconds: 90),
-  transitionBuilder: (context, animation, _, child) =>
-      FadeTransition(opacity: animation, child: child),
+  transitionDuration: Duration.zero,
   pageBuilder: (context, _, _) => CommandPalette(commands: commands),
 );
 

@@ -882,6 +882,38 @@ void main() {
       expect(screen.dy, closeTo(at.dy, 1e-6));
     });
 
+    testWidgets('a pinch that also reports the pan of zooming about the '
+        'fingers keeps the point under the pointer', (tester) async {
+      final controller = CanvasController();
+      await tester.pumpWidget(_host(controller));
+      // Windows reports a pinch about the fingers' middle as a scale and
+      // the pan that scaling about it makes.
+      final mouse = TestPointer(9, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(mouse.hover(const Offset(200, 150)));
+      final underPointer = controller.viewport.toPage(const Offset(200, 150));
+      final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+      const fingers = Offset(400, 300);
+
+      await tester.sendEventToBinding(trackpad.panZoomStart(fingers));
+      for (final scale in <double>[1.02, 1.05, 1.1, 1.3, 1.6, 2]) {
+        await tester.sendEventToBinding(
+          trackpad.panZoomUpdate(
+            fingers,
+            scale: scale,
+            pan: fingers * (1 - scale),
+          ),
+        );
+        await tester.pump();
+      }
+      await tester.sendEventToBinding(trackpad.panZoomEnd());
+      await tester.pump();
+
+      expect(controller.viewport.zoom, greaterThan(1.8));
+      final screen = controller.viewport.toScreen(underPointer);
+      expect(screen.dx, closeTo(200, 1e-6));
+      expect(screen.dy, closeTo(150, 1e-6));
+    });
+
     testWidgets('a scale that restarts mid-gesture does not jump', (
       tester,
     ) async {

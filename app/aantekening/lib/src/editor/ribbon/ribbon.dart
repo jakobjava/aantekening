@@ -120,9 +120,8 @@ class _RibbonState extends ConsumerState<Ribbon> {
                   height: Ribbon.bodyHeight,
                   child: IgnorePointer(
                     ignoring: !widget.enabled,
-                    child: AnimatedOpacity(
+                    child: Opacity(
                       opacity: widget.enabled ? 1 : 0.4,
-                      duration: const Duration(milliseconds: 150),
                       child: _body(state, layout),
                     ),
                   ),

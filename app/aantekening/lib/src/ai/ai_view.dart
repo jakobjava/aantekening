@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../links/note_links.dart';
 import '../look/controls.dart';
 import '../look/marks.dart';
+import '../look/motion.dart';
 import '../look/tones.dart';
 import '../settings/settings_view.dart';
 import 'ai_session.dart';
@@ -234,7 +235,7 @@ class _Rail extends ConsumerWidget {
 
 Future<String?> _askName(BuildContext context, String current) {
   final controller = TextEditingController(text: current);
-  return showDialog<String>(
+  return showPlainDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Rename'),

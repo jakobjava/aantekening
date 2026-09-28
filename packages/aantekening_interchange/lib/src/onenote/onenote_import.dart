@@ -124,6 +124,10 @@ final class _Converter {
   final Map<String, AssetDraft> assets = <String, AssetDraft>{};
   final List<String> warnings = <String>[];
 
+  /// The PDFs printed out onto pages, each kept once however many of its
+  /// pages are: OneNote refers to the same bytes from each.
+  final Map<Uint8List, String> _printouts = Map<Uint8List, String>.identity();
+
   /// The page being converted, for warnings.
   String _page = '';
 
@@ -176,7 +180,7 @@ final class _Converter {
           final box = _outline(item, now, ink);
           if (box != null) text.add(box);
         case OneImage():
-          final picture = _picture(item, now);
+          final picture = _printoutPage(item, now) ?? _picture(item, now);
           if (picture != null) pictures.add(picture);
         case OneFile():
           final file = _fileBox(item, now);
@@ -536,7 +540,37 @@ final class _Converter {
     return key;
   }
 
+  /// The PDF of [printout], kept once.
+  String? _keepPrintout(OnePrintout printout, String? fileName) {
+    final kept = _printouts[printout.pdf];
+    if (kept != null) return kept;
+    final key = _keep(
+      printout.pdf,
+      // Each page's picture is named for the file and its page.
+      fileName?.replaceFirstMapped(
+        RegExp(r'_\d+(\.pdf)$', caseSensitive: false),
+        (match) => match[1]!,
+      ),
+      'A printout',
+    );
+    if (key != null) _printouts[printout.pdf] = key;
+    return key;
+  }
+
   BlockEmbed? _imageEmbed(OneImage image) {
+    if (image.printout case final printout?) {
+      final key = _keepPrintout(printout, image.fileName);
+      if (key != null) {
+        return BlockEmbed(
+          kind: EmbedKind.pdfPage,
+          assetId: key,
+          pageIndex: printout.pageIndex,
+          width: (image.width ?? 4) * _perHalfInch,
+          height: (image.height ?? 3) * _perHalfInch,
+          text: _imageText(image),
+        );
+      }
+    }
     final key = _keep(image.data, image.fileName, 'A picture');
     if (key == null) return null;
     return BlockEmbed(
@@ -556,17 +590,39 @@ final class _Converter {
     return text.isEmpty ? null : text;
   }
 
+  /// The page of a PDF [image] shows, as that page, sharp at any zoom,
+  /// rather than as its picture; null for a picture that is not a
+  /// printout's page.
+  PdfElement? _printoutPage(OneImage image, int now) {
+    final printout = image.printout;
+    if (printout == null) return null;
+    final key = _keepPrintout(printout, image.fileName);
+    if (key == null) return null;
+    return PdfElement(
+      id: Ulid.generate(),
+      frame: _pictureFrame(image),
+      createdAt: now,
+      updatedAt: now,
+      assetId: key,
+      pageIndex: printout.pageIndex,
+      locked: image.isBackground,
+      extractedText: image.recognizedText,
+    );
+  }
+
+  static Frame _pictureFrame(OneImage image) => Frame(
+    x: (image.x ?? 0) * _perHalfInch,
+    y: (image.y ?? 0) * _perHalfInch,
+    width: (image.width ?? 4) * _perHalfInch,
+    height: (image.height ?? 3) * _perHalfInch,
+  );
+
   ImageElement? _picture(OneImage image, int now) {
     final key = _keep(image.data, image.fileName, 'A picture');
     if (key == null) return null;
     return ImageElement(
       id: Ulid.generate(),
-      frame: Frame(
-        x: (image.x ?? 0) * _perHalfInch,
-        y: (image.y ?? 0) * _perHalfInch,
-        width: (image.width ?? 4) * _perHalfInch,
-        height: (image.height ?? 3) * _perHalfInch,
-      ),
+      frame: _pictureFrame(image),
       createdAt: now,
       updatedAt: now,
       assetId: key,

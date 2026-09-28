@@ -226,21 +226,23 @@ class _SectionTile extends ConsumerWidget {
       selected: selected,
       padding: TreeRow.tilePadding,
       title: Text(section.title),
-      // Only the section open offers a subsection, so the list stays quiet.
-      trailing: selected
-          ? MarkButton(
-              MarkShape.add,
-              tooltip: 'New subsection',
-              size: 20,
-              markSize: 10,
-              onPressed: () => createNamedSection(
-                context,
-                ref,
-                notebookId: section.notebookId,
-                parentId: section.id,
-              ),
-            )
-          : null,
+      // Only the section open offers a subsection, so the list stays quiet;
+      // every row keeps the room for it, so picking one moves nothing.
+      trailing: Visibility.maintain(
+        visible: selected,
+        child: MarkButton(
+          MarkShape.add,
+          tooltip: 'New subsection',
+          size: 20,
+          markSize: 10,
+          onPressed: () => createNamedSection(
+            context,
+            ref,
+            notebookId: section.notebookId,
+            parentId: section.id,
+          ),
+        ),
+      ),
       onTap: () => ref
           .read(libraryActionsProvider)
           .openSection(section.notebookId, section.id),

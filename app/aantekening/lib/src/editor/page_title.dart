@@ -179,8 +179,11 @@ class _PageTitleState extends ConsumerState<PageTitle> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         Container(
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: RichTextStyles.titleRule)),
+          // Ruled in the accent, where there is one, or in ink.
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: context.tones.paperEmphasis),
+            ),
           ),
           child: Focus(
             canRequestFocus: false,

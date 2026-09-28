@@ -101,6 +101,7 @@ Future<void> showCommandMenu(
     context: context,
     position: RelativeRect.fromRect(at & Size.zero, Offset.zero & overlay.size),
     items: entries,
+    popUpAnimationStyle: AnimationStyle.noAnimation,
     constraints: header == null
         ? const BoxConstraints(minWidth: 180, maxWidth: 360)
         // Wide enough for a header of formatting controls.

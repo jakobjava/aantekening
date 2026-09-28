@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../look/controls.dart';
 import '../look/marks.dart';
+import '../look/motion.dart';
 import '../look/tones.dart';
 import 'ai_session.dart';
 import 'math_text.dart';
@@ -356,26 +357,21 @@ class _SessionState extends ConsumerState<_Session> {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child: _turned
-                            ? _GradeButtons(
-                                key: const ValueKey<bool>(true),
-                                review: review,
-                                onGrade: (grade) => unawaited(_grade(grade)),
-                              )
-                            : Tooltip(
-                                key: const ValueKey<bool>(false),
-                                message: 'Space or Enter',
-                                child: OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    minimumSize: const Size(220, 40),
-                                  ),
-                                  onPressed: _turn,
-                                  child: const Text('Show answer'),
+                      _turned
+                          ? _GradeButtons(
+                              review: review,
+                              onGrade: (grade) => unawaited(_grade(grade)),
+                            )
+                          : Tooltip(
+                              message: 'Space or Enter',
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size(220, 40),
                                 ),
+                                onPressed: _turn,
+                                child: const Text('Show answer'),
                               ),
-                      ),
+                            ),
                     ],
                   ),
                 ),
@@ -402,13 +398,8 @@ class FlipCard extends StatelessWidget {
   final Widget back;
 
   @override
-  Widget build(BuildContext context) => AnimatedSwitcher(
-    duration: const Duration(milliseconds: 120),
-    child: KeyedSubtree(
-      key: ValueKey<bool>(turned),
-      child: turned ? back : front,
-    ),
-  );
+  Widget build(BuildContext context) =>
+      KeyedSubtree(key: ValueKey<bool>(turned), child: turned ? back : front);
 }
 
 /// One side of a card, as an index card is: what it is, the text large in
@@ -489,7 +480,7 @@ class CardFace extends StatelessWidget {
 /// How well it was remembered: four buttons, each with its key and when
 /// the card comes back.
 class _GradeButtons extends StatelessWidget {
-  const _GradeButtons({required this.review, required this.onGrade, super.key});
+  const _GradeButtons({required this.review, required this.onGrade});
 
   final CardReview review;
   final ValueChanged<Grade> onGrade;
@@ -852,7 +843,7 @@ class _SmallCard extends StatelessWidget {
 Future<StudyCard?> _editCard(BuildContext context, StudyCard card) {
   final front = TextEditingController(text: card.front);
   final back = TextEditingController(text: card.back);
-  return showDialog<StudyCard>(
+  return showPlainDialog<StudyCard>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Correct the card'),

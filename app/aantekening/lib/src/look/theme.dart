@@ -5,6 +5,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'appearance.dart';
+import 'motion.dart';
 import 'tones.dart';
 
 /// Builds the themes from the [Appearance] chosen.
@@ -100,6 +101,7 @@ abstract final class AppTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: ButtonStyle(
+          animationDuration: Duration.zero,
           shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
           padding: const WidgetStatePropertyAll<EdgeInsets>(buttonPadding),
           minimumSize: const WidgetStatePropertyAll<Size>(buttonSize),
@@ -111,6 +113,7 @@ abstract final class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: ButtonStyle(
+          animationDuration: Duration.zero,
           shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
           padding: const WidgetStatePropertyAll<EdgeInsets>(buttonPadding),
           minimumSize: const WidgetStatePropertyAll<Size>(buttonSize),
@@ -128,6 +131,7 @@ abstract final class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: ButtonStyle(
+          animationDuration: Duration.zero,
           shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
           padding: const WidgetStatePropertyAll<EdgeInsets>(buttonPadding),
           minimumSize: const WidgetStatePropertyAll<Size>(buttonSize),
@@ -147,6 +151,7 @@ abstract final class AppTheme {
       ),
       iconButtonTheme: IconButtonThemeData(
         style: ButtonStyle(
+          animationDuration: Duration.zero,
           shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
           padding: const WidgetStatePropertyAll<EdgeInsets>(EdgeInsets.zero),
           minimumSize: const WidgetStatePropertyAll<Size>(Size.square(26)),
@@ -157,6 +162,7 @@ abstract final class AppTheme {
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
+          animationDuration: Duration.zero,
           shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
           side: WidgetStatePropertyAll<BorderSide>(edge),
           textStyle: WidgetStatePropertyAll<TextStyle?>(buttonText),
@@ -191,12 +197,13 @@ abstract final class AppTheme {
       scrollbarTheme: ScrollbarThemeData(
         radius: Radius.zero,
         thickness: const WidgetStatePropertyAll<double>(6),
+        // In the accent, where there is one, or the text's colour.
         thumbColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.dragged)
-              ? tones.muted
-              : states.contains(WidgetState.hovered)
-              ? tones.faint
-              : tones.strongLine,
+          (states) =>
+              states.contains(WidgetState.dragged) ||
+                  states.contains(WidgetState.hovered)
+              ? tones.emphasis
+              : tones.emphasis.withValues(alpha: 0.7),
         ),
         crossAxisMargin: 0,
         mainAxisMargin: 0,
@@ -239,6 +246,7 @@ abstract final class AppTheme {
       menuBarTheme: MenuBarThemeData(style: _menuStyle(tones, floating)),
       menuButtonTheme: MenuButtonThemeData(
         style: ButtonStyle(
+          animationDuration: Duration.zero,
           shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
           minimumSize: const WidgetStatePropertyAll<Size>(Size(0, 30)),
           padding: const WidgetStatePropertyAll<EdgeInsets>(
@@ -302,12 +310,11 @@ abstract final class AppTheme {
         elevation: 0,
         shape: square,
       ),
-      pageTransitionsTheme: const PageTransitionsTheme(
+      // Nothing in the interface moves: pages replace each other at once.
+      pageTransitionsTheme: PageTransitionsTheme(
         builders: <TargetPlatform, PageTransitionsBuilder>{
-          TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
-          TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
-          TargetPlatform.macOS: FadeForwardsPageTransitionsBuilder(),
-          TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+          for (final platform in TargetPlatform.values)
+            platform: const PlainPageTransitions(),
         },
       ),
     );

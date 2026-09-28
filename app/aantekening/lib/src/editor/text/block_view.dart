@@ -7,6 +7,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/material.dart';
 
+import 'shrink_to_width.dart';
 import 'text_styles.dart';
 
 /// The character a typeset formula occupies in laid-out text.
@@ -260,13 +261,16 @@ abstract final class TypesetFormulas {
     final cached = _cache.remove(key);
     if (cached != null) return _cache[key] = cached;
 
-    final widget = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 1),
-      child: MathView(
-        source: source,
-        mode: mode,
-        displayStyle: display,
-        textStyle: style,
+    // A formula cannot wrap: one wider than its line is made smaller.
+    final widget = ShrinkToWidth(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 1),
+        child: MathView(
+          source: source,
+          mode: mode,
+          displayStyle: display,
+          textStyle: style,
+        ),
       ),
     );
     _cache[key] = widget;

@@ -4,6 +4,7 @@ library;
 import 'dart:typed_data';
 
 import '../bytes.dart';
+import '../importer.dart';
 import '../onestore/revision_store.dart';
 import 'model.dart';
 import 'properties.dart';
@@ -421,7 +422,17 @@ final class _PageReader {
       link: properties.text(Prop.wzHyperlinkUrl),
       isBackground: properties.flag(Prop.isBackground),
       recognizedText: properties.text(Prop.richEditTextUnicode),
+      printout: _printout(properties),
     );
+  }
+
+  /// The page of a PDF a picture shows, where it is a file printout's.
+  OnePrintout? _printout(PropertySet properties) {
+    final pdf = _object(properties.ref(Prop.printoutFile))?.fileData;
+    final page = properties.integer(Prop.printoutPage);
+    if (pdf == null || page == null || page < 1) return null;
+    if (mimeTypeOf(pdf) != 'application/pdf') return null;
+    return OnePrintout(pdf, page - 1);
   }
 
   OneFile _file(StoreObject object) {

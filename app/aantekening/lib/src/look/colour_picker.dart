@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'appearance.dart';
+import 'motion.dart';
 import 'tones.dart';
 
 /// Shows the colour picker, [title]d, returning the chosen colour as opaque
@@ -15,7 +16,7 @@ Future<int?> showColorPicker(
   BuildContext context, {
   required int initial,
   String title = 'Colour',
-}) => showDialog<int>(
+}) => showPlainDialog<int>(
   context: context,
   builder: (context) =>
       ColorPickerDialog(initial: initial | 0xFF000000, title: title),

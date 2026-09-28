@@ -16,16 +16,16 @@ import '../../commands/editor_keys.dart';
 import '../../look/tones.dart';
 import '../../spelling/proofreader.dart';
 import '../note_clipboard.dart';
+import 'aligned_column.dart';
 import 'block_paragraph.dart';
 import 'block_view.dart';
 import 'block_widgets.dart';
-import 'aligned_column.dart';
 import 'formula_source.dart';
 import 'list_numbering.dart';
 import 'math_templates.dart';
-import 'text_box_controller.dart';
-import 'text_boundaries.dart';
 import 'table_view.dart';
+import 'text_boundaries.dart';
+import 'text_box_controller.dart';
 import 'text_styles.dart';
 
 /// Called with a text box's new contents. [recordUndo] is true when the change
@@ -3425,11 +3425,14 @@ class TextBoxEditorState extends State<TextBoxEditor>
     }
 
     // Until something is typed, a new box is only a caret on the paper, as in
-    // OneNote: no band to drag it by, no outline.
+    // OneNote: no band to drag it by, no outline. Once it holds something,
+    // its band shows while it is picked — which a box being typed in is —
+    // and goes with the rest of the selection's marks when the paper is
+    // pressed, though typing ends only as the press does.
     if (!empty) _hadContent = true;
     final showChrome = empty
         ? widget.isEditing && _hadContent
-        : widget.isEditing || widget.selected || _hovering;
+        : widget.selected || _hovering;
     final content = Stack(
       children: <Widget>[
         Padding(

@@ -822,6 +822,10 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       untransformedEndPosition: event.position,
       untransformedDelta: _panStep(gesture, event.pan),
     );
+    // An event whose own scale moves is zooming: its pan is what zooming
+    // about the fingers moved, as Windows reports a pinch, and the page is
+    // zoomed about the pointer instead. Scrolls report a scale of exactly 1.
+    final zooming = event.scale != 1 && event.scale != gesture.lastScale;
     final scale = _scaleStep(gesture, event.scale, event.pan);
     // The pointer stays where it is while fingers move on a trackpad, so it
     // is what a pinch zooms about, as everywhere else on the desktop.
@@ -836,7 +840,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       gesture.zoomed = true;
       _controller.zoomBy(scale, focus);
     }
-    if (pan != Offset.zero) {
+    if (pan != Offset.zero && !zooming) {
       _controller.panBy(pan);
       gesture.steps.add((event.timeStamp, pan));
       while (gesture.steps.length > 12) {
@@ -1263,6 +1267,7 @@ class _PageContentState extends State<_PageContent> {
 
     return CanvasScope(
       zoom: viewport.zoom,
+      region: region,
       child: PageSpace(
         view: widget.view,
         region: region,

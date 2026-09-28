@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../ai/ai_view.dart';
 import '../command_menu.dart';
 import '../commands/app_command.dart';
 import '../commands/editor_keys.dart';
@@ -20,15 +21,15 @@ import '../commands/shortcuts.dart';
 import '../files/attached_files.dart';
 import '../files/notes_keeper.dart';
 import '../files/notes_location.dart';
-import '../look/controls.dart';
-import '../look/tones.dart';
-import '../providers.dart';
 import '../input_trace.dart';
 import '../links/note_links.dart';
+import '../look/controls.dart';
+import '../look/motion.dart';
+import '../look/tones.dart';
+import '../providers.dart';
 import '../search/search_panel.dart';
 import '../spelling/proofreader.dart';
 import '../spelling/spelling.dart';
-import '../ai/ai_view.dart';
 import 'element_views.dart';
 import 'media_import.dart';
 import 'note_clipboard.dart';
@@ -363,7 +364,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     final store = _store;
     if (store == null) return;
     if (!await openAttachedFile(store, file) && mounted) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      ScaffoldMessenger.maybeOf(context)?.showPlainSnackBar(
         const SnackBar(content: Text('The file could not be opened.')),
       );
     }
@@ -404,7 +405,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     );
     _libraryRevision.bump();
     if (!mounted || kept == null) return;
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+    ScaffoldMessenger.maybeOf(context)?.showPlainSnackBar(
       SnackBar(
         content: Text(
           'This page was changed on another computer while you were '
@@ -807,7 +808,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   void _showMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(SnackBar(content: Text(message)));
+        ?.showPlainSnackBar(SnackBar(content: Text(message)));
   }
 
   // -------------------------------------------------------- copy and paste
@@ -1185,7 +1186,9 @@ class _PageEditorState extends ConsumerState<PageEditor> {
         // The ribbon works on the page, so it rests while the AI shows.
         Ribbon(
           commands: _ribbonCommands,
-          enabled: _ready && widget.aiScope == null,
+          // Greyed out only while no page is chosen: switching from one page
+          // to the next, it stays as it is.
+          enabled: widget.pageId != null && widget.aiScope == null,
         ),
         Expanded(
           child: (widget.around ?? _alone)(

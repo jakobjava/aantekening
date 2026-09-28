@@ -134,6 +134,12 @@ abstract final class Prop {
   static const pictureFileExtension = 0x24003424;
   static const pictureWidth = 0x140034CD;
   static const pictureHeight = 0x140034CE;
+
+  // Not in [MS-ONE]; learned from OneNote's own files. A picture that is a
+  // page of a file printout refers to the file printed, and says which of
+  // its pages it shows, counting from 1.
+  static const printoutFile = 0x200035C1;
+  static const printoutPage = 0x14001DF9;
 }
 
 /// Reading a [PropertySet]'s values as the types they are meant as.

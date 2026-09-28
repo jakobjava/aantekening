@@ -26,9 +26,10 @@ class CanvasElementView extends StatelessWidget {
         assetId: assetId,
         fit: fit,
       ),
-      PdfElement(:final assetId, :final pageIndex) => PdfPageView(
+      PdfElement(:final assetId, :final pageIndex, :final frame) => PdfPageView(
         assetId: assetId,
         pageIndex: pageIndex,
+        frame: frame,
       ),
       TableElement() => _TableBox(element: element as TableElement),
       // Text boxes are built by the page editor; groups have no appearance of

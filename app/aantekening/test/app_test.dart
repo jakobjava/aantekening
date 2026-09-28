@@ -715,6 +715,27 @@ void main() {
       expect(rows[1].place.expanded, isFalse);
     });
 
+    testWidgets('picking a section moves none of the rows', (tester) async {
+      final notebook = await store.library.createNotebook(title: 'Physics');
+      for (final title in <String>['Mechanics', 'Waves', 'Optics']) {
+        await store.library.createSection(
+          notebookId: notebook.id,
+          title: title,
+        );
+      }
+      useSurface(tester, wideWindow);
+      await tester.pumpWidget(shellWith(store));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Physics'));
+      await tester.pumpAndSettle();
+      Rect optics() => tester.getRect(inPanes(find.text('Optics')));
+      final before = optics();
+
+      await tester.tap(inPanes(find.text('Mechanics')));
+      await tester.pumpAndSettle();
+      expect(optics(), before);
+    });
+
     testWidgets('a section collapses by its line, and opens out again', (
       tester,
     ) async {

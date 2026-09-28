@@ -7,6 +7,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../look/motion.dart';
 import '../providers.dart';
 import '../shell/library_menu.dart';
 
@@ -40,7 +41,7 @@ Future<void> exportNotes(
   );
   if (!context.mounted) return;
   ScaffoldMessenger.maybeOf(context)
-      ?.showSnackBar(SnackBar(content: Text('Saved to $path')));
+      ?.showPlainSnackBar(SnackBar(content: Text('Saved to $path')));
 }
 
 /// [title] with what a file name may not hold replaced.
