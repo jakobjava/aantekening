@@ -295,6 +295,23 @@ void main() {
       }
     });
 
+    test('leaves out the pen trembling where it came to rest, rather than '
+        'taking it for an arrowhead', () {
+      final line = _drawn(const <Vec2>[Vec2(0, 0), Vec2(100, 0)], wobble: 0);
+      // Held still, the pen wanders about where it rests.
+      final held = <Vec2>[
+        ...line,
+        const Vec2(97, 9),
+        const Vec2(104, -8),
+        const Vec2(98, 7),
+        const Vec2(100, 0),
+      ];
+      expect(ShapeRecognizer.recognize(held)?.kind, ShapeKind.arrow);
+      final shape = ShapeRecognizer.recognize(held, settled: 10)! as PathShape;
+      expect(shape.kind, ShapeKind.line);
+      expect(shape.points.last, const Vec2(100, 0));
+    });
+
     test('leaves a dot, and makes a highlighter only straight', () {
       expect(
         ShapeRecognizer.recognize(const <Vec2>[Vec2(0, 0), Vec2(2, 1)]),

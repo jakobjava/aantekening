@@ -12,6 +12,7 @@ import 'note_reader.dart';
 import 'note_tools.dart';
 import 'provider.dart';
 import 'study.dart';
+import 'study_profile.dart';
 import 'web_search.dart';
 
 /// Where an answer has got to.
@@ -94,11 +95,16 @@ class NoteAgent {
     required this.reader,
     this.webSearch,
     this.notesTokens = ContextBudget.defaultNotesTokens,
+    this.about = '',
   });
 
   final ChatProvider provider;
   final String model;
   final NoteReader reader;
+
+  /// What the person says of themselves, for every answer and set to
+  /// bear in mind.
+  final String about;
 
   /// How many tokens of the notes go with a question, at most.
   final int notesTokens;
@@ -218,7 +224,7 @@ class NoteAgent {
     for (var round = 0; round < maxRounds; round++) {
       final request = ChatRequest(
         model: model,
-        system: systemPrompt(scope, tools: capabilities.tools),
+        system: systemPrompt(scope, tools: capabilities.tools, about: about),
         // The conversation as it stands, not as it will grow.
         messages: List<ChatMessage>.unmodifiable(messages),
         tools: capabilities.tools ? tools.specs : const <ToolSpec>[],
@@ -287,24 +293,31 @@ class NoteAgent {
     );
   }
 
-  /// Makes a study set of [kind] from the notes of [scope]: the notes
-  /// given whole, their passages numbered, the set asked for as JSON — and
-  /// shown as far as it is written, while it is written.
+  /// Makes a study set as [profile] describes it from the notes of
+  /// [scope]: the notes given whole, their passages numbered, the set asked
+  /// for in its form — and shown as far as it is written, while it is
+  /// written.
   ///
-  /// Whatever the model: what it writes is read however it wrote it
-  /// ([StudySet.reading]); what cannot all be read, it is asked once more
-  /// to put in order; and a set once shown is never taken away.
-  Stream<AgentProgress> make(StudyKind kind, {required ScopeInfo scope}) =>
-      _stoppable((stop) => _make(kind, scope: scope, stop: stop));
+  /// Whatever the model: what it writes as JSON is read however it wrote
+  /// it ([StudySet.reading]); what cannot all be read, it is asked once more
+  /// to put in order; and a set once shown is never taken away. Free text
+  /// is written as an answer is, citing the notes as the provider cites.
+  Stream<AgentProgress> make(
+    StudyProfile profile, {
+    required ScopeInfo scope,
+  }) => _stoppable((stop) => _make(profile, scope: scope, stop: stop));
 
   Stream<AgentProgress> _make(
-    StudyKind kind, {
+    StudyProfile profile, {
     required ScopeInfo scope,
     required Future<void> stop,
   }) async* {
+    final kind = profile.form;
     var sources = const <Source>[];
     final answering = _Answering(
-      draft: (text) => StudySet.read(kind, text, sources),
+      draft: (answer) => kind.structured
+          ? StudySet.read(kind, answer.markdown, sources)
+          : StudyText(answer),
     );
     yield answering.progress(AgentStage.gathering, 'Gathering your notes');
     final capabilities = await provider.capabilitiesOf(model);
@@ -316,19 +329,24 @@ class NoteAgent {
     if (sources.isEmpty) {
       throw AiException(
         'There is nothing in this ${scope.kindName} to make '
-        '${kind.label.toLowerCase()} from yet.',
+        '${profile.called} from yet.',
       );
     }
     final request = ChatRequest(
       model: model,
-      system: studyPrompt(scope),
+      system: studyPrompt(scope, form: kind, about: about),
       messages: <ChatMessage>[
         ChatMessage.user(<ChatPart>[
-          TextPart(CitationMarkers.write(sources, first: 1)),
+          // JSON names its sources by number; free text cites them as the
+          // provider does.
+          if (kind.structured)
+            TextPart(CitationMarkers.write(sources, first: 1))
+          else
+            SourcesPart(sources),
           ...given.images,
           TextPart(
             '<overview>\n${given.overview}</overview>\n\n'
-            '${kind.instructions(scope.kindName)}',
+            '${profile.instructions(scope.kindName)}',
           ),
         ]),
       ],
@@ -348,36 +366,49 @@ class NoteAgent {
     final cutOff = answering.done!.stop == StopReason.maxTokens;
     final thought = answering.reasoning.toString();
     final written = answering.builder.answer.markdown;
-    // A model whose reasoning its runtime did not tell apart may have
-    // written the set into it.
-    final made =
-        StudySet.reading(kind, written, sources) ??
-        StudySet.reading(kind, thought, sources);
     final material = written.trim().isEmpty ? thought : written;
-    StudySet? again;
-    if ((made == null || made.lost) && !cutOff && material.trim().isNotEmpty) {
-      yield answering.progress(
-        AgentStage.reading,
-        '$model is putting the ${kind.label.toLowerCase()} in order',
-      );
-      answering.draftFrom = written.length;
-      try {
-        yield* answering.run(
-          provider,
-          _inOrder(kind, scope: scope, written: material, stop: stop),
+    final StudySet? set;
+    if (kind.structured) {
+      // A model whose reasoning its runtime did not tell apart may have
+      // written the set into it.
+      final made =
+          StudySet.reading(kind, written, sources) ??
+          StudySet.reading(kind, thought, sources);
+      StudySet? again;
+      if ((made == null || made.lost) &&
+          !cutOff &&
+          material.trim().isNotEmpty) {
+        yield answering.progress(
+          AgentStage.reading,
+          '$model is putting ${profile.called} in order',
         );
-        again = StudySet.read(kind, answering.draftText, sources);
-      } on AiException {
-        // What was read before is kept.
+        answering.draftFrom = written.length;
+        try {
+          yield* answering.run(
+            provider,
+            _inOrder(profile, scope: scope, written: material, stop: stop),
+          );
+          again = StudySet.read(kind, answering.draftText, sources);
+        } on AiException {
+          // What was read before is kept.
+        }
       }
+      // The fullest of what was read, then and again, and of what was
+      // shown as it came.
+      set = <StudySet?>[made?.set, again, answering.study].fold<StudySet?>(
+        null,
+        (fullest, set) =>
+            set != null && set.holdsMoreThan(fullest) ? set : fullest,
+      );
+    } else {
+      if (cutOff && written.trim().isNotEmpty) {
+        answering.builder.note(
+          _cutOff(answered: true, thought: false, room: 0),
+        );
+      }
+      final text = StudyText(answering.builder.answer);
+      set = text.isEmpty ? null : text;
     }
-    // The fullest of what was read, then and again, and of what was shown
-    // as it came.
-    final set = <StudySet?>[made?.set, again, answering.study].fold<StudySet?>(
-      null,
-      (fullest, set) =>
-          set != null && set.holdsMoreThan(fullest) ? set : fullest,
-    );
     if (set == null) {
       throw AiException(switch (material.trim()) {
         _ when cutOff => _cutOff(
@@ -385,13 +416,13 @@ class NoteAgent {
           thought: thought.isNotEmpty,
           room: capabilities.contextTokens,
         ).replaceAll('*', ''),
-        '' =>
+        _ when material.trim().isEmpty || !kind.structured =>
           'The model answered with nothing. Try again, or choose another '
               'model.',
         _ =>
-          'The model did not write the ${kind.label.toLowerCase()} in a form '
-              'the app can read, even when asked again. Try again, or choose '
-              'another model.',
+          'The model did not write ${profile.called} in a form the app can '
+              'read, even when asked again. Try again, or choose another '
+              'model.',
       });
     }
     yield AgentProgress(
@@ -403,30 +434,30 @@ class NoteAgent {
     );
   }
 
-  /// Asks for the set of [kind] a model [written] — not in the form asked
-  /// for, or not all of it readable — again in that form: without the
-  /// notes, which it has drawn on already.
+  /// Asks for the set of [profile] a model [written] — not in the form
+  /// asked for, or not all of it readable — again in that form: without
+  /// the notes, which it has drawn on already.
   ChatRequest _inOrder(
-    StudyKind kind, {
+    StudyProfile profile, {
     required ScopeInfo scope,
     required String written,
     required Future<void> stop,
   }) => ChatRequest(
     model: model,
-    system: studyPrompt(scope),
+    system: studyPrompt(scope, form: profile.form, about: about),
     messages: <ChatMessage>[
       ChatMessage.user(<ChatPart>[
         TextPart(
-          'What follows was written as the ${kind.label.toLowerCase()} of the '
+          'What follows was written as ${profile.called} of the '
           '${scope.kindName}, but not in the form asked for, or not all of it '
           'can be read. Write it again in that form: keep everything it says '
           'and every passage number it names, and add nothing.\n\n'
           '<written>\n$written\n</written>\n\n'
-          '${kind.instructions(scope.kindName)}',
+          '${profile.instructions(scope.kindName)}',
         ),
       ]),
     ],
-    answerSchema: kind.schema,
+    answerSchema: profile.form.schema,
     stop: stop,
   );
 
@@ -488,23 +519,40 @@ class NoteAgent {
     ];
   }
 
-  /// The standing instructions for making study sets about [scope].
-  static String studyPrompt(ScopeInfo scope) {
+  /// The standing instructions for making study sets of [form] about
+  /// [scope], for a student who says [about] of themselves.
+  static String studyPrompt(
+    ScopeInfo scope, {
+    required StudyKind form,
+    String about = '',
+  }) {
     final where = scope.path.isEmpty ? '' : ' (in ${scope.path.join(' › ')})';
+    final json = form.structured;
     return '''
 You make study material from a student's own notes, in aantekening, a note-taking app. The notes of the ${scope.kindName} "${scope.title}"$where are given as passages, each numbered like [1.2]; the pictures show their handwriting and drawings over printouts.
 
-- Use what the notes say, in their terms and notation. Name the passages each thing comes from by their numbers, as "sources": ["1.2", "1.3"].
-- Write in the language the notes are written in.
-- Write mathematics in LaTeX between dollar signs, like \$v = \\frac{s}{t}\$; in JSON a backslash is written twice.
-- Answer with the JSON asked for and nothing else: no Markdown fence, no words before or after it.''';
+- Use what the notes say, in their terms and notation. ${json ? 'Name the passages each thing comes from by their numbers, as "sources": ["1.2", "1.3"].' : 'Cite the passages each part comes from.'}
+- Write in the language the notes are written in, unless the student asks for another.
+- Write mathematics in LaTeX between dollar signs, like \$v = \\frac{s}{t}\$${json ? '; in JSON a backslash is written twice' : ''}.
+- ${json ? 'Answer with the JSON asked for and nothing else: no Markdown fence, no words before or after it.' : 'Answer with what was asked for alone: no words about it before or after.'}${_aboutThem(about)}''';
   }
+
+  /// A line of the standing instructions saying what the person says
+  /// [about] themselves, or nothing if they said nothing.
+  static String _aboutThem(String about) => about.trim().isEmpty
+      ? ''
+      : '\n\nWhat the student says about themselves — bear it in mind, as '
+            'a teacher who knows them would:\n${about.trim()}';
 
   /// The standing instructions for questions about [scope].
   ///
   /// Kept the same for every question about it, so providers that cache
   /// what they were given before can reuse it.
-  static String systemPrompt(ScopeInfo scope, {required bool tools}) {
+  static String systemPrompt(
+    ScopeInfo scope, {
+    required bool tools,
+    String about = '',
+  }) {
     final where = scope.path.isEmpty ? '' : ' (in ${scope.path.join(' › ')})';
     return '''
 You are the study companion built into aantekening, a note-taking app. You have the person's notes to hand — every notebook, section and page they have written: typed text, formulas, tables, pictures, PDF printouts, and their own handwriting and drawings over them. Answer as someone who has read all of it and knows the subject well.
@@ -519,7 +567,7 @@ How to answer:
 - Write mathematics in LaTeX: \$…\$ in a sentence, \$\$…\$\$ on a line of its own.
 - Answer in the language the person writes in. Be clear, and no longer than the question needs; use headings and lists where they help.
 - Flashcards and quizzes are for learning the subject: the ideas, definitions, laws and formulas that matter, each once. Never about the notes themselves — their titles, layout, dates or where things are.
-- Flashcards go in a fenced block marked flashcards, holding a JSON array of {"front": "…", "back": "…"}. A quiz goes in a fenced block marked quiz, holding a JSON array of {"question": "…", "options": ["…"], "answer": <index of the right option>, "explanation": "…"}. Cite their sources in a sentence before the block.''';
+- Flashcards go in a fenced block marked flashcards, holding a JSON array of {"front": "…", "back": "…"}. A quiz goes in a fenced block marked quiz, holding a JSON array of {"question": "…", "options": ["…"], "answer": <index of the right option>, "explanation": "…"}. Cite their sources in a sentence before the block.${_aboutThem(about)}''';
   }
 }
 
@@ -531,13 +579,28 @@ class _Answering {
   final AnswerBuilder builder = AnswerBuilder();
 
   /// Reads a study set from what is written so far, for a set being made.
-  final StudySet? Function(String text)? draft;
+  final StudySet? Function(AiAnswer written)? draft;
 
   /// Where the text [draft] reads starts: past what was written before
   /// the set was asked for again.
   int draftFrom = 0;
 
   String get draftText => builder.answer.markdown.substring(draftFrom);
+
+  /// What [draft] reads: the answer from [draftFrom].
+  AiAnswer get _drafted {
+    final answer = builder.answer;
+    return AiAnswer(markdown: draftText, citations: answer.citations);
+  }
+
+  /// Takes the set as far as it is written, if it holds no less than
+  /// before.
+  void _redraft() {
+    if (draft?.call(_drafted) case final read?
+        when !(study?.holdsMoreThan(read) ?? false)) {
+      study = read;
+    }
+  }
 
   /// What the model has reasoned in the request going on.
   StringBuffer reasoning = StringBuffer();
@@ -608,12 +671,10 @@ class _Answering {
           yield progress(AgentStage.thinking, 'Thinking');
         case TextDelta(:final text):
           written += text.length;
-          if (draft?.call(draftText) case final read?
-              when !(study?.holdsMoreThan(read) ?? false)) {
-            study = read;
-          }
+          _redraft();
           yield progress(AgentStage.writing, _writing);
         case CitedSpan():
+          _redraft();
           yield progress(AgentStage.writing, _writing);
         case Activity(:final description):
           yield progress(AgentStage.working, description);

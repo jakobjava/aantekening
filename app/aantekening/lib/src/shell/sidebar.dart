@@ -11,6 +11,7 @@ import '../command_menu.dart';
 import '../commands/app_command.dart';
 import '../commands/shortcuts.dart';
 import '../graph/graph_panel.dart';
+import '../look/icons.dart';
 import '../look/tones.dart';
 import '../providers.dart';
 import '../search/search_panel.dart';
@@ -255,6 +256,12 @@ class _TabButton extends ConsumerWidget {
       _ => bindings.tooltip(tab.command, label: tab.label),
     };
 
+    final colour = onPressed == null
+        ? tones.faint
+        : selected
+        ? tones.text
+        : tones.muted;
+
     return Tooltip(
       message: tooltip,
       preferBelow: false,
@@ -277,23 +284,28 @@ class _TabButton extends ConsumerWidget {
                 ),
               ),
               alignment: Alignment.center,
-              // Written up the strip, read with the head tilted left.
-              child: RotatedBox(
-                quarterTurns: 3,
-                child: Text(
-                  tab.label,
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontSize: 12,
-                    letterSpacing: 0.3,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: onPressed == null
-                        ? tones.faint
-                        : selected
-                        ? tones.text
-                        : tones.muted,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  AppIconView(_iconOf(tab), color: colour),
+                  const SizedBox(height: 8),
+                  // Written up the strip, read with the head tilted left.
+                  RotatedBox(
+                    quarterTurns: 3,
+                    child: Text(
+                      tab.label,
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: 12,
+                        letterSpacing: 0.3,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: colour,
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -301,6 +313,14 @@ class _TabButton extends ConsumerWidget {
       ),
     );
   }
+
+  static AppIcon _iconOf(SidebarTab tab) => switch (tab) {
+    SidebarTab.notebooks => AppIcon.notebooks,
+    SidebarTab.search => AppIcon.search,
+    SidebarTab.graph => AppIcon.graph,
+    SidebarTab.ai => AppIcon.ai,
+    SidebarTab.settings => AppIcon.settings,
+  };
 }
 
 // ----------------------------------------------------------------- panels

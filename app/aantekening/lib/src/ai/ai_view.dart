@@ -73,8 +73,8 @@ class AiView extends ConsumerWidget {
 
 // -------------------------------------------------------------------- rail
 
-/// The way round the scope's AI: its overview, each kind of set to study,
-/// its conversations, and the answers kept.
+/// The way round the scope's AI: its overview, each profile's set to
+/// study, its conversations, and the answers kept.
 class _Rail extends ConsumerWidget {
   const _Rail({required this.scope});
 
@@ -151,25 +151,25 @@ class _Rail extends ConsumerWidget {
           onTap: session.newThread,
         ),
         heading('Study'),
-        for (final kind in StudyKind.values)
+        for (final profile in studyProfilesOf(ref, state))
           Builder(
             builder: (context) {
-              final item = state.setOf(kind);
+              final item = state.setOf(profile.id);
               final set = item == null ? null : StudySet.fromJson(item.body);
               final due = cardsToStudy(ref, item);
               return entry(
-                title: kind.label,
+                title: profile.name,
                 selected:
-                    state.shownKind == kind ||
+                    state.shownProfile == profile.id ||
                     (item != null && state.itemId == item.id),
-                onTap: () => session.openKind(kind),
-                trailing: state.making.containsKey(kind)
+                onTap: () => session.openProfile(profile.id),
+                trailing: state.making.containsKey(profile.id)
                     ? const Busy()
                     : due > 0
                     ? count('$due', strong: true)
                     : switch (set) {
                         null => count('—'),
-                        StudySummary() => Mark(
+                        StudySummary() || StudyText() => Mark(
                           MarkShape.check,
                           color: tones.muted,
                         ),
@@ -308,27 +308,37 @@ class _MainState extends ConsumerState<_Main> {
     ref.listen(aiSessionProvider(scope), (_, _) => _follow());
 
     final item = state.item;
-    final shownKind = state.shownKind;
+    final profiles = studyProfilesOf(ref, state);
+    StudyProfile? profileOf(String? id) =>
+        profiles.where((profile) => profile.id == id).firstOrNull;
+    final shown = profileOf(state.shownProfile);
     final set = item == null ? null : StudySet.fromJson(item.body);
     final Widget page;
     if (!state.loaded || model.isLoading) {
       page = const Loading();
     } else if (item != null && set != null) {
-      page = StudySetPage(scope: scope, item: item, set: set, onOpen: _open);
+      page = StudySetPage(
+        scope: scope,
+        item: item,
+        set: set,
+        profile: profileOf(item.kind)!,
+        onOpen: _open,
+      );
     } else if (item != null) {
       page = _ItemReader(scope: scope, item: item, onOpen: _open);
-    } else if (shownKind != null) {
-      page = switch (state.making[shownKind]) {
+    } else if (shown != null) {
+      page = switch (state.making[shown.id]) {
         final making? => StudyDraftPage(
           scope: scope,
           pending: making,
           onOpen: _open,
         ),
-        null => StudyKindPage(scope: scope, kind: shownKind),
+        null => StudyProfilePage(scope: scope, profile: shown),
       };
     } else if (model.value == null) {
       page = const _ChooseModel();
-    } else if (state.atOverview) {
+    } else if (state.atOverview || state.shownProfile != null) {
+      // The overview, too, where the profile shown was deleted.
       page = StudyOverview(scope: scope);
     } else {
       page = _Conversation(

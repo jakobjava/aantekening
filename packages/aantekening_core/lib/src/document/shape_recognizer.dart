@@ -16,9 +16,22 @@ import 'ink_shape.dart';
 abstract final class ShapeRecognizer {
   /// The shape [points] were drawn as, or null. With [linesOnly], a straight
   /// line or nothing: a highlighter's stroke is straightened, not outlined.
-  static InkShape? recognize(List<Vec2> points, {bool linesOnly = false}) {
+  ///
+  /// The points at the end within [settled] of the last are the pen
+  /// trembling where it came to rest, and are left out.
+  static InkShape? recognize(
+    List<Vec2> points, {
+    bool linesOnly = false,
+    double settled = 0,
+  }) {
+    if (points.isEmpty) return null;
+    var rested = points.length - 1;
+    while (rested > 1 &&
+        points[rested - 1].distanceTo(points.last) <= settled) {
+      rested--;
+    }
     final path = <Vec2>[];
-    for (final point in points) {
+    for (final point in <Vec2>[...points.take(rested), points.last]) {
       if (path.isEmpty || path.last != point) path.add(point);
     }
     if (path.length < 2) return null;

@@ -1635,6 +1635,162 @@ void main() {
       ]);
     });
 
+    testWidgets('dragging across a bare caret picks nothing of it', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      final canvas = tester.widget<InfiniteCanvas>(find.byType(InfiniteCanvas));
+      await tester.tapAt(const Offset(600, 450), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(
+        canvas.controller.document.elements,
+        hasLength(1),
+        reason: 'caret',
+      );
+
+      Future<void> dragOver(Rect band) async {
+        final mouse = await tester.startGesture(
+          band.topLeft,
+          kind: PointerDeviceKind.mouse,
+        );
+        await mouse.moveTo(band.center);
+        await tester.pump();
+        await mouse.moveTo(band.bottomRight);
+        await tester.pump();
+        await mouse.up();
+        await tester.pumpAndSettle();
+      }
+
+      // Alone, the caret's empty box is not picked, nor shown.
+      await dragOver(const Rect.fromLTRB(560, 400, 760, 520));
+      expect(canvas.controller.selection, isEmpty);
+
+      // With a box that has text, only that box is picked, and the empty
+      // one goes.
+      await press(tester, LogicalKeyboardKey.escape);
+      await startTextBox(tester);
+      await type(tester, 'words');
+      await press(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      final words = tester.getRect(find.byType(TextBoxEditor).first);
+      await tester.tapAt(const Offset(900, 600), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      await dragOver(
+        Rect.fromPoints(
+          words.topLeft - const Offset(20, 20),
+          const Offset(1000, 700),
+        ),
+      );
+      final picked = canvas.controller.selectedElements;
+      expect(picked, hasLength(1));
+      expect(
+        TextBoxEditor.isEmpty((picked.single as TextElement).blocks),
+        isFalse,
+      );
+      expect(
+        canvas.controller.document.elements.whereType<TextElement>().where(
+          (box) => TextBoxEditor.isEmpty(box.blocks),
+        ),
+        isEmpty,
+      );
+    });
+
+    group('a caret placed on the paper', () {
+      CanvasController canvasOf(WidgetTester tester) =>
+          tester.widget<InfiniteCanvas>(find.byType(InfiniteCanvas)).controller;
+      bool bandShows(WidgetTester tester) =>
+          tester.widget<GrabBand>(find.byType(GrabBand)).visible;
+
+      testWidgets('with a formula begun and left, shows no band, and goes '
+          'leaving nothing to undo', (tester) async {
+        await openEditor(tester, store, pageId);
+        await startTextBox(tester);
+        final canvas = canvasOf(tester);
+
+        await press(tester, LogicalKeyboardKey.keyM, control: true);
+        await tester.pumpAndSettle();
+        expect(inFormula(tester), isTrue);
+        expect(bandShows(tester), isFalse, reason: 'nothing written yet');
+        expect(canvas.selection, isEmpty);
+
+        await press(tester, LogicalKeyboardKey.keyM, control: true);
+        await tester.pumpAndSettle();
+        expect(inFormula(tester), isFalse);
+        expect(bandShows(tester), isFalse, reason: 'still only a caret');
+        expect(canvas.selection, isEmpty);
+
+        await press(tester, LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byType(TextBoxEditor), findsNothing);
+        expect(canvas.selection, isEmpty);
+        expect(canvas.canUndo, isFalse);
+        expect(canvas.isDirty, isFalse);
+      });
+
+      testWidgets('with a formula begun, moves where the paper is clicked, '
+          'all at once', (tester) async {
+        await openEditor(tester, store, pageId);
+        await startTextBox(tester);
+        await press(tester, LogicalKeyboardKey.keyM, control: true);
+        await tester.pumpAndSettle();
+
+        await tester.tapAt(
+          const Offset(700, 500),
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(canvasOf(tester).document.elements, hasLength(1));
+        expect(textBox(tester).isEditing, isTrue);
+        expect(bandShows(tester), isFalse);
+      });
+
+      testWidgets('becomes a box with the first thing written, which undo '
+          'takes back whole', (tester) async {
+        await openEditor(tester, store, pageId);
+        await startTextBox(tester);
+        await press(tester, LogicalKeyboardKey.keyM, control: true);
+        await type(tester, 'x');
+        await tester.pumpAndSettle();
+        expect(bandShows(tester), isTrue, reason: 'written in: a box');
+        await press(tester, LogicalKeyboardKey.escape);
+        await press(tester, LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        final canvas = canvasOf(tester);
+        expect(canvas.document.elements, hasLength(1));
+
+        await press(tester, LogicalKeyboardKey.keyZ, control: true);
+        await tester.pumpAndSettle();
+        expect(canvas.document.elements, isEmpty, reason: 'no empty box');
+        expect(find.byType(TextBoxEditor), findsNothing);
+        await press(tester, LogicalKeyboardKey.keyY, control: true);
+        await tester.pumpAndSettle();
+        expect(
+          (canvas.document.elements.single as TextElement).blocks,
+          isNot(TextBoxEditor.isEmpty),
+        );
+      });
+
+      testWidgets('is not saved with the page', (tester) async {
+        await openEditor(tester, store, pageId);
+        await startTextBox(tester);
+        await type(tester, 'kept');
+        await tester.tapAt(
+          const Offset(700, 500),
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(canvasOf(tester).document.elements, hasLength(2));
+
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
+        final saved = await tester.runAsync(
+          () => store.pages.loadDocument(pageId),
+        );
+        expect(saved!.elements, hasLength(1));
+      });
+    });
+
     testWidgets('a box picked by its band shows its contents selected', (
       tester,
     ) async {

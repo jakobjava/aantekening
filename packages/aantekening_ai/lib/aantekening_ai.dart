@@ -22,4 +22,5 @@ export 'src/provider.dart';
 export 'src/review.dart';
 export 'src/streamed_answer.dart';
 export 'src/study.dart';
+export 'src/study_profile.dart';
 export 'src/web_search.dart';

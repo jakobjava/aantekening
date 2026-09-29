@@ -1,6 +1,6 @@
 # 8. A purpose-built text box editor, with formulas as runs
 
-**Status:** accepted
+**Status:** accepted; how a box begins and ends is revised by ADR 26
 
 ## Context
 

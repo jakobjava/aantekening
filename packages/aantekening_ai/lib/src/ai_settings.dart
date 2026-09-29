@@ -8,6 +8,7 @@ import 'note_context.dart';
 import 'ollama_provider.dart';
 import 'openai_compatible_provider.dart';
 import 'provider.dart';
+import 'study_profile.dart';
 import 'web_search.dart';
 
 /// The kinds of API a provider speaks.
@@ -262,6 +263,8 @@ class AiSettings {
     this.webBackend = WebSearchBackend.none,
     this.searxngUrl = 'http://127.0.0.1:8888',
     this.searchWeb = true,
+    this.about = '',
+    this.profiles = const <StudyProfile>[],
   });
 
   final List<ProviderConfig> providers;
@@ -276,6 +279,28 @@ class AiSettings {
   /// Whether questions may search the web, where it can be.
   final bool searchWeb;
 
+  /// What the person says of themselves, told to the model with every
+  /// question and study set: their school year, their course, their exams.
+  final String about;
+
+  /// The app's own study profiles the person changed, and those they made,
+  /// in the order made; see [studyProfiles].
+  final List<StudyProfile> profiles;
+
+  /// The study profiles to make sets with: the app's own, as the person
+  /// has them, then their own.
+  List<StudyProfile> get studyProfiles {
+    final changed = <String, StudyProfile>{
+      for (final profile in profiles) profile.id: profile,
+    };
+    return <StudyProfile>[
+      for (final original in StudyProfile.originals)
+        changed[original.id] ?? original,
+      for (final profile in profiles)
+        if (!profile.isOriginal) profile,
+    ];
+  }
+
   ProviderConfig? get active =>
       providers.where((provider) => provider.id == activeId).firstOrNull ??
       providers.firstOrNull;
@@ -289,12 +314,16 @@ class AiSettings {
     WebSearchBackend? webBackend,
     String? searxngUrl,
     bool? searchWeb,
+    String? about,
+    List<StudyProfile>? profiles,
   }) => AiSettings(
     providers: providers ?? this.providers,
     activeId: activeId ?? this.activeId,
     webBackend: webBackend ?? this.webBackend,
     searxngUrl: searxngUrl ?? this.searxngUrl,
     searchWeb: searchWeb ?? this.searchWeb,
+    about: about ?? this.about,
+    profiles: profiles ?? this.profiles,
   );
 
   /// With [config] in place of the provider of its id, or added.
@@ -315,6 +344,30 @@ class AiSettings {
     webBackend: webBackend,
     searxngUrl: searxngUrl,
     searchWeb: searchWeb,
+    about: about,
+    profiles: profiles,
+  );
+
+  /// With [profile] in place of the profile of its id, or added — and one
+  /// of the app's own, changed back to as it came, no longer kept.
+  AiSettings withProfile(StudyProfile profile) {
+    final keep = !profile.isAsMade;
+    return copyWith(
+      profiles: <StudyProfile>[
+        for (final kept in profiles)
+          if (kept.id != profile.id) kept else if (keep) profile,
+        if (keep && !profiles.any((kept) => kept.id == profile.id)) profile,
+      ],
+    );
+  }
+
+  /// Without profile [id]: one the person made is gone, one of the app's
+  /// own is as it came.
+  AiSettings withoutProfile(String id) => copyWith(
+    profiles: <StudyProfile>[
+      for (final profile in profiles)
+        if (profile.id != id) profile,
+    ],
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -323,6 +376,9 @@ class AiSettings {
     'web': webBackend.name,
     'searxng': searxngUrl,
     'searchWeb': searchWeb,
+    if (about.isNotEmpty) 'about': about,
+    if (profiles.isNotEmpty)
+      'profiles': <Object?>[for (final p in profiles) p.toJson()],
   };
 
   static AiSettings fromJson(Object? json) {
@@ -338,6 +394,11 @@ class AiSettings {
           WebSearchBackend.none,
       searxngUrl: json['searxng'] as String? ?? 'http://127.0.0.1:8888',
       searchWeb: json['searchWeb'] as bool? ?? true,
+      about: json['about'] as String? ?? '',
+      profiles: <StudyProfile>[
+        for (final entry in (json['profiles'] as List<Object?>?) ?? const [])
+          if (entry is Map) ?StudyProfile.fromJson(entry.cast()),
+      ],
     );
   }
 }

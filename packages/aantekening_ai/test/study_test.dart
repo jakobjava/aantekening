@@ -288,7 +288,7 @@ Viel Erfolg beim Lernen! {Ende}''';
         provider: provider,
         model: 'm',
         reader: notes,
-      ).make(StudyKind.terms, scope: section).toList();
+      ).make(StudyProfile.original(StudyKind.terms), scope: section).toList();
       final drafts = progress
           .map((p) => p.study?.size)
           .whereType<int>()
@@ -325,7 +325,7 @@ Viel Erfolg beim Lernen! {Ende}''';
         provider: provider,
         model: 'm',
         reader: notes,
-      ).make(StudyKind.terms, scope: section).toList();
+      ).make(StudyProfile.original(StudyKind.terms), scope: section).toList();
       final writing = progress.firstWhere((p) => p.stage == AgentStage.writing);
       expect(writing.cost, greaterThan(0), reason: 'reckoned while it comes');
       expect(
@@ -353,7 +353,7 @@ Viel Erfolg beim Lernen! {Ende}''';
         provider: provider,
         model: 'm',
         reader: notes,
-      ).make(StudyKind.terms, scope: section).toList();
+      ).make(StudyProfile.original(StudyKind.terms), scope: section).toList();
       return (progress, provider.asked);
     }
 
@@ -411,6 +411,101 @@ Viel Erfolg beim Lernen! {Ende}''';
             contains('answered with nothing'),
           ),
         ),
+      );
+    });
+  });
+
+  group('study profiles', () {
+    const abitur = StudyProfile(
+      id: 'p1',
+      name: 'Abitur tasks',
+      form: StudyKind.text,
+      idea: 'Tasks as the Abitur sets them, each with a worked solution.',
+      details: 'Three tasks, the last one hard.',
+    );
+
+    test('ask for their idea, in their form, and what the person adds '
+        'last', () {
+      final asked = abitur.instructions('section');
+      expect(asked, startsWith(abitur.idea));
+      expect(asked, contains(StudyKind.text.form('section')));
+      expect(
+        asked,
+        endsWith(
+          'do as they ask, in the form asked for:\n'
+          'Three tasks, the last one hard.',
+        ),
+      );
+      expect(
+        StudyProfile.original(StudyKind.quiz).instructions('page'),
+        '${StudyKind.quiz.idea}\n\n${StudyKind.quiz.form('page')}',
+      );
+    });
+
+    test('keep only what was changed, the app’s own first', () {
+      final quiz = StudyProfile.original(
+        StudyKind.quiz,
+      ).copyWith(details: 'I am in Q13 in Bavaria.', form: StudyKind.text);
+      expect(quiz.form, StudyKind.quiz, reason: 'the app’s own keep theirs');
+      var settings = const AiSettings()
+          .withProfile(abitur)
+          .withProfile(quiz)
+          .withProfile(StudyProfile.original(StudyKind.terms));
+      expect(settings.profiles.map((p) => p.id), <String>['p1', 'quiz']);
+      settings = AiSettings.fromJson(settings.toJson());
+      expect(settings.studyProfiles.map((p) => p.name), <String>[
+        'Summary',
+        'Flashcards',
+        'Quiz',
+        'Key terms',
+        'Abitur tasks',
+      ]);
+      expect(settings.studyProfiles[2].details, 'I am in Q13 in Bavaria.');
+      expect(settings.studyProfiles.last.form, StudyKind.text);
+      // Changed back, one of the app's own is no longer kept.
+      settings = settings.withProfile(StudyProfile.original(StudyKind.quiz));
+      expect(settings.profiles.single.id, 'p1');
+      expect(settings.withoutProfile('p1').profiles, isEmpty);
+    });
+
+    test('free text is written as an answer, citing the notes', () async {
+      final provider = ScriptedProvider(<List<ChatEvent>>[
+        <ChatEvent>[
+          const TextDelta('## Task 1\n\nHow fast is it?'),
+          const CitedSpan(<Citation>[
+            Citation(
+              uri: 'aantekening://page/p#element=a',
+              title: 'Speed',
+              origin: SourceOrigin.notes,
+            ),
+          ]),
+          const MessageDone(
+            ChatMessage(ChatRole.assistant, <ChatPart>[]),
+            stop: StopReason.done,
+          ),
+        ],
+      ]);
+      final progress = await NoteAgent(
+        provider: provider,
+        model: 'm',
+        reader: notes,
+        about: 'I am in Q13 in Bavaria.',
+      ).make(abitur, scope: section).toList();
+      final text = progress.last.study! as StudyText;
+      expect(text.answer.markdown, startsWith('## Task 1'));
+      expect(text.answer.citations.single.title, 'Speed');
+      expect(text.size, 6);
+      final asked = provider.asked.single;
+      expect(asked.answerSchema, isNull);
+      expect(sourcesIn(asked.messages), isNotEmpty, reason: 'cited natively');
+      expect(asked.messages.single.text, contains(abitur.idea));
+      expect(asked.system, contains('I am in Q13 in Bavaria.'));
+      expect(asked.system, isNot(contains('JSON')));
+      expect(
+        StudySet.fromJson(text.toJson()),
+        isA<StudyText>().having((t) => t.answer.citations, 'citations', [
+          text.answer.citations.single,
+        ]),
       );
     });
   });

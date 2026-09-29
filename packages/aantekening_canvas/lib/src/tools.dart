@@ -2,6 +2,7 @@
 library;
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 
 /// What a pointer press does on the canvas.
@@ -100,4 +101,53 @@ class PenSettings {
 
   @override
   int get hashCode => Object.hash(tool, color, width, pressureSensitive);
+}
+
+/// What pressing a pen's barrel button does, held as the pen touches the
+/// page, whatever tool is in hand.
+enum PenButtonAction {
+  /// Nothing more than the tip does.
+  none('Nothing'),
+
+  /// Erases whole strokes, as the eraser does.
+  erase('Eraser'),
+
+  /// Picks, moves and resizes, as the select tool does.
+  select('Select'),
+
+  /// Moves the page.
+  scroll('Scroll');
+
+  const PenButtonAction(this.label);
+
+  final String label;
+}
+
+/// What a pen's two barrel buttons do, as the platform numbers them: the
+/// first is Flutter's [kPrimaryStylusButton], the second its
+/// [kSecondaryStylusButton].
+@immutable
+class PenButtons {
+  const PenButtons({
+    this.first = PenButtonAction.erase,
+    this.second = PenButtonAction.select,
+  });
+
+  final PenButtonAction first;
+  final PenButtonAction second;
+
+  /// What a pen pressed with [buttons] held does, or null for its tip
+  /// alone.
+  PenButtonAction? actionFor(int buttons) {
+    if (buttons & kPrimaryStylusButton != 0) return first;
+    if (buttons & kSecondaryStylusButton != 0) return second;
+    return null;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is PenButtons && other.first == first && other.second == second;
+
+  @override
+  int get hashCode => Object.hash(first, second);
 }

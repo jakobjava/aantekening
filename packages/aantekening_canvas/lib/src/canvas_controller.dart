@@ -64,6 +64,20 @@ class CanvasController extends ChangeNotifier {
   /// while the pointer drawing it is down.
   _ShapeDraft? _draft;
 
+  /// How far, in screen pixels, the line being drawn trails the pointer,
+  /// to steady a shaking hand: none at 0.
+  ///
+  /// The line is pulled along behind the pointer as if on a string that
+  /// long, so a tremor shorter than the string moves nothing, and the
+  /// line takes the way the hand meant. Where the pen lifts, or holds
+  /// still to make a shape, it catches up.
+  double inkSmoothing = 0;
+
+  /// Where the line being drawn has got to, trailing the pointer, and the
+  /// last sample the pointer gave.
+  Offset _lineEnd = Offset.zero;
+  ({Offset page, double pressure, double tilt})? _pointer;
+
   ShapeKind _shapeKind = ShapeKind.rectangle;
 
   /// The ink element new strokes are appended to.
@@ -556,10 +570,28 @@ class CanvasController extends ChangeNotifier {
     );
   }
 
-  /// Removes the elements named in [ids].
-  void removeElements(Set<String> ids, {bool recordUndo = true}) {
+  /// Removes the elements named in [ids]. With [markDirty] false the
+  /// removal does not by itself cause a save: of what was never saved.
+  void removeElements(
+    Set<String> ids, {
+    bool recordUndo = true,
+    bool markDirty = true,
+  }) {
     _selection.removeAll(ids);
-    _apply(_document.withElementsRemoved(ids), recordUndo: recordUndo);
+    _apply(
+      _document.withElementsRemoved(ids),
+      recordUndo: recordUndo,
+      markDirty: markDirty,
+    );
+  }
+
+  /// Replaces the element of [element]'s id with it, recorded in history as
+  /// its arrival: undone, it is gone. For what was a placeholder until now,
+  /// kept out of history — a caret on the paper, once something is written
+  /// at it.
+  void replacePlaceholder(NoteElement element) {
+    _record(_document.withElementsRemoved(<String>{element.id}));
+    _apply(_document.withElementReplaced(element), recordUndo: false);
   }
 
   /// Replaces the selection with [ids].
@@ -622,10 +654,14 @@ class CanvasController extends ChangeNotifier {
 
   // ------------------------------------------------------------ ink capture
 
-  /// Begins a stroke at a page-space point.
+  /// Begins a stroke at a page-space point, letting go of what was picked
+  /// — with a pen's button, say.
   void beginStroke(Offset page, {double pressure = 1, double tilt = 0}) {
+    _selection.clear();
     _drawing = true;
     _draft = null;
+    _lineEnd = page;
+    _pointer = (page: page, pressure: pressure, tilt: tilt);
     _wetPoints
       ..clear()
       ..addAll(<double>[page.dx, page.dy, _pressure(pressure), tilt]);
@@ -637,6 +673,7 @@ class CanvasController extends ChangeNotifier {
   void beginShape(Offset page) {
     final at = Vec2(page.dx, page.dy);
     final shape = InkShape.begin(_shapeKind, at);
+    _selection.clear();
     _drawing = true;
     _wetPoints.clear();
     _draft = _ShapeDraft(shape, shape.draggedHandle, at, dragged: true);
@@ -648,8 +685,12 @@ class CanvasController extends ChangeNotifier {
   /// is one — a highlighter's only a straight line — and returns whether
   /// it did. The shape is then held by its handle nearest the pointer,
   /// which reshapes it as it moves, until it lifts.
-  bool snapToShape() {
+  ///
+  /// The samples within [settled] page units of where the pen came to rest
+  /// are its trembling there, and are left out of what is read.
+  bool snapToShape({double settled = 0}) {
     if (!_drawing || _draft != null) return false;
+    _catchUp();
     final points = <Vec2>[
       for (var i = 0; i < _wetPoints.length; i += InkStroke.stride)
         Vec2(_wetPoints[i], _wetPoints[i + 1]),
@@ -658,6 +699,7 @@ class CanvasController extends ChangeNotifier {
     final shape = ShapeRecognizer.recognize(
       points,
       linesOnly: pen.tool == InkTool.highlighter,
+      settled: settled,
     );
     if (shape == null) return false;
     final pointer = points.last;
@@ -675,13 +717,9 @@ class CanvasController extends ChangeNotifier {
     return true;
   }
 
-  /// Adds a sample to the stroke in progress, or, once it is a shape,
-  /// reshapes it: [constrain] keeps a box square and a line on steps of
-  /// 15°.
-  ///
-  /// Samples closer together than a fraction of a page unit are dropped: a
-  /// stylus can report faster than the display refreshes, and keeping every
-  /// sample would inflate the stored page without changing what is drawn.
+  /// Adds a sample to the stroke in progress, trailing the pointer by
+  /// [inkSmoothing], or, once it is a shape, reshapes it: [constrain] keeps
+  /// a box square and a line on steps of 15°.
   void extendStroke(
     Offset page, {
     double pressure = 1,
@@ -696,6 +734,33 @@ class CanvasController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    _pointer = (page: page, pressure: pressure, tilt: tilt);
+    final string = viewport.toPageDistance(inkSmoothing);
+    if (string > 0) {
+      final pull = page - _lineEnd;
+      final distance = pull.distance;
+      if (distance <= string) return;
+      _lineEnd += pull * ((distance - string) / distance);
+    } else {
+      _lineEnd = page;
+    }
+    _addSample(_lineEnd, pressure, tilt);
+  }
+
+  /// Brings the line being drawn up to the pointer, where it trails it.
+  void _catchUp() {
+    final pointer = _pointer;
+    if (pointer == null || pointer.page == _lineEnd) return;
+    _lineEnd = pointer.page;
+    _addSample(pointer.page, pointer.pressure, pointer.tilt);
+  }
+
+  /// Adds a sample at [page] to the stroke in progress.
+  ///
+  /// Samples closer together than a fraction of a page unit are dropped: a
+  /// stylus can report faster than the display refreshes, and keeping every
+  /// sample would inflate the stored page without changing what is drawn.
+  void _addSample(Offset page, double pressure, double tilt) {
     final length = _wetPoints.length;
     if (length >= 4) {
       final dx = page.dx - _wetPoints[length - 4];
@@ -713,8 +778,10 @@ class CanvasController extends ChangeNotifier {
   /// held too few samples to be worth keeping.
   InkElement? endStroke() {
     if (!_drawing) return null;
-    _drawing = false;
     final draft = _draft;
+    if (draft == null) _catchUp();
+    _drawing = false;
+    _pointer = null;
     final strokes = draft == null ? wetStrokes : const <InkStroke>[];
     // What was drawn goes with the stroke, the samples of one that became
     // a shape too, or the overlay goes on showing them.
@@ -792,6 +859,7 @@ class CanvasController extends ChangeNotifier {
   void cancelStroke() {
     if (!_drawing && _wetPoints.isEmpty && _draft == null) return;
     _drawing = false;
+    _pointer = null;
     _wetPoints.clear();
     _draft = null;
     _wetInk.signal();
@@ -895,16 +963,19 @@ class CanvasController extends ChangeNotifier {
   }) {
     if (identical(next, _document)) return;
 
-    if (recordUndo) {
-      _undoStack.add(_document);
-      if (_undoStack.length > undoLimit) _undoStack.removeAt(0);
-      _redoStack.clear();
-    }
+    if (recordUndo) _record(_document);
     _document = next;
     if (markDirty) _dirty = true;
     _reindex();
     _selection.removeWhere((id) => !_byId.containsKey(id));
     _changed();
+  }
+
+  /// Keeps [before] as what undo goes back to.
+  void _record(PageDocument before) {
+    _undoStack.add(before);
+    if (_undoStack.length > undoLimit) _undoStack.removeAt(0);
+    _redoStack.clear();
   }
 
   /// Brings the lookups up to date with the document: only the elements

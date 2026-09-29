@@ -20,7 +20,9 @@ import 'answer_progress.dart';
 import 'money.dart';
 import 'flashcards_view.dart';
 import 'glossary_view.dart';
+import 'answer_view.dart';
 import 'quiz_view.dart';
+import 'study_profile_editor.dart';
 import 'study_style.dart';
 import 'summary_sheet.dart';
 
@@ -34,6 +36,7 @@ String sizeOf(StudySet set) => switch (set) {
     '${questions.length} ${questions.length == 1 ? 'question' : 'questions'}',
   Glossary(:final terms) =>
     '${terms.length} ${terms.length == 1 ? 'term' : 'terms'}',
+  StudyText(:final size) => '$size ${size == 1 ? 'word' : 'words'}',
 };
 
 /// When [millis] was, as a person says it: "today", "3 days ago".
@@ -50,13 +53,14 @@ String whenOf(int millis) {
   };
 }
 
-/// Kept set [item], [set], on a page of its own: its head, and the set as
-/// its kind is used.
+/// Kept set [item], [set], made by [profile], on a page of its own: its
+/// head, and the set as its kind is used.
 class StudySetPage extends ConsumerWidget {
   const StudySetPage({
     required this.scope,
     required this.item,
     required this.set,
+    required this.profile,
     required this.onOpen,
     super.key,
   });
@@ -64,18 +68,19 @@ class StudySetPage extends ConsumerWidget {
   final NoteLink scope;
   final AiItem item;
   final StudySet set;
+  final StudyProfile profile;
   final void Function(Citation citation) onOpen;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.read(aiSessionProvider(scope).notifier);
     final info = ref.watch(aiScopeInfoProvider(scope)).value;
-    final kind = set.kind;
+    final cards = set is FlashcardSet;
     return Column(
       children: <Widget>[
         StudyHeader(
-          kind: kind,
-          title: kind.label,
+          kind: set.kind,
+          title: profile.name,
           subtitle: <String>[
             ?info?.title,
             sizeOf(set),
@@ -85,18 +90,23 @@ class StudySetPage extends ConsumerWidget {
           ].join('  ·  '),
           actions: <Widget>[
             SmallButton(
+              'Edit',
+              tooltip: 'Change what is asked for, then make it again',
+              onPressed: () => editStudyProfile(context, profile: profile),
+            ),
+            SmallButton(
               'Make again',
               onPressed: () async {
-                if (kind == StudyKind.flashcards &&
+                if (cards &&
                     !await _confirm(
                       context,
-                      'Make the flashcards again?',
+                      'Make ${profile.called} again?',
                       'Cards that ask the same keep what you learnt of '
                           'them; the others start afresh.',
                     )) {
                   return;
                 }
-                unawaited(session.make(kind));
+                unawaited(session.make(profile));
               },
             ),
             SmallButton(
@@ -104,10 +114,10 @@ class StudySetPage extends ConsumerWidget {
               onPressed: () async {
                 if (await _confirm(
                   context,
-                  'Delete the ${kind.label.toLowerCase()}?',
-                  kind == StudyKind.flashcards
+                  'Delete ${profile.called}?',
+                  cards
                       ? 'What you learnt of the cards goes with them.'
-                      : 'You can make them again at any time.',
+                      : 'You can make it again at any time.',
                 )) {
                   await session.deleteItem(item.id);
                 }
@@ -140,6 +150,11 @@ class StudySetPage extends ConsumerWidget {
               glossary: glossary,
               onOpen: onOpen,
             ),
+            final StudyText text => SingleChildScrollView(
+              child: StudyPaper(
+                child: AnswerView(answer: text.answer, onOpen: onOpen),
+              ),
+            ),
           },
         ),
       ],
@@ -167,13 +182,17 @@ Future<bool> _confirm(BuildContext context, String title, String body) async =>
     ) ??
     false;
 
-/// A kind of set not made yet: what it is, and a button to make it — so
-/// looking at it never sets a model to work by itself.
-class StudyKindPage extends ConsumerWidget {
-  const StudyKindPage({required this.scope, required this.kind, super.key});
+/// A profile whose set is not made yet: what it makes, and a button to
+/// make it — so looking at it never sets a model to work by itself.
+class StudyProfilePage extends ConsumerWidget {
+  const StudyProfilePage({
+    required this.scope,
+    required this.profile,
+    super.key,
+  });
 
   final NoteLink scope;
-  final StudyKind kind;
+  final StudyProfile profile;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -188,12 +207,12 @@ class StudyKindPage extends ConsumerWidget {
           child: Column(
             children: <Widget>[
               Text(
-                kind.label,
+                profile.name,
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 8),
               Text(
-                kind.purpose,
+                profile.purpose,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: tones.muted, height: 1.45),
               ),
@@ -206,14 +225,33 @@ class StudyKindPage extends ConsumerWidget {
                 style: TextStyle(fontSize: 12.5, color: tones.faint),
               ),
               const SizedBox(height: 20),
-              FilledButton(
-                style: FilledButton.styleFrom(minimumSize: const Size(0, 38)),
-                onPressed: model == null
-                    ? null
-                    : () => unawaited(
-                        ref.read(aiSessionProvider(scope).notifier).make(kind),
-                      ),
-                child: Text('Make the ${kind.label.toLowerCase()}'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: <Widget>[
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 38),
+                    ),
+                    onPressed: () =>
+                        editStudyProfile(context, profile: profile),
+                    child: const Text('Edit'),
+                  ),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 38),
+                    ),
+                    onPressed: model == null
+                        ? null
+                        : () => unawaited(
+                            ref
+                                .read(aiSessionProvider(scope).notifier)
+                                .make(profile),
+                          ),
+                    child: Text('Make ${profile.called}'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -239,15 +277,15 @@ class StudyDraftPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final kind = pending.study!;
+    final profile = pending.profile!;
     final info = ref.watch(aiScopeInfoProvider(scope)).value;
     final model = ref.watch(aiModelProvider).value;
     final draft = pending.progress.study;
     return Column(
       children: <Widget>[
         StudyHeader(
-          kind: kind,
-          title: 'Making the ${kind.label.toLowerCase()}',
+          kind: profile.form,
+          title: 'Making ${profile.called}',
           subtitle: <String>[
             'from “${info?.title ?? ''}”',
             if (model != null) 'with ${model.config.model}',
@@ -256,7 +294,9 @@ class StudyDraftPage extends ConsumerWidget {
           actions: <Widget>[
             OutlinedButton(
               onPressed: () => unawaited(
-                ref.read(aiSessionProvider(scope).notifier).stopMaking(kind),
+                ref
+                    .read(aiSessionProvider(scope).notifier)
+                    .stopMaking(profile.id),
               ),
               child: const Text('Stop'),
             ),
@@ -303,6 +343,13 @@ class StudyDraftPage extends ConsumerWidget {
                       glossary: glossary,
                       onOpen: onOpen,
                       scrolls: false,
+                    ),
+                    final StudyText text => StudyPaper(
+                      child: AnswerView(
+                        answer: text.answer,
+                        onOpen: onOpen,
+                        showSources: false,
+                      ),
                     ),
                   },
               ],
@@ -363,18 +410,35 @@ class StudyOverview extends ConsumerWidget {
                     spacing: 16,
                     runSpacing: 16,
                     children: <Widget>[
-                      for (final kind in StudyKind.values)
+                      for (final profile in studyProfilesOf(ref, state))
                         SizedBox(
                           width: width,
                           child: _StudyTile(
-                            key: ValueKey<StudyKind>(kind),
-                            kind: kind,
-                            item: state.setOf(kind),
-                            making: state.making.containsKey(kind),
-                            onShow: () => session.openKind(kind),
-                            onMake: () => unawaited(session.make(kind)),
+                            key: ValueKey<String>(profile.id),
+                            profile: profile,
+                            item: state.setOf(profile.id),
+                            making: state.making.containsKey(profile.id),
+                            onShow: () => session.openProfile(profile.id),
+                            onMake: () => unawaited(session.make(profile)),
                           ),
                         ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: <Widget>[
+                      OutlinedButton(
+                        onPressed: () => editStudyProfile(context),
+                        child: const Text('New study profile…'),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Describe anything else to make from your notes: '
+                          'exam tasks, a cheat sheet, a timeline.',
+                          style: TextStyle(fontSize: 12.5, color: tones.muted),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 30),
@@ -433,11 +497,12 @@ class StudyOverview extends ConsumerWidget {
   }
 }
 
-/// One kind of set on the overview: what it is for, whether it is made and
-/// how far along it is, and a button to open or make it.
+/// One profile on the overview: what it is for, whether its set is made
+/// and how far along it is, and buttons to change it, and to open or make
+/// its set.
 class _StudyTile extends ConsumerWidget {
   const _StudyTile({
-    required this.kind,
+    required this.profile,
     super.key,
     required this.item,
     required this.making,
@@ -445,7 +510,7 @@ class _StudyTile extends ConsumerWidget {
     required this.onMake,
   });
 
-  final StudyKind kind;
+  final StudyProfile profile;
   final AiItem? item;
 
   /// Whether this set is being made now.
@@ -461,11 +526,11 @@ class _StudyTile extends ConsumerWidget {
     final item = this.item;
     final set = item == null ? null : StudySet.fromJson(item.body);
     final due = cardsToStudy(ref, item);
-    final open = switch (kind) {
-      StudyKind.summary => 'Read',
-      StudyKind.flashcards => due > 0 ? 'Study $due' : 'Open',
-      StudyKind.quiz => 'Take the quiz',
-      StudyKind.terms => 'Open',
+    final open = switch (set) {
+      StudySummary() || StudyText() => 'Read',
+      FlashcardSet() => due > 0 ? 'Study $due' : 'Open',
+      QuizSet() => 'Take the quiz',
+      Glossary() || null => 'Open',
     };
 
     return Material(
@@ -482,7 +547,7 @@ class _StudyTile extends ConsumerWidget {
                 children: <Widget>[
                   Expanded(
                     child: Text(
-                      kind.label,
+                      profile.name,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
@@ -499,8 +564,9 @@ class _StudyTile extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                kind.purpose,
+                profile.purpose,
                 maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 13, height: 1.4, color: tones.muted),
               ),
               const SizedBox(height: 12),
@@ -517,6 +583,12 @@ class _StudyTile extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 12, color: tones.faint),
                     ),
+                  ),
+                  SmallButton(
+                    'Edit',
+                    tooltip: 'Change what is asked for',
+                    onPressed: () =>
+                        editStudyProfile(context, profile: profile),
                   ),
                   if (making)
                     const Busy(width: 32)

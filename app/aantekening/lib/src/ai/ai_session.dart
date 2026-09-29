@@ -32,7 +32,8 @@ final aiScopeInfoProvider = FutureProvider.family<ScopeInfo?, NoteLink>((
 });
 
 /// A question asked often, offered to start a conversation with. What is
-/// made to study from — a summary, flashcards — is a [StudyKind] instead.
+/// made to study from — a summary, flashcards — is a [StudyProfile]
+/// instead.
 enum AiAction {
   explain(
     'Explain the hardest part',
@@ -88,18 +89,17 @@ class AiStep {
 /// took to get there.
 @immutable
 class PendingTurn {
-  /// [question], just asked — or, with [study], a set of that kind being
-  /// made.
+  /// [question], just asked — or, with [profile], a set of it being made.
   factory PendingTurn({
     required String question,
     required bool local,
-    StudyKind? study,
+    StudyProfile? profile,
   }) {
     final now = DateTime.now();
     return PendingTurn._(
       question: question,
       local: local,
-      study: study,
+      profile: profile,
       startedAt: now,
       progress: const AgentProgress(
         answer: AiAnswer(),
@@ -115,7 +115,7 @@ class PendingTurn {
   const PendingTurn._({
     required this.question,
     required this.local,
-    required this.study,
+    required this.profile,
     required this.startedAt,
     required this.progress,
     required this.since,
@@ -125,8 +125,9 @@ class PendingTurn {
 
   final String question;
 
-  /// The kind of study set being made, if it is one rather than an answer.
-  final StudyKind? study;
+  /// The profile of the study set being made, if it is one rather than an
+  /// answer.
+  final StudyProfile? profile;
 
   /// Whether the model runs on this computer, where reading is slow.
   final bool local;
@@ -155,7 +156,7 @@ class PendingTurn {
     return PendingTurn._(
       question: question,
       local: local,
-      study: study,
+      profile: profile,
       startedAt: startedAt,
       progress: next,
       since: same ? since : now,
@@ -187,8 +188,8 @@ class AiSessionState {
     this.itemId,
     this.turns = const <AiTurn>[],
     this.pending,
-    this.making = const <StudyKind, PendingTurn>{},
-    this.shownKind,
+    this.making = const <String, PendingTurn>{},
+    this.shownProfile,
     this.error,
   });
 
@@ -212,14 +213,14 @@ class AiSessionState {
   /// The question being answered, if one is.
   final PendingTurn? pending;
 
-  /// The study sets being made, each as far as it has got. They are made
-  /// alongside each other and the question, while anything else is looked
-  /// at.
-  final Map<StudyKind, PendingTurn> making;
+  /// The study sets being made, by the id of their profile, each as far as
+  /// it has got. They are made alongside each other and the question, while
+  /// anything else is looked at.
+  final Map<String, PendingTurn> making;
 
-  /// The kind of study set whose page shows, where it is being made or not
-  /// made yet; once made, its kept set shows as [itemId].
-  final StudyKind? shownKind;
+  /// The id of the profile whose page shows, where its set is being made
+  /// or not made yet; once made, its kept set shows as [itemId].
+  final String? shownProfile;
 
   /// Why the last question went unanswered.
   final String? error;
@@ -230,16 +231,31 @@ class AiSessionState {
   bool get atOverview =>
       itemId == null &&
       threadId == null &&
-      shownKind == null &&
+      shownProfile == null &&
       pending == null;
 
-  /// The kept set of [kind], if one was made.
-  AiItem? setOf(StudyKind kind) => items
-      .where(
-        (item) =>
-            item.kind == kind.name && StudySet.fromJson(item.body) != null,
-      )
+  /// The kept set of profile [id], if one was made.
+  AiItem? setOf(String id) => items
+      .where((item) => item.kind == id && StudySet.fromJson(item.body) != null)
       .firstOrNull;
+
+  /// The profiles to study by: [configured], then one for each set kept
+  /// whose own profile is gone, to see it and make it again by.
+  List<StudyProfile> profilesWith(List<StudyProfile> configured) {
+    final ids = <String>{for (final profile in configured) profile.id};
+    return <StudyProfile>[
+      ...configured,
+      for (final item in items)
+        if (StudySet.fromJson(item.body) case final set?
+            when ids.add(item.kind))
+          StudyProfile(
+            id: item.kind,
+            name: item.title,
+            form: set.kind,
+            idea: set.kind.idea,
+          ),
+    ];
+  }
 
   /// The answers kept from conversations.
   List<AiItem> get savedAnswers => <AiItem>[
@@ -255,8 +271,8 @@ class AiSessionState {
     String? Function()? itemId,
     List<AiTurn>? turns,
     PendingTurn? Function()? pending,
-    Map<StudyKind, PendingTurn>? making,
-    StudyKind? Function()? shownKind,
+    Map<String, PendingTurn>? making,
+    String? Function()? shownProfile,
     String? Function()? error,
   }) => AiSessionState(
     loaded: loaded ?? this.loaded,
@@ -267,7 +283,7 @@ class AiSessionState {
     turns: turns ?? this.turns,
     pending: pending == null ? this.pending : pending(),
     making: making ?? this.making,
-    shownKind: shownKind == null ? this.shownKind : shownKind(),
+    shownProfile: shownProfile == null ? this.shownProfile : shownProfile(),
     error: error == null ? this.error : error(),
   );
 }
@@ -281,8 +297,10 @@ class AiSession extends Notifier<AiSessionState> {
 
   final NoteLink scope;
   StreamSubscription<AgentProgress>? _answering;
-  final Map<StudyKind, StreamSubscription<AgentProgress>> _makers =
-      <StudyKind, StreamSubscription<AgentProgress>>{};
+
+  /// What makes each set being made, by the id of its profile.
+  final Map<String, StreamSubscription<AgentProgress>> _makers =
+      <String, StreamSubscription<AgentProgress>>{};
 
   Future<AantekeningStore> get _store => ref.read(storeProvider.future);
 
@@ -318,7 +336,7 @@ class AiSession extends Notifier<AiSessionState> {
     state = state.copyWith(
       threadId: () => id,
       itemId: () => null,
-      shownKind: () => null,
+      shownProfile: () => null,
       turns: await store.ai.turnsOf(id),
       error: () => null,
     );
@@ -328,29 +346,41 @@ class AiSession extends Notifier<AiSessionState> {
   void newThread() => state = state.copyWith(
     threadId: () => null,
     itemId: () => null,
-    shownKind: () => null,
+    shownProfile: () => null,
     turns: const <AiTurn>[],
     error: () => null,
   );
 
   /// Shows kept thing [id].
   void openItem(String id) =>
-      state = state.copyWith(itemId: () => id, shownKind: () => null);
+      state = state.copyWith(itemId: () => id, shownProfile: () => null);
 
-  /// Shows the study set of [kind]: as it is being made, as it was kept,
-  /// or, not made yet, what it would be and a way to make it.
-  void openKind(StudyKind kind) {
-    final item = state.setOf(kind);
-    if (item != null && !state.making.containsKey(kind)) {
+  /// Shows the study set of profile [id]: as it is being made, as it was
+  /// kept, or, not made yet, what it would be and a way to make it.
+  void openProfile(String id) {
+    final item = state.setOf(id);
+    if (item != null && !state.making.containsKey(id)) {
       openItem(item.id);
       return;
     }
     state = state.copyWith(
       itemId: () => null,
       threadId: () => null,
-      shownKind: () => kind,
+      shownProfile: () => id,
     );
   }
+
+  /// A model to answer with, as the settings have it: what it is asked
+  /// bears in mind what the person says of themselves.
+  NoteAgent _agent(AiModel model, WorkspaceReader reader, {WebSearch? web}) =>
+      NoteAgent(
+        provider: model.provider,
+        model: model.config.model,
+        reader: reader,
+        webSearch: web,
+        notesTokens: model.config.notesTokens,
+        about: ref.read(aiSettingsProvider).about,
+      );
 
   /// Asks [question] in the conversation showing, or a new one — the
   /// question of [action], if it is one. With [searchWeb], the web may be
@@ -379,19 +409,12 @@ class AiSession extends Notifier<AiSessionState> {
 
     state = state.copyWith(
       itemId: () => null,
-      shownKind: () => null,
+      shownProfile: () => null,
       pending: () => PendingTurn(question: text, local: model.config.local),
       error: () => null,
     );
-    final agent = NoteAgent(
-      provider: model.provider,
-      model: model.config.model,
-      reader: reader,
-      webSearch: web,
-      notesTokens: model.config.notesTokens,
-    );
     await _follow(
-      agent.ask(
+      _agent(model, reader, web: web).ask(
         scope: info,
         history: history,
         question: text,
@@ -405,14 +428,15 @@ class AiSession extends Notifier<AiSessionState> {
     );
   }
 
-  /// Makes a study set of [kind] from the notes of the scope, shown as it
-  /// is written, and keeps it — in place of the one made before, what was
-  /// learnt of its cards carried over. Made alongside anything else going
-  /// on; its page shows it coming, and anything else can be looked at
-  /// meanwhile.
-  Future<void> make(StudyKind kind) async {
-    if (state.making.containsKey(kind)) {
-      openKind(kind);
+  /// Makes a study set as [profile] describes it from the notes of the
+  /// scope, shown as it is written, and keeps it — in place of the one made
+  /// before, what was learnt of its cards carried over. Made alongside
+  /// anything else going on; its page shows it coming, and anything else
+  /// can be looked at meanwhile.
+  Future<void> make(StudyProfile profile) async {
+    final id = profile.id;
+    if (state.making.containsKey(id)) {
+      openProfile(id);
       return;
     }
     final model = await ref.read(aiModelProvider.future);
@@ -423,32 +447,31 @@ class AiSession extends Notifier<AiSessionState> {
     final reader = await ref.read(workspaceReaderProvider.future);
     final info = await reader.scope(scope);
     if (info == null) return;
-    void write(PendingTurn? pending) => _setMaking(kind, pending);
+    void write(PendingTurn? pending) => _setMaking(id, pending);
     write(
-      PendingTurn(question: kind.label, local: model.config.local, study: kind),
+      PendingTurn(
+        question: profile.name,
+        local: model.config.local,
+        profile: profile,
+      ),
     );
     state = state.copyWith(
       itemId: () => null,
       threadId: () => null,
-      shownKind: () => kind,
+      shownProfile: () => id,
       error: () => null,
-    );
-    final agent = NoteAgent(
-      provider: model.provider,
-      model: model.config.model,
-      reader: reader,
-      notesTokens: model.config.notesTokens,
     );
     StreamSubscription<AgentProgress>? making;
     await _follow(
-      agent.make(kind, scope: info),
-      read: () => state.making[kind],
+      _agent(model, reader).make(profile, scope: info),
+      read: () => state.making[id],
       write: write,
-      started: (subscription) => _makers[kind] = making = subscription,
+      started: (subscription) => _makers[id] = making = subscription,
       onDone: (progress) async {
         if (progress.study case final set?) {
           await _keepSet(
             set,
+            profile: profile,
             provider: model.config.name,
             model: model.config.model,
             usage: _usageOf(progress),
@@ -457,25 +480,25 @@ class AiSession extends Notifier<AiSessionState> {
       },
     );
     // Another may have been started once this one was kept.
-    if (identical(_makers[kind], making)) _makers.remove(kind);
+    if (identical(_makers[id], making)) _makers.remove(id);
   }
 
-  /// Stops making the set of [kind], keeping the one made before, if any.
-  Future<void> stopMaking(StudyKind kind) async {
-    _setMaking(kind, null);
-    await _makers.remove(kind)?.cancel();
+  /// Stops making the set of profile [id], keeping the one made before, if
+  /// any.
+  Future<void> stopMaking(String id) async {
+    _setMaking(id, null);
+    await _makers.remove(id)?.cancel();
   }
 
-  /// Keeps how far making the set of [kind] has got, or with null that it
-  /// is no longer being made.
-  void _setMaking(StudyKind kind, PendingTurn? pending) =>
-      state = state.copyWith(
-        making: <StudyKind, PendingTurn>{
-          for (final entry in state.making.entries)
-            if (entry.key != kind) entry.key: entry.value,
-          kind: ?pending,
-        },
-      );
+  /// Keeps how far making the set of profile [id] has got, or with null
+  /// that it is no longer being made.
+  void _setMaking(String id, PendingTurn? pending) => state = state.copyWith(
+    making: <String, PendingTurn>{
+      for (final entry in state.making.entries)
+        if (entry.key != id) entry.key: entry.value,
+      id: ?pending,
+    },
+  );
 
   /// Follows [answer] into what [read] and [write] keep of it — the
   /// question's pending turn, or a set's — handing its subscription to
@@ -497,15 +520,19 @@ class AiSession extends Notifier<AiSessionState> {
           if (pending != null) write(pending.moved(progress, DateTime.now()));
         },
         onError: (Object error) {
-          final kind = read()?.study;
+          final profile = read()?.profile;
           write(null);
           final why = error is AiException
               ? error.message
               : 'it broke off: $error';
           state = state.copyWith(
-            error: () => kind == null
-                ? (error is AiException ? why : 'The answer broke off: $error')
-                : 'The ${kind.label.toLowerCase()} could not be made: $why',
+            error: () => switch (profile?.called) {
+              null =>
+                error is AiException ? why : 'The answer broke off: $error',
+              final called =>
+                '${called[0].toUpperCase()}${called.substring(1)} could not '
+                    'be made: $why',
+            },
           );
           if (!done.isCompleted) done.complete();
         },
@@ -521,28 +548,29 @@ class AiSession extends Notifier<AiSessionState> {
     return done.future;
   }
 
-  /// Keeps [set] as the scope's set of its kind, and shows it if its page
+  /// Keeps [set] as the scope's set of [profile], and shows it if its page
   /// is showing.
   Future<void> _keepSet(
     StudySet set, {
+    required StudyProfile profile,
     required String provider,
     required String model,
     Map<String, Object?>? usage,
   }) async {
     final store = await _store;
-    final earlier = state.setOf(set.kind);
+    final earlier = state.setOf(profile.id);
     var kept = set;
     if (earlier == null) {
       final item = await store.ai.addItem(
         scope,
-        kind: set.kind.name,
-        title: set.kind.label,
+        kind: profile.id,
+        title: profile.name,
         body: set.toJson(),
         provider: provider,
         model: model,
         usage: usage,
       );
-      await _shown(set.kind, item.id);
+      await _shown(profile.id, item.id);
       return;
     }
     if ((set, StudySet.fromJson(earlier.body)) case (
@@ -556,30 +584,40 @@ class AiSession extends Notifier<AiSessionState> {
         keep: <String>{for (final card in cards.cards) card.id},
       );
     }
-    await store.ai.updateItem(earlier.id, body: kept.toJson(), usage: usage);
+    await store.ai.updateItem(
+      earlier.id,
+      body: kept.toJson(),
+      title: profile.name,
+      usage: usage,
+    );
     ref.invalidate(cardReviewsProvider(earlier.id));
-    await _shown(set.kind, earlier.id);
+    await _shown(profile.id, earlier.id);
   }
 
-  /// Once the set of [kind] is kept as [itemId]: shown in place of its
-  /// page, if that is showing.
-  Future<void> _shown(StudyKind kind, String itemId) async {
-    _setMaking(kind, null);
+  /// Once the set of profile [id] is kept as [itemId]: shown in place of
+  /// its page, if that is showing.
+  Future<void> _shown(String id, String itemId) async {
+    _setMaking(id, null);
     await _load();
-    if (state.shownKind == kind) {
-      state = state.copyWith(itemId: () => itemId, shownKind: () => null);
+    if (state.shownProfile == id) {
+      state = state.copyWith(itemId: () => itemId, shownProfile: () => null);
     }
   }
 
   /// Adds [cards] — from an answer, say — to the scope's flashcards.
   Future<void> addCards(List<StudyCard> cards) async {
     final model = await ref.read(aiModelProvider.future);
-    final earlier = state.setOf(StudyKind.flashcards);
+    final profile = ref
+        .read(aiSettingsProvider)
+        .studyProfiles
+        .firstWhere((profile) => profile.id == StudyKind.flashcards.name);
+    final earlier = state.setOf(profile.id);
     final before = earlier == null ? null : StudySet.fromJson(earlier.body);
     final set = FlashcardSet(cards);
     if (earlier == null || before is! FlashcardSet) {
       await _keepSet(
         set,
+        profile: profile,
         provider: model?.config.name ?? '',
         model: model?.config.model ?? '',
       );
@@ -732,6 +770,11 @@ class AiSession extends Notifier<AiSessionState> {
 
 final aiSessionProvider =
     NotifierProvider.family<AiSession, AiSessionState, NoteLink>(AiSession.new);
+
+/// The profiles to study the scope of [state] by, as [AiSessionState.
+/// profilesWith] has them.
+List<StudyProfile> studyProfilesOf(WidgetRef ref, AiSessionState state) =>
+    state.profilesWith(ref.watch(aiSettingsProvider).studyProfiles);
 
 /// How each card of kept set [itemId] is learnt, and grading them.
 class CardReviews extends AsyncNotifier<Map<String, CardReview>> {

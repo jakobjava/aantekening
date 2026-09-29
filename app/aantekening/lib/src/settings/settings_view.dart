@@ -1,12 +1,13 @@
-/// The settings: how the app looks, how it is laid out, its shortcuts, the
-/// languages spelling is checked in, the AI's models and where the notes
-/// are kept, each on a page of its own.
+/// The settings: how the app looks, how it is laid out, how the pen draws,
+/// its shortcuts, the languages spelling is checked in, the AI and
+/// where the notes are kept, each on a page of its own.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../look/controls.dart';
+import '../look/icons.dart';
 import '../look/marks.dart';
 import '../look/tones.dart';
 import 'about_settings.dart';
@@ -15,22 +16,41 @@ import 'appearance_settings.dart';
 import 'files_settings.dart';
 import 'keyboard_settings.dart';
 import 'layout_settings.dart';
+import 'pen_settings.dart';
 import 'spelling_settings.dart';
 
 /// A page of the settings.
 enum SettingsPage {
-  appearance('Appearance', 'Light and dark, colours, typeface and size'),
-  layout('Layout', 'The ribbon, the sidebar and the page'),
-  keyboard('Keyboard', 'Every shortcut, and changing them'),
-  spelling('Spelling', 'Languages, dictionaries and your own words'),
-  ai('AI models', 'Which models questions go to, and the web'),
-  files('Files', 'Where your notes are, backups, the bin, import and export'),
-  about('About', 'What the app is');
+  appearance(
+    'Appearance',
+    'Light and dark, colours, typeface and size',
+    AppIcon.appearance,
+  ),
+  layout('Layout', 'The ribbon, the sidebar and the page', AppIcon.layout),
+  pen('Pen', 'Smoothing, its buttons, and shapes', AppIcon.pen),
+  keyboard('Keyboard', 'Every shortcut, and changing them', AppIcon.keyboard),
+  spelling(
+    'Spelling',
+    'Languages, dictionaries and your own words',
+    AppIcon.spelling,
+  ),
+  ai(
+    'AI',
+    'Models, what they know of you, study profiles, the web',
+    AppIcon.ai,
+  ),
+  files(
+    'Files',
+    'Where your notes are, backups, the bin, import and export',
+    AppIcon.folder,
+  ),
+  about('About', 'What the app is', AppIcon.about);
 
-  const SettingsPage(this.label, this.description);
+  const SettingsPage(this.label, this.description, this.icon);
 
   final String label;
   final String description;
+  final AppIcon icon;
 }
 
 /// Opens the settings at [page], over the window.
@@ -185,6 +205,11 @@ class _PageList extends StatelessWidget {
         RowTile(
           selected: each == page,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+          leading: AppIconView(
+            each.icon,
+            size: 15,
+            color: each == page ? context.tones.text : context.tones.muted,
+          ),
           title: Text(each.label),
           onTap: () => onPicked(each),
         ),
@@ -232,6 +257,7 @@ class _PageBody extends StatelessWidget {
       switch (page) {
         SettingsPage.appearance => const AppearanceSettings(),
         SettingsPage.layout => const LayoutSettings(),
+        SettingsPage.pen => const PenSettingsPage(),
         SettingsPage.keyboard => const KeyboardSettings(),
         SettingsPage.spelling => const SpellingSettingsPage(),
         SettingsPage.ai => const AiSettingsPage(),

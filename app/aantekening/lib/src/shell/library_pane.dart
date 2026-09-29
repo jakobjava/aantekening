@@ -12,6 +12,7 @@ import '../commands/app_command.dart';
 import '../commands/shortcuts.dart';
 import '../files/bin_view.dart';
 import '../look/controls.dart';
+import '../look/icons.dart';
 import '../look/marks.dart';
 import '../look/tones.dart';
 import '../providers.dart';
@@ -69,8 +70,13 @@ class _LibraryPaneState extends ConsumerState<LibraryPane> {
                 MenuCommand(
                   'New notebook',
                   () => createNamedNotebook(context, ref),
+                  icon: AppIcon.notebooks,
                 ),
-                MenuCommand('Bin', () => unawaited(showBin(context))),
+                MenuCommand(
+                  'Bin',
+                  () => unawaited(showBin(context)),
+                  icon: AppIcon.bin,
+                ),
               ],
               child: notebooks.when(
                 loading: () => const Loading(),
@@ -320,6 +326,7 @@ class _BinRow extends ConsumerWidget {
     final count = ref.watch(binProvider).value?.length ?? 0;
     return RowTile(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      leading: AppIconView(AppIcon.bin, size: 15, color: context.tones.muted),
       title: const Text('Bin'),
       trailing: count == 0
           ? null

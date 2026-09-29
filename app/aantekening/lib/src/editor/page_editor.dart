@@ -24,6 +24,7 @@ import '../files/notes_location.dart';
 import '../input_trace.dart';
 import '../links/note_links.dart';
 import '../look/controls.dart';
+import '../look/icons.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 import '../providers.dart';
@@ -35,6 +36,7 @@ import 'media_import.dart';
 import 'note_clipboard.dart';
 import 'page_minimap.dart';
 import 'page_title.dart';
+import 'pen_preferences.dart';
 import 'ribbon/mini_toolbar.dart';
 import 'ribbon/ribbon.dart';
 import 'text/box_formatting.dart';
@@ -149,6 +151,18 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// The text box with the caret, if any.
   String? _editingId;
 
+  /// The boxes that are only a caret placed on the paper: nothing has been
+  /// written at them yet. They show nothing, are picked by nothing, are kept
+  /// out of history and are not saved; the first thing written makes one a
+  /// box, recorded as arriving then ([CanvasController.replacePlaceholder]),
+  /// and one left with nothing written goes as typing ends.
+  final Set<String> _placed = <String>{};
+
+  /// The caret the box being typed in was, before the first thing written
+  /// at it made it a box: put back where undo takes the box away while it
+  /// is typed in, so the words go and the caret stays.
+  TextElement? _caretBefore;
+
   /// Where each page opened this session was last seen from, so going back
   /// to it — in another tab, say — finds it as it was left.
   final Map<String, CanvasViewport> _views = <String, CanvasViewport>{};
@@ -218,6 +232,8 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     }
     _ready = false;
     _editingId = null;
+    _placed.clear();
+    _caretBefore = null;
     _elementWidgets.clear();
     if (widget.pageId != null) unawaited(_load());
   }
@@ -339,19 +355,44 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _placeFormulaPanel();
 
     final editingId = _editingId;
-    if (editingId != null &&
-        _controller.document.elementById(editingId) == null) {
+    final editing = editingId == null
+        ? null
+        : _controller.document.elementById(editingId);
+    if (editingId != null && editing == null) {
+      final caret = _caretBefore;
+      if (caret != null && caret.id == editingId) {
+        // Undo took back the first words written at the caret: it is a
+        // caret again.
+        _placed.add(editingId);
+        _controller.addElement(caret, recordUndo: false, markDirty: false);
+        return;
+      }
       // The box was removed from under the caret — by undo, say.
       _editingId = null;
+      _placed.remove(editingId);
       if (mounted) setState(() {});
+    } else if (editingId != null &&
+        _placed.contains(editingId) &&
+        !_holdsNothing(editingId)) {
+      // Redo wrote the words back: a box again.
+      _placed.remove(editingId);
+      _controller.select(editingId);
+      return;
+    }
+    final selection = _controller.selection;
+    // A drag across the paper that passed over a caret placed picks nothing
+    // there: the box behind it is only where the caret is. Letting go of it
+    // comes back here.
+    if (selection.any(_placed.contains)) {
+      _controller.selectAll(selection.difference(_placed));
+      return;
     }
     // Anything else picked on the page — by a drag across the paper, say —
-    // ends typing in the box.
-    final selection = _controller.selection;
+    // ends typing in the box, and stays picked.
     if (editingId != null &&
         selection.isNotEmpty &&
         !(selection.length == 1 && selection.contains(editingId))) {
-      _stopEditing();
+      _stopEditing(keepSelection: true);
     }
 
     // Until the page has been read, the canvas still holds the one before.
@@ -437,7 +478,11 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     if (store == null) return;
     if (!_disposed) _saving.value = true;
     try {
-      await store.pages.saveDocument(pageId, document);
+      // A caret placed is not saved: it is nothing yet.
+      await store.pages.saveDocument(
+        pageId,
+        _placed.isEmpty ? document : document.withElementsRemoved(_placed),
+      );
       if (!_disposed && pageId == widget.pageId) {
         _controller.markSaved(document);
         // A save that failed before has now been made good.
@@ -467,11 +512,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     });
     // An empty box is only a caret on the paper: it gets its outline and
     // handles once something is written in it.
-    final element = _controller.document.elementById(id);
-    if (element is TextElement && !TextBoxEditor.isEmpty(element.blocks)) {
-      _controller.select(id);
-    } else {
+    if (_placed.contains(id)) {
       _controller.clearSelection();
+    } else {
+      _controller.select(id);
     }
   }
 
@@ -495,21 +539,37 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     );
   }
 
-  /// Ends text editing, removing the box if it was left empty.
-  void _stopEditing({bool refocusCanvas = true}) {
+  /// Whether the box [id] holds nothing: a caret placed, or a box whose
+  /// text has all been deleted.
+  bool _holdsNothing(String id) {
+    final element = _controller.document.elementById(id);
+    return element is TextElement && TextBoxEditor.isEmpty(element.blocks);
+  }
+
+  /// Ends text editing, removing the box if it holds nothing; the box is
+  /// let go of too, unless [keepSelection] — it was picked with others.
+  ///
+  /// All of it happens now, not as the page rebuilds: the box finishes what
+  /// it has open first, so what it holds is known.
+  void _stopEditing({bool refocusCanvas = true, bool keepSelection = false}) {
     final id = _editingId;
     if (id == null) return;
+    _textController.finishEditing();
     setState(() => _editingId = null);
-    if (_controller.selection.contains(id)) _controller.clearSelection();
+    _caretBefore = null;
+    final placed = _placed.remove(id);
+    if (_holdsNothing(id)) {
+      // Undone, a box emptied comes back with what it last held; a caret
+      // placed was never anything, and nothing of it is saved.
+      _controller.removeElements(
+        <String>{id},
+        recordUndo: false,
+        markDirty: !placed,
+      );
+    } else if (!keepSelection && _controller.selection.contains(id)) {
+      _controller.clearSelection();
+    }
     if (refocusCanvas) _canvasFocus.requestFocus();
-    // The box finishes any open formula as it leaves editing, which happens
-    // in this frame's rebuild; only after that is it known to be empty.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final element = _controller.document.elementById(id);
-      if (element is TextElement && TextBoxEditor.isEmpty(element.blocks)) {
-        _controller.removeElements(<String>{id}, recordUndo: false);
-      }
-    });
   }
 
   /// Places a caret at [page]: an empty text box, invisible until something
@@ -517,13 +577,8 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// new OneNote container does.
   String _createTextBox(Offset page) {
     final box = _newTextBox(page);
-    _controller.addElement(
-      box,
-      // The box is recorded in history and saved with its first edit; an
-      // empty box that is abandoned leaves no trace.
-      recordUndo: false,
-      markDirty: false,
-    );
+    _placed.add(box.id);
+    _controller.addElement(box, recordUndo: false, markDirty: false);
     return box.id;
   }
 
@@ -619,18 +674,25 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   }) {
     final element = _controller.document.elementById(id);
     if (element is! TextElement) return;
-    _controller.replaceElement(
-      element.copyWith(
-        blocks: blocks,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-      recordUndo: recordUndo,
+    final changed = element.copyWith(
+      blocks: blocks,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
-    // The first thing typed at a bare caret turns it into a box, with its
-    // outline and handles.
-    if (id == _editingId &&
-        !_controller.selection.contains(id) &&
-        !TextBoxEditor.isEmpty(blocks)) {
+    final written = !TextBoxEditor.isEmpty(blocks);
+    if (!_placed.contains(id)) {
+      _controller.replaceElement(changed, recordUndo: recordUndo);
+    } else if (!written) {
+      // A formula begun at a caret, say: still nothing to keep.
+      _controller.replaceElement(changed, recordUndo: false, markDirty: false);
+      return;
+    } else {
+      // The first thing written at a caret makes it a box, with its outline
+      // and handles, arriving in history now.
+      _placed.remove(id);
+      _caretBefore = element;
+      _controller.replacePlaceholder(changed);
+    }
+    if (written && id == _editingId && !_controller.selection.contains(id)) {
       _controller.select(id);
     }
   }
@@ -975,21 +1037,25 @@ class _PageEditorState extends ConsumerState<PageEditor> {
             'Cut',
             some ? () => unawaited(_copySelection(cut: true)) : null,
             shortcut: EditorKey.cut.keys,
+            icon: AppIcon.cut,
           ),
           MenuCommand(
             'Copy',
             some ? () => unawaited(_copySelection()) : null,
             shortcut: EditorKey.copy.keys,
+            icon: AppIcon.copy,
           ),
           MenuCommand(
             'Paste',
             canPaste ? () => unawaited(_paste(at: page)) : null,
             shortcut: EditorKey.paste.keys,
+            icon: AppIcon.paste,
           ),
           MenuCommand(
             'Paste text only',
             canPaste ? () => unawaited(_paste(at: page, textOnly: true)) : null,
             shortcut: EditorKey.pasteText.keys,
+            icon: AppIcon.paste,
           ),
         ],
         <MenuCommand>[
@@ -997,12 +1063,14 @@ class _PageEditorState extends ConsumerState<PageEditor> {
             MenuCommand(
               'Set picture as background',
               () => _controller.setBackground(picture.id, background: true),
+              icon: AppIcon.picture,
             ),
           if (background != null)
             MenuCommand(
               'Set picture as background',
               () => _controller.setBackground(background.id, background: false),
               checked: true,
+              icon: AppIcon.picture,
             ),
         ],
         <MenuCommand>[
@@ -1011,6 +1079,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
               'Delete',
               _deleteSelection,
               shortcut: EditorKey.deleteSelection.keys,
+              icon: AppIcon.bin,
             ),
         ],
       ],
@@ -1146,18 +1215,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// Selects everything on the page. Reached from a text box only where it
   /// had nothing left to select, whose caret goes as the page takes over.
   void _selectEverything() {
-    final editing = _editingId != null;
     _stopEditing();
-    _controller.setTool(CanvasTool.select);
-    if (!editing) {
-      _controller.selectEverything();
-      return;
-    }
-    // A box left with nothing in it is removed after this frame; selecting
-    // once it has gone keeps the handles from flashing round the caret.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _controller.selectEverything();
-    });
+    _controller
+      ..setTool(CanvasTool.select)
+      ..selectEverything();
   }
 
   /// Takes up [tool], from the ribbon.
@@ -1309,43 +1370,49 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     ],
   );
 
-  Widget _canvas(String pageId, SearchTerms? highlight) => CallbackShortcuts(
-    bindings: _shortcuts(ref.watch(shortcutsProvider)),
-    child: Focus(
-      focusNode: _canvasFocus,
-      autofocus: true,
-      child: CommandMenuHeader(
-        header: _menuToolbar,
-        child: InfiniteCanvas(
-          controller: _controller,
-          claimsPointer: _claimsPointer,
-          grips: _grips,
-          onEmptyTap: _onEmptyTap,
-          onCanvasPress: _onCanvasPress,
-          onElementDoubleTap: _onElementDoubleTap,
-          onContextMenu: (page, global) =>
-              unawaited(_onContextMenu(page, global)),
-          elementBuilder: (context, element) =>
-              _buildElement(element, highlight, _firstMatchIn(highlight)),
-          header: CanvasHeader(
-            frame: PageTitle.frame,
-            child: Listener(
-              // Going to the title ends typing in a text box.
-              onPointerDown: (_) => _stopEditing(refocusCanvas: false),
-              child: PageTitle(
-                key: ValueKey<String>(pageId),
-                pageId: pageId,
-                highlight: highlight,
-                onFinished: _canvasFocus.requestFocus,
+  Widget _canvas(String pageId, SearchTerms? highlight) {
+    final pen = ref.watch(penPreferencesProvider);
+    _controller.inkSmoothing = pen.smoothing.pixels;
+    return CallbackShortcuts(
+      bindings: _shortcuts(ref.watch(shortcutsProvider)),
+      child: Focus(
+        focusNode: _canvasFocus,
+        autofocus: true,
+        child: CommandMenuHeader(
+          header: _menuToolbar,
+          child: InfiniteCanvas(
+            controller: _controller,
+            claimsPointer: _claimsPointer,
+            grips: _grips,
+            onEmptyTap: _onEmptyTap,
+            onCanvasPress: _onCanvasPress,
+            onElementDoubleTap: _onElementDoubleTap,
+            onContextMenu: (page, global) =>
+                unawaited(_onContextMenu(page, global)),
+            elementBuilder: (context, element) =>
+                _buildElement(element, highlight, _firstMatchIn(highlight)),
+            header: CanvasHeader(
+              frame: PageTitle.frame,
+              child: Listener(
+                // Going to the title ends typing in a text box.
+                onPointerDown: (_) => _stopEditing(refocusCanvas: false),
+                child: PageTitle(
+                  key: ValueKey<String>(pageId),
+                  pageId: pageId,
+                  highlight: highlight,
+                  onFinished: _canvasFocus.requestFocus,
+                ),
               ),
             ),
+            trackpadPanScale: _trackpadPanScale,
+            selectionColor: context.tones.paperEmphasis,
+            penButtons: pen.buttons,
+            shapesOnHold: pen.shapesOnHold,
           ),
-          trackpadPanScale: _trackpadPanScale,
-          selectionColor: context.tones.paperEmphasis,
         ),
       ),
-    ),
-  );
+    );
+  }
 
   /// The text box holding the first word [highlight] finds, reading down the
   /// page: the one brought into view.
@@ -1417,6 +1484,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       element: element,
       isEditing: isEditing,
       selected: _controller.selection.contains(id),
+      caretOnly: _placed.contains(id),
       startsInFormula: isEditing && _editingStartsInFormula,
       interactive: _controller.tool == CanvasTool.select,
       highlight: element is TextElement ? highlight : null,
@@ -1444,6 +1512,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       element: element,
       isEditing: built.isEditing,
       selected: built.selected,
+      caretOnly: built.caretOnly,
       controller: _textController,
       interactive: built.interactive,
       startInFormula: built.startsInFormula,
@@ -1475,6 +1544,7 @@ typedef _ElementBuild = ({
   NoteElement element,
   bool isEditing,
   bool selected,
+  bool caretOnly,
   bool startsInFormula,
   bool interactive,
   SearchTerms? highlight,

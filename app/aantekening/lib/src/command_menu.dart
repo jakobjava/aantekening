@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'look/controls.dart';
+import 'look/icons.dart';
 import 'look/marks.dart';
 import 'look/tones.dart';
 
@@ -15,10 +16,14 @@ class MenuCommand {
     this.onSelected, {
     this.shortcut,
     this.checked = false,
+    this.icon,
   });
 
   final String label;
   final VoidCallback? onSelected;
+
+  /// Drawn before its label, where it has one.
+  final AppIcon? icon;
 
   /// Its keys, shown at the end of its line: "Ctrl+C".
   final String? shortcut;
@@ -73,12 +78,23 @@ Future<void> showCommandMenu(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: <Widget>[
-              // A tick where it is on; the labels line up either way.
+              // A tick where it is on, else its icon; the labels line up
+              // either way.
               SizedBox(
-                width: 18,
-                child: command.checked
-                    ? Mark(MarkShape.check, color: tones.emphasis)
-                    : null,
+                width: 24,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: command.checked
+                      ? Mark(MarkShape.check, color: tones.emphasis)
+                      : switch (command.icon) {
+                          final icon? => AppIconView(
+                            icon,
+                            size: 14,
+                            color: enabled ? tones.muted : tones.faint,
+                          ),
+                          null => null,
+                        },
+                ),
               ),
               Expanded(
                 child: Text(command.label, overflow: TextOverflow.ellipsis),

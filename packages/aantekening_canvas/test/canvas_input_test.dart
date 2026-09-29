@@ -1,10 +1,12 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_canvas/src/element_transforms.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -356,6 +358,127 @@ void main() {
       expect(stroke.pointCount, 2);
       expect(stroke.xAt(1), closeTo(300, 0.5));
       expect(stroke.yAt(1), closeTo(180, 0.5));
+    });
+
+    testWidgets('the pen shows its nib, in its colour, for a cursor', (
+      tester,
+    ) async {
+      final controller = CanvasController()
+        ..setTool(CanvasTool.pen)
+        ..setPen(PenSettings.defaultPen.copyWith(color: 0xFFD93025, width: 8));
+      tester.view
+        ..physicalSize = const Size(800, 600)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_host(controller));
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(300, 300));
+      await mouse.moveTo(const Offset(320, 300));
+      await tester.pump();
+
+      final region = tester.widget<MouseRegion>(
+        find
+            .descendant(
+              of: find.byType(InfiniteCanvas),
+              matching: find.byType(MouseRegion),
+            )
+            .first,
+      );
+      expect(region.cursor, SystemMouseCursors.none);
+      final layer = tester.binding.renderViews.first.debugLayer! as OffsetLayer;
+      final image = (await tester.runAsync(
+        () => layer.toImage(const Rect.fromLTWH(0, 0, 800, 600)),
+      ))!;
+      final pixels = (await tester.runAsync(
+        () => image.toByteData(format: ui.ImageByteFormat.rawRgba),
+      ))!;
+      int red(int x, int y) => pixels.getUint8((y * 800 + x) * 4);
+      int green(int x, int y) => pixels.getUint8((y * 800 + x) * 4 + 1);
+      expect((red(320, 300), green(320, 300)), (0xD9, 0x30));
+      expect(green(340, 300), 255, reason: 'paper beyond the nib');
+      await mouse.removePointer();
+    });
+
+    testWidgets('a pen trembling where it is held still still makes the '
+        'shape', (tester) async {
+      final controller = CanvasController()..setTool(CanvasTool.pen);
+      await tester.pumpWidget(_host(controller));
+
+      final pen = await tester.startGesture(
+        const Offset(100, 100),
+        kind: PointerDeviceKind.stylus,
+      );
+      for (var i = 0; i < 20; i++) {
+        await pen.moveBy(const Offset(10, 0));
+      }
+      // Held, it trembles a few pixels this way and that for half a second.
+      for (var i = 0; i < 10; i++) {
+        await pen.moveTo(Offset(300.0 + (i.isEven ? 4 : -3), 100 + i % 3 * 3));
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+      expect(controller.isShaping, isTrue);
+      await pen.up();
+
+      final stroke =
+          (controller.document.elements.single as InkElement).strokes.single;
+      expect(stroke.pointCount, 2);
+      expect(stroke.yAt(0), stroke.yAt(1), reason: 'a level line');
+    });
+
+    testWidgets("a pen's buttons erase and select, and its other end erases", (
+      tester,
+    ) async {
+      final controller = CanvasController()..setTool(CanvasTool.pen);
+      await tester.pumpWidget(_host(controller));
+      Future<void> stroke(
+        Offset from,
+        Offset by, {
+        int buttons = kPrimaryButton,
+        PointerDeviceKind kind = PointerDeviceKind.stylus,
+      }) async {
+        final pen = await tester.startGesture(
+          from,
+          kind: kind,
+          buttons: buttons,
+        );
+        for (var i = 1; i <= 10; i++) {
+          await pen.moveTo(from + by * (i / 10));
+        }
+        await pen.up();
+        await tester.pump();
+      }
+
+      await stroke(const Offset(100, 100), const Offset(200, 0));
+      await stroke(const Offset(100, 300), const Offset(200, 0));
+      expect(controller.document.elements, hasLength(2));
+
+      // The first button erases what it passes over.
+      await stroke(
+        const Offset(200, 50),
+        const Offset(0, 100),
+        buttons: kPrimaryButton | kPrimaryStylusButton,
+      );
+      expect(controller.document.elements, hasLength(1));
+
+      // The second picks what it drags round, and does not move the page.
+      await stroke(
+        const Offset(50, 250),
+        const Offset(300, 100),
+        buttons: kPrimaryButton | kSecondaryStylusButton,
+      );
+      expect(controller.selection, hasLength(1));
+      expect(controller.viewport.origin, Offset.zero);
+      expect(controller.document.elements, hasLength(1), reason: 'no ink');
+
+      // Drawing again lets go of it; the pen's other end erases.
+      await stroke(const Offset(100, 500), const Offset(100, 0));
+      expect(controller.selection, isEmpty);
+      await stroke(
+        const Offset(150, 450),
+        const Offset(0, 100),
+        kind: PointerDeviceKind.invertedStylus,
+      );
+      expect(controller.document.elements, hasLength(1));
     });
 
     testWidgets('writing that pauses mid-stroke carries on as writing', (

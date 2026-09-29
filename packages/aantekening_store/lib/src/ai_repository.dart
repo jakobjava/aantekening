@@ -83,8 +83,8 @@ class AiItem {
   /// What it is about.
   final NoteLink scope;
 
-  /// What it is: `answer`, `summary`, `flashcards`, `quiz`, or a kind a
-  /// later build knows.
+  /// What it is: `answer`, or the id of the study profile that made it —
+  /// `summary`, `flashcards`, `quiz`, `terms` for the app's own.
   final String kind;
   final String title;
 

@@ -54,8 +54,10 @@ class FakeProvider implements ChatProvider {
       ChatMessage(ChatRole.assistant, <ChatPart>[]),
       stop: StopReason.done,
     );
-    // A study set, written as JSON, citing the first sentence.
-    if (request.system.contains('study material')) {
+    // A study set, written as JSON, citing the first sentence; free text
+    // is written as an answer is.
+    if (request.system.contains('study material') &&
+        request.answerSchema != null) {
       if (question.contains('"cards"')) await cardsGate?.future;
       yield TextDelta(
         question.contains('"cards"')
@@ -334,7 +336,7 @@ void main() {
 
     await tester.tap(
       find.descendant(
-        of: find.byKey(const ValueKey<StudyKind>(StudyKind.flashcards)),
+        of: find.byKey(const ValueKey<String>('flashcards')),
         matching: find.text('Make'),
       ),
     );
@@ -382,7 +384,7 @@ void main() {
           .first,
     );
     await settle();
-    expect(find.byType(StudyKindPage), findsOneWidget);
+    expect(find.byType(StudyProfilePage), findsOneWidget);
     expect(model.asked, isEmpty);
 
     // Flashcards being made; meanwhile the overview, and the summary made.
@@ -391,7 +393,7 @@ void main() {
     await settle();
     await tester.tap(
       find.descendant(
-        of: find.byKey(const ValueKey<StudyKind>(StudyKind.flashcards)),
+        of: find.byKey(const ValueKey<String>('flashcards')),
         matching: find.text('Make'),
       ),
     );
@@ -402,7 +404,7 @@ void main() {
     expect(find.byType(StudyOverview), findsOneWidget);
     await tester.tap(
       find.descendant(
-        of: find.byKey(const ValueKey<StudyKind>(StudyKind.summary)),
+        of: find.byKey(const ValueKey<String>('summary')),
         matching: find.text('Make'),
       ),
     );
@@ -429,7 +431,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(
       find.descendant(
-        of: find.byKey(const ValueKey<StudyKind>(StudyKind.summary)),
+        of: find.byKey(const ValueKey<String>('summary')),
         matching: find.text('Make'),
       ),
     );
@@ -470,6 +472,87 @@ void main() {
       find.text('Starts from this section, then all your notes'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('a study profile of one’s own is made from what it '
+      'describes, with what the person says of themselves', (tester) async {
+    final preferences = Preferences.inMemory(<String, Object?>{
+      'ai': <String, Object?>{'about': 'I am in Q13 in Bavaria.'},
+    });
+    final container = await openShell(tester, preferences: preferences);
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('New study profile…'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('I am in Q13 in Bavaria.'), findsOneWidget);
+    Finder field(String label) => find.widgetWithText(TextField, label);
+    await tester.enterText(field('Name'), 'Abitur tasks');
+    await tester.enterText(
+      field('What to make'),
+      'Tasks as the Abitur sets them, each with a worked solution.',
+    );
+    await tester.enterText(field('Anything else'), 'Three tasks.');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    final profile = container.read(aiSettingsProvider).studyProfiles.last;
+    expect(profile.name, 'Abitur tasks');
+    expect(profile.form, StudyKind.text, reason: 'free text unless chosen');
+    final make = find.descendant(
+      of: find.byKey(ValueKey<String>(profile.id)),
+      matching: find.text('Make'),
+    );
+    await tester.ensureVisible(make);
+    await tester.tap(make);
+    await tester.pumpAndSettle();
+
+    // Written as it describes, cited as an answer is, and kept by it.
+    expect(find.byType(StudySetPage), findsOneWidget);
+    expect(find.text('Abitur tasks'), findsWidgets);
+    expect(find.byType(FootnoteMark), findsOneWidget);
+    final asked = model.asked.single;
+    expect(asked.messages.single.text, contains('worked solution'));
+    expect(asked.messages.single.text, endsWith('Three tasks.'));
+    expect(asked.system, contains('I am in Q13 in Bavaria.'));
+    final items = await tester.runAsync(
+      () => store.ai.itemsAbout(NoteLink.page(page.id)),
+    );
+    expect(items!.single.kind, profile.id);
+    expect(StudySet.fromJson(items.single.body), isA<StudyText>());
+  });
+
+  testWidgets('the app’s own profiles can be changed, and reset', (
+    tester,
+  ) async {
+    final container = await openShell(tester);
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    Finder summary(String text) => find.descendant(
+      of: find.byKey(const ValueKey<String>('summary')),
+      matching: find.text(text),
+    );
+
+    await tester.tap(summary('Edit'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete'), findsNothing, reason: 'only reset');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Anything else'),
+      'Write it in German.',
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    await tester.tap(summary('Make'));
+    await tester.pumpAndSettle();
+    expect(model.asked.single.messages.single.text, endsWith('in German.'));
+
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reset to the original'));
+    await tester.pumpAndSettle();
+    final settings = container.read(aiSettingsProvider);
+    expect(settings.profiles, isEmpty);
+    expect(settings.studyProfiles.first.isAsMade, isTrue);
   });
 
   testWidgets('without a model, it offers to choose one', (tester) async {

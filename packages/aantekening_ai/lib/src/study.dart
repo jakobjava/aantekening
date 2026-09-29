@@ -5,38 +5,66 @@ library;
 
 import 'dart:math' as math;
 
+import 'answer.dart';
 import 'citation_markers.dart';
 import 'conversation.dart';
 import 'loose_json.dart';
 
-/// A kind of study set.
+/// A kind of study set: the form it takes, and the view it is shown in.
 enum StudyKind {
   summary(
     'Summary',
     'The essentials on one sheet, each point linked to where it is in your '
         'notes.',
+    'A study summary: what a student needs to understand and remember of '
+        'the notes, in the order the notes have it.',
   ),
   flashcards(
     'Flashcards',
     'Cards to learn with, each shown again just before you would forget it.',
+    'Flashcards to learn the notes by: one for each definition, law, '
+        'formula, cause or step a test would ask about — the essentials, not '
+        'every detail, and nothing twice.',
   ),
-  quiz('Quiz', 'Questions to test yourself, each explained once answered.'),
-  terms('Key terms', 'The words and symbols that matter, each explained.');
+  quiz(
+    'Quiz',
+    'Questions to test yourself, each explained once answered.',
+    'A quiz to test understanding of the notes: questions that need the '
+        'ideas understood, not only remembered, from easy to hard.',
+  ),
+  terms(
+    'Key terms',
+    'The words and symbols that matter, each explained.',
+    'The key terms of the notes — their technical words, symbols and units '
+        '— each with what it means here.',
+  ),
+  text(
+    'Free text',
+    'Written as you describe it — prose, lists, tables — each part linked '
+        'to your notes.',
+    'A page to study the notes from.',
+  );
 
-  const StudyKind(this.label, this.purpose);
+  const StudyKind(this.label, this.purpose, this.idea);
 
   final String label;
 
   /// What it is for, in a sentence.
   final String purpose;
 
-  /// What the model is asked to write for a set of this kind about a
-  /// [scope] — "page", "section", "notebook" — as JSON.
-  String instructions(String scope) => switch (this) {
+  /// What the model is asked to make, before [form] says how to write it:
+  /// where a [StudyProfile] says nothing else.
+  final String idea;
+
+  /// Whether the model writes it as JSON, held to [schema], rather than
+  /// as Markdown citing the notes as an answer does.
+  bool get structured => this != text;
+
+  /// How the model is asked to write a set of this kind about a [scope] —
+  /// "page", "section", "notebook".
+  String form(String scope) => switch (this) {
     summary =>
-      'Write a study summary of this $scope: what a student needs to '
-          'understand and remember of it, in the order the notes have it.\n'
-          'Answer with JSON alone, in this form:\n'
+      'Answer with JSON alone, in this form:\n'
           '{"title": "…", "gist": "the whole $scope in one or two sentences", '
           '"sections": [{"heading": "…", "points": [{"text": "one idea, in a '
           'short sentence", "sources": ["1.2"]}]}], '
@@ -49,19 +77,13 @@ enum StudyKind {
           'formula names the passages it comes from. Only "beyond" may hold '
           'what the notes do not say.',
     flashcards =>
-      'Make flashcards to learn this $scope: one for each definition, law, '
-          'formula, cause or step a test would ask about — the essentials, '
-          'not every detail, and nothing twice.\n'
-          'Answer with JSON alone, in this form:\n'
+      'Answer with JSON alone, in this form:\n'
           '{"cards": [{"front": "a question, answerable in a line", '
           '"back": "the answer, short", "sources": ["1.2"]}]}\n'
           'Five to twenty cards, as many as the notes hold ideas. Each card '
           'names the passages it comes from.',
     quiz =>
-      'Write a quiz to test understanding of this $scope: questions that '
-          'need the ideas understood, not only remembered, from easy to '
-          'hard.\n'
-          'Answer with JSON alone, in this form:\n'
+      'Answer with JSON alone, in this form:\n'
           '{"questions": [{"question": "…", "options": ["…", "…", "…", "…"], '
           '"answer": 0, "explanation": "why that option is right, and the '
           'others not", "sources": ["1.2"]}]}\n'
@@ -69,18 +91,20 @@ enum StudyKind {
           'right one; wrong options are plausible mistakes. Each question '
           'names the passages it comes from.',
     terms =>
-      'List the key terms of this $scope — its technical words, symbols '
-          'and units — each with what it means here.\n'
-          'Answer with JSON alone, in this form:\n'
+      'Answer with JSON alone, in this form:\n'
           r'{"terms": [{"term": "…, or a symbol like $v_0$", "meaning": "in a '
           'sentence or two", "sources": ["1.2"]}]}\n'
           'In the order the notes bring them. Each term names the passages '
           'it comes from.',
+    text =>
+      'Write it about this $scope in Markdown, with headings, lists and '
+          'tables where they help, and cite the passages each part draws '
+          'on. Say plainly where it goes beyond what the notes say.',
   };
 
-  /// The JSON Schema of what [instructions] asks for, for a provider
-  /// that can hold a model to it.
-  Map<String, Object?> get schema {
+  /// The JSON Schema of what [form] asks for, for a provider that can
+  /// hold a model to it; null for [text], which is not JSON.
+  Map<String, Object?>? get schema {
     Map<String, Object?> object(Map<String, Object?> properties) =>
         <String, Object?>{
           'type': 'object',
@@ -91,34 +115,34 @@ enum StudyKind {
       'type': 'array',
       'items': items,
     };
-    const text = <String, Object?>{'type': 'string'};
-    final sources = list(text);
+    const string = <String, Object?>{'type': 'string'};
+    final sources = list(string);
     return switch (this) {
       summary => object(<String, Object?>{
-        'title': text,
-        'gist': text,
+        'title': string,
+        'gist': string,
         'sections': list(
           object(<String, Object?>{
-            'heading': text,
+            'heading': string,
             'points': list(
-              object(<String, Object?>{'text': text, 'sources': sources}),
+              object(<String, Object?>{'text': string, 'sources': sources}),
             ),
           }),
         ),
         'formulas': list(
           object(<String, Object?>{
-            'latex': text,
-            'meaning': text,
+            'latex': string,
+            'meaning': string,
             'sources': sources,
           }),
         ),
-        'beyond': list(text),
+        'beyond': list(string),
       }),
       flashcards => object(<String, Object?>{
         'cards': list(
           object(<String, Object?>{
-            'front': text,
-            'back': text,
+            'front': string,
+            'back': string,
             'sources': sources,
           }),
         ),
@@ -126,10 +150,10 @@ enum StudyKind {
       quiz => object(<String, Object?>{
         'questions': list(
           object(<String, Object?>{
-            'question': text,
-            'options': list(text),
+            'question': string,
+            'options': list(string),
             'answer': const <String, Object?>{'type': 'integer'},
-            'explanation': text,
+            'explanation': string,
             'sources': sources,
           }),
         ),
@@ -137,12 +161,13 @@ enum StudyKind {
       terms => object(<String, Object?>{
         'terms': list(
           object(<String, Object?>{
-            'term': text,
-            'meaning': text,
+            'term': string,
+            'meaning': string,
             'sources': sources,
           }),
         ),
       }),
+      StudyKind.text => null,
     };
   }
 }
@@ -171,7 +196,7 @@ sealed class StudySet {
   /// Whether it holds nothing to study.
   bool get isEmpty;
 
-  /// How many things it holds: cards, questions, terms, points.
+  /// How many things it holds: cards, questions, terms, points, words.
   int get size;
 
   Map<String, Object?> toJson();
@@ -204,6 +229,8 @@ sealed class StudySet {
     String text,
     List<Source> sources,
   ) {
+    // Free text is not JSON, and is read as an answer is.
+    if (!kind.structured) return null;
     ({StudySet set, bool lost})? best;
     for (final (:value, :lost) in LooseJson.valuesIn(text)) {
       final set = _within(kind, value, (refs) => _cited(refs, sources));
@@ -350,6 +377,8 @@ sealed class StudySet {
                 sources: cite(term(_Names.sources)),
               ),
         ]);
+      case StudyKind.text:
+        return StudyText(AiAnswer.fromJson(set._map));
     }
   }
 
@@ -624,6 +653,32 @@ final class Glossary extends StudySet {
   };
 }
 
+/// A page written as its profile describes it: Markdown citing the notes,
+/// as an answer is.
+final class StudyText extends StudySet {
+  const StudyText(this.answer);
+
+  final AiAnswer answer;
+
+  @override
+  StudyKind get kind => StudyKind.text;
+
+  @override
+  bool get isEmpty => answer.isEmpty;
+
+  /// How many words it has.
+  @override
+  int get size => _word.allMatches(answer.plainText).length;
+
+  static final RegExp _word = RegExp(r'[\p{L}\p{N}]+', unicode: true);
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+    StudySet.kindKey: kind.name,
+    ...answer.toJson(),
+  };
+}
+
 /// The citations kept as [json], or none.
 List<Citation> _citations(Object? json) => <Citation>[
   for (final entry in (json as List<Object?>?) ?? const [])
@@ -780,6 +835,7 @@ abstract final class _Names {
     StudyKind.flashcards => _words('cards flashcards items deck'),
     StudyKind.quiz => _words('questions quiz items'),
     StudyKind.terms => _words('terms glossary keyterms items words vocabulary'),
+    StudyKind.text => const <String>[],
   };
 }
 

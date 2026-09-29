@@ -236,6 +236,24 @@ void main() {
       expect(controller.wetPoints.length, InkStroke.stride);
     });
 
+    test('smoothed, the line trails the pointer, steady through its '
+        'trembling, and catches up where it lifts', () {
+      final controller = CanvasController()
+        ..inkSmoothing = 8
+        ..beginStroke(Offset.zero);
+      for (var x = 2.0; x <= 200; x += 2) {
+        controller.extendStroke(Offset(x, x % 4 == 0 ? 3 : -3));
+      }
+      final drawn = controller.wetStrokes.single;
+      for (var i = 1; i < drawn.pointCount; i++) {
+        expect(drawn.yAt(i).abs(), lessThan(1.5));
+      }
+      expect(drawn.xAt(drawn.pointCount - 1), lessThan(195));
+
+      final kept = controller.endStroke()!.strokes.single;
+      expect(kept.xAt(kept.pointCount - 1), 200);
+    });
+
     test('cancelling leaves the page untouched', () {
       final controller = CanvasController()
         ..beginStroke(Offset.zero)
@@ -510,6 +528,21 @@ void main() {
         ..undo();
 
       expect(controller.selection, isEmpty);
+    });
+
+    test('a placeholder made real arrives in history then, undone whole', () {
+      final controller = CanvasController()
+        ..addElement(_text('b'))
+        ..addElement(_text('a'), recordUndo: false, markDirty: false)
+        ..replaceElement(_text('a', x: 5), recordUndo: false, markDirty: false)
+        ..replacePlaceholder(_text('a', x: 10));
+
+      expect(controller.document.elementById('a')!.frame.x, 10);
+      controller.undo();
+      expect(controller.document.elementById('a'), isNull);
+      expect(controller.document.elementById('b'), isNotNull);
+      controller.redo();
+      expect(controller.document.elementById('a')!.frame.x, 10);
     });
 
     test('loading a document resets history and dirty state', () {

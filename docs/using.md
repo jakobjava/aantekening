@@ -46,6 +46,15 @@ keeps a box square and a line to steps of 15°. Shapes are drawn in the
 pen's colour and width, and are ink once drawn: picked, moved, resized,
 turned and erased as handwriting is.
 
+**Settings → Pen** steadies the pen's line (Smoothing: the line trails the
+pen a little, as if pulled on a string, and catches up where it lifts), sets
+what the pen's two buttons do held as it touches the page — erase, select,
+scroll or nothing; erase and select unless changed — and turns shapes on
+holding still off. Pressing a button with the pen over that page shows which
+one it is. A pen's other end, where it has one, always erases. Over the
+page the pen, highlighter and eraser show what they would touch it with: a
+dot as thick as the line, the highlighter's nib, the eraser's reach.
+
 ## Colours and fonts
 
 **Inverted**, in the text colour's menu and first among the pen's colours,
@@ -137,6 +146,19 @@ question** sets how much of your notes goes with each question: 40k tokens by
 default, and never more than a third of what the model can take. Web search
 works by itself with Anthropic; with other providers, point the settings at a
 [SearXNG](https://docs.searxng.org) you run, or a Brave Search API key.
+
+**About you**, in the AI settings, goes with every question and study set:
+your school year, your course, the exams you are working towards ("I am in
+Q13 in Bavaria").
+
+What the AI makes to study from is a list of **study profiles**: the summary,
+flashcards, quiz and key terms, and any of your own. **Edit** on a profile
+changes its name, what it asks for, and **Anything else** (the language, how
+many, how hard), which wins where it differs from the rest; **Reset to the
+original** brings one of the app's own back. **New study profile…** describes
+something else to make, in the form of one of the app's own sets or as free
+text: exam tasks with worked solutions, a cheat sheet, a timeline. Free text
+cites your notes as answers do.
 
 ## Where notes live
 

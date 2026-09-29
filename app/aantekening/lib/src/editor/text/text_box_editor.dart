@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 
 import '../../command_menu.dart';
 import '../../commands/editor_keys.dart';
+import '../../look/icons.dart';
 import '../../look/tones.dart';
 import '../../spelling/proofreader.dart';
 import '../note_clipboard.dart';
@@ -53,6 +54,7 @@ class TextBoxEditor extends StatefulWidget {
     required this.isEditing,
     super.key,
     this.selected = false,
+    this.caretOnly = false,
     this.controller,
     this.interactive = true,
     this.startInFormula = false,
@@ -81,6 +83,12 @@ class TextBoxEditor extends StatefulWidget {
   /// it stays in view as the box is dragged about, whatever the pointer
   /// passes over.
   final bool selected;
+
+  /// Whether the box is only a caret placed on the paper, nothing written
+  /// at it yet, as in OneNote: it shows no band and no outline. One whose
+  /// text has all been deleted is not, and keeps its band while it is typed
+  /// in, so it can still be moved.
+  final bool caretOnly;
 
   /// Receives this box's formatting state and forwards toolbar commands to it
   /// while it is being edited.
@@ -189,7 +197,8 @@ class TextBoxEditor extends StatefulWidget {
     (block) =>
         !block.isEmbed &&
         !block.inTable &&
-        block.runs.every((run) => !run.isMath && run.text.trim().isEmpty),
+        // A formula begun and nothing written in it holds nothing either.
+        block.runs.every((run) => run.text.trim().isEmpty),
   );
 
   @override
@@ -306,11 +315,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
   bool _hovering = false;
   Size? _reportedSize;
 
-  /// Whether anything has been written in this box. A new box is only a
-  /// caret until then; one whose text has all been deleted keeps its band,
-  /// so it can still be moved.
-  bool _hadContent = false;
-
   // ------------------------------------------------------------- lifecycle
 
   @override
@@ -411,7 +415,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
   }
 
   void _endEditing() {
-    _closeFormula(emit: true);
+    // The page had the formula finished and reported before it let go of
+    // the box ([finishEditing]); nothing is reported from a rebuild.
+    _closeFormula();
     _followSyntax(null);
     widget.controller?.detach(this);
     _closeConnection();
@@ -1475,6 +1481,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
   }
 
   @override
+  void finishEditing() => _closeFormula(emit: true);
+
+  @override
   void finishFormula({bool after = true}) {
     if (_formula == null) return;
     _closeFormula(emit: true, after: after);
@@ -2320,6 +2329,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
           MenuCommand(
             'Add to dictionary',
             () => unawaited(widget.proofreader!.addWord(spelled)),
+            icon: AppIcon.spelling,
           ),
           MenuCommand('Ignore', () => widget.proofreader!.ignore(spelled)),
         ],
@@ -2329,30 +2339,39 @@ class TextBoxEditorState extends State<TextBoxEditor>
           'Cut',
           selected ? () => unawaited(_copy(cut: true)) : null,
           shortcut: EditorKey.cut.keys,
+          icon: AppIcon.cut,
         ),
         MenuCommand(
           'Copy',
           selected ? () => unawaited(_copy()) : null,
           shortcut: EditorKey.copy.keys,
+          icon: AppIcon.copy,
         ),
         MenuCommand(
           'Paste',
           canPaste ? () => unawaited(_paste()) : null,
           shortcut: EditorKey.paste.keys,
+          icon: AppIcon.paste,
         ),
         MenuCommand(
           'Paste text only',
           canPaste ? () => unawaited(_paste(textOnly: true)) : null,
           shortcut: EditorKey.pasteText.keys,
+          icon: AppIcon.paste,
         ),
       ],
       if (link != null || paragraphLink != null)
         <MenuCommand>[
           if (link != null) ...<MenuCommand>[
-            MenuCommand('Open link', () => widget.onOpenLink?.call(link)),
+            MenuCommand(
+              'Open link',
+              () => widget.onOpenLink?.call(link),
+              icon: AppIcon.link,
+            ),
             MenuCommand(
               'Copy link',
               () => unawaited(Clipboard.setData(ClipboardData(text: link))),
+              icon: AppIcon.link,
             ),
           ],
           if (paragraphLink != null)
@@ -2361,6 +2380,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
               () => unawaited(
                 Clipboard.setData(ClipboardData(text: paragraphLink)),
               ),
+              icon: AppIcon.link,
             ),
         ],
       if (table != null) ..._tableCommands(table, hit!.position.block),
@@ -2369,10 +2389,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
           MenuCommand(
             'Open file',
             widget.onOpenFile == null ? null : () => widget.onOpenFile!(file),
+            icon: AppIcon.folder,
           ),
           MenuCommand(
             'Save a copy…',
             widget.onSaveFile == null ? null : () => widget.onSaveFile!(file),
+            icon: AppIcon.export,
           ),
         ]
       else if (picture != null && widget.onEmbedToBackground != null)
@@ -2380,6 +2402,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
           MenuCommand(
             'Set picture as background',
             () => _embedToBackground(picture),
+            icon: AppIcon.picture,
           ),
         ],
     ]);
@@ -2442,6 +2465,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
         MenuCommand(
           'Delete row',
           () => edit((b) => TableEditing.deleteRow(b, table, cell.row)),
+          icon: AppIcon.bin,
         ),
         MenuCommand(
           'Delete column',
@@ -2453,10 +2477,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
               caretRow: cell.row,
             ),
           ),
+          icon: AppIcon.bin,
         ),
         MenuCommand(
           'Delete table',
           () => edit((b) => TableEditing.deleteTable(b, table)),
+          icon: AppIcon.bin,
         ),
         if (dragged)
           MenuCommand(
@@ -3429,15 +3455,15 @@ class TextBoxEditorState extends State<TextBoxEditor>
       WidgetsBinding.instance.addPostFrameCallback((_) => _placeFirstMatch());
     }
 
-    // Until something is typed, a new box is only a caret on the paper, as in
-    // OneNote: no band to drag it by, no outline. Once it holds something,
-    // its band shows while it is picked — which a box being typed in is —
-    // and goes with the rest of the selection's marks when the paper is
-    // pressed, though typing ends only as the press does.
-    if (!empty) _hadContent = true;
-    final showChrome = empty
-        ? widget.isEditing && _hadContent
-        : widget.selected || _hovering;
+    // Until something is typed, a new box is only a caret on the paper
+    // ([TextBoxEditor.caretOnly]): no band to drag it by, no outline. Once it
+    // holds something, its band shows while it is picked — which a box being
+    // typed in is — and goes with the rest of the selection's marks when the
+    // paper is pressed, though typing ends only as the press does. Emptied,
+    // it keeps its band while it is typed in.
+    final showChrome =
+        !widget.caretOnly &&
+        (empty ? widget.isEditing : widget.selected || _hovering);
     final content = Stack(
       children: <Widget>[
         Padding(

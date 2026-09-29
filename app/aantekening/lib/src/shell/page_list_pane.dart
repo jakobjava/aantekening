@@ -12,6 +12,7 @@ import '../command_menu.dart';
 import '../commands/app_command.dart';
 import '../commands/shortcuts.dart';
 import '../look/controls.dart';
+import '../look/icons.dart';
 import '../look/tones.dart';
 import '../providers.dart';
 import 'library_actions.dart';
@@ -97,12 +98,14 @@ class _PageListState extends ConsumerState<_PageList> {
               .of(AppCommand.newPage)
               .firstOrNull
               ?.label,
+          icon: AppIcon.page,
         ),
         MenuCommand(
           'Paste page',
           section != null && actions.canPaste(section)
               ? () => actions.paste(section)
               : null,
+          icon: AppIcon.paste,
         ),
       ],
       child: pages.when(

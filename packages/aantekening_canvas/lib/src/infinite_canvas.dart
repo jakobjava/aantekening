@@ -69,6 +69,8 @@ class InfiniteCanvas extends StatefulWidget {
     this.header,
     this.trackpadPanScale = 1,
     this.selectionColor,
+    this.penButtons = const PenButtons(),
+    this.shapesOnHold = true,
   });
 
   final CanvasController controller;
@@ -115,6 +117,14 @@ class InfiniteCanvas extends StatefulWidget {
   /// What the selection's frame and handles, and the band dragged to
   /// select, are drawn in: the theme's primary colour, if not given.
   final Color? selectionColor;
+
+  /// What a pen does pressed with one of its buttons held. Its other end,
+  /// where a pen has an eraser, always erases.
+  final PenButtons penButtons;
+
+  /// Whether a stroke held still at its end becomes the shape it was drawn
+  /// as.
+  final bool shapesOnHold;
 
   @override
   State<InfiniteCanvas> createState() => _InfiniteCanvasState();
@@ -245,15 +255,24 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   Offset? _marqueeAnchor;
   Aabb? _marquee;
 
-  /// Where the pen came to rest while drawing, and the wait for it to stay
-  /// there long enough for the stroke to become a shape.
+  /// Where the pen came to rest while drawing, how far it may tremble
+  /// there and still be at rest, and the wait for it to stay there long
+  /// enough for the stroke to become a shape.
   Offset _restingAt = Offset.zero;
+  double _restSlop = 0;
   Timer? _hold;
 
-  /// How long the pen is held still to make a stroke a shape, and how far,
-  /// in screen pixels, it may tremble meanwhile.
+  /// How long the pen is held still to make a stroke a shape.
   static const Duration _holdToShape = Duration(milliseconds: 500);
-  static const double _holdSlop = 5;
+
+  /// How far, in screen pixels, what draws trembles held still: a hand
+  /// pressing a pen or a finger to the screen moves more than one resting
+  /// on a mouse.
+  static double _restSlopOf(PointerDeviceKind kind) => switch (kind) {
+    PointerDeviceKind.mouse || PointerDeviceKind.trackpad => 4,
+    PointerDeviceKind.touch => 12,
+    _ => 10,
+  };
 
   /// Touch pointers currently down, by pointer id, at their latest position.
   final Map<int, Offset> _touches = <int, Offset>{};
@@ -273,6 +292,10 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   /// Where the mouse pointer is, which a trackpad pinch zooms about. Linux
   /// reports a pinch at the last place clicked rather than at the pointer.
   Offset? _mousePosition;
+
+  /// Where a mouse or pen is over the page, for the nib drawn there in
+  /// place of a cursor ([NibPainter]).
+  final ValueNotifier<NibPlace?> _nib = ValueNotifier<NibPlace?>(null);
 
   Size _size = Size.zero;
 
@@ -295,6 +318,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   @override
   void dispose() {
+    _nib.dispose();
     _hold?.cancel();
     _motion.dispose();
     _stopListening(_controller);
@@ -317,6 +341,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   void _onPointerDown(PointerDownEvent event) {
     _motion.brake();
+    _placeNib(event);
     if (event.kind == PointerDeviceKind.mouse) {
       _mousePosition = event.localPosition;
       if (event.buttons & kSecondaryMouseButton != 0) {
@@ -356,6 +381,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
           pressure: _normalizedPressure(event),
           tilt: event.tilt,
         );
+        _restSlop = _restSlopOf(event.kind);
         _restAt(event.localPosition);
       case _PointerAction.erase:
         _controller.eraseAt(page, radius: _eraserRadius);
@@ -382,6 +408,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   /// go of: the page it was on is no longer here to act on.
   void _onPointerMove(PointerMoveEvent event) {
     if (!mounted) return;
+    _placeNib(event);
     if (event.kind == PointerDeviceKind.mouse) {
       _mousePosition = event.localPosition;
     }
@@ -421,7 +448,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
         // stroke that was no shape where it paused may be one further on.
         if (!_controller.isShaping &&
             _controller.tool != CanvasTool.shape &&
-            (event.localPosition - _restingAt).distance > _holdSlop) {
+            (event.localPosition - _restingAt).distance > _restSlop) {
           _restAt(event.localPosition);
         }
       case _PointerAction.erase:
@@ -516,14 +543,17 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   void _restAt(Offset screen) {
     _restingAt = screen;
     _hold?.cancel();
-    _hold = Timer(_holdToShape, _heldStill);
+    if (widget.shapesOnHold) _hold = Timer(_holdToShape, _heldStill);
   }
 
   /// The pen held still: the stroke becomes the shape it was drawn as, if
   /// it is one, and the pen then reshapes it.
   void _heldStill() {
     _hold = null;
-    if (_action == _PointerAction.draw && _controller.snapToShape()) {
+    if (_action == _PointerAction.draw &&
+        _controller.snapToShape(
+          settled: _controller.viewport.toPageDistance(_restSlop),
+        )) {
       HapticFeedback.selectionClick();
     }
   }
@@ -555,20 +585,34 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   /// Chooses what a press does, from the tool and the pointer's own state.
   _PointerAction _resolveAction(PointerDownEvent event, Offset page) {
-    // The middle button and space-drag always pan, whatever tool is selected,
-    // so navigating never costs a trip to the toolbar.
-    if (event.buttons & kMiddleMouseButton != 0) return _PointerAction.pan;
+    // Space-drag always pans, whatever tool is selected, so navigating
+    // never costs a trip to the toolbar.
     if (HardwareKeyboard.instance.logicalKeysPressed.contains(
       LogicalKeyboardKey.space,
     )) {
       return _PointerAction.pan;
     }
-    // Most styluses report the barrel button as the secondary button; treating
-    // it as an eraser matches what the hardware is usually labelled for.
-    if (event.kind == PointerDeviceKind.stylus &&
-        event.buttons & kSecondaryStylusButton != 0) {
+    // A pen's other end erases, and its buttons do what they were given to.
+    if (event.kind == PointerDeviceKind.invertedStylus) {
       _pressed(null);
       return _PointerAction.erase;
+    }
+    if (event.kind == PointerDeviceKind.stylus) {
+      switch (widget.penButtons.actionFor(event.buttons)) {
+        case PenButtonAction.erase:
+          _pressed(null);
+          return _PointerAction.erase;
+        case PenButtonAction.select:
+          return _resolveSelectAction(event, page);
+        case PenButtonAction.scroll:
+          return _PointerAction.pan;
+        case PenButtonAction.none || null:
+          break;
+      }
+    } else if (event.buttons & kMiddleMouseButton != 0) {
+      // The middle button pans too. A pen's second button is numbered as
+      // it is, and does what it was given to instead.
+      return _PointerAction.pan;
     }
     if (event.kind == PointerDeviceKind.mouse &&
         event.buttons & kPrimaryMouseButton == 0) {
@@ -1019,11 +1063,26 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   // ------------------------------------------------------------------- hover
 
   void _onHover(PointerHoverEvent event) {
+    _placeNib(event);
     if (event.kind == PointerDeviceKind.mouse) {
       _mousePosition = event.localPosition;
     }
     final cursor = _cursorAt(event.localPosition);
     if (cursor != _hoverCursor) setState(() => _hoverCursor = cursor);
+  }
+
+  /// Puts the nib where [event] is, if a mouse or a pen: a finger has no
+  /// cursor.
+  void _placeNib(PointerEvent event) {
+    _nib.value = switch (event.kind) {
+      PointerDeviceKind.mouse ||
+      PointerDeviceKind.stylus => (at: event.localPosition, erasing: false),
+      PointerDeviceKind.invertedStylus => (
+        at: event.localPosition,
+        erasing: true,
+      ),
+      _ => null,
+    };
   }
 
   MouseCursor _cursorAt(Offset screen) {
@@ -1063,8 +1122,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     };
   }
 
-  double get _eraserRadius =>
-      _controller.viewport.toPageDistance(12).clamp(4.0, 64.0);
+  double get _eraserRadius => eraserRadiusIn(_controller.viewport);
 
   /// Maps a device's raw pressure onto 0..1.
   ///
@@ -1097,6 +1155,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
           onPointerPanZoomEnd: _onPanZoomEnd,
           behavior: HitTestBehavior.opaque,
           child: MouseRegion(
+            onExit: (_) => _nib.value = null,
             cursor: _hoverCursor == MouseCursor.defer
                 ? _cursorFor(controller.tool)
                 : _hoverCursor,
@@ -1142,6 +1201,16 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
                       ),
                     ),
                   ),
+                  IgnorePointer(
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        painter: NibPainter(
+                          place: _nib,
+                          controller: controller,
+                        ),
+                      ),
+                    ),
+                  ),
                   // Above everything: a press on a handle or a side of the
                   // selection is the canvas's alone. Without this the text
                   // box beneath the edge would take it too, placing its caret
@@ -1166,13 +1235,13 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
             null;
   }
 
-  static MouseCursor _cursorFor(CanvasTool tool) => switch (tool) {
-    CanvasTool.pen ||
-    CanvasTool.highlighter ||
-    CanvasTool.shape ||
-    CanvasTool.eraser => SystemMouseCursors.precise,
-    CanvasTool.select => SystemMouseCursors.basic,
-  };
+  /// The pen, highlighter and eraser show their nib instead
+  /// ([NibPainter]); a shape is placed as precisely as a crosshair can.
+  static MouseCursor _cursorFor(CanvasTool tool) => NibPainter.draws(tool)
+      ? SystemMouseCursors.none
+      : tool == CanvasTool.shape
+      ? SystemMouseCursors.precise
+      : SystemMouseCursors.basic;
 }
 
 /// A page drawn as the canvas draws it, seen from [viewport], only to be

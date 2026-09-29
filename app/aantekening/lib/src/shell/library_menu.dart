@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
 import '../files/export_flow.dart';
+import '../look/icons.dart';
 import '../look/motion.dart';
 import 'library_actions.dart';
 
@@ -55,10 +56,15 @@ Future<void> showLibraryMenu(
       MenuCommand(
         'New section',
         () => createNamedSection(context, ref, notebookId: id),
+        icon: AppIcon.folder,
       ),
     ],
     Section(:final id, :final notebookId) => <MenuCommand>[
-      MenuCommand('New page', () => actions.createPage(sectionId: id)),
+      MenuCommand(
+        'New page',
+        () => actions.createPage(sectionId: id),
+        icon: AppIcon.page,
+      ),
       MenuCommand(
         'New subsection',
         () => createNamedSection(
@@ -67,13 +73,19 @@ Future<void> showLibraryMenu(
           notebookId: notebookId,
           parentId: id,
         ),
+        icon: AppIcon.folder,
       ),
     ],
     PageRef(:final id, :final sectionId) => <MenuCommand>[
-      MenuCommand('New page', () => actions.createPage(sectionId: sectionId)),
+      MenuCommand(
+        'New page',
+        () => actions.createPage(sectionId: sectionId),
+        icon: AppIcon.page,
+      ),
       MenuCommand(
         'New subpage',
         () => actions.createPage(sectionId: sectionId, parentId: id),
+        icon: AppIcon.page,
       ),
     ],
     _ => const <MenuCommand>[],
@@ -102,10 +114,15 @@ Future<void> showLibraryMenu(
           'Open in new tab',
           () => unawaited(actions.openInNewTab(node)),
         ),
-      MenuCommand('Ask AI', () => unawaited(actions.openAi(node))),
+      MenuCommand(
+        'Ask AI',
+        () => unawaited(actions.openAi(node)),
+        icon: AppIcon.ai,
+      ),
       MenuCommand(
         'Copy link',
         () => unawaited(Clipboard.setData(ClipboardData(text: '$link'))),
+        icon: AppIcon.link,
       ),
     ],
     create,
@@ -113,15 +130,22 @@ Future<void> showLibraryMenu(
       // A notebook is not moved or copied on its own; sections are pasted
       // into it.
       if (node is! Notebook) ...<MenuCommand>[
-        MenuCommand('Cut', () => actions.cut(node)),
-        MenuCommand('Copy', () => actions.copy(node)),
+        MenuCommand('Cut', () => actions.cut(node), icon: AppIcon.cut),
+        MenuCommand('Copy', () => actions.copy(node), icon: AppIcon.copy),
       ],
       paste,
     ],
     <MenuCommand>[
-      MenuCommand('Export…', () => unawaited(exportNotes(context, ref, node))),
+      MenuCommand(
+        'Export…',
+        () => unawaited(exportNotes(context, ref, node)),
+        icon: AppIcon.export,
+      ),
     ],
-    <MenuCommand>[MenuCommand('Rename', rename), MenuCommand('Delete', delete)],
+    <MenuCommand>[
+      MenuCommand('Rename', rename),
+      MenuCommand('Delete', delete, icon: AppIcon.bin),
+    ],
   ]);
 }
 

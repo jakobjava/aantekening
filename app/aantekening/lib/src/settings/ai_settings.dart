@@ -1,4 +1,5 @@
-/// Choosing which models to ask, and how the web is searched.
+/// Choosing which models to ask, what they are told, what they make to
+/// study from, and how the web is searched.
 library;
 
 import 'dart:async';
@@ -10,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../ai/ai_state.dart';
 import '../ai/money.dart';
+import '../ai/study_profile_editor.dart';
 import '../look/controls.dart';
 import '../look/marks.dart';
 import '../look/tones.dart';
@@ -17,7 +19,8 @@ import 'settings_view.dart';
 
 /// The AI page of the settings: the providers set up — each saying plainly
 /// whether the notes stay on this computer or go to a service — which one
-/// questions go to and its model, and how the web is searched.
+/// questions go to and its model; what the person tells every model of
+/// themselves; the study profiles; and how the web is searched.
 class AiSettingsPage extends ConsumerWidget {
   const AiSettingsPage({super.key});
 
@@ -81,7 +84,102 @@ class AiSettingsPage extends ConsumerWidget {
             ),
           ],
         ),
+        const _AboutYou(),
+        const _StudyProfiles(),
         const _WebSettings(),
+      ],
+    );
+  }
+}
+
+/// What the person tells every model of themselves.
+class _AboutYou extends ConsumerStatefulWidget {
+  const _AboutYou();
+
+  @override
+  ConsumerState<_AboutYou> createState() => _AboutYouState();
+}
+
+class _AboutYouState extends ConsumerState<_AboutYou> {
+  late final TextEditingController _about = TextEditingController(
+    text: ref.read(aiSettingsProvider).about,
+  );
+
+  @override
+  void dispose() {
+    _about.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SettingsSection(
+    title: 'About you',
+    description:
+        'Told to the model with every question and study set, so it answers '
+        'for you: your school year, your course, the exams you are working '
+        'towards.',
+    children: <Widget>[
+      TextField(
+        controller: _about,
+        minLines: 2,
+        maxLines: 5,
+        decoration: const InputDecoration(
+          hintText:
+              'I am in Q13 at a Gymnasium in Bavaria, with physics and maths '
+              'as my Abitur subjects.',
+        ),
+        onChanged: (about) {
+          final settings = ref.read(aiSettingsProvider);
+          ref
+              .read(aiSettingsProvider.notifier)
+              .update(settings.copyWith(about: about.trim()));
+        },
+      ),
+    ],
+  );
+}
+
+/// The study profiles: what each makes, a way to change it, and a way to
+/// make a new one.
+class _StudyProfiles extends ConsumerWidget {
+  const _StudyProfiles();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profiles = ref.watch(aiSettingsProvider).studyProfiles;
+    return SettingsSection(
+      title: 'Study profiles',
+      description:
+          'What the AI makes to study from, offered in the AI of every '
+          'notebook, section and page. Change what each asks for, or '
+          'describe something new.',
+      children: <Widget>[
+        for (final profile in profiles)
+          RowTile(
+            padding: const EdgeInsets.fromLTRB(0, 6, 0, 6),
+            title: Text(profile.name),
+            subtitle: Text(
+              <String>[
+                if (profile.name != profile.form.label) profile.form.label,
+                if (profile.isOriginal)
+                  profile.isAsMade ? 'As it comes' : 'Changed',
+                if (profile.details.isNotEmpty) profile.details,
+              ].join('  ·  '),
+            ),
+            trailing: SmallButton(
+              'Edit',
+              onPressed: () => editStudyProfile(context, profile: profile),
+            ),
+            onTap: () => editStudyProfile(context, profile: profile),
+          ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton(
+            onPressed: () => editStudyProfile(context),
+            child: const Text('New study profile…'),
+          ),
+        ),
       ],
     );
   }

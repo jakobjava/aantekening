@@ -16,12 +16,13 @@ import '../../commands/shortcuts.dart';
 import '../../look/appearance.dart';
 import '../../look/colour_picker.dart';
 import '../../look/controls.dart';
+import '../../look/icons.dart';
 import '../../look/marks.dart';
 import '../../look/tones.dart';
 import '../../spelling/dictionaries.dart';
 import '../../spelling/spelling.dart';
-import '../palette.dart';
 import '../page_minimap.dart';
+import '../palette.dart';
 import '../text/cheat_sheet.dart';
 import '../text/math_syntax.dart';
 import '../text/math_templates.dart';
@@ -153,9 +154,60 @@ Widget ribbonFaceOf(RibbonItem item) => switch (item) {
     'code',
     style: TextStyle(fontFamily: InterfaceFont.mono.family, fontSize: 12),
   ),
-  RibbonItem.bullets => const Text('Bullets'),
-  RibbonItem.numbering => const Text('Numbers'),
-  _ => Text(item.label),
+  RibbonItem.bullets => const _IconFace(AppIcon.bullets, 'Bullets'),
+  RibbonItem.numbering => const _IconFace(AppIcon.numbers, 'Numbers'),
+  _ => switch (ribbonIconOf(item)) {
+    final icon? => _IconFace(icon, item.label),
+    null => Text(item.label),
+  },
+};
+
+/// A small button's face: its icon and its name.
+class _IconFace extends StatelessWidget {
+  const _IconFace(this.icon, this.label);
+
+  final AppIcon icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      AppIconView(icon, size: 15),
+      const SizedBox(width: 5),
+      Text(label),
+    ],
+  );
+}
+
+/// The icon of a button on the ribbon, if it has one: those drawn some
+/// other way — formatting as the letters it formats, a colour, a formula,
+/// the zoom — have none.
+AppIcon? ribbonIconOf(RibbonItem item) => switch (item) {
+  RibbonItem.undo => AppIcon.undo,
+  RibbonItem.redo => AppIcon.redo,
+  RibbonItem.bullets => AppIcon.bullets,
+  RibbonItem.numbering => AppIcon.numbers,
+  RibbonItem.todo => AppIcon.todo,
+  RibbonItem.outdent => AppIcon.outdent,
+  RibbonItem.indent => AppIcon.indent,
+  RibbonItem.formula || RibbonItem.insertFormula => AppIcon.formula,
+  RibbonItem.mathCheatSheet => AppIcon.cheatSheet,
+  RibbonItem.textBox => AppIcon.textBox,
+  RibbonItem.picture => AppIcon.picture,
+  RibbonItem.pdf => AppIcon.pdf,
+  RibbonItem.select => AppIcon.select,
+  RibbonItem.eraser => AppIcon.eraser,
+  RibbonItem.pen => AppIcon.pen,
+  RibbonItem.highlighter => AppIcon.highlighter,
+  RibbonItem.zoomIn => AppIcon.zoomIn,
+  RibbonItem.zoomOut => AppIcon.zoomOut,
+  RibbonItem.fitPage => AppIcon.fitPage,
+  RibbonItem.pagePreview => AppIcon.pagePreview,
+  RibbonItem.resetRibbon => AppIcon.reset,
+  RibbonItem.spelling => AppIcon.spelling,
+  RibbonItem.spellingLanguages => AppIcon.languages,
+  _ => null,
 };
 
 /// The widget for one ribbon item.
@@ -171,6 +223,7 @@ class RibbonItemView extends ConsumerWidget {
     final text = commands.text;
     final bindings = ref.watch(shortcutsProvider);
     final face = ribbonFaceOf(item);
+    final icon = ribbonIconOf(item);
 
     Widget mark(MarkKind kind, EditorKey key) => _TextCommand(
       text: text,
@@ -200,7 +253,13 @@ class RibbonItemView extends ConsumerWidget {
           select: () => canvas.tool,
           builder: (context, current) => RibbonLargeButton(
             label: item.label,
-            glyph: colour == null ? null : ColourBar(color: colour),
+            icon: icon,
+            glyph: colour == null
+                ? null
+                : ColourBar(
+                    color: colour,
+                    child: icon == null ? null : AppIconView(icon),
+                  ),
             tooltip: bindings.tooltip(command, describe: true),
             selected: current == tool,
             onPressed: () => commands.onToolSelected(tool),
@@ -213,6 +272,7 @@ class RibbonItemView extends ConsumerWidget {
       bool selected = false,
     }) => RibbonLargeButton(
       label: item.label,
+      icon: icon,
       tooltip: bindings.tooltip(command, label: item.label, describe: true),
       selected: selected,
       onPressed: onPressed,
@@ -335,6 +395,7 @@ class RibbonItemView extends ConsumerWidget {
       ),
       RibbonItem.mathCheatSheet => RibbonLargeButton(
         label: item.label,
+        icon: icon,
         tooltip: 'Cheat sheet\nWhat to type for every structure and symbol',
         selected: ref.watch(cheatSheetProvider),
         onPressed: ref.read(cheatSheetProvider.notifier).toggle,
@@ -347,6 +408,7 @@ class RibbonItemView extends ConsumerWidget {
       RibbonItem.spellingLanguages => _LanguagesMenu(item: item),
       RibbonItem.textBox => RibbonLargeButton(
         label: item.label,
+        icon: icon,
         tooltip:
             '${bindings.tooltip(AppCommand.insertTextBox, label: 'Text box')}'
             '\nOr click anywhere on the page with Select and start typing',
@@ -356,6 +418,7 @@ class RibbonItemView extends ConsumerWidget {
         text: text,
         builder: (state, enabled) => RibbonLargeButton(
           label: item.label,
+          icon: icon,
           tooltip: text.isActive
               ? 'Insert a picture into the text box'
               : 'Insert a picture onto the page',
@@ -366,6 +429,7 @@ class RibbonItemView extends ConsumerWidget {
         text: text,
         builder: (state, enabled) => RibbonLargeButton(
           label: item.label,
+          icon: icon,
           tooltip: text.isActive
               ? 'Insert PDF pages into the text box'
               : 'Insert PDF pages onto the page, one picture per page',
@@ -374,6 +438,7 @@ class RibbonItemView extends ConsumerWidget {
       ),
       RibbonItem.insertFormula => RibbonLargeButton(
         label: item.label,
+        icon: icon,
         tooltip:
             '${EditorKey.formula.tooltip}\nWritten in place, in a text box',
         onPressed: commands.onFormula,
@@ -454,6 +519,7 @@ class RibbonItemView extends ConsumerWidget {
       ),
       RibbonItem.resetRibbon => RibbonLargeButton(
         label: item.label,
+        icon: icon,
         tooltip:
             'Put every button back where it started\n'
             'Drag any button to move it, to another section or tab',
@@ -632,27 +698,34 @@ class RibbonButton extends StatelessWidget {
   );
 }
 
-/// A tall button: its name, over a [glyph] where there is something to show
-/// — the pen's colour, the zoom, a formula.
+/// A tall button: its name, under its icon, or under a [glyph] where there
+/// is more to show — the pen's colour, the zoom, a formula.
 class RibbonLargeButton extends StatelessWidget {
   const RibbonLargeButton({
     required this.label,
     required this.tooltip,
     required this.onPressed,
     this.glyph,
+    this.icon,
     this.selected = false,
     super.key,
   });
 
   final String label;
+
+  /// What is shown over the name: [icon], unless something more is to be
+  /// shown.
   final Widget? glyph;
+  final AppIcon? icon;
   final String tooltip;
   final VoidCallback? onPressed;
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    final glyph = this.glyph;
+    final icon = this.icon;
+    final glyph =
+        this.glyph ?? (icon == null ? null : AppIconView(icon, size: 20));
     final name = ConstrainedBox(
       constraints: const BoxConstraints(
         maxWidth: RibbonMetrics.largeLabelWidth,
@@ -1061,6 +1134,7 @@ class _LanguagesMenu extends ConsumerWidget {
     return MenuAnchor(
       builder: (context, menu, _) => RibbonLargeButton(
         label: item.label,
+        icon: ribbonIconOf(item),
         tooltip: 'Languages\nThe languages spelling is checked in',
         onPressed: () => menu.isOpen ? menu.close() : menu.open(),
       ),

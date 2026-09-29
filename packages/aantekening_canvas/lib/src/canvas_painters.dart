@@ -11,6 +11,7 @@ import 'canvas_controller.dart';
 import 'canvas_viewport.dart';
 import 'selection_handles.dart';
 import 'stroke_geometry.dart';
+import 'tools.dart';
 
 /// Draws the paper and its ruling.
 ///
@@ -378,6 +379,111 @@ class WetInkPainter extends CustomPainter {
   @override
   bool shouldRepaint(WetInkPainter old) =>
       old.controller != controller || old.viewport != viewport;
+}
+
+/// How far round the eraser reaches, in page units, seen from [viewport]:
+/// about the same on screen at any zoom, within reason.
+double eraserRadiusIn(CanvasViewport viewport) =>
+    viewport.toPageDistance(12).clamp(4.0, 64.0);
+
+/// Where the pointer, hovering or pressed, is over the page, and whether it
+/// is a pen's other end, which erases.
+typedef NibPlace = ({Offset at, bool erasing});
+
+/// Draws, in place of the pointer's own cursor, what the tool in hand would
+/// touch the page with: the pen's nib as thick as its line and in its
+/// colour, the highlighter's chisel, the eraser's reach — each ringed in
+/// light and dark, so it shows on paper and on a dark picture alike.
+class NibPainter extends CustomPainter {
+  /// Drawn again as the pointer moves, as the view zooms, and as the pen
+  /// changes.
+  NibPainter({required this.place, required this.controller})
+    : super(
+        repaint: Listenable.merge(<Listenable>[
+          place,
+          controller.view,
+          controller.contents,
+        ]),
+      );
+
+  /// Where the pointer is on screen, or null where there is none to draw.
+  final ValueListenable<NibPlace?> place;
+  final CanvasController controller;
+
+  /// Whether [tool] is drawn this way rather than with a system cursor.
+  static bool draws(CanvasTool tool) =>
+      tool == CanvasTool.pen ||
+      tool == CanvasTool.highlighter ||
+      tool == CanvasTool.eraser;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final place = this.place.value;
+    final tool = controller.tool;
+    if (place == null || !(place.erasing || draws(tool))) return;
+    final viewport = controller.viewport;
+    final at = viewport.toPage(place.at);
+    canvas
+      ..save()
+      ..transform(viewport.toMatrix().storage);
+
+    // What the nib covers, round or square, to be ringed just outside it.
+    final Rect nib;
+    final bool round;
+    if (place.erasing || tool == CanvasTool.eraser) {
+      nib = Rect.fromCircle(center: at, radius: eraserRadiusIn(viewport));
+      round = true;
+    } else {
+      final pen = controller.pen;
+      final sample = InkStroke.fromPoints(
+        tool: pen.tool,
+        color: pen.strokeColor,
+        width: pen.width,
+        xs: <double>[at.dx],
+        ys: <double>[at.dy],
+      );
+      if (pen.tool == InkTool.highlighter) {
+        nib = StrokeGeometry.chiselPath(sample).getBounds();
+        round = false;
+        InkPainter.paintStroke(canvas, sample);
+      } else {
+        // As thick as the pen's line, not its dot, which is rounder.
+        nib = Rect.fromCircle(center: at, radius: pen.width / 2);
+        round = true;
+        final inverting = pen.strokeColor == NoteColors.inverse;
+        canvas.drawOval(
+          nib,
+          Paint()
+            ..color = inverting ? const Color(0xFFFFFFFF) : Color(pen.color)
+            ..blendMode = inverting
+                ? InkLayer.inverting.blendMode
+                : BlendMode.srcOver,
+        );
+      }
+    }
+    // A light ring and a dark one round it, a pixel each.
+    final pixel = 1 / viewport.zoom;
+    for (final (out, colour) in <(double, Color)>[
+      (1, const Color(0xFFFFFFFF)),
+      (2, const Color(0x80000000)),
+    ]) {
+      final ring = nib.inflate(out * pixel);
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = pixel
+        ..color = colour;
+      if (round) {
+        canvas.drawOval(ring, paint);
+      } else {
+        canvas.drawRect(ring, paint);
+      }
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(NibPainter old) =>
+      old.place != place || old.controller != controller;
 }
 
 /// Draws the selection box, its handles and the marquee.

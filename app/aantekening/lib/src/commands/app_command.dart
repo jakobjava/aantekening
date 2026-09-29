@@ -252,9 +252,9 @@ enum AppCommand {
     <KeyChord>[KeyChord(LogicalKeyboardKey.f1)],
   ),
   aiSettings(
-    'AI models',
+    'AI settings',
     CommandGroup.app,
-    'Which models questions go to',
+    'Which models questions go to, what they know of you, study profiles',
     <KeyChord>[],
   ),
   dictionaries(

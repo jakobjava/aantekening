@@ -125,6 +125,9 @@ class BoxFormatting implements TextEditorCommands {
   void toggleFormula() {}
 
   @override
+  void finishEditing() {}
+
+  @override
   void insertMath(MathTemplate template) {}
 
   @override

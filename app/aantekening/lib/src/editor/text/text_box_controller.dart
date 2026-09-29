@@ -143,6 +143,12 @@ abstract interface class TextEditorCommands {
   /// after it, or before it.
   void finishFormula({bool after = true});
 
+  /// Finishes whatever is left open — the formula being edited — and
+  /// reports the text as it is then, as typing in the box ends: so the page
+  /// knows what the box holds before it lets go of it, rather than while it
+  /// rebuilds, when nothing on the page may change.
+  void finishEditing();
+
   /// Places pictures or PDF pages at the caret, each on its own line.
   void insertEmbeds(List<BlockEmbed> embeds);
 
@@ -320,6 +326,9 @@ class TextBoxEditorController extends ChangeNotifier
 
   @override
   void toggleFormula() => _editor?.toggleFormula();
+
+  @override
+  void finishEditing() => _editor?.finishEditing();
 
   @override
   void insertMath(MathTemplate template) => _editor?.insertMath(template);
