@@ -1,0 +1,32 @@
+# aantekening for Arch Linux, packaged from the Linux build the release
+# workflow makes (.github/workflows/release.yml), which also sets the
+# version and the sums. Built by hand, the build and the files it names
+# are put beside this file first:
+#
+#   aantekening-$pkgver-linux-x64.tar.gz   the bundle, in a folder aantekening
+#   dev.aantekening.aantekening.desktop    from packaging/linux
+#   aantekening.png                        the app's icon
+pkgname=aantekening
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='A powerful note application'
+arch=('x86_64')
+url='https://github.com/jakobjava/aantekening'
+license=('unknown')
+depends=('gtk3' 'libsecret' 'libepoxy' 'fontconfig' 'glib2' 'gcc-libs' 'glibc')
+# Flutter's engine and the app are built stripped already.
+options=('!strip' '!debug')
+source=("aantekening-$pkgver-linux-x64.tar.gz"
+        'dev.aantekening.aantekening.desktop'
+        'aantekening.png')
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+package() {
+  install -d "$pkgdir/opt/aantekening" "$pkgdir/usr/bin"
+  cp -a aantekening/. "$pkgdir/opt/aantekening/"
+  ln -s /opt/aantekening/aantekening "$pkgdir/usr/bin/aantekening"
+  install -Dm644 dev.aantekening.aantekening.desktop \
+    "$pkgdir/usr/share/applications/dev.aantekening.aantekening.desktop"
+  install -Dm644 aantekening.png \
+    "$pkgdir/usr/share/icons/hicolor/192x192/apps/dev.aantekening.aantekening.png"
+}

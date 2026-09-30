@@ -42,8 +42,20 @@ see [docs/using.md](docs/using.md).
 
 ## Getting it
 
-Every push to `master` builds a Windows copy: open the latest run under the
-repository's **Actions** tab and download **aantekening-windows**.
+From [the releases](https://github.com/jakobjava/aantekening/releases):
+
+- **Windows:** unzip `aantekening-…-windows-x64.zip` anywhere and start
+  `aantekening.exe`.
+- **Arch Linux:** `sudo pacman -U aantekening-…-x86_64.pkg.tar.zst`, then
+  start it from the menu or with `aantekening`.
+- **Other Linux:** unpack `aantekening-…-linux-x64.tar.gz` and start
+  `aantekening/aantekening`; it needs GTK 3 and libsecret.
+
+A release is made by pushing a tag of the app's version — `v0.1.0` for
+`version: 0.1.0` in `app/aantekening/pubspec.yaml` — which builds these
+(`.github/workflows/release.yml`, `packaging/`). Every push to `master` also
+builds a Windows copy: open the latest run under the repository's
+**Actions** tab and download **aantekening-windows**.
 
 To build it yourself, install the [Flutter SDK](https://docs.flutter.dev/get-started)
 (3.47 or newer). The first build downloads SQLite and PDFium, so it needs an
@@ -76,6 +88,7 @@ packages/aantekening_math          Simple syntax ⇄ LaTeX, typesetting
 packages/aantekening_ai            AI providers, citations, the note agent
 packages/aantekening_spell         spell checking, Hunspell ported to Dart
 app/aantekening                    the app
+third_party/flutter_math_fork      the TeX typesetter, patched (see its README)
 docs/                              architecture, file format, decisions, roadmap
 ```
 
@@ -97,7 +110,9 @@ for d in packages/aantekening_math packages/aantekening_canvas app/aantekening; 
 Built on Flutter and Dart (BSD-3), SQLite (public domain), `sqlite3.dart`,
 Riverpod, `pdfrx`, `archive` and `xml` (MIT), `flutter_math_fork`
 (MIT/Apache-2.0), PDFium (BSD-3/Apache-2.0), and `file_selector`, `http`,
-`path`, `crypto`, `path_provider` and `url_launcher` (BSD-3).
+`path`, `crypto`, `path_provider` and `url_launcher` (BSD-3). The fonts it
+brings — IBM Plex, Carlito, and Inconsolata set to Consolas's measure — are
+under the SIL Open Font Licence.
 
 `aantekening_spell` is largely a port of [Hunspell](https://hunspell.github.io)
 1.7.3, and those files are under Hunspell's licence (MPL 1.1, GPL 2 or

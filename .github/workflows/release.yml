@@ -1,0 +1,134 @@
+name: Release
+
+# A version tag — v0.1.0, say — makes a release of that version: the app
+# for Windows, for Linux, and packaged for Arch Linux. The tag must be the
+# version app/aantekening/pubspec.yaml gives.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          version=$(sed -n 's/^version: *\([^+]*\).*/\1/p' app/aantekening/pubspec.yaml)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME is not the app's version, $version."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.4
+          cache: true
+      - run: flutter pub get
+      - working-directory: app/aantekening
+        run: flutter build windows --release
+      # Unzipped anywhere, it runs: the Visual C++ runtime it is built
+      # against goes with it, for computers that do not have it.
+      - name: Package
+        shell: pwsh
+        run: |
+          $release = 'app/aantekening/build/windows/x64/runner/Release'
+          foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+            Copy-Item "$env:WINDIR\System32\$dll" $release
+          }
+          Compress-Archive -Path "$release\*" `
+            -DestinationPath 'aantekening-${{ needs.version.outputs.version }}-windows-x64.zip'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: aantekening-*-windows-x64.zip
+
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.4
+          cache: true
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libsecret-1-dev
+      - run: flutter pub get
+      - working-directory: app/aantekening
+        run: flutter build linux --release
+      - name: Package
+        run: |
+          mkdir stage
+          cp -a app/aantekening/build/linux/x64/release/bundle stage/aantekening
+          tar -C stage -czf aantekening-${{ needs.version.outputs.version }}-linux-x64.tar.gz aantekening
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: aantekening-*-linux-x64.tar.gz
+
+  # The Linux build, packaged by makepkg for pacman.
+  arch:
+    needs: [version, linux]
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: arch-build
+      - name: Package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cp packaging/arch/PKGBUILD packaging/linux/dev.aantekening.aantekening.desktop arch-build/
+          cp app/aantekening/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png arch-build/aantekening.png
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" arch-build/PKGBUILD
+          useradd -m builder
+          chown -R builder arch-build
+          cd arch-build
+          # The sums of what was just built, in place of the PKGBUILD's.
+          su builder -c 'makepkg -g' >> PKGBUILD
+          su builder -c 'makepkg --nodeps'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch
+          path: arch-build/*.pkg.tar.zst
+
+  release:
+    needs: [version, windows, linux, arch]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "aantekening $VERSION" \
+            --generate-notes \
+            --notes "**Windows:** unzip \`aantekening-$VERSION-windows-x64.zip\` anywhere and start \`aantekening.exe\`.
+
+          **Arch Linux:** \`sudo pacman -U aantekening-$VERSION-1-x86_64.pkg.tar.zst\`, then start aantekening from the menu or with \`aantekening\`.
+
+          **Other Linux:** unpack \`aantekening-$VERSION-linux-x64.tar.gz\` and start \`aantekening/aantekening\`; it needs GTK 3 and libsecret."

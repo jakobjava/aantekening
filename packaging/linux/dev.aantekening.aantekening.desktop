@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=aantekening
+GenericName=Notes
+Comment=Take notes by hand, in text and in formulas
+Exec=aantekening
+Icon=dev.aantekening.aantekening
+Terminal=false
+Categories=Office;
+Keywords=notes;notebook;handwriting;OneNote;
+StartupWMClass=dev.aantekening.aantekening
