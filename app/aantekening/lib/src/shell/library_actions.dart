@@ -215,6 +215,61 @@ class LibraryActions {
     if (page != null && !page.isDeleted) await openInNewTab(page);
   }
 
+  // -------------------------------------------------------------- arranging
+
+  /// Puts [moved] just above [beside], or just below it, as its sibling: a
+  /// page dropped there as the person arranges the pages of a section.
+  Future<void> arrangePage(
+    PageRef moved,
+    PageRef beside, {
+    required bool above,
+  }) async {
+    final tree = await _ref.read(pageTreeProvider(beside.sectionId).future);
+    final parentId = tree.parentOf(beside.id);
+    final siblings = parentId == null ? tree.roots : tree.childrenOf(parentId);
+    final store = await _store;
+    await store.pages.arrangePage(
+      moved.id,
+      parentId: parentId,
+      after: _after(siblings, moved, beside, above: above)?.id,
+    );
+    _changed();
+  }
+
+  /// Puts [moved] just above [beside], or just below it, as the person
+  /// arranges the notebooks.
+  Future<void> arrangeNotebook(
+    Notebook moved,
+    Notebook beside, {
+    required bool above,
+  }) async {
+    final notebooks = await _ref.read(notebooksProvider.future);
+    final store = await _store;
+    await store.library.arrangeNotebook(
+      moved.id,
+      after: _after(notebooks, moved, beside, above: above)?.id,
+    );
+    _changed();
+  }
+
+  /// What [moved] goes after among [siblings] to be just above or below
+  /// [beside]: the one above [beside], or [beside] itself; null to go
+  /// first.
+  static T? _after<T extends TreeNode>(
+    List<T> siblings,
+    T moved,
+    T beside, {
+    required bool above,
+  }) {
+    if (!above) return beside;
+    final others = <T>[
+      for (final node in siblings)
+        if (node.id != moved.id) node,
+    ];
+    final at = others.indexWhere((node) => node.id == beside.id);
+    return at > 0 ? others[at - 1] : null;
+  }
+
   // --------------------------------------------------------------- creating
 
   /// Creates a notebook, with a first section and a first page in it, as a

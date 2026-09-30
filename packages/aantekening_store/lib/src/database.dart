@@ -133,6 +133,75 @@ class AantekeningDatabase {
     return max == null ? 0 : FractionalIndex.after((max as num).toDouble());
   }
 
+  /// The position for a row going among the rows of [table] matching
+  /// [where]: after the row [after], before whichever comes next of those
+  /// not in the bin; without one, first if [first], or else last.
+  double positionAmong(
+    String table,
+    String where,
+    List<Object?> parameters, {
+    String? after,
+    bool first = false,
+  }) {
+    if (after == null) {
+      if (!first) return nextPosition(table, where, parameters);
+      final min = select(
+        'SELECT MIN(position) AS m FROM $table WHERE $where',
+        parameters,
+      ).first['m'];
+      return min == null ? 0 : FractionalIndex.before((min as num).toDouble());
+    }
+    var (previous, next) = _around(table, where, parameters, after);
+    if (next != null && FractionalIndex.needsRebalance(previous, next)) {
+      // So many went in at one place that there is no room left between.
+      _renumber(table, where, parameters);
+      (previous, next) = _around(table, where, parameters, after);
+    }
+    return FractionalIndex.insert(previous: previous, next: next);
+  }
+
+  /// The positions of the row [after] and of whichever row of [table]
+  /// matching [where], not in the bin, comes next, if one does.
+  (double, double?) _around(
+    String table,
+    String where,
+    List<Object?> parameters,
+    String after,
+  ) {
+    final anchor = select('SELECT position FROM $table WHERE id = ?', <Object?>[
+      after,
+    ]);
+    if (anchor.isEmpty) {
+      throw ArgumentError.value(after, 'after', 'no such row');
+    }
+    final position = (anchor.first['position']! as num).toDouble();
+    final next = select(
+      'SELECT MIN(position) AS m FROM $table WHERE ($where) '
+      'AND position > ? AND deleted_at IS NULL',
+      <Object?>[...parameters, position],
+    ).first['m'];
+    return (position, next == null ? null : (next as num).toDouble());
+  }
+
+  /// Spaces the rows of [table] matching [where] evenly again, in the order
+  /// they are in — those in the bin too, to go back where they were.
+  void _renumber(String table, String where, List<Object?> parameters) {
+    final ids = <String>[
+      for (final row in select(
+        'SELECT id FROM $table WHERE $where ORDER BY position, id',
+        parameters,
+      ))
+        row['id']! as String,
+    ];
+    final positions = FractionalIndex.rebalanced(ids.length);
+    for (var i = 0; i < ids.length; i++) {
+      run('UPDATE $table SET position = ? WHERE id = ?', <Object?>[
+        positions[i],
+        ids[i],
+      ]);
+    }
+  }
+
   /// Runs [body] inside a transaction, rolling back if it throws.
   ///
   /// Nested calls reuse the outermost transaction via savepoints, so a

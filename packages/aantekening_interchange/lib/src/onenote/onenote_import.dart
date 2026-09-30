@@ -320,8 +320,10 @@ final class _Converter {
         final cell = TableCell(
           r,
           c,
+          // OneNote keeps the width of a column's text; here a column is
+          // as wide as its cells, their text inset on either side.
           width: c < table.columnWidths.length
-              ? table.columnWidths[c] * _perHalfInch
+              ? table.columnWidths[c] * _perHalfInch + 2 * TableCell.inset
               : null,
           shading: source?.background,
           borders: table.bordersVisible,

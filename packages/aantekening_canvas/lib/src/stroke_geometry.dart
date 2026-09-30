@@ -25,6 +25,12 @@ abstract final class StrokeGeometry {
   /// their midpoints. Raw pointer samples are noisy and unevenly spaced, and
   /// drawing them as straight segments shows every jitter; this costs one
   /// quadratic per sample and removes almost all of it.
+  ///
+  /// A corner is kept a corner: a sample where the way turns more sharply
+  /// than [_sharpestTurn], between sides longer than the line is wide, is
+  /// passed through with straight sides. That is no jitter but a shape —
+  /// one of OneNote's, Xournal++'s, or drawn with a ruler — and smoothed
+  /// like handwriting, a hexagon of six samples was drawn as a circle.
   static Path smoothPath(InkStroke stroke) {
     final path = Path();
     final count = stroke.pointCount;
@@ -49,12 +55,33 @@ abstract final class StrokeGeometry {
     }
 
     for (var i = 1; i < count - 1; i++) {
-      final midX = (stroke.xAt(i) + stroke.xAt(i + 1)) / 2;
-      final midY = (stroke.yAt(i) + stroke.yAt(i + 1)) / 2;
-      path.quadraticBezierTo(stroke.xAt(i), stroke.yAt(i), midX, midY);
+      final x = stroke.xAt(i);
+      final y = stroke.yAt(i);
+      if (_isCorner(stroke, i)) {
+        path.lineTo(x, y);
+        continue;
+      }
+      final midX = (x + stroke.xAt(i + 1)) / 2;
+      final midY = (y + stroke.yAt(i + 1)) / 2;
+      path.quadraticBezierTo(x, y, midX, midY);
     }
     path.lineTo(stroke.xAt(count - 1), stroke.yAt(count - 1));
     return path;
+  }
+
+  /// Whether the way turns at sample [i] of [stroke], within it, more
+  /// sharply than [_sharpestTurn], between sides long enough for the turn
+  /// to show beyond the line's own width.
+  static bool _isCorner(InkStroke stroke, int i) {
+    final inX = stroke.xAt(i) - stroke.xAt(i - 1);
+    final inY = stroke.yAt(i) - stroke.yAt(i - 1);
+    final outX = stroke.xAt(i + 1) - stroke.xAt(i);
+    final outY = stroke.yAt(i + 1) - stroke.yAt(i);
+    final inLength = math.sqrt(inX * inX + inY * inY);
+    final outLength = math.sqrt(outX * outX + outY * outY);
+    final side = math.max(stroke.width, 1.0);
+    if (inLength <= side || outLength <= side) return false;
+    return (inX * outX + inY * outY) / (inLength * outLength) < _sharpestTurn;
   }
 
   /// Whether the stroke's pressure varies enough to be worth drawing
@@ -74,9 +101,10 @@ abstract final class StrokeGeometry {
     return false;
   }
 
-  /// The sharpest turn, as the cosine of its angle, a run of a
-  /// [pressurePath] goes round; a sharper one ends the run there, and the
-  /// round ends of the two runs make the corner round.
+  /// The sharpest turn, as the cosine of its angle, a line is drawn round:
+  /// a sharper one is a corner. A run of a [pressurePath] ends there, and
+  /// the round ends of the two runs make the corner; [smoothPath] goes
+  /// straight to it and on.
   static const double _sharpestTurn = 0.866;
 
   /// How near to the sample before, as a share of the stroke's half-width

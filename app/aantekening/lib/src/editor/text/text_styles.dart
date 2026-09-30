@@ -189,10 +189,17 @@ abstract final class RichTextStyles {
 
   /// The typefaces text set in [font] is drawn in where [font] is not
   /// installed: those drawn to the same measure — Carlito for Calibri,
-  /// Liberation for Arial, Times and Courier — so a page brought from
+  /// [consolasMeasure] for Consolas, Liberation for Arial, Times and
+  /// Courier — so a page brought from
   /// elsewhere keeps its lines where they were, then ones of its kind.
   static List<String> typefacesFor(String font) =>
       _substitutes[font.toLowerCase()] ?? const <String>[];
+
+  /// Inconsolata set to Consolas's measure, which the app carries: text set
+  /// in Consolas is drawn in it where Consolas is not installed. No other
+  /// face will do — in the one a system offers, Noto Sans Mono say, lines
+  /// broke elsewhere, stood a sixth taller, and sank.
+  static const String consolasMeasure = 'Inconsolata Aantekening';
 
   static const Map<String, List<String>> _substitutes = <String, List<String>>{
     'calibri': <String>['Carlito'],
@@ -203,12 +210,7 @@ abstract final class RichTextStyles {
     'helvetica': <String>['Liberation Sans', 'Arimo', 'Arial'],
     'times new roman': <String>['Liberation Serif', 'Tinos', 'Times'],
     'courier new': <String>['Liberation Mono', 'Cousine', 'monospace'],
-    'consolas': <String>[
-      'Inconsolata',
-      'DejaVu Sans Mono',
-      'Liberation Mono',
-      'monospace',
-    ],
+    'consolas': <String>[consolasMeasure],
     'segoe ui': <String>['Selawik', 'Open Sans', 'Noto Sans'],
     'verdana': <String>['DejaVu Sans', 'Noto Sans'],
     'georgia': <String>['Gelasio', 'Liberation Serif'],

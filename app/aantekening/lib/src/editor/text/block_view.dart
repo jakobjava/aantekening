@@ -282,6 +282,11 @@ InlineSpan _room(double width, TextStyle style) => WidgetSpan(
 abstract final class TypesetFormulas {
   static const int _capacity = 512;
 
+  /// The room a formula keeps above and below it, as a share of its size:
+  /// with the same below the formula over it, the room TeX keeps between
+  /// lines whose boxes would otherwise meet.
+  static const double _clearance = 0.1;
+
   static final LinkedHashMap<(String, MathMode, bool, TextStyle), Widget>
   _cache = LinkedHashMap<(String, MathMode, bool, TextStyle), Widget>();
 
@@ -296,10 +301,14 @@ abstract final class TypesetFormulas {
     final cached = _cache.remove(key);
     if (cached != null) return _cache[key] = cached;
 
-    // A formula cannot wrap: one wider than its line is made smaller.
+    // A formula cannot wrap: one wider than its line is made smaller. It
+    // keeps a little room above and below, within the line where it is no
+    // taller than the text, so a fraction never touches the one on the
+    // line above.
+    final clearance = (style.fontSize ?? RichTextStyles.bodySize) * _clearance;
     final widget = ShrinkToWidth(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 1),
+        padding: EdgeInsets.symmetric(horizontal: 1, vertical: clearance),
         child: MathView(
           source: source,
           mode: mode,

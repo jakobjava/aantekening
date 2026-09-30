@@ -10,6 +10,7 @@ import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'files/notes_location.dart';
+import 'shell/list_order.dart';
 import 'shell/tabs.dart';
 
 /// The notes, open: their folder, and this computer's index of it.
@@ -74,8 +75,19 @@ final selectedPageProvider = NotifierProvider<TabSelection, String?>(
 /// Every notebook, in display order.
 final notebooksProvider = FutureProvider<List<Notebook>>((ref) async {
   ref.watch(libraryRevisionProvider);
+  final order = ref.watch(listOrderProvider(OrderedList.notebooks));
   final store = await ref.watch(storeProvider.future);
-  return store.library.listNotebooks();
+  final notebooks = await store.library.listNotebooks();
+  if (order != ListOrder.changedNewest && order != ListOrder.changedOldest) {
+    return order.sort(notebooks);
+  }
+  // A notebook changes as its pages do.
+  ref.watch(pageContentsRevisionProvider);
+  final changes = await store.library.notebookChanges();
+  return order.sort(
+    notebooks,
+    changedAt: (notebook) => changes[notebook.id] ?? notebook.updatedAt,
+  );
 });
 
 /// Every section of a notebook, at any depth, in their tree.
@@ -98,7 +110,8 @@ final sectionProvider = FutureProvider.family<Section?, String>((
   return store.library.findSection(sectionId);
 });
 
-/// The pages of a section, in their tree.
+/// The pages of a section, in their tree, each level in the order the
+/// pages are listed in.
 final pageTreeProvider = FutureProvider.family<Hierarchy<PageRef>, String>((
   ref,
   sectionId,
@@ -106,8 +119,9 @@ final pageTreeProvider = FutureProvider.family<Hierarchy<PageRef>, String>((
   ref
     ..watch(libraryRevisionProvider)
     ..watch(pageContentsRevisionProvider);
+  final order = ref.watch(listOrderProvider(OrderedList.pages));
   final store = await ref.watch(storeProvider.future);
-  return PageRef.hierarchy(await store.pages.listPages(sectionId));
+  return PageRef.hierarchy(order.sort(await store.pages.listPages(sectionId)));
 });
 
 /// One page's metadata, its title and date among them.

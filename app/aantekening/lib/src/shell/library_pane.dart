@@ -16,8 +16,10 @@ import '../look/icons.dart';
 import '../look/marks.dart';
 import '../look/tones.dart';
 import '../providers.dart';
+import 'arranging.dart';
 import 'library_actions.dart';
 import 'library_menu.dart';
+import 'list_order.dart';
 import 'panel_focus.dart';
 import 'sidebar_state.dart';
 import 'tree_rows.dart';
@@ -61,6 +63,7 @@ class _LibraryPaneState extends ConsumerState<LibraryPane> {
         children: <Widget>[
           PaneHeader(
             title: 'Notebooks',
+            options: const ListOrderButton(OrderedList.notebooks),
             actionTooltip: bindings.tooltip(AppCommand.newNotebook),
             onAction: () => createNamedNotebook(context, ref),
           ),
@@ -148,15 +151,25 @@ class _NotebookRows extends ConsumerWidget {
           onToggle: (id) => selected
               ? ref.read(collapsedRowsProvider.notifier).toggle(id)
               : actions.openNotebook(id),
-          child: LibraryTile(
-            node: notebook,
-            child: RowTile(
-              selected: selected && ref.watch(selectedSectionProvider) == null,
-              focusNode: focusNode,
-              padding: TreeRow.tilePadding,
-              titleStyle: const TextStyle(fontWeight: FontWeight.w600),
-              title: Text(notebook.title),
-              onTap: () => actions.openNotebook(notebook.id),
+          child: ArrangeableRow<Notebook>(
+            item: notebook,
+            enabled:
+                ref.watch(listOrderProvider(OrderedList.notebooks)) ==
+                ListOrder.arranged,
+            onArrange: (moved, {required above}) => unawaited(
+              actions.arrangeNotebook(moved, notebook, above: above),
+            ),
+            child: LibraryTile(
+              node: notebook,
+              child: RowTile(
+                selected:
+                    selected && ref.watch(selectedSectionProvider) == null,
+                focusNode: focusNode,
+                padding: TreeRow.tilePadding,
+                titleStyle: const TextStyle(fontWeight: FontWeight.w600),
+                title: Text(notebook.title),
+                onTap: () => actions.openNotebook(notebook.id),
+              ),
             ),
           ),
         ),

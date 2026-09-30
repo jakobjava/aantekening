@@ -146,7 +146,8 @@ Rows and columns count from zero. Several blocks in a row with the same cell
 are its lines; a cell that comes before the one above it in reading order
 begins another table. `width` is the column's width in page units, where its
 line was dragged, carried by every cell of the column; without it the column
-fits its text. A cell may carry `shading`, its background as an ARGB
+fits its text. It is the whole cell's: the text is inset 6 units from the
+lines on either side. A cell may carry `shading`, its background as an ARGB
 colour, and `"borders": false` when its lines were hidden; the editor then
 draws them faint, so the table can still be seen. A build that does not know tables shows the cells as
 paragraphs, one after another. Readers repair a table missing cells by adding

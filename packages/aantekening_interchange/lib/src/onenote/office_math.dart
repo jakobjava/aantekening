@@ -194,7 +194,8 @@ String _objectLatex(_Object object) {
     case _MathType.equationArray:
       final aligned = arguments.any((row) => row.contains('&'));
       final environment = aligned ? 'aligned' : 'gathered';
-      return '\\begin{$environment}${arguments.join(r' \\ ')}'
+      return '\\begin{$environment}'
+          '${arguments.map(_numbered).join(r' \\ ')}'
           '\\end{$environment}';
     case _MathType.nary:
       final operator = char == null
@@ -233,6 +234,18 @@ String _objectLatex(_Object object) {
     default:
       return '{${arguments.join()}}';
   }
+}
+
+/// A row of an equation array as it is set: in OneNote's linear format a
+/// `#` ends the equation and begins its number, `E=mc^2#(1)`, which is set
+/// to its right; a `#` with nothing after it is not shown.
+String _numbered(String row) {
+  const mark = r'\#';
+  final at = row.lastIndexOf(mark);
+  if (at < 0) return row;
+  final number = row.substring(at + mark.length).trim();
+  final equation = row.substring(0, at);
+  return number.isEmpty ? equation : '$equation\\qquad $number';
 }
 
 bool _isLimitOperator(String latex) => RegExp(

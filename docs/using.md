@@ -10,6 +10,10 @@ and the knob above the box to rotate (hold Shift for 15° steps).
 
 Notebooks, sections and pages are in the sidebar's first panel; right-click
 one for what can be done to it. A new page opens with the caret in its title.
+**Sort**, above the notebooks and above the pages, lists them by when they
+were made, when they last changed or by name, either way round — or as you
+arranged them, by dragging one above or below another with the mouse or a
+pen.
 
 Commands are on the ribbon:
 
@@ -62,7 +66,9 @@ is no colour of its own but the opposite of what is beneath: black on the
 paper, white over a dark picture or highlight, so it can be read on
 either. The **Font** menu on the Home tab sets text in the page's own
 typeface, one the app brings — which looks the same on every computer — or
-any installed on this one.
+any installed on this one. Text brought from OneNote in Calibri or Consolas
+keeps its lines where they were on a computer without those fonts: it is
+drawn in faces made to their measure, Carlito and Inconsolata.
 
 ## Keyboard
 

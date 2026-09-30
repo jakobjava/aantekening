@@ -15,9 +15,11 @@ import '../look/controls.dart';
 import '../look/icons.dart';
 import '../look/tones.dart';
 import '../providers.dart';
+import 'arranging.dart';
 import 'library_actions.dart';
 import 'library_menu.dart';
 import 'library_pane.dart';
+import 'list_order.dart';
 import 'panel_focus.dart';
 import 'sidebar_state.dart';
 import 'tree_rows.dart';
@@ -43,6 +45,7 @@ class PageListPane extends ConsumerWidget {
         children: <Widget>[
           PaneHeader(
             title: 'Pages',
+            options: const ListOrderButton(OrderedList.pages),
             actionTooltip: bindings.tooltip(AppCommand.newPage),
             onAction: sectionId == null
                 ? null
@@ -87,6 +90,8 @@ class _PageListState extends ConsumerState<_PageList> {
     final section = ref.watch(sectionProvider(sectionId)).value;
     final selected = ref.watch(selectedPageProvider);
     final actions = ref.read(libraryActionsProvider);
+    final arranged =
+        ref.watch(listOrderProvider(OrderedList.pages)) == ListOrder.arranged;
 
     return PaneBackgroundMenu(
       commands: () => <MenuCommand>[
@@ -131,10 +136,19 @@ class _PageListState extends ConsumerState<_PageList> {
                   return TreeRow(
                     place: place,
                     onToggle: ref.read(collapsedRowsProvider.notifier).toggle,
-                    child: _PageTile(
-                      page: page,
-                      selected: page.id == selected,
-                      focusNode: page.id == focused ? _row : null,
+                    child: ArrangeableRow<PageRef>(
+                      item: page,
+                      enabled: arranged,
+                      // Not among its own subpages.
+                      accepts: (moved) => !tree.isWithin(page.id, moved.id),
+                      onArrange: (moved, {required above}) => unawaited(
+                        actions.arrangePage(moved, page, above: above),
+                      ),
+                      child: _PageTile(
+                        page: page,
+                        selected: page.id == selected,
+                        focusNode: page.id == focused ? _row : null,
+                      ),
                     ),
                   );
                 },

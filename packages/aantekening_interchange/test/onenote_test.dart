@@ -159,6 +159,15 @@ void main() {
       );
     });
 
+    test('stack an equation array, each equation with its number', () {
+      final latex = officeMathToLatex(<OneRun>[
+        _formula('﷐', 15, 2),
+        _formula('𝑥=1#(1)﷮'),
+        _formula('𝑦=2#﷯'),
+      ]).single;
+      expect(latex, r'\begin{gathered}x=1\qquad (1) \\ y=2\end{gathered}');
+    });
+
     test('break after each semicolon, as OneNote wraps them', () {
       expect(officeMathToLatex(<OneRun>[_formula('𝑎=1; 𝑏=2;𝑐')]), <String>[
         'a=1;',
@@ -378,9 +387,10 @@ void main() {
                   .elements
                   .single
               as TextElement;
+      // Two and three half-inches of text, inset on either side.
       expect(box.blocks.map((block) => block.cell), <TableCell>[
-        const TableCell(0, 0, width: 96, shading: 0xFFFFFF00, borders: false),
-        const TableCell(0, 1, width: 144, borders: false),
+        const TableCell(0, 0, width: 108, shading: 0xFFFFFF00, borders: false),
+        const TableCell(0, 1, width: 156, borders: false),
       ]);
       expect(TextTables.tablesIn(box.blocks).single.columns, 2);
     });

@@ -158,38 +158,24 @@ sealed class InkShape {
 
   /// The strokes it is drawn with, in [tool], [color] and [width].
   ///
-  /// Every corner is sampled twice, so the smoothing ink is drawn with
-  /// passes through it instead of rounding it off, and every sample is
-  /// pressed alike, so it is drawn at the pen's width all along.
+  /// Every sample is pressed alike, so it is drawn at the pen's width all
+  /// along. Its corners are kept corners by how ink is drawn, which goes
+  /// straight to a sharp turn between long sides rather than round it.
   List<InkStroke> strokes({
     required InkTool tool,
     required int color,
     required double width,
   }) => <InkStroke>[
     for (final line in lines(width))
-      if (line.length > 1) _stroke(line, tool, color, width),
+      if (line.length > 1)
+        InkStroke.fromPoints(
+          tool: tool,
+          color: color,
+          width: width,
+          xs: <double>[for (final point in line) point.x],
+          ys: <double>[for (final point in line) point.y],
+        ),
   ];
-
-  static InkStroke _stroke(
-    List<Vec2> line,
-    InkTool tool,
-    int color,
-    double width,
-  ) {
-    final samples = <Vec2>[
-      for (var i = 0; i < line.length; i++) ...<Vec2>[
-        line[i],
-        if (i > 0 && i < line.length - 1) line[i],
-      ],
-    ];
-    return InkStroke.fromPoints(
-      tool: tool,
-      color: color,
-      width: width,
-      xs: <double>[for (final sample in samples) sample.x],
-      ys: <double>[for (final sample in samples) sample.y],
-    );
-  }
 }
 
 /// A shape through points: a line, an arrow, a number line, or the lines

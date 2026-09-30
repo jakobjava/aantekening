@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:aantekening/src/editor/text/text_styles.dart';
 import 'package:aantekening/src/files/backup_settings.dart';
 import 'package:aantekening/src/files/bin_view.dart';
 import 'package:aantekening/src/files/notes_keeper.dart';
@@ -255,7 +256,9 @@ void main() {
       );
       final run = (monospaced.text as TextSpan).children!.single as TextSpan;
       expect(run.style!.fontFamily, 'Consolas');
-      expect(run.style!.fontFamilyFallback, contains('Inconsolata'));
+      expect(run.style!.fontFamilyFallback, <String>[
+        RichTextStyles.consolasMeasure,
+      ]);
       final raised = (centred.text as TextSpan).children!.last as TextSpan;
       expect(raised.style!.fontFeatures, isNotEmpty);
     });

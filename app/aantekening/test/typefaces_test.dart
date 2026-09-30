@@ -1,7 +1,51 @@
+import 'dart:io';
+
+import 'package:aantekening/src/editor/text/text_styles.dart';
 import 'package:aantekening/src/editor/text/typefaces.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('text set in Consolas is drawn to its measure where it is '
+      'not installed', (tester) async {
+    await tester.runAsync(() async {
+      final loader = FontLoader(RichTextStyles.consolasMeasure)
+        ..addFont(
+          Future<ByteData>.value(
+            ByteData.sublistView(
+              File('fonts/InconsolataAantekening-Regular.ttf')
+                  .readAsBytesSync(),
+            ),
+          ),
+        );
+      await loader.load();
+    });
+    expect(RichTextStyles.typefacesFor('Consolas'), <String>[
+      RichTextStyles.consolasMeasure,
+    ]);
+
+    const size = 100.0;
+    final text = TextPainter(
+      text: const TextSpan(
+        text: 'Wellenberg\nWellenberg',
+        style: TextStyle(
+          fontFamily: RichTextStyles.consolasMeasure,
+          fontSize: size,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final line = text.computeLineMetrics().first;
+    // Consolas's: each letter 1126/2048 of the size wide, lines
+    // 2398/2048 high, and the baseline where OneNote sets it, 1696/2048
+    // down — measured against the printouts text was typed on.
+    expect(text.width / 10 / size, closeTo(1126 / 2048, 0.001));
+    expect(line.height / size, closeTo(2398 / 2048, 0.002));
+    expect(line.baseline / size, closeTo(1696 / 2048, 0.002));
+    text.dispose();
+  });
+
   test('reads the families fontconfig lists, each once, in order', () {
     const listing =
         'Noto Sans,Noto Sans Light\n'

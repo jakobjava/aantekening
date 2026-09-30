@@ -90,10 +90,14 @@ class PaneHeader extends StatelessWidget {
     this.actionTooltip,
     this.onAction,
     this.trailing,
+    this.options,
     super.key,
   });
 
   final String title;
+
+  /// Before the button: how what the pane lists is ordered, say.
+  final Widget? options;
 
   /// The command's name, on its button.
   final String action;
@@ -116,6 +120,7 @@ class PaneHeader extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Expanded(child: SmallCaps(title)),
+          ?options,
           ?trailing,
           if (trailing == null && (onAction != null || actionTooltip != null))
             SmallButton(action, tooltip: actionTooltip, onPressed: onAction),

@@ -430,7 +430,12 @@ class TableCell {
   /// The column's width in page units, as its border was dragged to, or null
   /// for a column fitted to what it holds. Every cell of a column carries it,
   /// so the column keeps its width whichever of its rows are removed.
+  ///
+  /// It is the whole cell's, its text [inset] on either side of it.
   final double? width;
+
+  /// How far a cell's text is from its left and right lines, in page units.
+  static const double inset = 6;
 
   /// The cell's background colour as 32-bit ARGB, or null for none.
   final int? shading;

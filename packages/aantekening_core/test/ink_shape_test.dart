@@ -411,8 +411,8 @@ void main() {
         ShapeKind.square,
         const Vec2(0, 0),
       ).strokes(tool: InkTool.pen, color: 0xFF000000, width: 2).single;
-      // Five corners, the three inside sampled twice.
-      expect(square.pointCount, 8);
+      // Four corners, and the first again to close it.
+      expect(square.pointCount, 5);
     });
 
     test('draws the edges out of sight dashed', () {

@@ -37,6 +37,7 @@ Widget _host(
   Offset offset = Offset.zero,
   CanvasHeader? header,
   void Function(Offset page, Offset global)? onContextMenu,
+  CanvasElementBuilder? elementBuilder,
 }) => MaterialApp(
   home: Scaffold(
     body: Padding(
@@ -50,8 +51,9 @@ Widget _host(
         header: header,
         onContextMenu: onContextMenu,
         trackpadPanScale: trackpadPanScale,
-        elementBuilder: (context, element) =>
-            const ColoredBox(color: Colors.blue),
+        elementBuilder:
+            elementBuilder ??
+            (context, element) => const ColoredBox(color: Colors.blue),
       ),
     ),
   ),
@@ -248,6 +250,125 @@ void main() {
     });
   });
 
+  group('InfiniteCanvas wheel', () {
+    testWidgets('a notch glides the page on, and there exactly', (
+      tester,
+    ) async {
+      final controller = CanvasController();
+      await tester.pumpWidget(_host(controller));
+      final mouse = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
+
+      await tester.sendEventToBinding(mouse.scroll(const Offset(0, 60)));
+      expect(controller.viewport.origin.dy, 0);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(controller.viewport.origin.dy, inExclusiveRange(0, 60));
+      await tester.pumpAndSettle();
+      expect(controller.viewport.origin.dy, 60);
+    });
+
+    testWidgets('notches in quick succession add up', (tester) async {
+      final controller = CanvasController();
+      await tester.pumpWidget(_host(controller));
+      final mouse = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
+
+      await tester.sendEventToBinding(mouse.scroll(const Offset(0, 60)));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.sendEventToBinding(mouse.scroll(const Offset(0, 60)));
+      await tester.pumpAndSettle();
+      expect(controller.viewport.origin.dy, 120);
+    });
+
+    testWidgets('a smooth wheel or a touchpad is followed at once', (
+      tester,
+    ) async {
+      final controller = CanvasController();
+      await tester.pumpWidget(_host(controller));
+      final mouse = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
+
+      await tester.sendEventToBinding(mouse.scroll(const Offset(0, 6)));
+      expect(controller.viewport.origin.dy, 6);
+    });
+  });
+
+  group('InfiniteCanvas laying out', () {
+    testWidgets('a pinch scales the page as it is laid out, and lays it '
+        'out for the zoom it comes to once it is done', (tester) async {
+      final controller = CanvasController()
+        ..addElement(_image('a', x: 300, y: 200));
+      var built = 0;
+      final zooms = <double>[];
+      await tester.pumpWidget(
+        _host(
+          controller,
+          elementBuilder: (context, element) {
+            built++;
+            return Builder(
+              builder: (context) {
+                zooms.add(CanvasScope.zoomOf(context));
+                return const ColoredBox(color: Colors.blue);
+              },
+            );
+          },
+        ),
+      );
+      expect(built, 1);
+      final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+      const at = Offset(400, 300);
+
+      await tester.sendEventToBinding(trackpad.panZoomStart(at));
+      for (var i = 1; i <= 8; i++) {
+        await tester.sendEventToBinding(
+          trackpad.panZoomUpdate(at, scale: 1 + i * 0.05),
+        );
+        await tester.pump();
+      }
+      expect(controller.viewport.zoom, greaterThan(1.3));
+      expect(built, 1);
+      expect(zooms, <double>[1]);
+
+      await tester.sendEventToBinding(trackpad.panZoomEnd());
+      await tester.pumpAndSettle();
+      expect(built, 1);
+      expect(zooms.last, controller.viewport.zoom);
+    });
+
+    testWidgets('scrolling on does not build again what is on the page', (
+      tester,
+    ) async {
+      final controller = CanvasController()
+        ..addElements(<NoteElement>[
+          for (var i = 0; i < 20; i++) _image('$i', x: 100, y: i * 150.0),
+        ]);
+      final built = <String, int>{};
+      await tester.pumpWidget(
+        _host(
+          controller,
+          elementBuilder: (context, element) {
+            built[element.id] = (built[element.id] ?? 0) + 1;
+            return const ColoredBox(color: Colors.blue);
+          },
+        ),
+      );
+      final mouse = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
+
+      // Down more than a view's height, a few pixels at a time: the part of
+      // the page laid out moves on several times.
+      for (var i = 0; i < 80; i++) {
+        await tester.sendEventToBinding(mouse.scroll(const Offset(0, 10)));
+        await tester.pump();
+      }
+      expect(controller.viewport.origin.dy, 800);
+      expect(built.values, everyElement(1));
+      expect(built.length, greaterThan(8));
+    });
+  });
+
   group('InfiniteCanvas zooming', () {
     testWidgets('a trackpad pinch zooms by its total scale beyond the slop', (
       tester,
@@ -295,6 +416,8 @@ void main() {
       await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
       await tester.sendEventToBinding(mouse.scroll(const Offset(0, -53)));
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      // It glides there over the next frames.
+      await tester.pumpAndSettle();
 
       expect(controller.viewport.zoom, greaterThan(1.05));
       expect(controller.viewport.zoom, lessThan(1.2));
@@ -1136,16 +1259,16 @@ void main() {
       expect(controller.viewport.origin.dy, greaterThan(lifted + 50));
     });
 
-    testWidgets('a slow scroll follows the fingers exactly, a quick one '
-        'goes further', (tester) async {
+    testWidgets('a scroll follows the fingers exactly, and a quick one '
+        'coasts on', (tester) async {
       final controller = CanvasController();
       await tester.pumpWidget(_host(controller));
       final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
       const at = Offset(400, 300);
 
       /// Scrolls 200 pixels down in ten steps [step] apart, and says how far
-      /// the page went before it could coast.
-      Future<double> scroll(Duration step) async {
+      /// the page went before it could coast, and how far in all.
+      Future<(double, double)> scroll(Duration step) async {
         final before = controller.viewport.origin.dy;
         await tester.sendEventToBinding(trackpad.panZoomStart(at));
         for (var i = 1; i <= 10; i++) {
@@ -1159,14 +1282,18 @@ void main() {
         }
         final moved = controller.viewport.origin.dy - before;
         await tester.sendEventToBinding(
-          trackpad.panZoomEnd(timeStamp: step * 20),
+          trackpad.panZoomEnd(timeStamp: step * 11),
         );
         await tester.pumpAndSettle();
-        return moved;
+        return (moved, controller.viewport.origin.dy - before);
       }
 
-      expect(await scroll(const Duration(milliseconds: 100)), 200);
-      expect(await scroll(const Duration(milliseconds: 8)), greaterThan(400));
+      final (slow, slowInAll) = await scroll(const Duration(milliseconds: 100));
+      expect(slow, 200);
+      expect(slowInAll, 200);
+      final (quick, quickInAll) = await scroll(const Duration(milliseconds: 8));
+      expect(quick, 200);
+      expect(quickInAll, greaterThan(400));
     });
 
     testWidgets('scrolled past the top, the page gives a little and springs '
@@ -1275,6 +1402,98 @@ void main() {
       final coasted = controller.viewport.origin.dy - lifted;
       expect(coasted, greaterThan(1500));
       expect(coasted, lessThan(4100));
+    });
+
+    group('caught as it coasts', () {
+      const at = Offset(400, 300);
+
+      /// Scrolls down [steps] times by [step] pixels, [every] apart, from
+      /// [from] on the gesture's clock, and lifts [every] after the last.
+      Future<void> scroll(
+        WidgetTester tester,
+        TestPointer trackpad, {
+        required double step,
+        required int steps,
+        required Duration every,
+        Duration from = Duration.zero,
+      }) async {
+        await tester.sendEventToBinding(trackpad.panZoomStart(at));
+        for (var i = 1; i <= steps; i++) {
+          await tester.sendEventToBinding(
+            trackpad.panZoomUpdate(
+              at,
+              pan: Offset(0, -step * i),
+              timeStamp: from + every * i,
+            ),
+          );
+        }
+        await tester.sendEventToBinding(
+          trackpad.panZoomEnd(timeStamp: from + every * (steps + 1)),
+        );
+      }
+
+      testWidgets('fingers put down stop the page where they catch it', (
+        tester,
+      ) async {
+        final controller = CanvasController();
+        await tester.pumpWidget(_host(controller));
+        final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+        await scroll(
+          tester,
+          trackpad,
+          step: 100,
+          steps: 8,
+          every: const Duration(milliseconds: 8),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        // Two fingers put down, settling a pixel or two the same way.
+        await scroll(
+          tester,
+          trackpad,
+          step: 1,
+          steps: 3,
+          every: const Duration(milliseconds: 10),
+          from: const Duration(seconds: 1),
+        );
+        final caught = controller.viewport.origin.dy;
+        await tester.pumpAndSettle();
+        expect(controller.viewport.origin.dy, closeTo(caught, 1));
+      });
+
+      testWidgets('a flick the same way sends it faster still', (tester) async {
+        Future<double> coasted({required bool again}) async {
+          final controller = CanvasController();
+          await tester.pumpWidget(_host(controller));
+          final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+          await scroll(
+            tester,
+            trackpad,
+            step: 60,
+            steps: 8,
+            every: const Duration(milliseconds: 8),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 50));
+          if (again) {
+            await scroll(
+              tester,
+              trackpad,
+              step: 60,
+              steps: 8,
+              every: const Duration(milliseconds: 8),
+              from: const Duration(seconds: 1),
+            );
+          }
+          final before = controller.viewport.origin.dy;
+          await tester.pumpAndSettle();
+          return controller.viewport.origin.dy - before;
+        }
+
+        final once = await coasted(again: false);
+        expect(await coasted(again: true), greaterThan(once * 1.3));
+      });
     });
 
     testWidgets('a pan scale brings touchpad deltas back to finger distance', (

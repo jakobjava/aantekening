@@ -275,6 +275,44 @@ class PageRepository {
     });
   }
 
+  /// Puts a page, with its subpages, among the pages of its section under
+  /// [parentId] — after the page [after], which must be one of them, or
+  /// else first — as the person arranges them. It is no change to the page:
+  /// when it was last changed stays as it was.
+  ///
+  /// Throws [ArgumentError] when [parentId] is the page or one of its
+  /// subpages.
+  Future<void> arrangePage(
+    String pageId, {
+    String? parentId,
+    String? after,
+  }) async {
+    _db.transaction(() {
+      final page = _findPage(pageId);
+      if (page == null) {
+        throw ArgumentError.value(pageId, 'pageId', 'no such page');
+      }
+      if (parentId != null && _subtree(pageId).contains(parentId)) {
+        throw ArgumentError.value(
+          parentId,
+          'parentId',
+          'a page cannot become a subpage of itself',
+        );
+      }
+      final position = _db.positionAmong(
+        'pages',
+        _siblings,
+        <Object?>[page.sectionId, parentId],
+        after: after,
+        first: true,
+      );
+      _db.run(
+        'UPDATE pages SET parent_id = ?, position = ? WHERE id = ?',
+        <Object?>[parentId, position, pageId],
+      );
+    });
+  }
+
   /// Copies a page, with its subpages, into [sectionId], placed as
   /// [movePage] places a page; returns the copy.
   ///
@@ -651,52 +689,14 @@ class PageRepository {
 
   /// Where a page goes among the pages of [sectionId] under [parentId]: after
   /// the page [after], before whichever came next, or else at the end.
-  double _positionFor(String sectionId, String? parentId, String? after) {
-    if (after == null) return _nextPagePosition(sectionId, parentId);
-    var (previous, next) = _around(after, sectionId, parentId);
-    if (next != null && FractionalIndex.needsRebalance(previous, next)) {
-      // So many went in at one place that there is no room left between.
-      _renumber(sectionId, parentId);
-      (previous, next) = _around(after, sectionId, parentId);
-    }
-    return FractionalIndex.insert(previous: previous, next: next);
-  }
+  double _positionFor(String sectionId, String? parentId, String? after) =>
+      _db.positionAmong('pages', _siblings, <Object?>[
+        sectionId,
+        parentId,
+      ], after: after);
 
-  /// The positions of the page [after] and of whichever page comes next
-  /// among the pages of [sectionId] under [parentId], if one does.
-  (double, double?) _around(String after, String sectionId, String? parentId) {
-    final anchor = _findPage(after);
-    if (anchor == null) {
-      throw ArgumentError.value(after, 'after', 'no such page');
-    }
-    final rows = _db.select(
-      'SELECT MIN(position) AS m FROM pages WHERE section_id = ? '
-      'AND parent_id IS ? AND position > ? AND deleted_at IS NULL',
-      <Object?>[sectionId, parentId, anchor.position],
-    );
-    final next = rows.first['m'];
-    return (anchor.position, next == null ? null : (next as num).toDouble());
-  }
-
-  /// Spaces the pages of [sectionId] under [parentId] evenly again, in the
-  /// order they are in — those in the bin too, to go back where they were.
-  void _renumber(String sectionId, String? parentId) {
-    final ids = <String>[
-      for (final row in _db.select(
-        'SELECT id FROM pages WHERE section_id = ? AND parent_id IS ? '
-        'ORDER BY position, id',
-        <Object?>[sectionId, parentId],
-      ))
-        str(row, 'id'),
-    ];
-    final positions = FractionalIndex.rebalanced(ids.length);
-    for (var i = 0; i < ids.length; i++) {
-      _db.run('UPDATE pages SET position = ? WHERE id = ?', <Object?>[
-        positions[i],
-        ids[i],
-      ]);
-    }
-  }
+  /// The pages of a section under one parent, or none.
+  static const String _siblings = 'section_id = ? AND parent_id IS ?';
 
   /// Copies [source] and its live subpages to [sectionId], under [parentId]
   /// at [position]; subpages keep their order beneath the copy.
@@ -757,10 +757,7 @@ class PageRepository {
   }
 
   double _nextPagePosition(String sectionId, String? parentId) =>
-      _db.nextPosition('pages', 'section_id = ? AND parent_id IS ?', <Object?>[
-        sectionId,
-        parentId,
-      ]);
+      _db.nextPosition('pages', _siblings, <Object?>[sectionId, parentId]);
 
   /// The start of [text], as the page list shows it.
   static String previewOf(String text) {

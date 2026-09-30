@@ -1,6 +1,6 @@
 # 23. Shapes as ink, fonts, and a colour that is the inverse of what is beneath
 
-**Status:** accepted; adds to ADRs 5 and 18
+**Status:** accepted; adds to ADRs 5 and 18; how a shape keeps its corners revised by ADR 28
 
 ## Context
 

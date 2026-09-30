@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'editor/text/text_styles.dart';
 import 'look/appearance.dart';
 import 'look/theme.dart';
 import 'preferences.dart';
@@ -71,7 +72,8 @@ class InterfaceScale extends StatelessWidget {
 }
 
 /// Registers the licences of the typefaces the app carries: the
-/// interface's, and Carlito, which text set in Calibri is drawn in.
+/// interface's, Carlito, which text set in Calibri is drawn in, and
+/// Inconsolata, which text set in Consolas is.
 void registerFontLicence() => LicenseRegistry.addLicense(() async* {
   yield LicenseEntryWithLineBreaks(<String>[
     InterfaceFont.sans.family,
@@ -80,6 +82,9 @@ void registerFontLicence() => LicenseRegistry.addLicense(() async* {
   yield LicenseEntryWithLineBreaks(<String>[
     'Carlito',
   ], await rootBundle.loadString('fonts/Carlito-OFL.txt'));
+  yield LicenseEntryWithLineBreaks(<String>[
+    RichTextStyles.consolasMeasure,
+  ], await rootBundle.loadString('fonts/Inconsolata-OFL.txt'));
 });
 
 class _AppScrollBehavior extends MaterialScrollBehavior {

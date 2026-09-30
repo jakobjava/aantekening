@@ -196,11 +196,6 @@ class _TrackpadGesture {
 
   bool zoomed = false;
 
-  /// How fast the fingers have lately been moving, in pixels per second,
-  /// and when they were last seen to.
-  double speed = 0;
-  Duration? lastMoved;
-
   /// Recent pan steps, for the momentum when the fingers lift.
   final List<(Duration, Offset)> steps = <(Duration, Offset)>[];
 }
@@ -214,16 +209,19 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   /// distance zooms by the same amount spread smoothly across its events.
   static const double _scrollZoomRate = 0.002;
 
+  /// The shortest scroll, in pixels, taken for a mouse wheel's notch, which
+  /// the view glides through rather than jumping at once: a touchpad or a
+  /// wheel that turns freely reports far less at a time, as smoothly as it
+  /// can be followed.
+  static const double _notch = 20;
+
   /// How far a press may wander, in screen pixels, and still count as a click.
   static const double _mouseTapSlop = 4;
 
-  /// How much faster than the fingers a touchpad scroll goes as they speed
-  /// up: not at all below the first speed, in pixels per second, and at the
-  /// most by the factor, from the second on. Slow scrolling is placed
-  /// exactly; a quick swipe crosses a long page.
-  static const double _slowSwipe = 400;
-  static const double _fastSwipe = 2400;
-  static const double _swipeGain = 2.5;
+  /// The least speed, in pixels per second, of a flick that adds to the
+  /// coasting it caught: a flick made on purpose, not fingers settling as
+  /// they are put down to stop the page.
+  static const double _flickAgain = 600;
 
   /// The largest pan, in pixels, one trackpad event can plausibly carry.
   /// Events arrive dozens of times a second, so even a fast swipe moves a few
@@ -280,7 +278,16 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   _TrackpadGesture? _trackpad;
 
-  late final CanvasMotion _motion = CanvasMotion(() => _controller, this);
+  late final CanvasMotion _motion = CanvasMotion(
+    () => _controller,
+    this,
+    onZoomed: _syncZooming,
+  );
+
+  /// Whether the view is being zoomed — by fingers, or gliding through a
+  /// wheel's zoom — for the page to be scaled as it is laid out meanwhile,
+  /// and laid out for the zoom it comes to once it is done.
+  final ValueNotifier<bool> _zooming = ValueNotifier<bool>(false);
 
   /// How fast the view was coasting when a touchpad gesture caught it: a
   /// flick the same way adds to it, as flicking a list on a phone again
@@ -318,6 +325,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   @override
   void dispose() {
+    _zooming.dispose();
     _nib.dispose();
     _hold?.cancel();
     _motion.dispose();
@@ -570,7 +578,13 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       _transform = null;
       _touchVelocity = null;
     });
+    _syncZooming();
   }
+
+  void _syncZooming() => _zooming.value =
+      _action == _PointerAction.pinch ||
+      (_trackpad?.zoomed ?? false) ||
+      _motion.isZooming;
 
   /// Whether this change should open a new undo step, consuming the
   /// allowance so that the rest of the drag joins it.
@@ -839,6 +853,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       _marqueeAnchor = null;
       _transform = null;
     });
+    _syncZooming();
   }
 
   void _updatePinch(int pointer, Offset position) {
@@ -868,13 +883,23 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     switch (event) {
       case PointerScrollEvent():
         if (_isZoomModifierPressed) {
-          _zoomByScroll(event.scrollDelta.dy, event.localPosition);
+          // Glided through, notch or not: a zoom at every event would lay
+          // the page out again at every one.
+          _motion.glideZoom(
+            _scrollZoom(event.scrollDelta.dy),
+            event.localPosition,
+          );
+          _syncZooming();
           return;
         }
-        final delta = HardwareKeyboard.instance.isShiftPressed
+        final pan = -(HardwareKeyboard.instance.isShiftPressed
             ? Offset(event.scrollDelta.dy, 0)
-            : event.scrollDelta;
-        _controller.panBy(-delta);
+            : event.scrollDelta);
+        if (pan.distance >= _notch) {
+          _motion.glide(pan);
+        } else {
+          _controller.panBy(pan);
+        }
       case PointerScaleEvent():
         _controller.zoomBy(event.scale, event.localPosition);
       case _:
@@ -909,14 +934,11 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     // sits in the window: measured from the zero a gesture starts at, the
     // page jumped by the width of the sidebars and the height of the ribbon
     // at the start of every scroll.
-    final pan = _accelerated(
-      gesture,
-      PointerEvent.transformDeltaViaPositions(
-        transform: event.transform,
-        untransformedEndPosition: event.position,
-        untransformedDelta: _panStep(gesture, event.pan),
-      ),
-      event.timeStamp,
+    // The page follows the fingers exactly, and coasts on as they lift.
+    final pan = PointerEvent.transformDeltaViaPositions(
+      transform: event.transform,
+      untransformedEndPosition: event.position,
+      untransformedDelta: _panStep(gesture, event.pan),
     );
     // An event whose own scale moves is zooming: its pan is what zooming
     // about the fingers moved, as Windows reports a pinch, and the page is
@@ -929,11 +951,15 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
     if (_isZoomModifierPressed) {
       // Ctrl with a two-finger swipe zooms, as Ctrl with the wheel does.
-      _zoomByScroll(-pan.dy, focus);
+      if (pan.dy == 0) return;
+      gesture.zoomed = true;
+      _syncZooming();
+      _controller.zoomBy(_scrollZoom(-pan.dy), focus);
       return;
     }
     if (scale != 1) {
       gesture.zoomed = true;
+      _syncZooming();
       _controller.stretchZoomBy(scale, focus);
     }
     if (pan != Offset.zero && !zooming) {
@@ -956,29 +982,6 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     gesture.lastPan = total;
     return step.distance > _maxPanStep ? Offset.zero : step;
   }
-
-  /// [pan] made faster the faster the fingers are moving, from [_slowSwipe]
-  /// on; not past an edge, which the fingers pull against as they are.
-  Offset _accelerated(_TrackpadGesture gesture, Offset pan, Duration time) {
-    final last = gesture.lastMoved;
-    if (pan == Offset.zero) return pan;
-    gesture.lastMoved = time;
-    if (last == null) return pan;
-    final seconds = (time - last).inMicroseconds / 1e6;
-    // Events delivered together say nothing of the speed; a pause says it
-    // starts again from rest.
-    if (seconds > 0.001) {
-      final speed = seconds > 0.1 ? 0.0 : pan.distance / seconds;
-      // Smoothed, as events come unevenly spaced.
-      gesture.speed = gesture.speed * 0.6 + speed * 0.4;
-    }
-    return _controller.isStretched ? pan : pan * _gain(gesture.speed);
-  }
-
-  static double _gain(double speed) =>
-      1 +
-      (_swipeGain - 1) *
-          ((speed - _slowSwipe) / (_fastSwipe - _slowSwipe)).clamp(0.0, 1.0);
 
   /// How much this event zooms by, as a factor.
   double _scaleStep(_TrackpadGesture gesture, double total, Offset pan) {
@@ -1014,12 +1017,17 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     if (!mounted) return;
     final gesture = _trackpad;
     _trackpad = null;
+    _syncZooming();
     final flick = gesture == null ? Offset.zero : _flick(gesture, event);
     final caught = _caught;
     _caught = Offset.zero;
-    // Flicked again the way it was coasting, it goes faster still.
-    final same = flick.dx * caught.dx + flick.dy * caught.dy > 0;
-    _motion.fling(same ? flick + caught : flick);
+    // Flicked again the way it was coasting, it goes faster still. Only a
+    // flick: fingers put down to stop it barely move, and lifted again
+    // leave it where they caught it, whichever way they moved.
+    final again =
+        flick.distance >= _flickAgain &&
+        flick.dx * caught.dx + flick.dy * caught.dy > 0;
+    _motion.fling(again ? flick + caught : flick);
   }
 
   /// How fast the fingers were moving as they lifted from a two-finger
@@ -1051,10 +1059,9 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     return seconds < 0.02 ? Offset.zero : distance / seconds;
   }
 
-  void _zoomByScroll(double scrollDelta, Offset focus) {
-    final factor = math.exp(-scrollDelta * _scrollZoomRate).clamp(0.8, 1.25);
-    _controller.zoomBy(factor, focus);
-  }
+  /// How much a scroll of [scrollDelta] pixels with Ctrl held zooms by.
+  static double _scrollZoom(double scrollDelta) =>
+      math.exp(-scrollDelta * _scrollZoomRate).clamp(0.8, 1.25);
 
   bool get _isZoomModifierPressed =>
       HardwareKeyboard.instance.isControlPressed ||
@@ -1181,6 +1188,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
                   _PageContent(
                     controller: controller,
                     view: controller.view,
+                    zooming: _zooming,
                     size: _size,
                     builder: widget.elementBuilder,
                     onDoubleTap: widget.onElementDoubleTap,
@@ -1285,13 +1293,17 @@ class CanvasPreview extends StatelessWidget {
 
 /// The page's own layers, from the bottom up: the pictures and PDF pages
 /// set as its background, highlighter, the element widgets, pen ink, ink
-/// inverting what is beneath it, and the stroke in progress; laid out in page units over the part of the page
-/// around what [view] sees in a view of [size], and shown as it sees it.
+/// inverting what is beneath it, and the stroke in progress; laid out in
+/// page units over the part of the page around what [view] sees in a view
+/// of [size], and shown as it sees it.
 ///
 /// It follows the view without being built again until the view moves out
-/// of what was laid out, or zooms. Each layer repaints by itself, so a new
-/// ink sample repaints only the stroke in progress, and a caret blinking only
-/// the element layer.
+/// of what was laid out, or zooms — and while it is being zoomed
+/// ([zooming]), it is scaled as it was laid out, and laid out for the zoom
+/// it comes to once that is done. Built again as the view moves on, an
+/// element already placed keeps the very widget it had. Each layer repaints
+/// by itself, so a new ink sample repaints only the stroke in progress, and
+/// a caret blinking only the element layer.
 class _PageContent extends StatefulWidget {
   const _PageContent({
     required this.controller,
@@ -1300,12 +1312,16 @@ class _PageContent extends StatefulWidget {
     required this.builder,
     required this.header,
     required this.headerInteractive,
+    this.zooming,
     this.onDoubleTap,
     this.still = false,
   });
 
   final CanvasController controller;
   final ValueListenable<CanvasViewport> view;
+
+  /// Whether the view is being zoomed; never, if null.
+  final ValueListenable<bool>? zooming;
   final Size size;
   final CanvasElementBuilder? builder;
   final CanvasHeader? header;
@@ -1321,14 +1337,26 @@ class _PageContent extends StatefulWidget {
 }
 
 class _PageContentState extends State<_PageContent> {
-  /// The part of the page laid out, and the zoom it was built for.
+  /// The part of the page laid out.
   Aabb _region = Aabb.empty;
+
+  /// The zoom it was laid out for, which what is drawn in pixels is drawn
+  /// for: the view's, but for while it is being zoomed.
   double _zoom = 0;
+
+  /// Each element's widget as it was last placed, and the element it was
+  /// placed for: an element placed again as the view moves on is given the
+  /// very widget it had, which the framework leaves as it is.
+  Map<String, (NoteElement, Widget?)> _placed =
+      <String, (NoteElement, Widget?)>{};
+
+  bool get _isZooming => widget.zooming?.value ?? false;
 
   @override
   void initState() {
     super.initState();
     widget.view.addListener(_onViewChanged);
+    widget.zooming?.addListener(_onViewChanged);
   }
 
   @override
@@ -1338,59 +1366,102 @@ class _PageContentState extends State<_PageContent> {
       oldWidget.view.removeListener(_onViewChanged);
       widget.view.addListener(_onViewChanged);
     }
+    if (!identical(oldWidget.zooming, widget.zooming)) {
+      oldWidget.zooming?.removeListener(_onViewChanged);
+      widget.zooming?.addListener(_onViewChanged);
+    }
+    // Built again from above, what the page holds, or what builds it, has
+    // changed: every element is built anew.
+    _placed = <String, (NoteElement, Widget?)>{};
   }
 
   @override
   void dispose() {
     widget.view.removeListener(_onViewChanged);
+    widget.zooming?.removeListener(_onViewChanged);
     super.dispose();
   }
 
   void _onViewChanged() {
     final viewport = widget.view.value;
-    if (viewport.zoom != _zoom ||
-        pageRegion(viewport, widget.size) != _region) {
-      setState(() {});
+    final laidOut = _isZooming
+        ? _region.containsBox(viewport.visibleBounds(widget.size))
+        : viewport.zoom == _zoom &&
+              pageRegion(viewport, widget.size) == _region;
+    if (!laidOut) setState(() {});
+  }
+
+  /// The widget [element] is shown by, placed at its frame: the one it was
+  /// given before, in [before], if it is the same element. Only what is
+  /// shown is kept for the next time.
+  Widget? _place(
+    Map<String, (NoteElement, Widget?)> before,
+    NoteElement element, {
+    required bool pressable,
+  }) {
+    final kept = before[element.id];
+    if (kept != null && identical(kept.$1, element)) {
+      _placed[element.id] = kept;
+      return kept.$2;
     }
+    final content = widget.builder?.call(context, element);
+    final onDoubleTap = pressable ? widget.onDoubleTap : null;
+    final placed = content == null
+        ? null
+        : PlacedOnPage(
+            // Keyed by identity so an element keeps its widget state — a
+            // text box its caret, a PDF page its rendered image — while
+            // others are added, removed or scrolled out of view around it.
+            key: ValueKey<String>(element.id),
+            frame: element.frame,
+            child: GestureDetector(
+              onDoubleTap: onDoubleTap == null
+                  ? null
+                  : () => onDoubleTap(element),
+              behavior: HitTestBehavior.deferToChild,
+              child: content,
+            ),
+          );
+    _placed[element.id] = (element, placed);
+    return placed;
   }
 
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
-    final builder = widget.builder;
-    final headerInteractive = widget.headerInteractive;
-    final onDoubleTap = widget.onDoubleTap;
     final viewport = widget.view.value;
     final region = _region = pageRegion(viewport, widget.size);
-    _zoom = viewport.zoom;
+    if (!_isZooming || _zoom == 0) _zoom = viewport.zoom;
     final shown = controller.elementsIn(region);
     final origin = Offset(region.left, region.top);
     // The painters draw in page space moved to the region's corner.
     final fromOrigin = CanvasViewport(origin: origin);
     final pixelsPerUnit = widget.still
-        ? viewport.zoom * MediaQuery.devicePixelRatioOf(context)
+        ? _zoom * MediaQuery.devicePixelRatioOf(context)
         : null;
     final ink = <InkElement>[
       for (final element in shown)
         if (element is InkElement && !element.locked) element,
     ];
+    final before = _placed;
+    _placed = <String, (NoteElement, Widget?)>{};
     Widget layer(bool locked, {CanvasHeader? header}) => _ElementLayer(
-      elements: <NoteElement>[
+      placed: <Widget>[
         for (final element in shown)
-          if (element.locked == locked && element is! InkElement) element,
+          if (element.locked == locked && element is! InkElement)
+            ?_place(before, element, pressable: !locked),
       ],
       origin: origin,
-      builder: builder,
-      onDoubleTap: locked ? null : onDoubleTap,
       header: header,
-      headerInteractive: headerInteractive,
+      headerInteractive: widget.headerInteractive,
     );
+
     Widget paint(CustomPainter painter) => IgnorePointer(
       child: RepaintBoundary(child: CustomPaint(painter: painter)),
     );
 
     return CanvasScope(
-      zoom: viewport.zoom,
+      zoom: _zoom,
       region: region,
       child: PageSpace(
         view: widget.view,
@@ -1434,37 +1505,32 @@ class _PageContentState extends State<_PageContent> {
   }
 }
 
-/// Places element widgets on the page, with the header beneath them.
+/// Places the element widgets on the page, with the header beneath them.
 ///
 /// Each is laid out at its frame's size in page units, and the whole layer
 /// is scaled with the page, so text lays out the same at every zoom.
 class _ElementLayer extends StatelessWidget {
   const _ElementLayer({
-    required this.elements,
+    required this.placed,
     required this.origin,
-    required this.builder,
     required this.header,
     required this.headerInteractive,
-    this.onDoubleTap,
   });
 
-  final List<NoteElement> elements;
+  /// The elements' widgets, each a [PlacedOnPage].
+  final List<Widget> placed;
 
   /// The page point at the layer's top-left corner.
   final Offset origin;
-  final CanvasElementBuilder? builder;
   final CanvasHeader? header;
 
   /// Whether the header takes presses: only with the select tool, so a pen
   /// can write over it.
   final bool headerInteractive;
-  final void Function(NoteElement element)? onDoubleTap;
 
   @override
   Widget build(BuildContext context) {
-    final build = builder;
     final header = this.header;
-    final onDoubleTap = this.onDoubleTap;
     return PagePlacement(
       origin: origin,
       children: <Widget>[
@@ -1479,23 +1545,7 @@ class _ElementLayer extends StatelessWidget {
               child: header.child,
             ),
           ),
-        if (build != null)
-          for (final element in elements)
-            if (build(context, element) case final content?)
-              PlacedOnPage(
-                // Keyed by identity so an element keeps its widget state — a
-                // text box its caret, a PDF page its rendered image — while
-                // others are added, removed or scrolled out of view around it.
-                key: ValueKey<String>(element.id),
-                frame: element.frame,
-                child: GestureDetector(
-                  onDoubleTap: onDoubleTap == null
-                      ? null
-                      : () => onDoubleTap(element),
-                  behavior: HitTestBehavior.deferToChild,
-                  child: content,
-                ),
-              ),
+        ...placed,
       ],
     );
   }

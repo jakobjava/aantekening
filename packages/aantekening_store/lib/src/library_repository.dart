@@ -98,6 +98,38 @@ class LibraryRepository {
     );
   }
 
+  /// Puts a notebook after the notebook [after], or else first, as the
+  /// person arranges them. It is no change to the notebook.
+  Future<void> arrangeNotebook(String id, {String? after}) async {
+    _db.transaction(() {
+      final position = _db.positionAmong(
+        'notebooks',
+        '1',
+        const <Object?>[],
+        after: after,
+        first: true,
+      );
+      _db.run('UPDATE notebooks SET position = ? WHERE id = ?', <Object?>[
+        position,
+        id,
+      ]);
+    });
+  }
+
+  /// When each notebook not in the bin last changed: it, or any page in it
+  /// not in the bin, by notebook.
+  Future<Map<String, int>> notebookChanges() async => <String, int>{
+    for (final row in _db.select(
+      'SELECT n.id AS id, MAX(n.updated_at, COALESCE(('
+      '  SELECT MAX(p.updated_at) FROM pages p '
+      '  JOIN sections s ON s.id = p.section_id '
+      '  WHERE s.notebook_id = n.id AND p.deleted_at IS NULL '
+      '  AND s.deleted_at IS NULL), 0)) AS changed '
+      'FROM notebooks n WHERE n.deleted_at IS NULL',
+    ))
+      str(row, 'id'): integer(row, 'changed'),
+  };
+
   /// Renames a notebook.
   Future<void> renameNotebook(String id, String title) async {
     _db.run(

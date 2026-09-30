@@ -71,6 +71,14 @@ flutter:
         - asset: fonts/Carlito-BoldItalic.ttf
           weight: 700
           style: italic
+    # Consolas's measure, likewise: Inconsolata respaced to it, by
+    # tool/consolas_measure.py.
+    - family: Inconsolata Aantekening
+      fonts:
+        - asset: fonts/InconsolataAantekening-Regular.ttf
+        - asset: fonts/InconsolataAantekening-Bold.ttf
+          weight: 700
   assets:
     - fonts/OFL.txt
     - fonts/Carlito-OFL.txt
+    - fonts/Inconsolata-OFL.txt

@@ -3,10 +3,11 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:aantekening_core/aantekening_core.dart' show TableCell;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart' hide TableCell;
 
 import 'block_paragraph.dart';
 
@@ -91,7 +92,12 @@ class RenderTextTable extends RenderBox
   static const double fittedWidth = 96;
 
   /// Room between a cell's lines and its text.
-  static const EdgeInsets cellPadding = EdgeInsets.fromLTRB(6, 3, 6, 3);
+  static const EdgeInsets cellPadding = EdgeInsets.fromLTRB(
+    TableCell.inset,
+    3,
+    TableCell.inset,
+    3,
+  );
 
   /// How thick the lines are, in page units.
   static const double line = 1;

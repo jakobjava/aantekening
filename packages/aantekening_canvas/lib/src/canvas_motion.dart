@@ -73,15 +73,19 @@ CanvasViewport _eachAxis(
 }
 
 /// Moves a canvas's view by itself, frame by frame: on after a flick,
-/// slowing as a thrown sheet of paper would, and back from past the page's
-/// edges.
+/// slowing as a thrown sheet of paper would; back from past the page's
+/// edges; and on to where a mouse wheel sent it.
 class CanvasMotion {
-  CanvasMotion(this._controller, TickerProvider vsync) {
+  CanvasMotion(this._controller, TickerProvider vsync, {this.onZoomed}) {
     _ticker = vsync.createTicker(_tick);
   }
 
   final CanvasController Function() _controller;
   late final Ticker _ticker;
+
+  /// Told when a zoom the view was gliding through has got where it was
+  /// going.
+  final VoidCallback? onZoomed;
 
   /// How quickly a flick slows: its speed falls by a factor of e every this
   /// many seconds, so it coasts about this many seconds' worth of its
@@ -95,6 +99,11 @@ class CanvasMotion {
   /// of e of the way every this many seconds.
   static const double _return = 0.07;
 
+  /// How quickly a glide closes on where it is going, likewise: a wheel's
+  /// notch goes most of its way in the first frames and is there in a
+  /// tenth of a second, as the desktop's own scrolling goes.
+  static const double _glide = 0.035;
+
   /// Flicks slower than this, in pixels per second, are not worth coasting.
   static const double minSpeed = 150;
 
@@ -105,8 +114,17 @@ class CanvasMotion {
   Offset _velocity = Offset.zero;
   Duration _last = Duration.zero;
 
+  /// How far, in screen pixels, the view is still to pan, and by how much
+  /// — the logarithm of the factor — it is still to zoom, and about where.
+  Offset _panning = Offset.zero;
+  double _zooming = 0;
+  Offset _zoomFocus = Offset.zero;
+
   /// Whether the view is moving by itself.
   bool get isMoving => _ticker.isActive;
+
+  /// Whether it is gliding through a zoom.
+  bool get isZooming => _zooming != 0;
 
   /// How fast it is coasting, in screen pixels per second.
   Offset get velocity => isMoving ? _velocity : Offset.zero;
@@ -119,9 +137,23 @@ class CanvasMotion {
     _velocity = speed < minSpeed
         ? Offset.zero
         : velocity * (math.min(speed, maxSpeed) / speed);
-    _ticker.stop();
-    _last = Duration.zero;
-    if (_velocity != Offset.zero || _controller().isStretched) _ticker.start();
+    _run();
+  }
+
+  /// Pans by a screen-space [delta], as [CanvasController.panBy] does, over
+  /// the next frames, on from wherever the last glide has got to.
+  void glide(Offset delta) {
+    _panning += delta;
+    _run();
+  }
+
+  /// Zooms by [factor] about [screenFocus], as [CanvasController.zoomBy]
+  /// does, over the next frames, on from wherever the last glide has got
+  /// to.
+  void glideZoom(double factor, Offset screenFocus) {
+    _zooming += math.log(factor);
+    _zoomFocus = screenFocus;
+    _run();
   }
 
   /// Comes back from past an edge, unless it is moving already.
@@ -129,26 +161,58 @@ class CanvasMotion {
     if (!isMoving) fling(Offset.zero);
   }
 
-  /// Stops coasting, still coming back from past an edge.
+  /// Stops coasting, still gliding on and coming back from past an edge.
   void brake() {
     _velocity = Offset.zero;
-    if (isMoving && !_controller().isStretched) _ticker.stop();
+    if (isMoving && !_gliding && !_controller().isStretched) _ticker.stop();
   }
 
-  /// Stops moving at once, wherever the view is: fingers have taken hold
-  /// of it.
+  /// Stops moving at once: fingers have taken hold of the view. Where a
+  /// glide was going, it goes, since that was asked for as well.
   void stop() {
     _velocity = Offset.zero;
     _ticker.stop();
+    if (_gliding) _step(1);
   }
 
   void dispose() => _ticker.dispose();
+
+  bool get _gliding => _panning != Offset.zero || _zooming != 0;
+
+  void _run() {
+    if (isMoving) return;
+    _last = Duration.zero;
+    if (_velocity != Offset.zero || _gliding || _controller().isStretched) {
+      _ticker.start();
+    }
+  }
+
+  /// Glides [share] of the rest of the way, and all of it once what is
+  /// left would not be seen.
+  void _step(double share) {
+    final controller = _controller();
+    if (_panning != Offset.zero) {
+      var pan = _panning * share;
+      if ((_panning - pan).distance < 0.5) pan = _panning;
+      _panning -= pan;
+      controller.panBy(pan);
+    }
+    if (_zooming != 0) {
+      var zoom = _zooming * share;
+      if ((_zooming - zoom).abs() < 1e-3) zoom = _zooming;
+      _zooming -= zoom;
+      controller.zoomBy(math.exp(zoom), _zoomFocus);
+      if (_zooming == 0) onZoomed?.call();
+    }
+  }
 
   void _tick(Duration elapsed) {
     final seconds = (elapsed - _last).inMicroseconds / 1e6;
     _last = elapsed;
     if (seconds <= 0) return;
     final controller = _controller();
+
+    _step(1 - math.exp(-seconds / _glide));
 
     // The exact distance an exponentially slowing flick covers in this
     // time, so it goes as far at 30 frames a second as at 120.
@@ -174,6 +238,9 @@ class CanvasMotion {
     final (y, dy) = along(view.origin.dy, _velocity.dy);
     _velocity = Offset(dx, dy);
     controller.stretchTo(CanvasViewport(origin: Offset(x, y), zoom: view.zoom));
-    if (_velocity.distance < 20 && !controller.isStretched) _ticker.stop();
+    if (_velocity.distance < 20 && !_gliding && !controller.isStretched) {
+      _velocity = Offset.zero;
+      _ticker.stop();
+    }
   }
 }

@@ -337,6 +337,70 @@ void main() {
     });
   });
 
+  group('arranging', () {
+    test('puts a page first, after another, or beneath another, and does '
+        'not count it a change', () async {
+      final sectionId = await workspace.seedSection();
+      final pages = <PageRef>[
+        for (final title in <String>['A', 'B', 'C'])
+          await store.pages.createPage(sectionId: sectionId, title: title),
+      ];
+      Future<List<String>> titles() async => <String>[
+        for (final page in await store.pages.listPages(sectionId))
+          '${page.parentId == null ? '' : '  '}${page.title}',
+      ];
+
+      await store.pages.arrangePage(pages[2].id);
+      expect(await titles(), <String>['C', 'A', 'B']);
+      await store.pages.arrangePage(pages[2].id, after: pages[0].id);
+      expect(await titles(), <String>['A', 'C', 'B']);
+      await store.pages.arrangePage(pages[1].id, parentId: pages[0].id);
+      expect(
+        PageRef.hierarchy(
+          await store.pages.listPages(sectionId),
+        ).childrenOf(pages[0].id).map((page) => page.title),
+        <String>['B'],
+      );
+
+      final after = await store.pages.findPage(pages[2].id);
+      expect(after!.updatedAt, pages[2].updatedAt);
+      expect(
+        () => store.pages.arrangePage(pages[0].id, parentId: pages[1].id),
+        throwsArgumentError,
+      );
+    });
+
+    test('puts a notebook first, or after another', () async {
+      final books = <Notebook>[
+        for (final title in <String>['A', 'B', 'C'])
+          await store.library.createNotebook(title: title),
+      ];
+      Future<List<String>> titles() async => <String>[
+        for (final book in await store.library.listNotebooks()) book.title,
+      ];
+
+      await store.library.arrangeNotebook(books[2].id);
+      expect(await titles(), <String>['C', 'A', 'B']);
+      await store.library.arrangeNotebook(books[0].id, after: books[1].id);
+      expect(await titles(), <String>['C', 'B', 'A']);
+    });
+
+    test('a notebook last changed when a page in it last changed', () async {
+      final sectionId = await workspace.seedSection();
+      final notebook = (await store.library.listNotebooks()).single;
+      final page = await store.pages.createPage(sectionId: sectionId);
+      await store.pages.saveDocument(
+        page.id,
+        documentWithText(page.id, 'Later'),
+      );
+      final saved = await store.pages.findPage(page.id);
+
+      final changes = await store.library.notebookChanges();
+      expect(changes[notebook.id], saved!.updatedAt);
+      expect(saved.updatedAt, greaterThanOrEqualTo(notebook.updatedAt));
+    });
+  });
+
   group('pages', () {
     test('round-trips a document through the database', () async {
       final sectionId = await workspace.seedSection();

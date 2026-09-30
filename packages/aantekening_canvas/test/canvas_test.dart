@@ -647,6 +647,45 @@ void main() {
       expect(StrokeGeometry.smoothPath(stroke).getBounds().isEmpty, isFalse);
     });
 
+    test('keeps the corners of a shape, as OneNote keeps its shapes', () {
+      // A diamond of five samples, each corner at the far side of one
+      // edge: smoothed round them, it would fall short of every one.
+      final diamond = InkStroke.fromPoints(
+        tool: InkTool.pen,
+        color: 0xFF000000,
+        width: 2,
+        xs: <double>[50, 100, 50, 0, 50],
+        ys: <double>[0, 50, 100, 50, 0],
+      );
+
+      expect(
+        StrokeGeometry.smoothPath(diamond).getBounds(),
+        const Rect.fromLTRB(0, 0, 100, 100),
+      );
+    });
+
+    test('still smooths the jitter of samples close together', () {
+      final jitter = InkStroke.fromPoints(
+        tool: InkTool.pen,
+        color: 0xFF000000,
+        width: 2,
+        xs: <double>[0, 1, 2, 3, 4],
+        ys: <double>[0, 1, 0, 1, 0],
+      );
+
+      // How far down the drawn line reaches, followed along its length.
+      var lowest = 0.0;
+      for (final metric in StrokeGeometry.smoothPath(jitter).computeMetrics()) {
+        for (var at = 0.0; at <= metric.length; at += metric.length / 200) {
+          lowest = math.max(
+            lowest,
+            metric.getTangentForOffset(at)!.position.dy,
+          );
+        }
+      }
+      expect(lowest, lessThan(0.9));
+    });
+
     test('detects a constant-pressure stroke', () {
       final flat = InkStroke.fromPoints(
         tool: InkTool.pen,

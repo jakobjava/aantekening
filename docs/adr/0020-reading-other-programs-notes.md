@@ -1,6 +1,6 @@
 # 20. Reading other programs' notes as they were
 
-**Status:** accepted
+**Status:** accepted; what is brought from OneNote added to by ADR 28
 
 ## Context
 
