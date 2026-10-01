@@ -95,7 +95,9 @@ Speed here is structural rather than the result of micro-optimisation:
 | Opening a notebook | Page metadata and page bodies are separate tables, so listing never touches multi-megabyte blobs. |
 | Painting a large page | A uniform-grid `SpatialIndex` makes paint cost track what is visible, not how much the page holds. |
 | Scrolling and zooming | The page's layers are laid out in page units and shown through one transform; moving the view changes the transform, building and painting nothing (ADR 21). |
-| Drawing handwriting | A pressure-varying stroke is one filled outline, recorded once per element; the page's map keeps its ink as pixels. |
+| Drawing handwriting | A pressure-varying stroke is one filled outline, recorded once per element. Ink is kept as tiles of pixels, drawn again only when the ink on them or the zoom changes, so a frame of a scroll draws a picture per tile rather than every stroke; the page moves by whole device pixels, so the tiles look as the strokes do (ADR 30). |
+| Every frame | The canvas is a repaint boundary, so the page built again as the view moves on repaints nothing around it; a screen reader is told where the page's parts are once the view rests. |
+| PDF pages | Drawn from pictures shared by every view of them, never blank once drawn: a new zoom sharpens the page from the nearest picture there is; a page is drawn whole at most 2048 pixels wide, and in tiles about the view beyond. |
 | Ink latency | The stroke in progress lives in its own layer; a new sample repaints only that. |
 | Handwriting volume | Samples are one flat `Float32List`; consecutive strokes join one element. |
 | Search | FTS5 with `bm25` ranking, keyed by `pages.rowid` so re-indexing is a primary-key delete plus insert. |

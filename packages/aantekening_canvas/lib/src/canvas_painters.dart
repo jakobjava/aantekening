@@ -154,12 +154,30 @@ class InkPainter extends CustomPainter {
     required this.viewport,
     required this.layer,
     this.pixelsPerUnit,
-    super.repaint,
-  });
+    this.tiles,
+    this.tileScale = 1,
+    this.zooming,
+    this.pixelRatio = 1,
+  }) : super(repaint: zooming);
 
   final List<InkElement> elements;
   final CanvasViewport viewport;
   final InkLayer layer;
+
+  /// Where the ink is kept as pixels in tiles, for a view that scrolls but
+  /// is not being zoomed; null to draw the strokes themselves.
+  final InkTiles? tiles;
+
+  /// Device pixels per page unit the [tiles] are drawn at.
+  final double tileScale;
+
+  /// The view, while it is being zoomed: zoomed in further than the tiles
+  /// were drawn for, the strokes are drawn instead, sharp, and the ink is
+  /// drawn again at every step of the zoom.
+  final ValueListenable<CanvasViewport>? zooming;
+
+  /// Device pixels per screen pixel.
+  final double pixelRatio;
 
   /// How many pixels a page unit is drawn across, where the ink is to be
   /// kept as pixels, for a view that does not zoom; null to draw the strokes
@@ -183,6 +201,18 @@ class InkPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final tiles = this.tiles;
+    final zoom = zooming?.value.zoom;
+    if (tiles != null && (zoom == null || zoom * pixelRatio <= tileScale)) {
+      tiles.paint(
+        canvas,
+        viewport.visibleBounds(size),
+        elements,
+        _pictureOf,
+        scale: tileScale,
+      );
+      return;
+    }
     if (elements.isEmpty) return;
 
     final visible = viewport.visibleBounds(size);
@@ -310,7 +340,139 @@ class InkPainter extends CustomPainter {
       old.viewport != viewport ||
       old.layer != layer ||
       old.pixelsPerUnit != pixelsPerUnit ||
+      !identical(old.tiles, tiles) ||
+      old.tileScale != tileScale ||
+      old.zooming != zooming ||
+      old.pixelRatio != pixelRatio ||
       !_sameElements(old.elements, elements);
+}
+
+/// One layer of ink kept as pixels, in tiles on a grid fixed to the page,
+/// drawn as many device pixels to a page unit as it is painted at.
+///
+/// Impeller keeps nothing between frames: every stroke on screen was
+/// drawn again, shape and all, at every frame of a scroll. Kept as tiles,
+/// a frame draws a picture of each, and a tile is drawn again only once
+/// the ink on it changes — or the zoom does, which leaves none of them. A
+/// tile lands on the screen's own pixels, as the page is moved by whole
+/// ones ([PageSpace]) from a corner a whole number of them from the page's
+/// ([pageRegion]), so the ink looks as it does drawn as strokes.
+class InkTiles {
+  InkTiles(this.layer);
+
+  final InkLayer layer;
+
+  /// Device pixels per page unit the tiles are drawn at.
+  double _scale = 0;
+
+  /// The side of a tile, in device pixels.
+  static const int side = 512;
+
+  final Map<(int, int), _InkTile> _tiles = <(int, int), _InkTile>{};
+
+  /// How many tiles have been drawn, again or for the first time.
+  @visibleForTesting
+  int get drawn => _drawn;
+  int _drawn = 0;
+
+  /// Lets go of every tile.
+  void clear() {
+    for (final tile in _tiles.values) {
+      tile.image.dispose();
+    }
+    _tiles.clear();
+  }
+
+  /// Draws [region] of the page, the page point at its corner at
+  /// [canvas]'s origin, from [elements], whose strokes on this layer
+  /// [pictureOf] gives, [scale] device pixels to a page unit, drawing again
+  /// the tiles whose ink has changed.
+  void paint(
+    Canvas canvas,
+    Aabb region,
+    List<InkElement> elements,
+    ui.Picture? Function(InkElement element) pictureOf, {
+    required double scale,
+  }) {
+    if (scale != _scale) {
+      clear();
+      _scale = scale;
+    }
+    final unit = side / scale;
+    final first = ((region.left / unit).floor(), (region.top / unit).floor());
+    final last = ((region.right / unit).ceil(), (region.bottom / unit).ceil());
+    final shown = <(int, int)>{};
+    final paint = Paint()
+      ..filterQuality = FilterQuality.low
+      ..blendMode = layer.blendMode;
+    for (var row = first.$2; row < last.$2; row++) {
+      for (var column = first.$1; column < last.$1; column++) {
+        final place = Aabb(
+          column * unit,
+          row * unit,
+          (column + 1) * unit,
+          (row + 1) * unit,
+        );
+        final inked = <InkElement>[
+          for (final element in elements)
+            if (element.bounds.intersects(place) && pictureOf(element) != null)
+              element,
+        ];
+        if (inked.isEmpty) continue;
+        final key = (column, row);
+        shown.add(key);
+        var tile = _tiles[key];
+        if (tile == null || !_sameElements(tile.elements, inked)) {
+          tile?.image.dispose();
+          tile = _tiles[key] = _InkTile(inked, _draw(place, inked, pictureOf));
+        }
+        canvas.drawImageRect(
+          tile.image,
+          const Rect.fromLTWH(0, 0, side + 0.0, side + 0.0),
+          Rect.fromLTRB(
+            place.left - region.left,
+            place.top - region.top,
+            place.right - region.left,
+            place.bottom - region.top,
+          ),
+          paint,
+        );
+      }
+    }
+    // What is no longer about the view, or no longer inked, is let go.
+    _tiles.removeWhere((key, tile) {
+      if (shown.contains(key)) return false;
+      tile.image.dispose();
+      return true;
+    });
+  }
+
+  ui.Image _draw(
+    Aabb place,
+    List<InkElement> inked,
+    ui.Picture? Function(InkElement element) pictureOf,
+  ) {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder)
+      ..scale(_scale)
+      ..translate(-place.left, -place.top);
+    for (final element in inked) {
+      canvas.drawPicture(pictureOf(element)!);
+    }
+    final picture = recorder.endRecording();
+    _drawn++;
+    final image = picture.toImageSync(side, side);
+    picture.dispose();
+    return image;
+  }
+}
+
+class _InkTile {
+  _InkTile(this.elements, this.image);
+
+  /// The ink on it, which it was drawn from.
+  final List<InkElement> elements;
+  final ui.Image image;
 }
 
 /// Which strokes an [InkPainter] draws.

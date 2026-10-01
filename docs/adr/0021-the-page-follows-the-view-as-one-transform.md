@@ -1,6 +1,6 @@
 # 21. The page follows the view as one transform
 
-**Status:** accepted; supersedes the last consequence of ADR 5; how the page follows a zoom revised by ADR 27
+**Status:** accepted; supersedes the last consequence of ADR 5; how the page follows a zoom revised by ADR 27; drawn in whole device pixels, its ink kept as pixels, by ADR 30
 
 ## Context
 

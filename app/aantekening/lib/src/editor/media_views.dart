@@ -4,6 +4,7 @@ library;
 
 import 'dart:async';
 import 'dart:collection';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
@@ -76,8 +77,8 @@ class AssetImageView extends ConsumerWidget {
   }
 }
 
-/// The sizes, in device pixels, pictures and PDF pages are drawn at.
-const List<int> _pixelSteps = <int>[
+/// The sizes, in device pixels, pictures are decoded at.
+const List<int> _pictureSteps = <int>[
   256,
   512,
   768,
@@ -91,24 +92,41 @@ const List<int> _pixelSteps = <int>[
 /// How many device pixels to draw something [extent] page units long in, to
 /// show it sharply at the zoom and pixel density it is seen at: the next
 /// step up, so that panning and small changes of zoom never draw it again.
-int shownPixels(BuildContext context, double extent) {
-  final zoom = CanvasScope.zoomOf(context);
-  final pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
-  final wanted = extent * zoom * pixelRatio;
-  return _pixelSteps.firstWhere(
-    (step) => step >= wanted,
-    orElse: () => _pixelSteps.last,
-  );
-}
+int shownPixels(BuildContext context, double extent) =>
+    _stepFor(_wantedPixels(context, extent), _pictureSteps);
+
+/// How many device pixels [extent] page units come to as they are seen.
+double _wantedPixels(BuildContext context, double extent) =>
+    extent *
+    CanvasScope.zoomOf(context) *
+    (MediaQuery.maybeDevicePixelRatioOf(context) ?? 1);
+
+/// The first of [steps] at least [wanted], or the last.
+int _stepFor(double wanted, List<int> steps) =>
+    steps.firstWhere((step) => step >= wanted, orElse: () => steps.last);
+
+/// The widths, in device pixels, a whole PDF page is drawn at. Seen wider
+/// than the last, it is drawn in tiles about the view as well: a page drawn
+/// whole that wide would take a hundred megabytes, and as long to hand to
+/// the screen as several frames.
+const List<int> _pdfWidths = <int>[256, 512, 768, 1024, 1536, 2048];
+
+/// The width a PDF page coming into view while the view zooms is sketched
+/// at, until the zoom it comes to is known.
+const int _pdfSketch = 512;
+
+/// The side of a tile of a PDF page, in device pixels.
+const int _tileSide = 1024;
 
 /// One page of an imported PDF, drawn on white paper.
 ///
-/// The page is rasterised at a resolution chosen from its size on screen, so
-/// zooming in re-renders it sharply instead of magnifying a small bitmap.
-/// Resolutions come in steps, and rendered pages are cached, so panning and
-/// small zoom changes never re-render. Zoomed in further than the whole page
-/// can be rendered sharp at, the tiles of it about the view are rendered
-/// sharp over it, where the page knows where it lies ([frame]).
+/// The page is drawn in pixels as sharp as it is seen: the whole of it at
+/// one of a few widths, and zoomed in further than that, the tiles of it
+/// about the view as well, where the page knows where it lies ([frame]).
+/// What is drawn is shared by every view of the page ([PdfRasters]), so a
+/// page scrolled back to, or shown again, is there at once. Until what it
+/// asks for is drawn it shows the nearest it has, scaled: once drawn it
+/// never goes blank, and a new zoom sharpens it rather than flashing it.
 class PdfPageView extends ConsumerWidget {
   const PdfPageView({
     required this.assetId,
@@ -124,295 +142,523 @@ class PdfPageView extends ConsumerWidget {
   /// itself rather than in a text box.
   final Frame? frame;
 
-  /// The side of a tile, in device pixels.
-  static const int _tileSide = 1024;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final document = ref.watch(pdfDocumentProvider(assetId));
-
+    final doc = document.value;
+    final missing =
+        !document.isLoading && (doc == null || pageIndex >= doc.pages.length);
     return DecoratedBox(
       // A printed page, edged on the paper it lies on.
       decoration: BoxDecoration(
         color: Tones.paper,
         border: Border.all(color: RichTextStyles.titleRule),
       ),
-      child: document.when(
-        loading: () => const SizedBox.expand(),
-        error: (error, _) => MediaPlaceholder(label: 'PDF failed: $error'),
-        data: (doc) {
-          if (doc == null || pageIndex >= doc.pages.length) {
-            return const MediaPlaceholder(label: 'PDF is missing');
-          }
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final width = shownPixels(context, constraints.maxWidth);
-              final whole = _Rendered(
-                cacheKey: '$assetId/$pageIndex/$width',
-                render: (_) => renderPdfPage(doc, pageIndex, width),
-              );
-              final tiles = _tiles(context, doc, constraints.biggest);
-              return tiles.isEmpty
-                  ? whole
-                  : Stack(
-                      fit: StackFit.expand,
-                      children: <Widget>[whole, ...tiles],
-                    );
-            },
-          );
-        },
-      ),
-    );
-  }
-
-  /// The tiles of the page about the view, rendered sharp over the whole of
-  /// it, where that is too large to be rendered sharp; none otherwise.
-  ///
-  /// They lie on a grid fixed for each resolution, so scrolling renders only
-  /// the tiles coming into view, and a tile shows its own part of the page
-  /// wherever the view has gone while it rendered.
-  List<Widget> _tiles(BuildContext context, PdfDocument document, Size size) {
-    final frame = this.frame;
-    final region = CanvasScope.regionOf(context);
-    if (frame == null || region == null || frame.rotation != 0) {
-      return const <Widget>[];
-    }
-    final pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
-    final wanted = size.width * CanvasScope.zoomOf(context) * pixelRatio;
-    if (wanted <= _pixelSteps.last) return const <Widget>[];
-    var fullWidth = _pixelSteps.last.toDouble();
-    while (fullWidth < wanted) {
-      fullWidth *= 1.5;
-    }
-    final page = document.pages[pageIndex];
-    final fullHeight = fullWidth * page.height / page.width;
-    // The region in pixels of the page rendered [fullWidth] wide, and the
-    // tiles it takes in.
-    final full = Offset.zero & Size(fullWidth, fullHeight);
-    final seen = Rect.fromLTRB(
-      (region.left - frame.x) / frame.width * fullWidth,
-      (region.top - frame.y) / frame.height * fullHeight,
-      (region.right - frame.x) / frame.width * fullWidth,
-      (region.bottom - frame.y) / frame.height * fullHeight,
-    ).intersect(full);
-    if (seen.isEmpty) return const <Widget>[];
-    final toBox = Size(size.width / fullWidth, size.height / fullHeight);
-    return <Widget>[
-      for (
-        var row = seen.top ~/ _tileSide;
-        row * _tileSide < seen.bottom;
-        row++
-      )
-        for (
-          var column = seen.left ~/ _tileSide;
-          column * _tileSide < seen.right;
-          column++
-        )
-          _tile(document, page, fullWidth, full, column, row, toBox),
-    ];
-  }
-
-  /// The tile at [column] and [row] of the page rendered as [full], shown
-  /// scaled by [toBox] in the page's box.
-  Widget _tile(
-    PdfDocument document,
-    PdfPage page,
-    double fullWidth,
-    Rect full,
-    int column,
-    int row,
-    Size toBox,
-  ) {
-    final side = _tileSide.toDouble();
-    final pixels = Rect.fromLTWH(
-      column * side,
-      row * side,
-      side,
-      side,
-    ).intersect(full);
-    return Positioned.fromRect(
-      key: ValueKey<String>('$fullWidth/$column/$row'),
-      rect: Rect.fromLTRB(
-        pixels.left * toBox.width,
-        pixels.top * toBox.height,
-        pixels.right * toBox.width,
-        pixels.bottom * toBox.height,
-      ),
-      child: _Rendered(
-        cacheKey: '$assetId/$pageIndex/$fullWidth/$column/$row',
-        page: page,
-        render: (cancellation) => renderPdfPage(
-          document,
-          pageIndex,
-          fullWidth.round(),
-          // The page's last row of pixels may be only partly on it.
-          pixels: Rect.fromLTRB(
-            pixels.left,
-            pixels.top,
-            pixels.right,
-            pixels.bottom.ceilToDouble(),
-          ),
-          cancellation: cancellation,
-        ),
-      ),
+      child: document.hasError
+          ? MediaPlaceholder(label: 'PDF failed: ${document.error}')
+          : missing
+          ? const MediaPlaceholder(label: 'PDF is missing')
+          // While the document opens, what was drawn of the page before
+          // is shown.
+          : _PdfPage(
+              id: '$assetId/$pageIndex',
+              document: doc,
+              pageIndex: pageIndex,
+              frame: frame,
+            ),
     );
   }
 }
 
-/// The image [render] makes, kept in [RasterCache.pdfPages] as [cacheKey],
-/// drawn filling its box.
-///
-/// Asked for another, it renders it once the change has rested a moment,
-/// going on showing the one before, scaled: rendering at every step of a
-/// pinch would stall it. Given the [page] rendered, it calls off a render
-/// not yet begun once it is no longer shown: a tile scrolled past before its
-/// turn came.
-class _Rendered extends StatefulWidget {
-  const _Rendered({required this.cacheKey, required this.render, this.page});
+class _PdfPage extends StatefulWidget {
+  const _PdfPage({
+    required this.id,
+    required this.document,
+    required this.pageIndex,
+    required this.frame,
+  });
 
-  final String cacheKey;
-  final Future<ui.Image?> Function(PdfPageRenderCancellationToken? cancellation)
-  render;
-  final PdfPage? page;
+  /// What the page's pictures are shared under.
+  final String id;
+
+  /// The document, or null while it opens.
+  final PdfDocument? document;
+  final int pageIndex;
+  final Frame? frame;
+
+  PdfPage? get page => document?.pages[pageIndex];
 
   @override
-  State<_Rendered> createState() => _RenderedState();
+  State<_PdfPage> createState() => _PdfPageState();
 }
 
-class _RenderedState extends State<_Rendered> {
+class _PdfPageState extends State<_PdfPage> {
+  /// How long a new zoom rests before the page is drawn for it: drawing it
+  /// at every step of a zoom would keep the renderer busy with pictures
+  /// that are never seen.
   static const Duration _settle = Duration(milliseconds: 180);
 
-  ui.Image? _image;
-  int _requested = 0;
+  late PageRasters _rasters = PdfRasters.shared.of(widget.id);
+
+  /// The pictures asked for, which are kept while they are, and the plan
+  /// they were asked for by.
+  Set<PdfRaster> _asked = const <PdfRaster>{};
+  _PdfPlan? _askedPlan;
+
+  /// A plan for a new zoom, waiting for it to rest.
+  _PdfPlan? _waiting;
   Timer? _settleTimer;
-  PdfPageRenderCancellationToken? _cancellation;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void didUpdateWidget(_Rendered old) {
+  void didUpdateWidget(_PdfPage old) {
     super.didUpdateWidget(old);
-    if (old.cacheKey == widget.cacheKey) return;
-    // Whatever was asked for before is no longer wanted: an image of it
-    // arriving late must not be shown for this one.
-    _requested++;
-    _settleTimer?.cancel();
-    if (_image == null) {
-      _load();
-    } else {
-      _settleTimer = Timer(_settle, _load);
-    }
+    if (old.id == widget.id) return;
+    _askFor(const <PdfRaster>{});
+    _askedPlan = null;
+    _rasters = PdfRasters.shared.of(widget.id);
   }
 
   @override
   void dispose() {
     _settleTimer?.cancel();
-    _cancellation?.cancel();
-    _image?.dispose();
+    _askFor(const <PdfRaster>{});
     super.dispose();
   }
 
-  void _load() {
-    if (!mounted) return;
-    final request = ++_requested;
-    final cancellation = _cancellation = widget.page?.createCancellationToken();
-    unawaited(
-      RasterCache.pdfPages
-          .obtain(widget.cacheKey, () => widget.render(cancellation))
-          .then(
-            (image) {
-              // A newer one may have been asked for while this one rendered.
-              if (!mounted || request != _requested || image == null) {
-                image?.dispose();
-                return;
-              }
-              setState(() {
-                _image?.dispose();
-                _image = image;
-              });
-            },
-            onError: (Object error) {
-              debugPrint('PDF page failed to render: $error');
-            },
-          ),
+  /// What to draw of the page, [size] page units in its box, and how
+  /// sharply, as it is seen now.
+  _PdfPlan _plan(BuildContext context, Size size) {
+    final wanted = _wantedPixels(context, size.width);
+    final width = _stepFor(wanted, _pdfWidths);
+    final page = widget.page;
+    final frame = widget.frame;
+    final region = CanvasScope.regionOf(context);
+    if (page == null ||
+        frame == null ||
+        region == null ||
+        frame.rotation != 0 ||
+        wanted <= _pdfWidths.last) {
+      return _PdfPlan(width: width);
+    }
+    var level = _pdfWidths.last.toDouble();
+    while (level < wanted) {
+      level *= 1.5;
+    }
+    final plan = _PdfPlan(
+      width: width,
+      level: level.round(),
+      aspect: page.height / page.width,
+      box: size,
+      seen: Rect.fromLTRB(
+        region.left - frame.x,
+        region.top - frame.y,
+        region.right - frame.x,
+        region.bottom - frame.y,
+      ).intersect(Offset.zero & size),
+    );
+    return plan.seen.isEmpty ? _PdfPlan(width: width) : plan;
+  }
+
+  /// Asks for what [plan] draws, once a change of zoom has rested; while
+  /// the view zooms, for nothing new, but a sketch of a page that has
+  /// nothing drawn yet.
+  void _ask(_PdfPlan plan, {required bool zooming}) {
+    if (widget.document == null) return;
+    if (zooming) {
+      if (_rasters.isEmpty && _asked.isEmpty) {
+        _askFor(<PdfRaster>{_wholePage(math.min(plan.width, _pdfSketch))});
+      }
+      return;
+    }
+    final asked = _askedPlan;
+    if (asked == null || plan.sharpAs(asked) || _rasters.isEmpty) {
+      _settleTimer?.cancel();
+      _waiting = null;
+      _askFor(plan.rasters);
+      _askedPlan = plan;
+      return;
+    }
+    // Scrolling on while it waits, it waits on with where the view is now.
+    final waiting = _waiting;
+    _waiting = plan;
+    if (waiting != null && plan.sharpAs(waiting)) return;
+    _settleTimer?.cancel();
+    _settleTimer = Timer(_settle, () {
+      final ready = _waiting;
+      _waiting = null;
+      if (!mounted || ready == null) return;
+      _askFor(ready.rasters);
+      _askedPlan = ready;
+    });
+  }
+
+  void _askFor(Set<PdfRaster> rasters) {
+    final before = _asked;
+    _asked = rasters;
+    for (final raster in rasters) {
+      if (!before.contains(raster)) {
+        _rasters.want(raster, () => _render(raster));
+      }
+    }
+    for (final raster in before) {
+      if (!rasters.contains(raster)) _rasters.unwant(raster);
+    }
+  }
+
+  RasterRender _render(PdfRaster raster) {
+    final document = widget.document!;
+    final page = document.pages[widget.pageIndex];
+    final cancellation = page.createCancellationToken();
+    return (
+      image: renderPdfPage(
+        document,
+        widget.pageIndex,
+        raster.width,
+        pixels: raster.isTile
+            ? _tilePixels(raster, page.height / page.width)
+            : null,
+        cancellation: cancellation,
+      ),
+      cancel: cancellation.cancel,
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    final image = _image;
-    if (image == null) return const SizedBox.expand();
-    return RawImage(
-      image: image,
-      fit: BoxFit.fill,
-      filterQuality: FilterQuality.medium,
-    );
-  }
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final plan = _plan(context, constraints.biggest);
+      _ask(plan, zooming: CanvasScope.zoomingOf(context));
+      return SizedBox.expand(
+        child: CustomPaint(painter: _PdfPainter(_rasters, plan)),
+      );
+    },
+  );
 }
 
-/// Rasterised images, kept so that scrolling back to a PDF page or rebuilding
-/// it does not render it again.
-///
-/// Bounded by total pixels rather than by count, because one poster-sized page
-/// can cost as much memory as fifty slides.
-class RasterCache {
-  RasterCache({this.maxPixels = 64 * 1024 * 1024});
+/// A picture of a PDF page: the whole of it drawn [width] pixels wide, or
+/// the tile at [column] and [row] of it drawn that wide.
+typedef PdfRaster = ({int width, int column, int row});
 
-  /// The cache for PDF pages; about 256 MB of decoded pixels.
-  static final RasterCache pdfPages = RasterCache();
+PdfRaster _wholePage(int width) => (width: width, column: -1, row: -1);
+
+extension on PdfRaster {
+  bool get isTile => column >= 0;
+}
+
+/// The pixels of the page [tile] covers, of the page drawn [tile]'s width
+/// and [aspect] times as high; the last row of them may lie only partly on
+/// the page.
+Rect _tilePixels(PdfRaster tile, double aspect) {
+  final side = _tileSide.toDouble();
+  final width = tile.width.toDouble();
+  final pixels = Rect.fromLTWH(
+    tile.column * side,
+    tile.row * side,
+    side,
+    side,
+  ).intersect(Offset.zero & Size(width, width * aspect));
+  return Rect.fromLTRB(
+    pixels.left,
+    pixels.top,
+    pixels.right,
+    pixels.bottom.ceilToDouble(),
+  );
+}
+
+/// What of a PDF page to draw, and how sharply: the whole of it [width]
+/// pixels wide, and where the view is zoomed in further than that, the
+/// tiles of it drawn [level] pixels wide over the part of its box [seen].
+@immutable
+class _PdfPlan {
+  const _PdfPlan({
+    required this.width,
+    this.level = 0,
+    this.aspect = 0,
+    this.box = Size.zero,
+    this.seen = Rect.zero,
+  });
+
+  final int width;
+
+  /// The width the tiles are drawn at, or 0 for none.
+  final int level;
+
+  /// The page's height over its width.
+  final double aspect;
+
+  /// The page's box, and the part of it laid out about the view, in page
+  /// units.
+  final Size box;
+  final Rect seen;
+
+  /// Where [tile] lies in the box.
+  Rect place(PdfRaster tile) {
+    final pixels = _tilePixels(tile, aspect);
+    final across = box.width / tile.width;
+    final down = box.height / (tile.width * aspect);
+    return Rect.fromLTRB(
+      pixels.left * across,
+      pixels.top * down,
+      pixels.right * across,
+      pixels.bottom * down,
+    );
+  }
+
+  /// Whether this draws the page as sharp as [other] does.
+  bool sharpAs(_PdfPlan other) => width == other.width && level == other.level;
+
+  /// The whole page, and the tiles over what is seen, the nearest the
+  /// middle of it first.
+  Set<PdfRaster> get rasters {
+    final rasters = <PdfRaster>{_wholePage(width)};
+    if (level == 0) return rasters;
+    final across = level / box.width;
+    final down = level * aspect / box.height;
+    final pixels = Rect.fromLTRB(
+      seen.left * across,
+      seen.top * down,
+      seen.right * across,
+      seen.bottom * down,
+    );
+    final middle = pixels.center;
+    final tiles = <PdfRaster>[
+      for (
+        var row = pixels.top ~/ _tileSide;
+        row * _tileSide < pixels.bottom;
+        row++
+      )
+        for (
+          var column = pixels.left ~/ _tileSide;
+          column * _tileSide < pixels.right;
+          column++
+        )
+          (width: level, column: column, row: row),
+    ];
+    double away(PdfRaster tile) =>
+        (_tilePixels(tile, aspect).center - middle).distanceSquared;
+    return rasters..addAll(tiles..sort((a, b) => away(a).compareTo(away(b))));
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _PdfPlan &&
+      other.width == width &&
+      other.level == level &&
+      other.aspect == aspect &&
+      other.box == box &&
+      other.seen == seen;
+
+  @override
+  int get hashCode => Object.hash(width, level, aspect, box, seen);
+}
+
+/// Draws a PDF page from what is drawn of it: the whole page as sharp as
+/// [plan] asks, or the nearest drawn, and over it the tiles drawn about the
+/// view — at the level asked, over those drawn coarser before, which go on
+/// showing where the sharper are not drawn yet.
+class _PdfPainter extends CustomPainter {
+  _PdfPainter(this.rasters, this.plan) : super(repaint: rasters);
+
+  final PageRasters rasters;
+  final _PdfPlan plan;
+
+  static final Paint _paint = Paint()..filterQuality = FilterQuality.medium;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final whole = rasters.whole(plan.width);
+    if (whole != null) _draw(canvas, whole, Offset.zero & size);
+    if (plan.level == 0) return;
+    for (final (tile, image) in rasters.tiles(upTo: plan.level)) {
+      final place = plan.place(tile);
+      if (place.overlaps(plan.seen)) _draw(canvas, image, place);
+    }
+  }
+
+  static void _draw(Canvas canvas, ui.Image image, Rect place) =>
+      canvas.drawImageRect(
+        image,
+        Offset.zero & Size(image.width.toDouble(), image.height.toDouble()),
+        place,
+        _paint,
+      );
+
+  @override
+  bool shouldRepaint(_PdfPainter old) =>
+      !identical(old.rasters, rasters) || old.plan != plan;
+}
+
+/// A render of a picture under way: the picture it comes to, or null if it
+/// was called off, and what calls it off if it has not begun.
+typedef RasterRender = ({Future<ui.Image?> image, VoidCallback cancel});
+
+/// The pictures PDF pages are drawn as, shared by every view of them.
+///
+/// A picture is drawn once however many views ask for it, and kept while
+/// any of them wants it. Once none does it is kept a while longer, in case
+/// it is wanted again — a page scrolled back to — those wanted least
+/// recently let go first once all the pictures come to more than
+/// [maxPixels]: bounded by pixels rather than by count, as one
+/// poster-sized page costs as much as fifty slides.
+class PdfRasters {
+  PdfRasters({this.maxPixels = 48 * 1024 * 1024});
+
+  /// The pictures of every PDF page shown: about 200 MB of them, at most,
+  /// besides those in view.
+  static final PdfRasters shared = PdfRasters();
 
   final int maxPixels;
 
-  final LinkedHashMap<String, ui.Image> _images =
-      LinkedHashMap<String, ui.Image>();
-  final Map<String, Future<ui.Image?>> _pending = <String, Future<ui.Image?>>{};
+  final Map<String, PageRasters> _pages = <String, PageRasters>{};
+
+  /// The pictures no view wants, the least recently wanted first.
+  final LinkedHashSet<(PageRasters, PdfRaster)> _spare =
+      LinkedHashSet<(PageRasters, PdfRaster)>();
+
+  /// How many pixels all the pictures held come to.
+  int get pixels => _pixels;
   int _pixels = 0;
 
-  /// How many images are held.
-  int get length => _images.length;
+  /// The pictures of the page [id].
+  PageRasters of(String id) => _pages[id] ??= PageRasters._(this);
 
-  /// A handle to the image for [key], produced by [produce] if it is not held
-  /// yet. Concurrent requests for one key share a single [produce] call.
-  ///
-  /// The caller owns the returned handle and must dispose of it.
-  Future<ui.Image?> obtain(
-    String key,
-    Future<ui.Image?> Function() produce,
-  ) async {
-    final cached = _images.remove(key);
-    if (cached != null) {
-      _images[key] = cached;
-      return cached.clone();
-    }
+  void _held(ui.Image image) => _pixels += image.width * image.height;
 
-    // The callback must not return the removed future: whenComplete waits on
-    // whatever its callback returns, and a future waiting on itself never
-    // completes — which is how every PDF page once stayed blank.
-    final image = await (_pending[key] ??= produce().whenComplete(() {
-      _pending.remove(key);
-    }));
-    if (image == null) return null;
-
-    if (!_images.containsKey(key)) {
-      _images[key] = image;
-      _pixels += image.width * image.height;
-      _evict();
-    }
-    return (_images[key] ?? image).clone();
-  }
-
-  void _evict() {
-    while (_pixels > maxPixels && _images.length > 1) {
-      final oldest = _images.keys.first;
-      final image = _images.remove(oldest)!;
+  void _spared(PageRasters page, PdfRaster raster) {
+    _spare.add((page, raster));
+    while (_pixels > maxPixels && _spare.isNotEmpty) {
+      final oldest = _spare.first;
+      _spare.remove(oldest);
+      final image = oldest.$1._pictures.remove(oldest.$2)!.image!;
       _pixels -= image.width * image.height;
       image.dispose();
     }
   }
+}
+
+/// The pictures of one PDF page: told when one more is drawn.
+class PageRasters extends ChangeNotifier {
+  PageRasters._(this._all);
+
+  final PdfRasters _all;
+  final Map<PdfRaster, _Picture> _pictures = <PdfRaster, _Picture>{};
+
+  /// Whether nothing of the page is drawn.
+  bool get isEmpty => !_pictures.values.any((picture) => picture.image != null);
+
+  /// The whole page as drawn [width] pixels wide, or else as drawn nearest
+  /// that: the narrowest wider, or failing that the widest narrower.
+  ui.Image? whole(int width) {
+    PdfRaster? best;
+    ui.Image? image;
+    for (final MapEntry(key: raster, value: picture) in _pictures.entries) {
+      final drawn = picture.image;
+      if (drawn == null || raster.isTile) continue;
+      if (best == null || _nearer(raster.width, best.width, width)) {
+        best = raster;
+        image = drawn;
+      }
+    }
+    return image;
+  }
+
+  /// Whether a picture [a] wide is nearer [width] than one [b] wide: the
+  /// sharper wins, unless it is sharper than need be.
+  static bool _nearer(int a, int b, int width) =>
+      a >= width ? b < width || a < b : b < width && a > b;
+
+  /// The tiles drawn no wider than [upTo], the coarsest first.
+  List<(PdfRaster, ui.Image)> tiles({required int upTo}) =>
+      <(PdfRaster, ui.Image)>[
+        for (final MapEntry(key: raster, value: picture) in _pictures.entries)
+          if (raster.isTile && raster.width <= upTo && picture.image != null)
+            (raster, picture.image!),
+      ]..sort((a, b) => a.$1.width.compareTo(b.$1.width));
+
+  /// Asks for [raster], drawn by [render] unless it is drawn or being drawn
+  /// already: it is kept until [unwant] is asked as often as this.
+  void want(PdfRaster raster, RasterRender Function() render) {
+    final picture = _pictures[raster] ??= _Picture();
+    picture.wanters++;
+    _all._spare.remove((this, raster));
+    if (picture.image == null && picture.cancel == null && !picture.failed) {
+      _render(raster, picture, render);
+    }
+  }
+
+  /// No longer asks for [raster]: what is drawn of it is kept a while, and
+  /// what is not, not drawn, if it has not begun to be.
+  void unwant(PdfRaster raster) {
+    final picture = _pictures[raster];
+    if (picture == null || --picture.wanters > 0) return;
+    if (picture.cancel case final cancel?) {
+      picture.calledOff = true;
+      cancel();
+    } else if (picture.image == null) {
+      _pictures.remove(raster);
+    } else {
+      _all._spared(this, raster);
+    }
+  }
+
+  void _render(
+    PdfRaster raster,
+    _Picture picture,
+    RasterRender Function() render,
+  ) {
+    final rendering = render();
+    picture
+      ..cancel = rendering.cancel
+      ..calledOff = false;
+    void done(ui.Image? image) {
+      picture.cancel = null;
+      if (!identical(_pictures[raster], picture)) {
+        image?.dispose();
+        return;
+      }
+      if (image == null) {
+        // Called off, then wanted again before it could be.
+        if (picture.calledOff && picture.wanters > 0) {
+          _render(raster, picture, render);
+        } else if (picture.wanters == 0) {
+          _pictures.remove(raster);
+        } else {
+          picture.failed = true;
+        }
+        return;
+      }
+      picture.image = image;
+      _all._held(image);
+      if (picture.wanters == 0) _all._spared(this, raster);
+      notifyListeners();
+    }
+
+    unawaited(
+      rendering.image.then(
+        done,
+        onError: (Object error) {
+          debugPrint('PDF page failed to render: $error');
+          done(null);
+        },
+      ),
+    );
+  }
+}
+
+/// A picture of a PDF page: drawn, or being drawn.
+class _Picture {
+  ui.Image? image;
+
+  /// How many times it is asked for.
+  int wanters = 0;
+
+  /// What calls off drawing it, while it is being drawn; and whether that
+  /// was asked for.
+  VoidCallback? cancel;
+  bool calledOff = false;
+
+  /// Whether it could not be drawn: it is not tried again.
+  bool failed = false;
 }
 
 /// Renders page [pageIndex] of [document], [pixelWidth] pixels wide, on white:

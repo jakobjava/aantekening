@@ -1408,6 +1408,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
             selectionColor: context.tones.paperEmphasis,
             penButtons: pen.buttons,
             shapesOnHold: pen.shapesOnHold,
+            touchpadFingers: touchpadFingers,
           ),
         ),
       ),

@@ -1,6 +1,6 @@
 # 27. The page glides, and zooms as a picture until it stops
 
-**Status:** accepted; revises how ADR 21's page follows a zoom
+**Status:** accepted; revises how ADR 21's page follows a zoom; how its ink and PDF pages follow one revised by ADR 30
 
 ## Context
 
@@ -52,10 +52,16 @@ lift (ADR 21's momentum), as scrolling does everywhere else on the desktop.
 it, and stays there as they lift. Only a flick the same way, of 600 pixels a
 second or more, sends it on faster still: before, any movement the same way
 counted, and fingers settling a pixel as they were put down sent it on at
-the speed it had, so that only a scroll the other way stopped it. A touchpad
-says nothing of fingers put down that do not move at all (GTK 3, which
-Flutter's Linux build uses, has no hold gesture); the smallest movement
-stops it.
+the speed it had, so that only a scroll the other way stopped it.
+
+**Fingers resting stop it before they move.** A touchpad reports two
+fingers put down only once they have moved far enough to scroll, and on
+Linux, until they had, the page coasted on under them. A Wayland desktop
+tells of fingers resting by a hold gesture, which GTK 3, which Flutter's
+Linux build uses, does not pass on: the runner asks the desktop for them
+itself (`touchpad_hold.cc`) and tells the app, and two or more fingers
+resting catch the page as a scroll's start would. Lifted again without
+moving, they leave it where they caught it.
 
 ## Consequences
 

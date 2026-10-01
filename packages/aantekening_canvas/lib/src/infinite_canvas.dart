@@ -49,6 +49,19 @@ class CanvasHeader {
   final Widget child;
 }
 
+/// What fingers on a touchpad are doing, where the platform says so:
+/// most report fingers put down only once they move.
+enum TouchpadFingers {
+  /// None are on it, or they lifted from it without moving.
+  lifted,
+
+  /// Two or more rest on it, still.
+  resting,
+
+  /// They rested, and have moved on: a scroll or a pinch follows.
+  moving,
+}
+
 /// An infinitely pannable, zoomable page.
 ///
 /// Layers are stacked so each repaints independently: paper, highlighter ink,
@@ -71,6 +84,7 @@ class InfiniteCanvas extends StatefulWidget {
     this.selectionColor,
     this.penButtons = const PenButtons(),
     this.shapesOnHold = true,
+    this.touchpadFingers,
   });
 
   final CanvasController controller;
@@ -125,6 +139,11 @@ class InfiniteCanvas extends StatefulWidget {
   /// Whether a stroke held still at its end becomes the shape it was drawn
   /// as.
   final bool shapesOnHold;
+
+  /// What fingers on a touchpad are doing, where the platform tells of
+  /// fingers put down that have not moved: put down, they stop the page
+  /// coasting, as they do once they move.
+  final ValueListenable<TouchpadFingers>? touchpadFingers;
 
   @override
   State<InfiniteCanvas> createState() => _InfiniteCanvasState();
@@ -312,6 +331,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   void initState() {
     super.initState();
     _listen(_controller);
+    widget.touchpadFingers?.addListener(_onTouchpadFingers);
   }
 
   @override
@@ -321,10 +341,15 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       _stopListening(oldWidget.controller);
       _listen(widget.controller);
     }
+    if (oldWidget.touchpadFingers != widget.touchpadFingers) {
+      oldWidget.touchpadFingers?.removeListener(_onTouchpadFingers);
+      widget.touchpadFingers?.addListener(_onTouchpadFingers);
+    }
   }
 
   @override
   void dispose() {
+    widget.touchpadFingers?.removeListener(_onTouchpadFingers);
     _zooming.dispose();
     _nib.dispose();
     _hold?.cancel();
@@ -907,8 +932,26 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     }
   }
 
+  /// Fingers put down on the touchpad, before they move: they catch the
+  /// page as a scroll's start would, and lifted again without moving leave
+  /// it where they caught it.
+  void _onTouchpadFingers() {
+    switch (widget.touchpadFingers!.value) {
+      case TouchpadFingers.resting:
+        _caught = _motion.velocity;
+        _motion.stop();
+      case TouchpadFingers.lifted:
+        _caught = Offset.zero;
+        _motion.settle();
+      case TouchpadFingers.moving:
+        break;
+    }
+  }
+
   void _onPanZoomStart(PointerPanZoomStartEvent event) {
-    _caught = _motion.velocity;
+    // Caught by fingers resting first, it was caught going as fast as it
+    // went then.
+    if (_motion.isMoving) _caught = _motion.velocity;
     _motion.stop();
     final current = _trackpad;
     // A start while a gesture is under way is the other stream beginning —
@@ -1145,91 +1188,97 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        _size = constraints.biggest;
-        final controller = _controller..viewSize = _size;
+    // The page is built again inside the layout builder as the view moves
+    // on, which lays the builder out again, and paints what holds it: all
+    // of the window around the page, at every step of a scroll, but for
+    // this.
+    return RepaintBoundary(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          _size = constraints.biggest;
+          final controller = _controller..viewSize = _size;
 
-        return Listener(
-          onPointerDown: _onPointerDown,
-          onPointerMove: _onPointerMove,
-          onPointerUp: _onPointerUp,
-          onPointerCancel: _onPointerCancel,
-          onPointerHover: _onHover,
-          onPointerSignal: _onPointerSignal,
-          onPointerPanZoomStart: _onPanZoomStart,
-          onPointerPanZoomUpdate: _onPanZoomUpdate,
-          onPointerPanZoomEnd: _onPanZoomEnd,
-          behavior: HitTestBehavior.opaque,
-          child: MouseRegion(
-            onExit: (_) => _nib.value = null,
-            cursor: _hoverCursor == MouseCursor.defer
-                ? _cursorFor(controller.tool)
-                : _hoverCursor,
-            child: ClipRect(
-              // Only the element layer takes pointers. The painted layers
-              // would otherwise count as hit everywhere — a CustomPaint does by
-              // default — and the ones above the elements would swallow every
-              // press meant for a text box.
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  IgnorePointer(
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        painter: BackgroundPainter(
-                          background: controller.document.canvas.background,
-                          view: controller.view,
-                          paperWidth: controller.document.canvas.paperWidth,
+          return Listener(
+            onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
+            onPointerUp: _onPointerUp,
+            onPointerCancel: _onPointerCancel,
+            onPointerHover: _onHover,
+            onPointerSignal: _onPointerSignal,
+            onPointerPanZoomStart: _onPanZoomStart,
+            onPointerPanZoomUpdate: _onPanZoomUpdate,
+            onPointerPanZoomEnd: _onPanZoomEnd,
+            behavior: HitTestBehavior.opaque,
+            child: MouseRegion(
+              onExit: (_) => _nib.value = null,
+              cursor: _hoverCursor == MouseCursor.defer
+                  ? _cursorFor(controller.tool)
+                  : _hoverCursor,
+              child: ClipRect(
+                // Only the element layer takes pointers. The painted
+                // layers would otherwise count as hit everywhere — a
+                // CustomPaint does by default — and the ones above the
+                // elements would swallow every press meant for a text box.
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    IgnorePointer(
+                      child: RepaintBoundary(
+                        child: CustomPaint(
+                          painter: BackgroundPainter(
+                            background: controller.document.canvas.background,
+                            view: controller.view,
+                            paperWidth: controller.document.canvas.paperWidth,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  _PageContent(
-                    controller: controller,
-                    view: controller.view,
-                    zooming: _zooming,
-                    size: _size,
-                    builder: widget.elementBuilder,
-                    onDoubleTap: widget.onElementDoubleTap,
-                    header: widget.header,
-                    headerInteractive: controller.tool == CanvasTool.select,
-                  ),
-                  IgnorePointer(
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        painter: SelectionPainter(
-                          selected: controller.selectedElements,
-                          view: controller.view,
-                          accent:
-                              widget.selectionColor ??
-                              Theme.of(context).colorScheme.primary,
-                          marquee: _marquee,
+                    _PageContent(
+                      controller: controller,
+                      view: controller.view,
+                      zooming: _zooming,
+                      size: _size,
+                      builder: widget.elementBuilder,
+                      onDoubleTap: widget.onElementDoubleTap,
+                      header: widget.header,
+                      headerInteractive: controller.tool == CanvasTool.select,
+                    ),
+                    IgnorePointer(
+                      child: RepaintBoundary(
+                        child: CustomPaint(
+                          painter: SelectionPainter(
+                            selected: controller.selectedElements,
+                            view: controller.view,
+                            accent:
+                                widget.selectionColor ??
+                                Theme.of(context).colorScheme.primary,
+                            marquee: _marquee,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  IgnorePointer(
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        painter: NibPainter(
-                          place: _nib,
-                          controller: controller,
+                    IgnorePointer(
+                      child: RepaintBoundary(
+                        child: CustomPaint(
+                          painter: NibPainter(
+                            place: _nib,
+                            controller: controller,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  // Above everything: a press on a handle or a side of the
-                  // selection is the canvas's alone. Without this the text
-                  // box beneath the edge would take it too, placing its caret
-                  // and selecting text while the box is resized.
-                  _HandleTargets(hits: _onHandle),
-                ],
+                    // Above everything: a press on a handle or a side of the
+                    // selection is the canvas's alone. Without this the text
+                    // box beneath the edge would take it too, placing its caret
+                    // and selecting text while the box is resized.
+                    _HandleTargets(hits: _onHandle),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -1344,11 +1393,22 @@ class _PageContentState extends State<_PageContent> {
   /// for: the view's, but for while it is being zoomed.
   double _zoom = 0;
 
+  /// Whether it was laid out while the view was being zoomed, to be laid
+  /// out again once it is not, for the zoom it came to.
+  bool _laidOutZooming = false;
+
   /// Each element's widget as it was last placed, and the element it was
   /// placed for: an element placed again as the view moves on is given the
   /// very widget it had, which the framework leaves as it is.
   Map<String, (NoteElement, Widget?)> _placed =
       <String, (NoteElement, Widget?)>{};
+
+  /// The ink beneath the elements and above them, kept as pixels while the
+  /// view is not being zoomed.
+  final Map<InkLayer, InkTiles> _inkTiles = <InkLayer, InkTiles>{
+    for (final layer in const <InkLayer>[InkLayer.beneath, InkLayer.above])
+      layer: InkTiles(layer),
+  };
 
   bool get _isZooming => widget.zooming?.value ?? false;
 
@@ -1379,14 +1439,21 @@ class _PageContentState extends State<_PageContent> {
   void dispose() {
     widget.view.removeListener(_onViewChanged);
     widget.zooming?.removeListener(_onViewChanged);
+    for (final tiles in _inkTiles.values) {
+      tiles.clear();
+    }
     super.dispose();
   }
 
   void _onViewChanged() {
     final viewport = widget.view.value;
+    // Laid out once more as a zoom begins, for the ink to follow it by
+    // itself, and then only where it uncovers what was not laid out.
     final laidOut = _isZooming
-        ? _region.containsBox(viewport.visibleBounds(widget.size))
-        : viewport.zoom == _zoom &&
+        ? _laidOutZooming &&
+              _region.containsBox(viewport.visibleBounds(widget.size))
+        : !_laidOutZooming &&
+              viewport.zoom == _zoom &&
               pageRegion(viewport, widget.size) == _region;
     if (!laidOut) setState(() {});
   }
@@ -1431,14 +1498,21 @@ class _PageContentState extends State<_PageContent> {
     final controller = widget.controller;
     final viewport = widget.view.value;
     final region = _region = pageRegion(viewport, widget.size);
+    _laidOutZooming = _isZooming;
     if (!_isZooming || _zoom == 0) _zoom = viewport.zoom;
     final shown = controller.elementsIn(region);
     final origin = Offset(region.left, region.top);
     // The painters draw in page space moved to the region's corner.
     final fromOrigin = CanvasViewport(origin: origin);
-    final pixelsPerUnit = widget.still
-        ? _zoom * MediaQuery.devicePixelRatioOf(context)
-        : null;
+    final pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
+    final pixelsPerUnit = widget.still ? _zoom * pixelRatio : null;
+    InkTiles? tilesOf(InkLayer layer) => widget.still ? null : _inkTiles[layer];
+    // Zooming out, the ink stays as tiles, drawn again for the zoom the
+    // view has come to each time it outgrows them; zooming in, it is drawn
+    // as strokes until the zoom stops.
+    final tileScale =
+        (_laidOutZooming ? math.min(_zoom, viewport.zoom) : _zoom) * pixelRatio;
+    final zooming = _laidOutZooming ? widget.view : null;
     final ink = <InkElement>[
       for (final element in shown)
         if (element is InkElement && !element.locked) element,
@@ -1463,9 +1537,11 @@ class _PageContentState extends State<_PageContent> {
     return CanvasScope(
       zoom: _zoom,
       region: region,
+      zooming: _laidOutZooming,
       child: PageSpace(
         view: widget.view,
         region: region,
+        devicePixelRatio: pixelRatio,
         child: Stack(
           fit: StackFit.expand,
           clipBehavior: Clip.none,
@@ -1479,6 +1555,10 @@ class _PageContentState extends State<_PageContent> {
                 viewport: fromOrigin,
                 layer: InkLayer.beneath,
                 pixelsPerUnit: pixelsPerUnit,
+                tiles: tilesOf(InkLayer.beneath),
+                tileScale: tileScale,
+                zooming: zooming,
+                pixelRatio: pixelRatio,
               ),
             ),
             RepaintBoundary(child: layer(false, header: widget.header)),
@@ -1492,6 +1572,10 @@ class _PageContentState extends State<_PageContent> {
                   viewport: fromOrigin,
                   layer: above,
                   pixelsPerUnit: pixelsPerUnit,
+                  tiles: tilesOf(above),
+                  tileScale: tileScale,
+                  zooming: zooming,
+                  pixelRatio: pixelRatio,
                 ),
               ),
             if (!widget.still)

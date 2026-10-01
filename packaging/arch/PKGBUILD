@@ -5,7 +5,7 @@
 #
 #   aantekening-$pkgver-linux-x64.tar.gz   the bundle, in a folder aantekening
 #   dev.aantekening.aantekening.desktop    from packaging/linux
-#   aantekening.png                        the app's icon
+#   aantekening.png                        from packaging/icon
 pkgname=aantekening
 pkgver=0.1.0
 pkgrel=1
@@ -28,5 +28,5 @@ package() {
   install -Dm644 dev.aantekening.aantekening.desktop \
     "$pkgdir/usr/share/applications/dev.aantekening.aantekening.desktop"
   install -Dm644 aantekening.png \
-    "$pkgdir/usr/share/icons/hicolor/192x192/apps/dev.aantekening.aantekening.png"
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/dev.aantekening.aantekening.png"
 }

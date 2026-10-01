@@ -1,12 +1,16 @@
-/// The touchpad's quirks: how far its scrolling goes, and where the platform
-/// says its gestures happened.
+/// The touchpad's quirks: how far its scrolling goes, where the platform
+/// says its gestures happened, and fingers resting on it.
 library;
 
 import 'dart:io';
 
+import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+
+import '../input_trace.dart';
 
 /// How far the page moves per pixel of pan a touchpad reports, so that it
 /// follows the fingers.
@@ -28,6 +32,24 @@ double trackpadPanScale({
   final wayland =
       (env['WAYLAND_DISPLAY'] ?? '').isNotEmpty && !backend.startsWith('x11');
   return wayland ? 10 / 53 : 15 / 53;
+}
+
+/// What fingers on the touchpad are doing, as the Linux runner hears of it
+/// from a Wayland desktop's hold gestures: GTK 3 passes on none, and a
+/// touchpad reports fingers put down only once they move.
+final ValueNotifier<TouchpadFingers> touchpadFingers =
+    ValueNotifier<TouchpadFingers>(TouchpadFingers.lifted);
+
+/// Listens for the runner telling what fingers on the touchpad are doing.
+void listenToTouchpadFingers() {
+  const MethodChannel('aantekening/touchpad')
+      .setMethodCallHandler((call) async {
+        if (call.method != 'fingers') return;
+        if (traceInput) traceLine('fingers ${call.arguments}');
+        touchpadFingers.value =
+            TouchpadFingers.values.asNameMap()[call.arguments] ??
+            TouchpadFingers.lifted;
+      });
 }
 
 /// Aims scrolling and touchpad gestures at the pointer, wherever they are

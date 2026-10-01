@@ -8,6 +8,7 @@ import 'src/input_trace.dart';
 void main() {
   AantekeningBinding.ensureInitialized();
   installInputTrace();
+  listenToTouchpadFingers();
   registerFontLicence();
   runApp(const ProviderScope(child: AantekeningApp()));
 }

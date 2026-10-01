@@ -97,7 +97,7 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           cp packaging/arch/PKGBUILD packaging/linux/dev.aantekening.aantekening.desktop arch-build/
-          cp app/aantekening/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png arch-build/aantekening.png
+          cp packaging/icon/aantekening.png arch-build/aantekening.png
           sed -i "s/^pkgver=.*/pkgver=$VERSION/" arch-build/PKGBUILD
           useradd -m builder
           chown -R builder arch-build

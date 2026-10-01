@@ -2,8 +2,10 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
+import 'package:aantekening_canvas/src/page_space.dart';
 import 'package:aantekening_canvas/src/element_transforms.dart';
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -38,6 +40,7 @@ Widget _host(
   CanvasHeader? header,
   void Function(Offset page, Offset global)? onContextMenu,
   CanvasElementBuilder? elementBuilder,
+  ValueListenable<TouchpadFingers>? touchpadFingers,
 }) => MaterialApp(
   home: Scaffold(
     body: Padding(
@@ -51,6 +54,7 @@ Widget _host(
         header: header,
         onContextMenu: onContextMenu,
         trackpadPanScale: trackpadPanScale,
+        touchpadFingers: touchpadFingers,
         elementBuilder:
             elementBuilder ??
             (context, element) => const ColoredBox(color: Colors.blue),
@@ -335,6 +339,33 @@ void main() {
       await tester.pumpAndSettle();
       expect(built, 1);
       expect(zooms.last, controller.viewport.zoom);
+    });
+
+    testWidgets('the page lands on whole device pixels, wherever it is '
+        'scrolled to', (tester) async {
+      final controller = CanvasController()
+        ..addElement(_image('a', x: 300, y: 200));
+      await tester.pumpWidget(_host(controller));
+      final ratio = tester.view.devicePixelRatio;
+      for (final origin in <Offset>[
+        const Offset(10.123, 7.77),
+        const Offset(250.4, 1001.01),
+      ]) {
+        controller.viewport = CanvasViewport(origin: origin, zoom: 1.37);
+        await tester.pump();
+        final page = tester
+            .renderObject<RenderPageSpace>(find.byType(PageSpace))
+            .child!
+            .localToGlobal(Offset.zero);
+        expect(
+          page.dx * ratio,
+          closeTo((page.dx * ratio).roundToDouble(), 1e-6),
+        );
+        expect(
+          page.dy * ratio,
+          closeTo((page.dy * ratio).roundToDouble(), 1e-6),
+        );
+      }
     });
 
     testWidgets('scrolling on does not build again what is on the page', (
@@ -1460,6 +1491,33 @@ void main() {
         final caught = controller.viewport.origin.dy;
         await tester.pumpAndSettle();
         expect(controller.viewport.origin.dy, closeTo(caught, 1));
+      });
+
+      testWidgets('fingers resting stop it before they move, where the '
+          'platform tells of them', (tester) async {
+        final controller = CanvasController();
+        final fingers = ValueNotifier<TouchpadFingers>(TouchpadFingers.lifted);
+        addTearDown(fingers.dispose);
+        await tester.pumpWidget(_host(controller, touchpadFingers: fingers));
+        final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+        await scroll(
+          tester,
+          trackpad,
+          step: 100,
+          steps: 8,
+          every: const Duration(milliseconds: 8),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        fingers.value = TouchpadFingers.resting;
+        final caught = controller.viewport.origin.dy;
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(controller.viewport.origin.dy, caught);
+
+        fingers.value = TouchpadFingers.lifted;
+        await tester.pumpAndSettle();
+        expect(controller.viewport.origin.dy, caught);
       });
 
       testWidgets('a flick the same way sends it faster still', (tester) async {

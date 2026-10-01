@@ -90,7 +90,11 @@ packages/aantekening_spell         spell checking, Hunspell ported to Dart
 app/aantekening                    the app
 third_party/flutter_math_fork      the TeX typesetter, patched (see its README)
 docs/                              architecture, file format, decisions, roadmap
+packaging/                         the icon, the Linux desktop entry, Arch's PKGBUILD
 ```
+
+Every platform's icon is made from `packaging/icon/aantekening.png` by
+`python3 tool/app_icons.py`.
 
 Start with [docs/architecture.md](docs/architecture.md) and
 [docs/file-format.md](docs/file-format.md). The reasons behind the main
@@ -103,6 +107,18 @@ To check everything:
 dart analyze
 for p in core store interchange ai spell; do (cd packages/aantekening_$p && dart test); done
 for d in packages/aantekening_math packages/aantekening_canvas app/aantekening; do (cd $d && flutter test); done
+```
+
+To measure how smoothly, and at what cost, a heavy page scrolls and zooms
+— the time each frame takes and the processor time spent, thread by thread
+— build the benchmark in profile mode and run it on the desktop to measure.
+It makes up its page, or uses the heaviest page of a OneNote package named
+by `AANTEKENING_BENCH_NOTES`; nothing is read from or written to the notes:
+
+```bash
+cd app/aantekening
+flutter build linux --profile -t benchmark/canvas_benchmark.dart
+build/linux/x64/profile/bundle/aantekening
 ```
 
 ## Licences

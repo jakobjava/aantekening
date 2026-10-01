@@ -1,6 +1,8 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
+import 'package:aantekening_canvas/src/page_space.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -631,6 +633,114 @@ void main() {
         ..extendStroke(const Offset(10, 410))
         ..endStroke();
       expect(painter(ink()).shouldRepaint(before), isTrue);
+    });
+  });
+
+  group('InkTiles', () {
+    InkElement handwriting(String id, Offset at) {
+      final stroke = InkStroke.fromPoints(
+        tool: InkTool.pen,
+        color: 0xFF1A3C8C,
+        width: 2.5,
+        xs: <double>[for (var i = 0; i < 60; i++) at.dx + i * 3.0],
+        ys: <double>[for (var i = 0; i < 60; i++) at.dy + math.sin(i / 4) * 9],
+        pressures: <double>[
+          for (var i = 0; i < 60; i++) 0.3 + 0.6 * math.sin(i / 60 * math.pi),
+        ],
+      );
+      final bounds = stroke.bounds;
+      return InkElement(
+        id: id,
+        frame: Frame(
+          x: bounds.left,
+          y: bounds.top,
+          width: bounds.width,
+          height: bounds.height,
+        ),
+        createdAt: 0,
+        updatedAt: 0,
+        strokes: <InkStroke>[stroke],
+      );
+    }
+
+    const region = Aabb(0, 0, 800, 500);
+    final ink = <InkElement>[
+      handwriting('a', const Offset(20, 40)),
+      handwriting('b', const Offset(500, 380)),
+    ];
+
+    /// The ink drawn over [region] on white, [scale] pixels to a unit.
+    Future<List<int>> draw(
+      List<InkElement> elements, {
+      InkTiles? tiles,
+      double scale = 1.5,
+    }) async {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder)
+        ..drawColor(const Color(0xFFFFFFFF), BlendMode.src)
+        ..scale(scale);
+      InkPainter(
+        elements: elements,
+        viewport: const CanvasViewport(),
+        layer: InkLayer.above,
+        tiles: tiles,
+        tileScale: scale,
+      ).paint(canvas, Size(region.width, region.height));
+      final image = await recorder.endRecording().toImage(
+        (region.width * scale).round(),
+        (region.height * scale).round(),
+      );
+      final bytes = (await image.toByteData())!.buffer.asUint8List();
+      image.dispose();
+      return bytes;
+    }
+
+    test('looks as the strokes drawn themselves do', () async {
+      final tiles = InkTiles(InkLayer.above);
+      final strokes = await draw(ink);
+      final pixels = await draw(ink, tiles: tiles);
+      var apart = 0;
+      for (var i = 0; i < strokes.length; i++) {
+        apart += (strokes[i] - pixels[i]).abs();
+      }
+      expect(apart / strokes.length, lessThan(0.05));
+      tiles.clear();
+    });
+
+    test('draws a tile again only once its ink changes', () async {
+      final tiles = InkTiles(InkLayer.above);
+      await draw(ink, tiles: tiles);
+      final first = tiles.drawn;
+      expect(first, 2, reason: 'one tile each, the rest empty');
+
+      await draw(ink, tiles: tiles);
+      expect(tiles.drawn, first, reason: 'nothing changed');
+
+      await draw(<InkElement>[
+        ink.first,
+        handwriting('b', const Offset(500, 390)),
+      ], tiles: tiles);
+      expect(tiles.drawn, first + 1, reason: 'only the tile b is on');
+
+      await draw(ink, tiles: tiles, scale: 2);
+      expect(tiles.drawn, greaterThan(first + 1), reason: 'a new zoom');
+      tiles.clear();
+    });
+  });
+
+  group('pageRegion', () {
+    test('has its corner a whole number of screen pixels from the page\'s, '
+        'at any zoom', () {
+      for (final zoom in <double>[0.37, 1, 1.25, 2.9]) {
+        final region = pageRegion(
+          CanvasViewport(origin: const Offset(123.4, 5678.9), zoom: zoom),
+          const Size(1000, 700),
+        );
+        for (final corner in <double>[region.left, region.top]) {
+          final pixels = corner * zoom / 64;
+          expect(pixels, closeTo(pixels.roundToDouble(), 1e-6));
+        }
+      }
     });
   });
 
