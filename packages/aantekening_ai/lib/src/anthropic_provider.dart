@@ -324,7 +324,7 @@ class AnthropicProvider implements ChatProvider {
           final index = data['index']! as int;
           final block = blocks[index];
           final json = partialJson.remove(index)?.toString();
-          if (json != null) block['input'] = _parseInput(json);
+          if (json != null) block['input'] = ToolCallPart.inputFrom(json);
           switch (block['type']) {
             case 'text':
               yield CitedSpan(<Citation>[
@@ -463,22 +463,6 @@ class AnthropicProvider implements ChatProvider {
         from.block == to.block;
     return same ? from.toWords(a.from, b.to).toString() : start;
   }
-
-  /// A tool's input as streamed, or, where it came through broken, what
-  /// arrived, for the model to be told so.
-  static Map<String, Object?> _parseInput(String json) {
-    if (json.trim().isEmpty) return const <String, Object?>{};
-    try {
-      final parsed = jsonDecode(json);
-      if (parsed is Map) return parsed.cast<String, Object?>();
-    } on FormatException {
-      // Answered below.
-    }
-    return <String, Object?>{invalidInputKey: json};
-  }
-
-  /// Where a tool's input that could not be read is kept.
-  static const String invalidInputKey = '__invalid_json';
 
   static StopReason _stop(String? reason) => switch (reason) {
     'tool_use' => StopReason.toolUse,

@@ -53,17 +53,17 @@ picked, moved or erased until it is taken out of the background again.
 | `ink` | `strokes`: `{tool, color, width, points}` |
 | `image` | `assetId`, `fit`, `altText?`, `recognizedText?` |
 | `pdf` | `assetId`, `pageIndex`, `extractedText?` |
-| `math` | `source`, `mode` (`linear` \| `latex`), `displayStyle` |
-| `table` | `columnWidths`, `rows` (row-major cells of blocks), `headerRow` |
-| `group` | `childIds`, `label?` |
 
 An image's `fit` is `contain`, `cover` or `stretch`; a picture stretched out
 of its proportions by a side of its selection box becomes `stretch`, so it
 fills the frame it was given.
 
-`math` elements are what earlier builds made for a formula on its own. New
-formulas are written inside text boxes; a `math` element is converted into a
-text box the first time it is double-clicked.
+Builds before 0.1.0 also wrote `math` elements (`source`, `mode`), a formula
+on its own, `table` elements (`columnWidths`, `rows` of cells, each a block)
+and `group` elements (`childIds`). A `math` or `table` element is read as a
+text box holding the formula or the table, where it was, and written as one
+the next time the page is saved; a `group` is left out, its members
+staying.
 
 A highlighter stroke's `width` is the height of its chisel nib, and its
 translucency is in its `color`'s alpha.

@@ -1,6 +1,7 @@
 # 26. A caret placed on the paper
 
-**Status:** accepted; revises how ADR 8's text boxes begin and end
+**Status:** accepted; revises how ADR 8's text boxes begin and end; a caret
+takes no presses, and one a formula is begun at shows as a box, since ADR 33
 
 ## Context
 

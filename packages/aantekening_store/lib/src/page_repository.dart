@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'asset_store.dart';
 import 'away.dart';
 import 'database.dart';
 import 'files/entity_files.dart';
@@ -467,14 +468,7 @@ class PageRepository {
         'WHERE pa.page_id = ? ORDER BY a.id',
         <Object?>[pageId],
       ))
-        AssetRef(
-          id: str(row, 'id'),
-          sha256: str(row, 'sha256'),
-          mimeType: str(row, 'mime_type'),
-          byteSize: integer(row, 'byte_size'),
-          createdAt: integer(row, 'created_at'),
-          originalName: strOrNull(row, 'original_name'),
-        ),
+        AssetStore.assetOf(row),
     ];
     return PageFile(
       page: page,
@@ -579,30 +573,6 @@ class PageRepository {
         );
       }
     });
-  }
-
-  /// Rebuilds the entire full-text index from the stored bodies.
-  ///
-  /// Needed after changing how text is extracted, and as a repair path if the
-  /// index is ever suspected of being stale.
-  Future<int> rebuildSearchIndex() async {
-    final rows = _db.select(
-      'SELECT id, title FROM pages WHERE deleted_at IS NULL',
-    );
-    var count = 0;
-    for (final row in rows) {
-      final pageId = str(row, 'id');
-      final document = await loadDocument(pageId);
-      if (document == null) continue;
-      _db.transaction(() {
-        _reindex(pageId, str(row, 'title'), document.extractSearchText());
-      });
-      count++;
-    }
-    _db.run('INSERT INTO page_search(page_search) VALUES (?)', <Object?>[
-      'optimize',
-    ]);
-    return count;
   }
 
   // ------------------------------------------------------------------ helpers

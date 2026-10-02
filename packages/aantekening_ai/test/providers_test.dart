@@ -528,10 +528,10 @@ void main() {
       );
       final done = await provider(fake.client)
           .chat(
-            ChatRequest(
+            const ChatRequest(
               model: 'qwen',
               system: '',
-              messages: const <ChatMessage>[],
+              messages: <ChatMessage>[],
             ),
           )
           .where((e) => e is MessageDone)
@@ -1044,7 +1044,6 @@ Here are cards from your notes⟦1⟧.
         'Distance over time',
       );
       expect(AnswerBlocks.questionsIn(blocks[1].group(2)!)!.single.answer, 0);
-      expect(AnswerBlocks.kindOf(markdown), AnswerBlocks.flashcards);
     });
   });
 }

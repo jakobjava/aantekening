@@ -8,6 +8,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:meta/meta.dart';
+
 import 'rich_text.dart';
 import 'text_tables.dart';
 
@@ -16,6 +18,7 @@ import 'text_tables.dart';
 /// Offsets count UTF-16 code units of the block's text, with a formula
 /// counting its source. An embed block has offsets 0 (before the object) and 1
 /// (after it).
+@immutable
 class RichPosition implements Comparable<RichPosition> {
   const RichPosition(this.block, this.offset);
 
@@ -45,6 +48,7 @@ class RichPosition implements Comparable<RichPosition> {
 }
 
 /// A selection in a text box, possibly spanning several blocks.
+@immutable
 class RichSelection {
   const RichSelection(this.base, this.extent);
 
@@ -928,7 +932,8 @@ abstract final class RichTextEditing {
 
   // ---------------------------------------------------------------- formulas
 
-  /// Inserts an empty formula at [at] and returns where it went.
+  /// Inserts an empty formula in place of [selection] and returns where it
+  /// went.
   ///
   /// The formula takes the size and colour of [marks] — the formatting the
   /// text around it has — so it matches what it is written among. At an

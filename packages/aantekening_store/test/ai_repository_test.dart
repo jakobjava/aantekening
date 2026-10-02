@@ -90,7 +90,6 @@ void main() {
         'flashcards',
         'summary',
       ]);
-      expect(await ai.countAbout(page), 3);
 
       await ai.deleteThread(thread.id);
       final items = await ai.itemsAbout(page);

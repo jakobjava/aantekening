@@ -4,11 +4,14 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
+
 import '../bytes.dart';
 import 'file_nodes.dart';
 
 /// An extended GUID: a GUID and a number, which together name an object,
 /// an object space or a revision.
+@immutable
 final class ExGuid {
   const ExGuid(this.guid, this.n);
 
@@ -570,7 +573,9 @@ final class _Streams {
   final List<int> _objects;
   final List<int> _spaces;
   final List<int> _contexts;
-  int _object = 0, _space = 0, _context = 0;
+  int _object = 0;
+  int _space = 0;
+  int _context = 0;
 
   ReferencesValue take(ReferenceKind kind, int count, {required bool single}) {
     final (list, at) = switch (kind) {

@@ -68,9 +68,6 @@ class CardReview {
 
   bool isDue(DateTime now) => !due.isAfter(now);
 
-  /// Whether it is learnt well enough to last a few weeks.
-  bool get isMature => !learning && interval >= const Duration(days: 21);
-
   /// Its state after it was remembered as [grade] at [now].
   CardReview after(Grade grade, DateTime now) {
     final gap = next(grade);

@@ -26,7 +26,7 @@ void main() {
     });
 
     test('zooming keeps the point under the cursor fixed', () {
-      const viewport = CanvasViewport(origin: Offset(10, 20), zoom: 1);
+      const viewport = CanvasViewport(origin: Offset(10, 20));
       const focus = Offset(300, 200);
       final pageFocus = viewport.toPage(focus);
 
@@ -126,7 +126,7 @@ void main() {
       final controller = CanvasController();
 
       controller
-        ..beginStroke(const Offset(0, 0))
+        ..beginStroke(Offset.zero)
         ..extendStroke(const Offset(10, 10))
         ..extendStroke(const Offset(20, 0));
       final element = controller.endStroke();
@@ -235,7 +235,7 @@ void main() {
         controller.extendStroke(const Offset(0.01, 0.01));
       }
 
-      expect(controller.wetPoints.length, InkStroke.stride);
+      expect(controller.wetStrokes.single.pointCount, 1);
     });
 
     test('smoothed, the line trails the pointer, steady through its '
@@ -263,7 +263,7 @@ void main() {
         ..cancelStroke();
 
       expect(controller.document.elements, isEmpty);
-      expect(controller.isDrawing, isFalse);
+      expect(controller.wetStrokes, isEmpty);
     });
   });
 
@@ -302,7 +302,6 @@ void main() {
       expect(controller.isShaping, isFalse);
       // Nothing of the stroke as it was drawn is left showing.
       expect(controller.wetStrokes, isEmpty);
-      expect(controller.wetPoints, isEmpty);
     });
 
     test('a stroke that is no shape stays as it was written', () {
@@ -340,9 +339,8 @@ void main() {
     });
 
     test('a shape is picked by itself: writing after it starts anew', () {
-      final controller = drawing(
-        straight(const Offset(0, 0), const Offset(200, 0)),
-      )..snapToShape();
+      final controller = drawing(straight(Offset.zero, const Offset(200, 0)))
+        ..snapToShape();
       final line = controller.endStroke()!;
       controller
         ..beginStroke(const Offset(10, 10))
@@ -403,7 +401,7 @@ void main() {
   group('CanvasController erasing', () {
     CanvasController withStroke() {
       final controller = CanvasController()
-        ..beginStroke(const Offset(0, 0))
+        ..beginStroke(Offset.zero)
         ..extendStroke(const Offset(50, 0))
         ..extendStroke(const Offset(100, 0));
       controller.endStroke();
@@ -469,8 +467,8 @@ void main() {
 
     test('marquee selection takes everything it covers', () {
       final controller = CanvasController()
-        ..addElement(_text('a', x: 0, y: 0))
-        ..addElement(_text('b', x: 400, y: 0))
+        ..addElement(_text('a'))
+        ..addElement(_text('b', x: 400))
         ..selectIn(const Aabb(-10, -10, 200, 200));
 
       expect(controller.selection, <String>{'a'});
@@ -618,10 +616,12 @@ void main() {
 
     test('only visible elements are returned for painting', () {
       final controller = CanvasController()
-        ..addElement(_text('near', x: 0, y: 0))
+        ..addElement(_text('near'))
         ..addElement(_text('far', x: 100000, y: 100000));
 
-      final visible = controller.visibleElements(const Size(800, 600));
+      final visible = controller.elementsIn(
+        controller.viewport.visibleBounds(const Size(800, 600)),
+      );
 
       expect(visible.map((e) => e.id), <String>['near']);
     });

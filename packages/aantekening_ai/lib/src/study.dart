@@ -5,10 +5,12 @@ library;
 
 import 'dart:math' as math;
 
+import '../aantekening_ai.dart' show StudyProfile;
 import 'answer.dart';
 import 'citation_markers.dart';
 import 'conversation.dart';
 import 'loose_json.dart';
+import 'study_profile.dart' show StudyProfile;
 
 /// A kind of study set: the form it takes, and the view it is shown in.
 enum StudyKind {
@@ -194,7 +196,7 @@ sealed class StudySet {
   StudyKind get kind;
 
   /// Whether it holds nothing to study.
-  bool get isEmpty;
+  bool get isEmpty => size == 0;
 
   /// How many things it holds: cards, questions, terms, points, words.
   int get size;
@@ -546,9 +548,6 @@ final class FlashcardSet extends StudySet {
   StudyKind get kind => StudyKind.flashcards;
 
   @override
-  bool get isEmpty => cards.isEmpty;
-
-  @override
   int get size => cards.length;
 
   @override
@@ -598,9 +597,6 @@ final class QuizSet extends StudySet {
   StudyKind get kind => StudyKind.quiz;
 
   @override
-  bool get isEmpty => questions.isEmpty;
-
-  @override
   int get size => questions.length;
 
   @override
@@ -639,9 +635,6 @@ final class Glossary extends StudySet {
 
   @override
   StudyKind get kind => StudyKind.terms;
-
-  @override
-  bool get isEmpty => terms.isEmpty;
 
   @override
   int get size => terms.length;

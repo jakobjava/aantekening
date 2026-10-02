@@ -5,6 +5,17 @@ import 'package:flutter/widgets.dart';
 
 /// Character and word boundaries in laid-out text.
 abstract final class TextBoundaries {
+  /// Where the caret stops moving from [offset] in [text], [forward] or
+  /// back, by a [word] or by a character.
+  static int step(
+    String text,
+    int offset, {
+    required bool forward,
+    required bool word,
+  }) => forward
+      ? (word ? wordAfter(text, offset) : characterAfter(text, offset))
+      : (word ? wordBefore(text, offset) : characterBefore(text, offset));
+
   /// The start of the character before [offset] in [text], a whole
   /// grapheme — an emoji or a letter with its accent — at a time.
   static int characterBefore(String text, int offset) {

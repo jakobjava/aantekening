@@ -1,6 +1,8 @@
 /// The row of tabs beneath the ribbon.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -96,27 +98,29 @@ class _TabState extends ConsumerState<_Tab> {
     final count = ref.read(tabsProvider).tabs.length;
     final bindings = ref.read(shortcutsProvider);
     String? keys(AppCommand command) => bindings.of(command).firstOrNull?.label;
-    showCommandMenu(context, position, <List<MenuCommand>>[
-      <MenuCommand>[
-        MenuCommand('New tab', _tabs.open, shortcut: keys(AppCommand.newTab)),
-        MenuCommand(
-          'Reopen closed tab',
-          _tabs.canReopen ? _tabs.reopen : null,
-          shortcut: keys(AppCommand.reopenTab),
-        ),
-      ],
-      <MenuCommand>[
-        MenuCommand(
-          'Close tab',
-          () => _tabs.close(widget.index),
-          shortcut: keys(AppCommand.closeTab),
-        ),
-        MenuCommand(
-          'Close other tabs',
-          count > 1 ? () => _tabs.closeOthers(widget.index) : null,
-        ),
-      ],
-    ]);
+    unawaited(
+      showCommandMenu(context, position, <List<MenuCommand>>[
+        <MenuCommand>[
+          MenuCommand('New tab', _tabs.open, shortcut: keys(AppCommand.newTab)),
+          MenuCommand(
+            'Reopen closed tab',
+            _tabs.canReopen ? _tabs.reopen : null,
+            shortcut: keys(AppCommand.reopenTab),
+          ),
+        ],
+        <MenuCommand>[
+          MenuCommand(
+            'Close tab',
+            () => _tabs.close(widget.index),
+            shortcut: keys(AppCommand.closeTab),
+          ),
+          MenuCommand(
+            'Close other tabs',
+            count > 1 ? () => _tabs.closeOthers(widget.index) : null,
+          ),
+        ],
+      ]),
+    );
   }
 
   @override

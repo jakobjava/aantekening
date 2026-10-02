@@ -50,8 +50,7 @@ what the AI is given with a question, which today is chosen by full-text search.
   columns do; a box of fixed width does not widen for them.
 * Tables have no merged cells, and rows take the height of their text, not
   one dragged to. Cells pasted into a cell go into it as lines, rather than
-  filling the cells beside it. Free-standing tables from earlier builds are
-  shown but not edited.
+  filling the cells beside it.
 * Tabs keep each page's view, but not its undo history: going to another
   page, in a tab or not, starts that page's history afresh.
 * Colours picked with the colour picker are remembered for the session only.

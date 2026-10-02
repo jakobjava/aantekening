@@ -6,12 +6,15 @@
 /// when the person asks it something, and only to the model they chose.
 library;
 
+import 'aantekening_ai.dart' show ChatProvider;
+import 'src/provider.dart' show ChatProvider;
+
 export 'src/ai_settings.dart';
 export 'src/answer.dart';
 export 'src/anthropic_provider.dart';
 export 'src/citation_markers.dart';
-export 'src/loose_json.dart';
 export 'src/conversation.dart';
+export 'src/loose_json.dart';
 export 'src/note_agent.dart';
 export 'src/note_context.dart';
 export 'src/note_reader.dart';

@@ -8,11 +8,6 @@ void main() {
       expect(Ulid.isValid(Ulid.generate()), isTrue);
     });
 
-    test('round-trips the encoded timestamp', () {
-      final at = DateTime.fromMillisecondsSinceEpoch(1758000000000);
-      expect(Ulid.timestampOf(Ulid.generate(at)), at);
-    });
-
     test('sorts in creation order even within one millisecond', () {
       final ids = List<String>.generate(1000, (_) => Ulid.generate());
       final sorted = List<String>.of(ids)..sort();
@@ -26,7 +21,6 @@ void main() {
         isFalse,
         reason: 'U is not in the alphabet',
       );
-      expect(() => Ulid.timestampOf('nope'), throwsFormatException);
     });
   });
 }

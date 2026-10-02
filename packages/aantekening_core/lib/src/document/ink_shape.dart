@@ -413,7 +413,7 @@ final class BoxShape extends InkShape {
       box.ellipse(box.point(w / 2, rim), w / 2, rim),
       <Vec2>[box.point(0, rim), box.point(0, h - rim)],
       <Vec2>[box.point(w, rim), box.point(w, h - rim)],
-      box.ellipse(bottom, w / 2, rim, from: 0, to: math.pi),
+      box.ellipse(bottom, w / 2, rim, to: math.pi),
       ..._dashed(box.ellipse(bottom, w / 2, rim, from: math.pi), width),
     ];
   }
@@ -425,7 +425,7 @@ final class BoxShape extends InkShape {
     final base = box.point(w / 2, h - rim);
     return <List<Vec2>>[
       <Vec2>[box.point(0, h - rim), box(0.5, 0), box.point(w, h - rim)],
-      box.ellipse(base, w / 2, rim, from: 0, to: math.pi),
+      box.ellipse(base, w / 2, rim, to: math.pi),
       ..._dashed(box.ellipse(base, w / 2, rim, from: math.pi), width),
     ];
   }
@@ -454,7 +454,7 @@ final class BoxShape extends InkShape {
     final equator = radius * 0.3;
     return <List<Vec2>>[
       box.ellipse(centre, radius, box.height / 2),
-      box.ellipse(centre, radius, equator, from: 0, to: math.pi),
+      box.ellipse(centre, radius, equator, to: math.pi),
       ..._dashed(box.ellipse(centre, radius, equator, from: math.pi), width),
     ];
   }
@@ -467,8 +467,8 @@ class _Box {
 
   factory _Box.of(BoxShape shape) {
     final size = shape.size;
-    final across = Vec2(1, 0).rotated(shape.angle);
-    final down = Vec2(0, 1).rotated(shape.angle);
+    final across = const Vec2(1, 0).rotated(shape.angle);
+    final down = const Vec2(0, 1).rotated(shape.angle);
     if (shape.kind.mirrors) {
       return _Box(
         shape.origin,

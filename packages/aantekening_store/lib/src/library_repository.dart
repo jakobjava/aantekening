@@ -81,23 +81,6 @@ class LibraryRepository {
     return notebook;
   }
 
-  /// Persists changes to [notebook], stamping it as modified now.
-  Future<void> updateNotebook(Notebook notebook) async {
-    _db.run(
-      'UPDATE notebooks SET title = ?, position = ?, color = ?, icon = ?, '
-      'updated_at = ?, deleted_at = ? WHERE id = ?',
-      <Object?>[
-        notebook.title,
-        notebook.position,
-        notebook.color,
-        notebook.icon,
-        _now,
-        notebook.deletedAt,
-        notebook.id,
-      ],
-    );
-  }
-
   /// Puts a notebook after the notebook [after], or else first, as the
   /// person arranges them. It is no change to the notebook.
   Future<void> arrangeNotebook(String id, {String? after}) async {
@@ -182,28 +165,6 @@ class LibraryRepository {
 
   // ----------------------------------------------------------------- sections
 
-  /// Lists the direct children of [parentId] within [notebookId], or the
-  /// notebook's top-level sections when [parentId] is null.
-  Future<List<Section>> listSections(
-    String notebookId, {
-    String? parentId,
-    bool includeDeleted = false,
-  }) async {
-    final deletedClause = includeDeleted ? '' : 'AND deleted_at IS NULL ';
-    final rows = parentId == null
-        ? _db.select(
-            'SELECT * FROM sections WHERE notebook_id = ? AND parent_id IS NULL '
-            '$deletedClause ORDER BY position, id',
-            <Object?>[notebookId],
-          )
-        : _db.select(
-            'SELECT * FROM sections WHERE notebook_id = ? AND parent_id = ? '
-            '$deletedClause ORDER BY position, id',
-            <Object?>[notebookId, parentId],
-          );
-    return <Section>[for (final row in rows) sectionOf(row)];
-  }
-
   /// Lists every section in [notebookId] at any depth.
   ///
   /// The sidebar renders the whole tree at once, so it is cheaper to fetch the
@@ -245,24 +206,6 @@ class LibraryRepository {
     );
     _insertSection(section);
     return section;
-  }
-
-  /// Persists changes to [section].
-  Future<void> updateSection(Section section) async {
-    _db.run(
-      'UPDATE sections SET notebook_id = ?, parent_id = ?, title = ?, '
-      'position = ?, color = ?, updated_at = ?, deleted_at = ? WHERE id = ?',
-      <Object?>[
-        section.notebookId,
-        section.parentId,
-        section.title,
-        section.position,
-        section.color,
-        _now,
-        section.deletedAt,
-        section.id,
-      ],
-    );
   }
 
   /// Renames a section.

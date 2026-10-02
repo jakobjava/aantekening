@@ -277,12 +277,7 @@ abstract final class RichTextStyles {
     );
   }
 
-  /// The room on either side of the formula being edited, inside its box, in
-  /// page units. It is part of the line, so the box never covers the text
-  /// beside it.
-  static const double formulaPadding = 4;
-
-  /// How wide an empty formula's box is, to type into.
+  /// How wide a new formula's place in the text is while it is typed.
   static const double emptyFormulaWidth = 18;
 
   /// How opaque a text highlight is: enough to mark the words, not so much
@@ -305,15 +300,4 @@ abstract final class RichTextStyles {
         (255 - (255 - ((argb >> shift) & 0xFF)) * alpha).round();
     return channel(16) << 16 | channel(8) << 8 | channel(0);
   }
-
-  /// A plain span for a block's runs, formulas shown as their source. Used by
-  /// the free-standing tables of earlier builds, which are shown but not
-  /// edited; tables are made in text boxes now.
-  static TextSpan plainSpanFor(TextBlock block, TextStyle base) => TextSpan(
-    style: blockStyle(block.kind, base),
-    children: <InlineSpan>[
-      for (final run in block.runs)
-        TextSpan(text: run.text, style: runStyle(run.marks)),
-    ],
-  );
 }

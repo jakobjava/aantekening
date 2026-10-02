@@ -3,7 +3,10 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:meta/meta.dart';
+
 /// An immutable 2-D point or vector, in page-space logical pixels.
+@immutable
 class Vec2 {
   const Vec2(this.x, this.y);
 
@@ -70,8 +73,9 @@ class Vec2 {
 /// An axis-aligned bounding box.
 ///
 /// The canvas uses these for viewport culling and for the spatial index, so the
-/// hot methods ([intersects], [contains]) are deliberately branch-light and
+/// hot methods ([intersects], [containsPoint]) are deliberately branch-light and
 /// allocation-free.
+@immutable
 class Aabb {
   const Aabb(this.left, this.top, this.right, this.bottom);
 
@@ -147,6 +151,7 @@ class Aabb {
 /// The placement of an element on the infinite canvas.
 ///
 /// Rotation is stored in radians and applied about the frame's centre.
+@immutable
 class Frame {
   const Frame({
     required this.x,
@@ -311,6 +316,7 @@ class Frame {
 /// Used to move, scale and rotate content whose geometry is absolute, such as
 /// ink, where a transform has to be baked into the samples rather than applied
 /// when painting.
+@immutable
 class Affine2D {
   const Affine2D(this.a, this.b, this.c, this.d, this.tx, this.ty);
 

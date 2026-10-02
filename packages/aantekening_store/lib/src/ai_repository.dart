@@ -136,13 +136,6 @@ class AiRepository {
       _thread(row),
   ];
 
-  Future<AiThread?> findThread(String id) async {
-    final rows = _db.select('SELECT * FROM ai_threads WHERE id = ?', <Object?>[
-      id,
-    ]);
-    return rows.isEmpty ? null : _thread(rows.first);
-  }
-
   /// Starts a conversation about [scope], titled [title].
   Future<AiThread> createThread(NoteLink scope, {required String title}) async {
     final now = _now;
@@ -160,11 +153,6 @@ class AiRepository {
     );
     return thread;
   }
-
-  Future<void> renameThread(String id, String title) async => _db.run(
-    'UPDATE ai_threads SET title = ? WHERE id = ?',
-    <Object?>[title, id],
-  );
 
   /// Deletes a conversation and its questions. What was kept of it stays.
   Future<void> deleteThread(String id) async =>
@@ -401,20 +389,6 @@ class AiRepository {
       <Object?>[itemId, ...kept],
     );
   }
-
-  /// How many conversations and kept things there are about [scope], for
-  /// showing whether it has any.
-  Future<int> countAbout(NoteLink scope) async => integer(
-    _db
-        .select(
-          'SELECT (SELECT COUNT(*) FROM ai_items WHERE scope_kind = ?1 AND '
-          'scope_id = ?2) + (SELECT COUNT(*) FROM ai_threads WHERE '
-          'scope_kind = ?1 AND scope_id = ?2) AS n',
-          _scopeArgs(scope.whole),
-        )
-        .first,
-    'n',
-  );
 
   AiItem _item(Row row) => AiItem(
     id: str(row, 'id'),

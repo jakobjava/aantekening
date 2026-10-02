@@ -163,8 +163,9 @@ right-click a cell to add or remove rows and columns.
 ## Formulas
 
 Press Alt+= and type; the formula is typeset live beneath, and in the line
-once finished (Enter or Esc). Arrowing into or clicking a formula shows its
-source again. Tab moves to the next place a structure left to fill in. A
+once finished (Enter or Esc). Its source is typed over the text, so nothing
+around it moves until it is finished. Arrowing into or clicking a formula
+shows its source again. Tab moves to the next place a structure left to fill in. A
 formula alone on its line is typeset large; end it with `#` to centre it.
 
 Formulas are stored as LaTeX and can be typed in LaTeX or in the Simple

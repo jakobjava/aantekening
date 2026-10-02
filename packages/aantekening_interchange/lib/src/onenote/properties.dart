@@ -20,26 +20,13 @@ abstract final class Jcid {
   static const inkContainer = 0x00060014;
   static const outlineGroup = 0x00060019;
   static const tableNode = 0x00060022;
-  static const tableRowNode = 0x00060023;
-  static const tableCellNode = 0x00060024;
   static const titleNode = 0x0006002C;
-  static const pageMetadata = 0x00020030;
-  static const sectionMetadata = 0x00020031;
   static const embeddedFileNode = 0x00060035;
-  static const pageManifestNode = 0x00060037;
-  static const inkDataNode = 0x0002003B;
   static const inkStrokeNode = 0x00020047;
-  static const strokePropertiesNode = 0x00120048;
-  static const paragraphStyleObject = 0x0012004D;
-  static const noteTagSharedDefinition = 0x00120043;
-  static const tocContainer = 0x00020001;
 }
 
 /// Property ids, with their type bits as [MS-ONE] 2.1.12 gives them.
 abstract final class Prop {
-  static const pageWidth = 0x14001C01;
-  static const pageHeight = 0x14001C02;
-  static const outlineElementChildLevel = 0x0C001C03;
   static const bold = 0x08001C04;
   static const italic = 0x08001C05;
   static const underline = 0x08001C06;
@@ -60,7 +47,6 @@ abstract final class Prop {
   static const elementChildNodes = 0x24001C20;
   static const richEditTextUnicode = 0x1C001C22;
   static const listNodes = 0x24001C26;
-  static const notebookManagementEntityGuid = 0x1C001C30;
   static const pictureContainer = 0x20001C3F;
   static const inkScalingX = 0x14001C46;
   static const inkScalingY = 0x14001C47;
@@ -92,7 +78,6 @@ abstract final class Prop {
   static const textRunFormatting = 0x24001E13;
   static const hyperlink = 0x08001E14;
   static const hidden = 0x08001E16;
-  static const textRunIsEmbeddedObject = 0x08001E22;
   static const cellBackgroundColor = 0x14001E26;
   static const imageAltText = 0x1C001E58;
   static const wzHyperlinkUrl = 0x1C001E20;
@@ -112,7 +97,6 @@ abstract final class Prop {
   static const paragraphSpaceBefore = 0x1400342E;
   static const paragraphSpaceAfter = 0x1400342F;
   static const paragraphLineSpacingExact = 0x14003430;
-  static const metaDataObjectsAboveGraphSpace = 0x24003442;
   static const mathInlineObjectType = 0x1400344F;
   static const mathInlineObjectCount = 0x14003450;
   static const mathInlineObjectColumns = 0x0C003451;
@@ -131,7 +115,6 @@ abstract final class Prop {
   static const textExtendedAscii = 0x1C003498;
   static const textRunData = 0x40003499;
   static const sectionDisplayName = 0x1C00349B;
-  static const pictureFileExtension = 0x24003424;
   static const pictureWidth = 0x140034CD;
   static const pictureHeight = 0x140034CE;
 

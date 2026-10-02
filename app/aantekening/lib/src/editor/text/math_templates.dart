@@ -95,7 +95,7 @@ abstract final class MathGalleries {
 
   static const MathGallery script = MathGallery(
     'Script',
-    r'x^{n}',
+    'x^{n}',
     <MathTemplate>[
       MathTemplate(
         'Superscript',

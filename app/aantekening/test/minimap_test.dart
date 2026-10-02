@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:aantekening/src/editor/page_minimap.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
@@ -12,23 +10,10 @@ import 'editor_harness.dart';
 
 void main() {
   late AantekeningStore store;
-  late Directory assets;
   late String pageId;
-
-  setUp(() async {
-    assets = Directory.systemTemp.createTempSync('aantekening_map_test_');
-    store = AantekeningStore.inMemory(assetDirectory: assets);
-    final notebook = await store.library.createNotebook(title: 'Notes');
-    final section = await store.library.createSection(
-      notebookId: notebook.id,
-      title: 'Section',
-    );
-    pageId = (await store.pages.createPage(sectionId: section.id)).id;
-  });
-
-  tearDown(() async {
-    await store.close();
-    if (assets.existsSync()) assets.deleteSync(recursive: true);
+  useTestPage((made, id) {
+    store = made;
+    pageId = id;
   });
 
   /// A page with text boxes down to 3000 units.

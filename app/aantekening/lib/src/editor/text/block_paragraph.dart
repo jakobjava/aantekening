@@ -1,5 +1,5 @@
-/// A paragraph that draws its own caret, selection, formula highlight and
-/// search matches.
+/// A paragraph that draws its own caret, selection and search matches, and
+/// the source of the formula being edited, drawn over the text it is in.
 library;
 
 import 'dart:math' as math;
@@ -18,8 +18,6 @@ class BlockDecoration {
     this.caretAffinity = TextAffinity.downstream,
     this.typingStyle,
     this.composing,
-    this.formula,
-    this.formulaMarks = const <({TextRange range, Color color})>[],
     this.matches = const <TextRange>[],
     this.misspellings = const <TextRange>[],
   });
@@ -43,14 +41,6 @@ class BlockDecoration {
   /// Text the input method is still composing, underlined.
   final TextRange? composing;
 
-  /// The formula being edited, its source and the room either side of it,
-  /// drawn in a tinted, outlined box.
-  final TextRange? formula;
-
-  /// What the highlights in the source of the formula being edited mark,
-  /// each drawn on its colour inside the formula's box.
-  final List<({TextRange range, Color color})> formulaMarks;
-
   /// Words a search found, marked behind the text.
   final List<TextRange> matches;
 
@@ -65,8 +55,6 @@ class BlockDecoration {
       other.caretAffinity == caretAffinity &&
       other.typingStyle == typingStyle &&
       other.composing == composing &&
-      other.formula == formula &&
-      listEquals(other.formulaMarks, formulaMarks) &&
       listEquals(other.matches, matches) &&
       listEquals(other.misspellings, misspellings);
 
@@ -77,8 +65,6 @@ class BlockDecoration {
     caretAffinity,
     typingStyle,
     composing,
-    formula,
-    Object.hashAll(formulaMarks),
     Object.hashAll(matches),
     Object.hashAll(misspellings),
   );
@@ -108,7 +94,7 @@ class BlockPaint {
   /// The wavy line beneath a word spelled wrongly.
   final Color misspellingColor;
 
-  /// The line drawn around the formula being edited, if any.
+  /// Behind the source of the formula being edited, and the line round it.
   final Color? formulaOutline;
   final Color composingColor;
 
@@ -450,139 +436,16 @@ class RenderBlockParagraph extends RenderProxyBox {
       box.toRect(),
   ];
 
-  /// The box drawn round the formula laid out over [start]..[end] — the room
-  /// either side of its source included — one rectangle for each line it is
-  /// on.
-  ///
-  /// The layout reports a separate rectangle for each stretch of the line
-  /// laid out in one style, which drawn as they are would be a row of boxes.
-  /// The room at one end may wrap onto a line of its own in a narrow box;
-  /// that line is left out, rather than drawn as a sliver of box beside text
-  /// the formula is not on.
-  List<Rect> formulaRects(int start, int end) {
-    final source = _lines(rangeRects(start + 1, end - 1));
-    // An empty formula is nothing but the room to type in.
-    final lines = source.isEmpty ? _lines(rangeRects(start, end)) : source;
-    if (source.isNotEmpty) {
-      for (final room in <Rect>[
-        ...rangeRects(start, start + 1),
-        ...rangeRects(end - 1, end),
-      ]) {
-        final line = _lineOf(lines, room);
-        if (line >= 0) lines[line] = lines[line].expandToInclude(room);
-      }
-    }
-    return <Rect>[
-      for (final rect in lines)
-        Rect.fromLTRB(rect.left, rect.top + 1, rect.right, rect.bottom - 1),
-    ];
-  }
-
-  /// [rects] gathered into one rectangle for each line they lie on.
-  static List<Rect> _lines(List<Rect> rects) {
-    final lines = <Rect>[];
-    for (final rect in rects) {
-      final line = _lineOf(lines, rect);
-      if (line < 0) {
-        lines.add(rect);
-      } else {
-        lines[line] = lines[line].expandToInclude(rect);
-      }
-    }
-    return lines;
-  }
-
-  /// Which of [lines] [rect] lies on — the one it overlaps by more than half
-  /// its height — or -1 for none of them.
-  static int _lineOf(List<Rect> lines, Rect rect) => lines.indexWhere(
-    (other) =>
-        math.min(other.bottom, rect.bottom) - math.max(other.top, rect.top) >
-        math.min(other.height, rect.height) / 2,
-  );
-
-  /// Where the caret is drawn, or null where none is: [caretRect] for the
-  /// caret the decoration names, kept within the box round the formula being
-  /// edited while it stands in that.
+  /// Where the caret is drawn, or null where none is.
   Rect? get drawnCaret {
     final caret = _decoration.caret;
     if (caret == null) return null;
-    final rect = caretRect(
-      caret,
-      _decoration.caretAffinity,
-      _decoration.typingStyle,
-    );
-    final formula = _decoration.formula;
-    if (formula == null || caret < formula.start || caret > formula.end) {
-      return rect;
-    }
-    return _inside(formulaRects(formula.start, formula.end), rect);
-  }
-
-  /// The rectangles covering laid-out range [start]..[end], those in the
-  /// formula being edited kept within the box round it, as the caret is.
-  List<Rect> _rectsIn(int start, int end) {
-    final formula = _decoration.formula;
-    if (formula == null || end <= formula.start || start >= formula.end) {
-      return rangeRects(start, end);
-    }
-    final boxes = formulaRects(formula.start, formula.end);
-    final from = math.max(start, formula.start);
-    final to = math.min(end, formula.end);
-    return <Rect>[
-      if (start < from) ...rangeRects(start, from),
-      for (final rect in rangeRects(from, to)) _inside(boxes, rect),
-      if (to < end) ...rangeRects(to, end),
-    ];
-  }
-
-  /// [caret] kept within whichever of [boxes] it stands on, so the caret in a
-  /// formula never reaches past the box drawn round it.
-  static Rect _inside(List<Rect> boxes, Rect caret) {
-    for (final box in boxes) {
-      if (caret.bottom <= box.top || caret.top >= box.bottom) continue;
-      return Rect.fromLTRB(
-        caret.left,
-        math.max(caret.top, box.top),
-        caret.right,
-        math.min(caret.bottom, box.bottom),
-      );
-    }
-    return caret;
+    return caretRect(caret, _decoration.caretAffinity, _decoration.typingStyle);
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
     final canvas = context.canvas;
-    final formula = _decoration.formula;
-    final boxes = formula == null
-        ? const <Rect>[]
-        : <Rect>[
-            for (final rect in formulaRects(formula.start, formula.end))
-              rect.shift(offset),
-          ];
-    if (formula != null) {
-      final fill = Paint()..color = _blockPaint.formulaColor;
-      for (final box in boxes) {
-        canvas.drawRect(box, fill);
-      }
-      for (final mark in _decoration.formulaMarks) {
-        final paint = Paint()..color = mark.color;
-        for (final rect in _rectsIn(mark.range.start, mark.range.end)) {
-          canvas.drawRect(rect.shift(offset), paint);
-        }
-      }
-      final outline = _blockPaint.formulaOutline;
-      if (outline != null) {
-        final stroke = Paint()
-          ..color = outline
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = _caretWidth * 0.7;
-        for (final box in boxes) {
-          canvas.drawRect(box, stroke);
-        }
-      }
-    }
-
     if (_decoration.matches.isNotEmpty) {
       final paint = Paint()..color = _blockPaint.matchColor;
       for (final match in _decoration.matches) {
@@ -598,7 +461,7 @@ class RenderBlockParagraph extends RenderProxyBox {
     final selection = _decoration.selection;
     if (selection != null && !selection.isCollapsed) {
       final paint = Paint()..color = _blockPaint.selectionColor;
-      for (final rect in _rectsIn(selection.start, selection.end)) {
+      for (final rect in rangeRects(selection.start, selection.end)) {
         canvas.drawRect(rect.shift(offset), paint);
       }
     }

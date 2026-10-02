@@ -134,18 +134,13 @@ void main() {
         parentId: sub.id,
       );
 
-      expect(
-        (await store.library.listSections(book.id)).map((s) => s.title),
-        <String>['Mechanics'],
-      );
-      expect(
-        (await store.library.listSections(
-          book.id,
-          parentId: top.id,
-        )).map((s) => s.title),
-        <String>['Kinematics'],
-      );
-      expect((await store.library.listAllSections(book.id)).length, 3);
+      final sections = await store.library.listAllSections(book.id);
+      Iterable<String> under(String? parent) => sections
+          .where((section) => section.parentId == parent)
+          .map((section) => section.title);
+      expect(under(null), <String>['Mechanics']);
+      expect(under(top.id), <String>['Kinematics']);
+      expect(sections, hasLength(3));
     });
 
     test('refuses to move a section inside its own subtree', () async {
@@ -888,13 +883,18 @@ void main() {
         title: 'Formula',
       );
       final document = PageDocument.empty(id: page.id).withElementAdded(
-        MathElement(
+        TextElement(
           id: Ulid.generate(),
           frame: const Frame(x: 0, y: 0, width: 100, height: 40),
           createdAt: 0,
           updatedAt: 0,
-          source: r'\int_0^\infty e^{-x^2} dx',
-          mode: MathMode.latex,
+          blocks: const <TextBlock>[
+            TextBlock(
+              runs: <TextRun>[
+                TextRun.math(r'\int_0^\infty e^{-x^2} dx', MathMode.latex),
+              ],
+            ),
+          ],
         ),
       );
       await store.pages.saveDocument(page.id, document);
@@ -906,17 +906,6 @@ void main() {
       await addPage('Notes', 'content');
       expect(await store.search.search('  '), isEmpty);
       expect(await store.search.count('  '), 0);
-    });
-
-    test('rebuilding the index reproduces the same results', () async {
-      await addPage('Notes', 'reindexed content');
-      store.database.run('DELETE FROM page_search');
-      expect(await store.search.search('reindexed'), isEmpty);
-
-      final rebuilt = await store.pages.rebuildSearchIndex();
-
-      expect(rebuilt, 1);
-      expect(await store.search.search('reindexed'), isNotEmpty);
     });
   });
 
@@ -999,141 +988,6 @@ void main() {
         AssetStore.mimeTypeForPath('/tmp/a.xyz'),
         'application/octet-stream',
       );
-    });
-  });
-
-  group('embeddings', () {
-    Future<String> seedPage() async {
-      final sectionId = await workspace.seedSection();
-      final page = await store.pages.createPage(sectionId: sectionId);
-      return page.id;
-    }
-
-    test('ranks chunks by cosine similarity', () async {
-      final pageId = await seedPage();
-      await store.embeddings.replacePageChunks(
-        pageId,
-        'test-model',
-        <EmbeddedChunk>[
-          EmbeddedChunk(
-            pageId: pageId,
-            chunkIndex: 0,
-            text: 'aligned',
-            vector: Float32List.fromList(<double>[1, 0, 0]),
-          ),
-          EmbeddedChunk(
-            pageId: pageId,
-            chunkIndex: 1,
-            text: 'orthogonal',
-            vector: Float32List.fromList(<double>[0, 1, 0]),
-          ),
-        ],
-      );
-
-      final hits = await store.embeddings.nearest(
-        Float32List.fromList(<double>[1, 0, 0]),
-        model: 'test-model',
-        minSimilarity: -1,
-      );
-
-      expect(hits.first.text, 'aligned');
-      expect(hits.first.similarity, closeTo(1, 1e-6));
-      expect(hits.last.similarity, closeTo(0, 1e-6));
-    });
-
-    test('drops matches below the similarity floor', () async {
-      final pageId = await seedPage();
-      await store.embeddings.replacePageChunks(
-        pageId,
-        'test-model',
-        <EmbeddedChunk>[
-          EmbeddedChunk(
-            pageId: pageId,
-            chunkIndex: 0,
-            text: 'orthogonal',
-            vector: Float32List.fromList(<double>[0, 1, 0]),
-          ),
-        ],
-      );
-
-      final hits = await store.embeddings.nearest(
-        Float32List.fromList(<double>[1, 0, 0]),
-        model: 'test-model',
-      );
-
-      expect(hits, isEmpty);
-    });
-
-    test('ignores models and dimensions that do not match the query', () async {
-      final pageId = await seedPage();
-      await store.embeddings.replacePageChunks(
-        pageId,
-        'other-model',
-        <EmbeddedChunk>[
-          EmbeddedChunk(
-            pageId: pageId,
-            chunkIndex: 0,
-            text: 'wrong model',
-            vector: Float32List.fromList(<double>[1, 0, 0]),
-          ),
-        ],
-      );
-
-      final hits = await store.embeddings.nearest(
-        Float32List.fromList(<double>[1, 0, 0]),
-        model: 'test-model',
-        minSimilarity: -1,
-      );
-
-      expect(hits, isEmpty);
-      expect(await store.embeddings.chunkCount(), 1);
-    });
-
-    test('replacing chunks removes the previous generation', () async {
-      final pageId = await seedPage();
-      Future<void> write(String text) => store.embeddings.replacePageChunks(
-        pageId,
-        'test-model',
-        <EmbeddedChunk>[
-          EmbeddedChunk(
-            pageId: pageId,
-            chunkIndex: 0,
-            text: text,
-            vector: Float32List.fromList(<double>[1, 0, 0]),
-          ),
-        ],
-      );
-
-      await write('first');
-      await write('second');
-
-      expect(await store.embeddings.chunkCount(model: 'test-model'), 1);
-      final hits = await store.embeddings.nearest(
-        Float32List.fromList(<double>[1, 0, 0]),
-        model: 'test-model',
-        minSimilarity: -1,
-      );
-      expect(hits.single.text, 'second');
-    });
-
-    test('deleting a page cascades to its embeddings', () async {
-      final pageId = await seedPage();
-      await store.embeddings.replacePageChunks(
-        pageId,
-        'test-model',
-        <EmbeddedChunk>[
-          EmbeddedChunk(
-            pageId: pageId,
-            chunkIndex: 0,
-            text: 'gone',
-            vector: Float32List.fromList(<double>[1, 0, 0]),
-          ),
-        ],
-      );
-
-      await store.pages.purgePage(pageId);
-
-      expect(await store.embeddings.chunkCount(), 0);
     });
   });
 }

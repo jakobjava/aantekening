@@ -228,8 +228,8 @@ void main() {
       }
     }
 
-    RenderBlockParagraph paragraphOf(WidgetTester tester) =>
-        tester.renderObject<RenderBlockParagraph>(find.byType(BlockParagraph));
+    RenderBlockParagraph paragraphOf(WidgetTester tester) => tester
+        .renderObject<RenderBlockParagraph>(find.byType(BlockParagraph).first);
 
     /// Right-clicks the laid-out characters [start]..[end] and picks
     /// [choice] from the menu.
@@ -271,15 +271,21 @@ void main() {
     ) async {
       await open(tester);
       await startTextBox(tester);
-      await type(tester, 'teh cat ');
+      // The source is typed over the formula's own line: the word is on
+      // the line above, where it can be right-clicked.
+      await type(tester, 'teh cat');
+      await press(tester, LogicalKeyboardKey.enter);
       await press(tester, LogicalKeyboardKey.equal, alt: true);
       await type(tester, 'x^2');
       await letCheckerAnswer(tester);
 
       await correct(tester, 0, 3, 'the');
-      final runs = blocksOf(tester).single.runs;
-      expect(runs.first.text, 'the cat ');
-      expect(runs.last, const TextRun.math('x^2', MathMode.latex));
+      final blocks = blocksOf(tester);
+      expect(blocks.first.plainText, 'the cat');
+      expect(
+        blocks.last.runs.single,
+        const TextRun.math('x^2', MathMode.latex),
+      );
       expect(inFormula(tester), isFalse);
     });
   });

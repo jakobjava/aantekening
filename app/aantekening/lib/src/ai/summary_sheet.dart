@@ -178,7 +178,6 @@ class _FormulaCard extends StatelessWidget {
             child: MathView(
               source: formula.latex,
               mode: MathMode.latex,
-              displayStyle: true,
               textStyle: TextStyle(fontSize: 19, color: tones.text),
             ),
           ),

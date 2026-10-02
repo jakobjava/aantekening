@@ -1,10 +1,12 @@
 /// Finding the tables among a text box's blocks, and keeping them whole.
 library;
 
+import 'package:meta/meta.dart';
 import 'rich_text.dart';
 
 /// A table among a text box's blocks: the blocks from [start] up to, but not
 /// including, [end], every one of them a line of one of its cells.
+@immutable
 class TextTable {
   const TextTable({
     required this.start,

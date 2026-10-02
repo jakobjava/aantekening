@@ -8,6 +8,7 @@ import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import 'formula_overlay.dart' show FormulaOverlay;
 import 'shrink_to_width.dart';
 import 'text_styles.dart';
 
@@ -27,7 +28,7 @@ class RunLayout {
     required this.viewStart,
     required this.viewEnd,
     required this.collapsed,
-    this.padded = false,
+    this.open = false,
   });
 
   /// The run's index in its block.
@@ -39,29 +40,22 @@ class RunLayout {
   final int viewStart;
   final int viewEnd;
 
-  /// Whether this run is a typeset formula, standing in the laid-out text as a
+  /// Whether this run is a formula, standing in the laid-out text as a
   /// single [objectReplacementCharacter].
   final bool collapsed;
 
-  /// Whether this is the formula being edited, laid out with a space of its
-  /// own either side of its source: an [objectReplacementCharacter] that is
-  /// in the laid-out text but not in the model.
-  final bool padded;
-
-  /// Where the run starts and ends in the laid-out text, the space either
-  /// side of the formula being edited included.
-  int get outerStart => padded ? viewStart - 1 : viewStart;
-  int get outerEnd => padded ? viewEnd + 1 : viewEnd;
+  /// Whether this is the formula being edited: its place in the text is
+  /// kept, and its source drawn over it ([FormulaOverlay]).
+  final bool open;
 }
 
 /// A block as it is laid out: which formula (if any) is open for editing, the
 /// text the layout and the input method see, and the offset mapping between
 /// that text and the model.
 ///
-/// Every formula is typeset except the one being edited, which is shown as
-/// its source, so the caret moves through it like any other text. That one
-/// has a little room of its own either side, so the box drawn round it sits
-/// clear of the text beside it.
+/// Every formula stands in the text as one character, the one being edited
+/// too: its place is kept as it was while its source is typed over it, so
+/// nothing around it moves.
 class BlockView {
   BlockView(this.block, {this.openRun}) {
     final buffer = StringBuffer();
@@ -70,31 +64,22 @@ class BlockView {
     for (var i = 0; i < block.runs.length; i++) {
       final run = block.runs[i];
       final length = run.text.length;
-      final collapsed = run.isMath && i != openRun;
-      final padded = run.isMath && i == openRun;
-      final lead = padded ? 1 : 0;
+      final collapsed = run.isMath;
       final viewLength = collapsed ? 1 : length;
       runs.add(
         RunLayout(
           index: i,
           modelStart: model,
           modelEnd: model + length,
-          viewStart: view + lead,
-          viewEnd: view + lead + viewLength,
+          viewStart: view,
+          viewEnd: view + viewLength,
           collapsed: collapsed,
-          padded: padded,
+          open: i == openRun,
         ),
       );
-      if (padded) {
-        buffer
-          ..write(objectReplacementCharacter)
-          ..write(run.text)
-          ..write(objectReplacementCharacter);
-      } else {
-        buffer.write(collapsed ? objectReplacementCharacter : run.text);
-      }
+      buffer.write(collapsed ? objectReplacementCharacter : run.text);
       model += length;
-      view += viewLength + 2 * lead;
+      view += viewLength;
     }
     text = buffer.toString();
   }
@@ -113,17 +98,13 @@ class BlockView {
   /// display style, as OneNote does with such equations. It sits where its
   /// paragraph is aligned: centred only if that is centred.
   bool get isDisplayFormula =>
-      block.runs.length == 1 && block.runs.single.isMath && openRun == null;
+      block.runs.length == 1 && block.runs.single.isMath;
 
-  /// Maps a model offset to the laid-out text. An offset inside a typeset
-  /// formula snaps to its start; the ends of the formula being edited map
-  /// inside the room either side of it, where its source starts and ends.
+  /// Maps a model offset to the laid-out text. An offset inside a formula
+  /// snaps to its start.
   int toView(int model) {
     for (final run in runs) {
-      if (run.padded && model >= run.modelStart && model <= run.modelEnd) {
-        return run.viewStart + model - run.modelStart;
-      }
-      if (model <= run.modelStart) return run.outerStart;
+      if (model <= run.modelStart) return run.viewStart;
       if (model < run.modelEnd) {
         return run.collapsed
             ? run.viewStart
@@ -131,11 +112,10 @@ class BlockView {
       }
     }
     final last = runs.isEmpty ? null : runs.last;
-    return last == null ? model : last.outerEnd + model - last.modelEnd;
+    return last == null ? model : last.viewEnd + model - last.modelEnd;
   }
 
-  /// Maps an offset in the laid-out text back to the model. The room either
-  /// side of the formula being edited belongs to its nearer end.
+  /// Maps an offset in the laid-out text back to the model.
   int toModel(int view) {
     for (final run in runs) {
       if (view <= run.viewStart) return run.modelStart;
@@ -144,16 +124,16 @@ class BlockView {
             ? run.modelStart
             : run.modelStart + view - run.viewStart;
       }
-      if (view <= run.outerEnd) return run.modelEnd;
     }
     final last = runs.isEmpty ? null : runs.last;
-    return last == null ? view : last.modelEnd + view - last.outerEnd;
+    return last == null ? view : last.modelEnd + view - last.viewEnd;
   }
 
-  /// The typeset formula occupying laid-out offset [view], if any.
+  /// The typeset formula occupying laid-out offset [view], if any: not the
+  /// one being edited.
   RunLayout? collapsedAt(int view) {
     for (final run in runs) {
-      if (run.collapsed && run.viewStart == view) return run;
+      if (run.collapsed && !run.open && run.viewStart == view) return run;
     }
     return null;
   }
@@ -161,9 +141,16 @@ class BlockView {
   /// The run with index [index].
   RunLayout runAt(int index) => runs[index];
 
-  /// Builds the span the layout draws, with links and the formula being
-  /// edited drawn in [mark].
-  InlineSpan span({required TextStyle base, required Color mark}) {
+  /// Builds the span the layout draws, with links drawn in [mark].
+  ///
+  /// The formula being edited keeps the place it had when it was [opened],
+  /// as LaTeX, empty for a new one: as large as it was typeset then, and
+  /// blank, its source being drawn over it.
+  InlineSpan span({
+    required TextStyle base,
+    required Color mark,
+    String opened = '',
+  }) {
     final blockStyle = RichTextStyles.blockStyleOf(block, base);
     final display = isDisplayFormula;
 
@@ -171,7 +158,7 @@ class BlockView {
       style: blockStyle,
       children: <InlineSpan>[
         for (var i = 0; i < block.runs.length; i++)
-          _runSpan(block.runs[i], i, blockStyle, display, mark),
+          _runSpan(block.runs[i], i, blockStyle, display, mark, opened),
       ],
     );
   }
@@ -182,31 +169,12 @@ class BlockView {
     TextStyle blockStyle,
     bool display,
     Color mark,
+    String opened,
   ) {
     if (!run.isMath) {
       return TextSpan(
         text: run.text,
         style: RichTextStyles.runStyle(run.marks, link: mark),
-      );
-    }
-    if (index == openRun) {
-      final source = RichTextStyles.formulaSource(
-        blockStyle,
-        run.marks,
-        accent: mark,
-      );
-      const padding = RichTextStyles.formulaPadding;
-      return TextSpan(
-        children: <InlineSpan>[
-          _room(padding, source),
-          TextSpan(text: run.text, style: source),
-          _room(
-            run.text.isEmpty
-                ? RichTextStyles.emptyFormulaWidth - padding
-                : padding,
-            source,
-          ),
-        ],
       );
     }
     // A formula in the inverse of what is beneath is typeset white, and
@@ -217,6 +185,30 @@ class BlockView {
       link: mark,
     );
     final style = marks == null ? blockStyle : blockStyle.merge(marks);
+    if (index == openRun) {
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: opened.trim().isEmpty
+            ? _room(
+                RichTextStyles.emptyFormulaWidth,
+                RichTextStyles.formulaSource(
+                  blockStyle,
+                  run.marks,
+                  accent: mark,
+                ),
+              )
+            : Opacity(
+                opacity: 0,
+                child: TypesetFormulas.of(
+                  opened,
+                  MathMode.latex,
+                  display,
+                  style,
+                ),
+              ),
+      );
+    }
     final formula = TypesetFormulas.of(
       run.text,
       run.math!,
@@ -259,17 +251,13 @@ class _RenderInverting extends RenderProxyBox {
 
 /// A blank [width] wide, as tall as a line in [style] and on its baseline,
 /// so the caret beside it is as tall as it is beside the letters.
-InlineSpan _room(double width, TextStyle style) => WidgetSpan(
-  alignment: PlaceholderAlignment.baseline,
-  baseline: TextBaseline.alphabetic,
-  child: SizedBox(
-    width: width,
-    child: Text(
-      '\u200B',
-      style: style,
-      textScaler: TextScaler.noScaling,
-      maxLines: 1,
-    ),
+Widget _room(double width, TextStyle style) => SizedBox(
+  width: width,
+  child: Text(
+    '\u200B',
+    style: style,
+    textScaler: TextScaler.noScaling,
+    maxLines: 1,
   ),
 );
 

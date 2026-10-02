@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'canvas_controller.dart';
 import 'canvas_viewport.dart';
 import 'lasso.dart';
+import 'page_space.dart' show PageSpace;
 import 'selection_handles.dart';
 import 'sheet_painter.dart';
 import 'stroke_geometry.dart';

@@ -6,6 +6,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'icons.dart';
+
 /// A symbol, drawn in lines on a grid of twelve by twelve.
 enum MarkShape {
   close,
@@ -49,14 +51,7 @@ class Mark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icons = IconTheme.of(context);
-    final color =
-        this.color ??
-        icons.color?.withValues(
-          alpha: (icons.color!.a * (icons.opacity ?? 1)).clamp(0, 1),
-        ) ??
-        DefaultTextStyle.of(context).style.color ??
-        const Color(0xFF000000);
+    final color = this.color ?? iconColorOf(context);
     return SizedBox.square(
       dimension: size,
       child: CustomPaint(painter: _MarkPainter(shape, color)),

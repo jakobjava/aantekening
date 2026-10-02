@@ -6,6 +6,7 @@
 library;
 
 import '../../arrangement/arrangement.dart';
+import '../../look/icons.dart';
 
 /// A ribbon tab.
 enum RibbonTab {
@@ -37,8 +38,8 @@ enum RibbonTab {
 
 /// A button, menu or gallery on the ribbon.
 enum RibbonItem {
-  undo('Undo'),
-  redo('Redo'),
+  undo('Undo', icon: AppIcon.undo),
+  redo('Redo', icon: AppIcon.redo),
   font('Font'),
   fontSize('Font size'),
   bold('Bold'),
@@ -48,39 +49,39 @@ enum RibbonItem {
   inlineCode('Inline code'),
   highlight('Highlight'),
   textColor('Text colour'),
-  bullets('Bullets'),
-  numbering('Numbering'),
-  todo('To-do'),
-  outdent('Outdent'),
-  indent('Indent'),
+  bullets('Bullets', icon: AppIcon.bullets),
+  numbering('Numbering', icon: AppIcon.numbers),
+  todo('To-do', icon: AppIcon.todo),
+  outdent('Outdent', icon: AppIcon.outdent),
+  indent('Indent', icon: AppIcon.indent),
   paragraphStyle('Paragraph style'),
-  formula('Formula'),
+  formula('Formula', icon: AppIcon.formula),
   formulaSyntax('Formula syntax'),
-  mathCheatSheet('Cheat sheet', large: true),
-  textBox('Text box', large: true),
-  picture('Picture', large: true),
-  pdf('PDF printout', large: true),
-  insertFormula('Formula', large: true),
-  addSheet('Add sheet', large: true),
-  paper('Paper'),
-  moveSheetUp('Move up'),
-  moveSheetDown('Move down'),
-  deleteSheet('Delete sheet'),
-  select('Select', large: true),
-  lasso('Lasso select', large: true),
-  eraser('Eraser', large: true),
-  pen('Pen', large: true),
-  highlighter('Highlighter', large: true),
+  mathCheatSheet('Cheat sheet', large: true, icon: AppIcon.cheatSheet),
+  textBox('Text box', large: true, icon: AppIcon.textBox),
+  picture('Picture', large: true, icon: AppIcon.picture),
+  pdf('PDF printout', large: true, icon: AppIcon.pdf),
+  insertFormula('Formula', large: true, icon: AppIcon.formula),
+  addSheet('Add sheet', large: true, icon: AppIcon.addSheet),
+  paper('Paper', icon: AppIcon.paper),
+  moveSheetUp('Move up', icon: AppIcon.sheetUp),
+  moveSheetDown('Move down', icon: AppIcon.sheetDown),
+  deleteSheet('Delete sheet', icon: AppIcon.bin),
+  select('Select', large: true, icon: AppIcon.select),
+  lasso('Lasso select', large: true, icon: AppIcon.lasso),
+  eraser('Eraser', large: true, icon: AppIcon.eraser),
+  pen('Pen', large: true, icon: AppIcon.pen),
+  highlighter('Highlighter', large: true, icon: AppIcon.highlighter),
   shapes('Shapes', large: true),
   inkColour('Ink colour', large: true),
   inkThickness('Thickness', large: true),
-  zoomIn('Zoom in'),
-  zoomOut('Zoom out'),
+  zoomIn('Zoom in', icon: AppIcon.zoomIn),
+  zoomOut('Zoom out', icon: AppIcon.zoomOut),
   zoomLevel('Actual size', large: true),
-  fitPage('Fit page', large: true),
-  pageLayout('Pages', large: true),
-  pagePreview('Page preview', large: true),
-  resetRibbon('Reset ribbon', large: true),
+  fitPage('Fit page', large: true, icon: AppIcon.fitPage),
+  pageLayout('Pages', large: true, icon: AppIcon.sheets),
+  pagePreview('Page preview', large: true, icon: AppIcon.pagePreview),
+  resetRibbon('Reset ribbon', large: true, icon: AppIcon.reset),
   mathFraction('Fraction', large: true),
   mathScript('Script', large: true),
   mathRadical('Radical', large: true),
@@ -95,12 +96,17 @@ enum RibbonItem {
   mathRelations('Relations', large: true),
   mathArrows('Arrows', large: true),
   mathOther('Other', large: true),
-  spelling('Spelling', large: true),
-  spellingLanguages('Languages', large: true);
+  spelling('Spelling', large: true, icon: AppIcon.spelling),
+  spellingLanguages('Languages', large: true, icon: AppIcon.languages);
 
-  const RibbonItem(this.label, {this.large = false});
+  const RibbonItem(this.label, {this.large = false, this.icon});
 
   final String label;
+
+  /// The icon on the button, if it has one: those drawn some other way —
+  /// formatting as the letters it formats, a colour, a formula, the zoom —
+  /// have none.
+  final AppIcon? icon;
 
   /// Takes the full height of the ribbon — a tall button with its name under
   /// the icon, or a gallery — rather than one of the two rows that small

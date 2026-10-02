@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:aantekening/src/editor/text/text_styles.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
@@ -45,10 +44,8 @@ Future<({Uint8List pixels, int width})> _drawnOverHalves(
   );
   final render =
       boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-  final image = (await tester.runAsync(() => render.toImage()))!;
-  final bytes = (await tester.runAsync(
-    () => image.toByteData(format: ui.ImageByteFormat.rawRgba),
-  ))!;
+  final image = (await tester.runAsync(render.toImage))!;
+  final bytes = (await tester.runAsync(image.toByteData))!;
   return (pixels: bytes.buffer.asUint8List(), width: image.width);
 }
 

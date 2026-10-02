@@ -112,8 +112,7 @@ sealed class NoteElement {
   };
 
   /// Copies of [elements] to paste: each with an identifier of its own,
-  /// moved by [offset] and made at [now], a group keeping those of its
-  /// members copied with it.
+  /// moved by [offset] and made at [now].
   static List<NoteElement> copiesOf(
     List<NoteElement> elements, {
     required int now,
@@ -130,10 +129,6 @@ sealed class NoteElement {
           'frame': element.frame.translate(offset.x, offset.y).toJson(),
           'createdAt': now,
           'updatedAt': now,
-          if (element is GroupElement)
-            'childIds': <String>[
-              for (final child in element.childIds) ?ids[child],
-            ],
         }),
     ];
   }
@@ -150,11 +145,57 @@ sealed class NoteElement {
       'ink' => InkElement.fromJson(json),
       'image' => ImageElement.fromJson(json),
       'pdf' => PdfElement.fromJson(json),
-      'math' => MathElement.fromJson(json),
-      'table' => TableElement.fromJson(json),
-      'group' => GroupElement.fromJson(json),
+      // A formula or a table on the page by itself, from before they were
+      // written in text boxes, is read as a text box holding it; a group,
+      // which nothing made, is left out, its members staying.
+      'math' => _boxHolding(json, <TextBlock>[
+        TextBlock(
+          runs: <TextRun>[
+            TextRun.math(
+              readString(json, 'source'),
+              readEnum(json, 'mode', MathMode.values, MathMode.linear),
+            ),
+          ],
+        ),
+      ]),
+      'table' => _boxHolding(json, _tableLines(json)),
       _ => null,
     };
+  }
+
+  /// A text box holding [blocks], where the element [json] describes was.
+  static TextElement _boxHolding(
+    Map<String, Object?> json,
+    List<TextBlock> blocks,
+  ) => TextElement(
+    id: readString(json, 'id'),
+    frame: TextElement.frameAround(Frame.fromJson(readObject(json, 'frame'))),
+    createdAt: readInt(json, 'createdAt'),
+    updatedAt: readInt(json, 'updatedAt'),
+    z: readInt(json, 'z'),
+    locked: readBool(json, 'locked'),
+    blocks: blocks,
+  );
+
+  /// The cells of a table that stood on the page by itself, as the lines of
+  /// a table in a text box.
+  static List<TextBlock> _tableLines(Map<String, Object?> json) {
+    final widths = readDoubleList(json, 'columnWidths');
+    final rows = json['rows'];
+    return <TextBlock>[
+      if (rows is List)
+        for (final (row, cells) in rows.indexed)
+          if (cells is List)
+            for (final (column, cell) in cells.indexed)
+              if (cell is Map)
+                TextBlock.fromJson(cell.cast<String, Object?>()).inCell(
+                  TableCell(
+                    row,
+                    column,
+                    width: column < widths.length ? widths[column] : null,
+                  ),
+                ),
+    ];
   }
 }
 
@@ -648,282 +689,6 @@ final class PdfElement extends NoteElement {
     z: readInt(json, 'z'),
     locked: readBool(json, 'locked'),
     extractedText: readStringOrNull(json, 'extractedText'),
-  );
-}
-
-/// A mathematical expression.
-///
-/// The [source] is always stored in the mode it was authored in, and linear
-/// input is translated to LaTeX only at render time. Round-tripping through
-/// LaTeX would destroy the user's original keystrokes and make the expression
-/// harder to edit later.
-final class MathElement extends NoteElement {
-  const MathElement({
-    required super.id,
-    required super.frame,
-    required super.createdAt,
-    required super.updatedAt,
-    required this.source,
-    super.z,
-    super.locked,
-    this.mode = MathMode.linear,
-    this.displayStyle = true,
-  });
-
-  final String source;
-  final MathMode mode;
-
-  /// Whether to typeset in display style (centred, full-size operators) rather
-  /// than inline style.
-  final bool displayStyle;
-
-  @override
-  String get type => 'math';
-
-  @override
-  void writeSearchText(StringBuffer out) {
-    // The raw source is indexed so that searching "frac" or "alpha" finds the
-    // formula, alongside any plain-text fragments it contains.
-    out.writeln(source);
-  }
-
-  MathElement copyWith({
-    Frame? frame,
-    int? z,
-    bool? locked,
-    int? updatedAt,
-    String? source,
-    MathMode? mode,
-    bool? displayStyle,
-  }) => MathElement(
-    id: id,
-    frame: frame ?? this.frame,
-    createdAt: createdAt,
-    updatedAt: updatedAt ?? this.updatedAt,
-    source: source ?? this.source,
-    z: z ?? this.z,
-    locked: locked ?? this.locked,
-    mode: mode ?? this.mode,
-    displayStyle: displayStyle ?? this.displayStyle,
-  );
-
-  @override
-  MathElement withFrame(Frame frame) => copyWith(frame: frame);
-
-  @override
-  MathElement withZ(int z) => copyWith(z: z);
-
-  @override
-  MathElement withLocked(bool locked) => copyWith(locked: locked);
-
-  @override
-  MathElement touch(int timestamp) => copyWith(updatedAt: timestamp);
-
-  @override
-  Map<String, Object?> toJson() => <String, Object?>{
-    ...baseJson(),
-    'source': source,
-    'mode': mode.name,
-    if (!displayStyle) 'displayStyle': false,
-  };
-
-  static MathElement fromJson(Map<String, Object?> json) => MathElement(
-    id: readString(json, 'id'),
-    frame: Frame.fromJson(readObject(json, 'frame')),
-    createdAt: readInt(json, 'createdAt'),
-    updatedAt: readInt(json, 'updatedAt'),
-    source: readString(json, 'source'),
-    z: readInt(json, 'z'),
-    locked: readBool(json, 'locked'),
-    mode: readEnum(json, 'mode', MathMode.values, MathMode.linear),
-    displayStyle: readBool(json, 'displayStyle', true),
-  );
-}
-
-/// A grid of rich-text cells.
-final class TableElement extends NoteElement {
-  const TableElement({
-    required super.id,
-    required super.frame,
-    required super.createdAt,
-    required super.updatedAt,
-    required this.columnWidths,
-    required this.rows,
-    super.z,
-    super.locked,
-    this.headerRow = false,
-  });
-
-  /// Width of each column in page-space pixels; its length defines the column
-  /// count.
-  final List<double> columnWidths;
-
-  /// Row-major cell contents. Short rows render as empty trailing cells.
-  final List<List<TextBlock>> rows;
-
-  final bool headerRow;
-
-  @override
-  String get type => 'table';
-
-  int get columnCount => columnWidths.length;
-  int get rowCount => rows.length;
-
-  @override
-  void writeSearchText(StringBuffer out) {
-    for (final row in rows) {
-      for (final cell in row) {
-        for (final run in cell.runs) {
-          out.write(run.text);
-        }
-        out.write('\t');
-      }
-      out.write('\n');
-    }
-  }
-
-  TableElement copyWith({
-    Frame? frame,
-    int? z,
-    bool? locked,
-    int? updatedAt,
-    List<double>? columnWidths,
-    List<List<TextBlock>>? rows,
-    bool? headerRow,
-  }) => TableElement(
-    id: id,
-    frame: frame ?? this.frame,
-    createdAt: createdAt,
-    updatedAt: updatedAt ?? this.updatedAt,
-    columnWidths: columnWidths ?? this.columnWidths,
-    rows: rows ?? this.rows,
-    z: z ?? this.z,
-    locked: locked ?? this.locked,
-    headerRow: headerRow ?? this.headerRow,
-  );
-
-  @override
-  TableElement withFrame(Frame frame) => copyWith(frame: frame);
-
-  @override
-  TableElement withZ(int z) => copyWith(z: z);
-
-  @override
-  TableElement withLocked(bool locked) => copyWith(locked: locked);
-
-  @override
-  TableElement touch(int timestamp) => copyWith(updatedAt: timestamp);
-
-  @override
-  Map<String, Object?> toJson() => <String, Object?>{
-    ...baseJson(),
-    'columnWidths': columnWidths,
-    'rows': <Object?>[
-      for (final row in rows) <Object?>[for (final cell in row) cell.toJson()],
-    ],
-    if (headerRow) 'headerRow': true,
-  };
-
-  static TableElement fromJson(Map<String, Object?> json) {
-    final rawRows = json['rows'];
-    final rows = <List<TextBlock>>[];
-    if (rawRows is List) {
-      for (final rawRow in rawRows) {
-        if (rawRow is! List) continue;
-        rows.add(<TextBlock>[
-          for (final cell in rawRow)
-            if (cell is Map) TextBlock.fromJson(cell.cast<String, Object?>()),
-        ]);
-      }
-    }
-    return TableElement(
-      id: readString(json, 'id'),
-      frame: Frame.fromJson(readObject(json, 'frame')),
-      createdAt: readInt(json, 'createdAt'),
-      updatedAt: readInt(json, 'updatedAt'),
-      columnWidths: readDoubleList(json, 'columnWidths'),
-      rows: rows,
-      z: readInt(json, 'z'),
-      locked: readBool(json, 'locked'),
-      headerRow: readBool(json, 'headerRow'),
-    );
-  }
-}
-
-/// A named grouping of other elements, which move and scale together.
-///
-/// Children stay top-level entries in the page's element list and are
-/// referenced by id, so grouping never rewrites their geometry and ungrouping
-/// is a single deletion.
-final class GroupElement extends NoteElement {
-  const GroupElement({
-    required super.id,
-    required super.frame,
-    required super.createdAt,
-    required super.updatedAt,
-    required this.childIds,
-    super.z,
-    super.locked,
-    this.label,
-  });
-
-  final List<String> childIds;
-  final String? label;
-
-  @override
-  String get type => 'group';
-
-  @override
-  void writeSearchText(StringBuffer out) {
-    if (label != null) out.writeln(label);
-  }
-
-  GroupElement copyWith({
-    Frame? frame,
-    int? z,
-    bool? locked,
-    int? updatedAt,
-    List<String>? childIds,
-    String? label,
-  }) => GroupElement(
-    id: id,
-    frame: frame ?? this.frame,
-    createdAt: createdAt,
-    updatedAt: updatedAt ?? this.updatedAt,
-    childIds: childIds ?? this.childIds,
-    z: z ?? this.z,
-    locked: locked ?? this.locked,
-    label: label ?? this.label,
-  );
-
-  @override
-  GroupElement withFrame(Frame frame) => copyWith(frame: frame);
-
-  @override
-  GroupElement withZ(int z) => copyWith(z: z);
-
-  @override
-  GroupElement withLocked(bool locked) => copyWith(locked: locked);
-
-  @override
-  GroupElement touch(int timestamp) => copyWith(updatedAt: timestamp);
-
-  @override
-  Map<String, Object?> toJson() => <String, Object?>{
-    ...baseJson(),
-    'childIds': childIds,
-    if (label != null) 'label': label,
-  };
-
-  static GroupElement fromJson(Map<String, Object?> json) => GroupElement(
-    id: readString(json, 'id'),
-    frame: Frame.fromJson(readObject(json, 'frame')),
-    createdAt: readInt(json, 'createdAt'),
-    updatedAt: readInt(json, 'updatedAt'),
-    childIds: readStringList(json, 'childIds'),
-    z: readInt(json, 'z'),
-    locked: readBool(json, 'locked'),
-    label: readStringOrNull(json, 'label'),
   );
 }
 

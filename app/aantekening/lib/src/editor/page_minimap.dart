@@ -95,7 +95,7 @@ class _PageMinimapState extends State<PageMinimap> {
 
   void _forgetRemoved() {
     if (_drawn.length <= _controller.document.elements.length + 64) return;
-    _drawn.removeWhere((id, _) => _controller.document.elementById(id) == null);
+    _drawn.removeWhere((id, _) => _controller.elementById(id) == null);
   }
 
   /// Brings the part of the page under [local] to the middle of the view.

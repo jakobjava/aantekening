@@ -23,3 +23,18 @@ linter:
     - unawaited_futures
     - unnecessary_await_in_return
     - use_super_parameters
+    - avoid_bool_literals_in_conditional_expressions
+    - avoid_equals_and_hash_code_on_mutable_classes
+    - avoid_multiple_declarations_per_line
+    - avoid_redundant_argument_values
+    - directives_ordering
+    - discarded_futures
+    - only_throw_errors
+    - prefer_const_constructors
+    - test_types_in_equals
+    - throw_in_finally
+    - unnecessary_lambdas
+    - unnecessary_null_checks
+    - unnecessary_raw_strings
+    - unnecessary_statements
+    - use_named_constants

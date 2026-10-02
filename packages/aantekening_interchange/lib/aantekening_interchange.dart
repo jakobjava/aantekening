@@ -2,9 +2,9 @@
 /// again.
 library;
 
+export 'src/aantekening/archive_import.dart';
 export 'src/bytes.dart' show FormatDamage;
 export 'src/cabinet/cabinet.dart';
 export 'src/importer.dart';
 export 'src/onenote/onenote_import.dart' show OneNoteImporter;
-export 'src/aantekening/archive_import.dart';
 export 'src/xournal/xournal_import.dart';

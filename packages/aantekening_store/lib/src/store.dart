@@ -13,7 +13,6 @@ import 'asset_store.dart';
 import 'bin_repository.dart';
 import 'database.dart';
 import 'draft_storing.dart';
-import 'embedding_repository.dart';
 import 'files/folder_mirror.dart';
 import 'files/notes_folder.dart';
 import 'library_repository.dart';
@@ -37,7 +36,6 @@ class AantekeningStore {
     required this.library,
     required this.pages,
     required this.search,
-    required this.embeddings,
     required this.assets,
     required this.ai,
     required this.bin,
@@ -121,7 +119,6 @@ class AantekeningStore {
       library: library,
       pages: pages,
       search: SearchRepository(database),
-      embeddings: EmbeddingRepository(database),
       assets: assets,
       ai: AiRepository(database),
       bin: bin,
@@ -189,9 +186,6 @@ class AantekeningStore {
 
   /// Full-text search.
   final SearchRepository search;
-
-  /// Embeddings for semantic search.
-  final EmbeddingRepository embeddings;
 
   /// Imported images and PDFs.
   final AssetStore assets;

@@ -24,20 +24,6 @@ void main() {
           ),
         ],
       ),
-      TableElement(
-        id: 'table',
-        frame: Frame(x: 0, y: 50, width: 100, height: 40),
-        createdAt: 0,
-        updatedAt: 0,
-        columnWidths: <double>[100],
-        rows: <List<TextBlock>>[
-          <TextBlock>[
-            TextBlock(
-              runs: <TextRun>[TextRun.math('sqrt(2)', MathMode.linear)],
-            ),
-          ],
-        ],
-      ),
     ]);
 
     final stored = MathStorage.withLatexFormulas(page);
@@ -48,11 +34,6 @@ void main() {
       const TextRun.math(r'\frac{x^2}{3}', MathMode.latex, marks),
     );
     expect(text.blocks.single.runs.first, const TextRun('so '));
-    final table = stored.elementById('table')! as TableElement;
-    expect(
-      table.rows.single.single.runs.single,
-      const TextRun.math(r'\sqrt{2}', MathMode.latex),
-    );
   });
 
   test('leaves a page already in LaTeX untouched', () {

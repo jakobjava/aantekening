@@ -7,11 +7,14 @@
 /// real, focusable, editable widgets.
 library;
 
+import 'aantekening_canvas.dart' show CanvasElementBuilder;
+import 'src/infinite_canvas.dart' show CanvasElementBuilder;
+
 export 'src/canvas_controller.dart';
 export 'src/canvas_painters.dart';
+export 'src/canvas_scope.dart';
 export 'src/canvas_scroll.dart';
 export 'src/canvas_viewport.dart';
-export 'src/canvas_scope.dart';
 export 'src/infinite_canvas.dart';
 export 'src/lasso.dart';
 export 'src/page_scrollbar.dart';

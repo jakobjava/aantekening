@@ -215,19 +215,6 @@ final class Cabinet {
     }
   }
 
-  /// Every file's bytes, in memory: for small cabinets and for tests.
-  Map<String, Uint8List> readAll() {
-    final builders = <String, BytesBuilder>{};
-    read(
-      onBytes: (file, bytes) =>
-          (builders[file.name] ??= BytesBuilder(copy: true)).add(bytes),
-      onFile: (file) => builders.putIfAbsent(file.name, BytesBuilder.new),
-    );
-    return <String, Uint8List>{
-      for (final entry in builders.entries) entry.key: entry.value.takeBytes(),
-    };
-  }
-
   /// Writes every file beneath [directory], keeping the folders they are
   /// in, and returns their paths by name.
   Map<String, String> extractTo(

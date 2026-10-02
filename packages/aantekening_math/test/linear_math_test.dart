@@ -170,7 +170,7 @@ void main() {
     test('still renders an expression that is mid-keystroke', () {
       final translation = LinearMath.translate('x^');
       expect(translation.latex, isNotEmpty);
-      expect(translation.isComplete, isFalse);
+      expect(translation.diagnostics, isNotEmpty);
       expect(translation.diagnostics.single.offset, 2);
     });
 
@@ -181,7 +181,7 @@ void main() {
     });
 
     test('skips an unrecognised character and keeps going', () {
-      final translation = LinearMath.translate(r'a # b');
+      final translation = LinearMath.translate('a # b');
       expect(translation.latex, 'a b');
       expect(translation.diagnostics.single.message, contains('#'));
     });

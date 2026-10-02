@@ -610,12 +610,12 @@ void main() {
 
   group('serialisation', () {
     test('formulas and embeds round-trip through JSON', () {
-      final element = TextElement(
+      final element = const TextElement(
         id: 't',
-        frame: const Frame(x: 0, y: 0, width: 300, height: 100),
+        frame: Frame(x: 0, y: 0, width: 300, height: 100),
         createdAt: 0,
         updatedAt: 0,
-        blocks: const <TextBlock>[
+        blocks: <TextBlock>[
           TextBlock(
             runs: <TextRun>[
               TextRun('area '),

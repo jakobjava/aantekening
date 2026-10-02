@@ -271,45 +271,37 @@ class _PairTile extends StatelessWidget {
       selected: selected,
       button: true,
       label: pair.name,
-      child: InkWell(
+      child: PickRing(
+        selected: selected,
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(2),
+          width: 96,
+          height: 54,
+          padding: const EdgeInsets.fromLTRB(9, 6, 9, 6),
           decoration: BoxDecoration(
-            border: Border.all(
-              color: selected ? tones.emphasis : Colors.transparent,
-              width: 1.5,
-            ),
+            color: pair.base,
+            border: Border.all(color: tones.line),
           ),
-          child: Container(
-            width: 96,
-            height: 54,
-            padding: const EdgeInsets.fromLTRB(9, 6, 9, 6),
-            decoration: BoxDecoration(
-              color: pair.base,
-              border: Border.all(color: tones.line),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: <Widget>[
-                Text(
-                  'Aa',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    color: pair.text,
-                  ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: <Widget>[
+              Text(
+                'Aa',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: pair.text,
                 ),
-                Text(
-                  pair.name,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Color.lerp(pair.base, pair.text, 0.64),
-                  ),
+              ),
+              Text(
+                pair.name,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Color.lerp(pair.base, pair.text, 0.64),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

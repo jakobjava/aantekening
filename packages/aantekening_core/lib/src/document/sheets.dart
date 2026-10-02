@@ -4,6 +4,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:meta/meta.dart';
+
 import '../util/geometry.dart';
 import '../util/json_read.dart';
 
@@ -53,6 +55,7 @@ enum SheetTemplate {
 /// the sheets cutting it into bands [height] tall from its top, one after
 /// another. Shown as sheets and shown again as one paper, nothing on it has
 /// moved.
+@immutable
 class Sheets {
   Sheets({
     this.size = SheetSize.a4,

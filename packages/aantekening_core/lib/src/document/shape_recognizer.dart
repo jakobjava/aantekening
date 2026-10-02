@@ -191,7 +191,7 @@ abstract final class ShapeRecognizer {
     // points the same way for all four.
     var sum = const Vec2.zero();
     for (final side in sides) {
-      sum += Vec2(1, 0).rotated(4 * side.angle) * side.length;
+      sum += const Vec2(1, 0).rotated(4 * side.angle) * side.length;
     }
     var angle = sum.angle / 4;
     if (angle.abs() < 7 * math.pi / 180) angle = 0;

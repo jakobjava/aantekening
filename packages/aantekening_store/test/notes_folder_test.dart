@@ -414,7 +414,7 @@ void main() {
       await store.close();
       final backups = p.join(root.path, 'Backups');
 
-      final first = Backups.create(notes, backups, at: DateTime(2026, 9, 1));
+      final first = Backups.create(notes, backups, at: DateTime(2026, 9));
       Backups.create(notes, backups, at: DateTime(2026, 9, 2));
       Backups.create(notes, backups, at: DateTime(2026, 9, 3));
       expect(File(first).existsSync(), isTrue);

@@ -9,9 +9,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../editor/trackpad.dart';
-import '../providers.dart';
 import '../look/controls.dart';
 import '../look/tones.dart';
+import '../providers.dart';
 import '../shell/library_actions.dart';
 import 'force_layout.dart';
 import 'note_graph.dart';

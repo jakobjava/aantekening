@@ -1,9 +1,7 @@
-import 'dart:io';
-
-import 'package:aantekening/src/look/marks.dart';
 import 'package:aantekening/src/editor/media_views.dart';
 import 'package:aantekening/src/editor/ribbon/mini_toolbar.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
+import 'package:aantekening/src/look/marks.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
@@ -16,23 +14,10 @@ import 'editor_harness.dart';
 
 void main() {
   late AantekeningStore store;
-  late Directory assets;
   late String pageId;
-
-  setUp(() async {
-    assets = Directory.systemTemp.createTempSync('aantekening_menu_test_');
-    store = AantekeningStore.inMemory(assetDirectory: assets);
-    final notebook = await store.library.createNotebook(title: 'Notes');
-    final section = await store.library.createSection(
-      notebookId: notebook.id,
-      title: 'Section',
-    );
-    pageId = (await store.pages.createPage(sectionId: section.id)).id;
-  });
-
-  tearDown(() async {
-    await store.close();
-    if (assets.existsSync()) assets.deleteSync(recursive: true);
+  useTestPage((made, id) {
+    store = made;
+    pageId = id;
   });
 
   /// Saves the page holding [elements], each picture's asset stored first.
@@ -345,5 +330,51 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(blocksOf(tester).single.runs.single.marks.bold, isTrue);
+  });
+
+  testWidgets('everything picked stays picked under a right-click, and the '
+      'toolbar formats every box in it', (tester) async {
+    mockClipboard(tester);
+    TextElement box(String id, double y) => TextElement(
+      id: id,
+      frame: Frame(x: 120, y: y, width: 200, height: 50),
+      createdAt: 0,
+      updatedAt: 0,
+      blocks: <TextBlock>[
+        TextBlock(runs: <TextRun>[TextRun(id)]),
+      ],
+    );
+    await savePage(
+      tester,
+      (_) => <NoteElement>[box('one', 160), box('two', 300)],
+    );
+    await openEditor(tester, store, pageId);
+
+    await press(tester, LogicalKeyboardKey.keyA, control: true);
+    await tester.pumpAndSettle();
+    expect(canvasOf(tester).selection, <String>{'one', 'two'});
+
+    // In the text of one of them, not on its band.
+    await rightClick(
+      tester,
+      tester.getCenter(find.byType(TextBoxEditor).first) + const Offset(0, 8),
+    );
+    expect(canvasOf(tester).selection, <String>{'one', 'two'});
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(MiniToolbar),
+            matching: find.byTooltip('Bold  (Ctrl+B)'),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+
+    for (final element in elementsOf(tester)) {
+      expect(
+        (element as TextElement).blocks.single.runs.single.marks.bold,
+        isTrue,
+      );
+    }
   });
 }

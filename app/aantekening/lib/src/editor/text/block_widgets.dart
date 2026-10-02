@@ -332,6 +332,7 @@ class EmbedBlock extends StatelessWidget {
     required this.caretVisible,
     required this.caretColor,
     required this.caretWidth,
+    required this.caretHeight,
     this.objectKey,
     super.key,
   });
@@ -351,6 +352,10 @@ class EmbedBlock extends StatelessWidget {
   final ValueListenable<bool> caretVisible;
   final Color caretColor;
   final double caretWidth;
+
+  /// How tall the caret is: as tall as a line of text, standing on the
+  /// object's lower edge as on a line's, rather than as tall as the object.
+  final double caretHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -410,7 +415,7 @@ class EmbedBlock extends StatelessWidget {
                   Positioned(
                     left: side == 0 ? -caretWidth - 1 : null,
                     right: side == 1 ? -caretWidth - 1 : null,
-                    top: 0,
+                    height: math.min(caretHeight, height),
                     bottom: 0,
                     child: ValueListenableBuilder<bool>(
                       valueListenable: caretVisible,

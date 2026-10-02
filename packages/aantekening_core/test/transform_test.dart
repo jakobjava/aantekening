@@ -156,7 +156,7 @@ void main() {
         const <TextBlock>[
           TextBlock(runs: <TextRun>[TextRun.math('x', MathMode.linear)]),
         ],
-        const RichSelection(RichPosition(0, 0), RichPosition(0, 1)),
+        const RichSelection(RichPosition.zero, RichPosition(0, 1)),
         (marks) => marks
             .copyWith(bold: true, color: 0xFF0000FF, size: 20)
             .withHighlight(0x66FFD60A),

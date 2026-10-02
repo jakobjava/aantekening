@@ -158,7 +158,7 @@ void main() {
     final part = (await reader.render(pageId, find(digest)))!;
     final codec = await ui.instantiateImageCodec(part.bytes);
     final image = (await codec.getNextFrame()).image;
-    final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final data = await image.toByteData();
     return (data: data!, width: image.width);
   }))!;
 

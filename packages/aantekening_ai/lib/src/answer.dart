@@ -135,15 +135,4 @@ abstract final class AnswerBlocks {
     body.replaceAll(AiAnswer.marker, ''),
     const <Source>[],
   );
-
-  /// The word of the first structured block in [markdown] this build
-  /// understands, or null for an answer that is only prose.
-  static String? kindOf(String markdown) {
-    for (final match in fence.allMatches(markdown)) {
-      final word = match.group(1);
-      if (word == flashcards && cardsIn(match.group(2)!) != null) return word;
-      if (word == quiz && questionsIn(match.group(2)!) != null) return word;
-    }
-    return null;
-  }
 }

@@ -25,15 +25,6 @@ class MathView extends StatelessWidget {
   });
 
   /// Renders the formula held by [element].
-  factory MathView.element(MathElement element, {Key? key, TextStyle? style}) =>
-      MathView(
-        key: key,
-        source: element.source,
-        mode: element.mode,
-        displayStyle: element.displayStyle,
-        textStyle: style,
-      );
-
   /// The formula, in whichever syntax [mode] names.
   final String source;
 

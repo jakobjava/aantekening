@@ -1,6 +1,7 @@
 # 15. Tables in text boxes, as lines of cells
 
-**Status:** accepted
+**Status:** accepted; the free-standing `TableElement` is read as a text box
+holding its table since ADR 35
 
 ## Context
 

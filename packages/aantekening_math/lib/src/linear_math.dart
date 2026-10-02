@@ -28,8 +28,6 @@ class MathTranslation {
   /// Problems found in the input, each pointing at an offset the editor can
   /// underline.
   final List<MathDiagnostic> diagnostics;
-
-  bool get isComplete => diagnostics.isEmpty;
 }
 
 /// Translates OneNote-style linear input into LaTeX.

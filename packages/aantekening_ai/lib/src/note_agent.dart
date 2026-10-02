@@ -4,9 +4,9 @@ library;
 
 import 'dart:async';
 
-import 'conversation.dart';
 import 'answer.dart';
 import 'citation_markers.dart';
+import 'conversation.dart';
 import 'note_context.dart';
 import 'note_reader.dart';
 import 'note_tools.dart';

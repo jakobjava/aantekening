@@ -440,7 +440,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
               ? 'call_${entry.key}'
               : '${entry.value.id}',
           name: '${entry.value.name}',
-          input: _parseArguments('${entry.value.args}'),
+          input: ToolCallPart.inputFrom('${entry.value.args}'),
         ),
     ];
     if (toolCalls.isNotEmpty) stop = StopReason.toolUse;
@@ -471,20 +471,6 @@ class OpenAiCompatibleProvider implements ChatProvider {
       cost: (used['cost'] as num?)?.toDouble(),
     );
   }
-
-  static Map<String, Object?> _parseArguments(String json) {
-    if (json.trim().isEmpty) return const <String, Object?>{};
-    try {
-      final parsed = jsonDecode(json);
-      if (parsed is Map) return parsed.cast<String, Object?>();
-    } on FormatException {
-      // Answered below.
-    }
-    return <String, Object?>{invalidInputKey: json};
-  }
-
-  /// Where a tool's input that could not be read is kept.
-  static const String invalidInputKey = '__invalid_json';
 
   /// Posts [body] to [uri], for the response streamed back — the request
   /// broken off as soon as [stop] completes. A server that will not hold

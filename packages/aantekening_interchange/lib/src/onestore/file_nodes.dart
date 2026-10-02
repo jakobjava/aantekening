@@ -47,9 +47,7 @@ final class FileNode {
 abstract final class NodeId {
   static const objectSpaceManifestRoot = 0x004;
   static const objectSpaceManifestListReference = 0x008;
-  static const objectSpaceManifestListStart = 0x00C;
   static const revisionManifestListReference = 0x010;
-  static const revisionManifestListStart = 0x014;
   static const revisionManifestStart4 = 0x01B;
   static const revisionManifestEnd = 0x01C;
   static const revisionManifestStart6 = 0x01E;
@@ -71,16 +69,12 @@ abstract final class NodeId {
   static const objectDeclarationFileData3RefCount = 0x072;
   static const objectDeclarationFileData3LargeRefCount = 0x073;
   static const objectDataEncryptionKeyV2 = 0x07C;
-  static const objectInfoDependencyOverrides = 0x084;
-  static const dataSignatureGroupDefinition = 0x08C;
   static const fileDataStoreListReference = 0x090;
   static const fileDataStoreObjectReference = 0x094;
   static const objectDeclaration2RefCount = 0x0A4;
   static const objectDeclaration2LargeRefCount = 0x0A5;
   static const objectGroupListReference = 0x0B0;
-  static const objectGroupStart = 0x0B4;
   static const objectGroupEnd = 0x0B8;
-  static const hashedChunkDescriptor2 = 0x0C2;
   static const readOnlyObjectDeclaration2RefCount = 0x0C4;
   static const readOnlyObjectDeclaration2LargeRefCount = 0x0C5;
   static const chunkTerminator = 0x0FF;

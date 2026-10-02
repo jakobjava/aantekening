@@ -1,6 +1,8 @@
 /// Links to notes: to a notebook, a section, a page, or a place on a page.
 library;
 
+import 'package:meta/meta.dart';
+
 /// What a [NoteLink] points at.
 enum NoteLinkKind { notebook, section, page }
 
@@ -16,6 +18,7 @@ enum NoteLinkKind { notebook, section, page }
 ///
 /// Identifiers are the workspace's own, so a link keeps pointing at the same
 /// thing however it is renamed or moved.
+@immutable
 class NoteLink {
   const NoteLink(
     this.kind,

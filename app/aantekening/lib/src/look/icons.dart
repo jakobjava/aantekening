@@ -56,6 +56,17 @@ enum AppIcon {
   sheetDown,
 }
 
+/// The colour of the icons here: the [IconTheme]'s, greyed out as it is,
+/// or else the text's.
+Color iconColorOf(BuildContext context) {
+  final icons = IconTheme.of(context);
+  return icons.color?.withValues(
+        alpha: (icons.color!.a * (icons.opacity ?? 1)).clamp(0, 1),
+      ) ??
+      DefaultTextStyle.of(context).style.color ??
+      const Color(0xFF000000);
+}
+
 /// [icon], [size] across, in the colour of the icons here — which follows
 /// the text's, greyed out with it — or [color].
 class AppIconView extends StatelessWidget {
@@ -67,14 +78,7 @@ class AppIconView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icons = IconTheme.of(context);
-    final color =
-        this.color ??
-        icons.color?.withValues(
-          alpha: (icons.color!.a * (icons.opacity ?? 1)).clamp(0, 1),
-        ) ??
-        DefaultTextStyle.of(context).style.color ??
-        const Color(0xFF000000);
+    final color = this.color ?? iconColorOf(context);
     return SizedBox.square(
       dimension: size,
       child: CustomPaint(painter: _IconPainter(icon, color)),

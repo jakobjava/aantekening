@@ -5,6 +5,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart' show Widget;
 
 import 'math_templates.dart';
 import 'text_styles.dart';
@@ -216,7 +217,7 @@ class TextBoxEditorController extends ChangeNotifier
     if (!identical(_editor, editor)) return;
     _editor = null;
     _state = TextFormatState.none;
-    _setFormula(null, null);
+    _setFormula(null, null, null);
     _notify();
   }
 
@@ -229,6 +230,10 @@ class TextBoxEditorController extends ChangeNotifier
   /// Where the source of the formula being edited sits in its text box, in
   /// the box's own page units, once it has been laid out.
   final ValueNotifier<Rect?> formulaAnchor = ValueNotifier<Rect?>(null);
+
+  /// The source of the formula being edited, for the page to draw over
+  /// everything on it; null when no formula is.
+  final ValueNotifier<Widget?> formulaField = ValueNotifier<Widget?>(null);
 
   /// The syntax formulas are typed in. Kept in step with the person's
   /// preference by the page; a text box switching it translates the formula
@@ -252,21 +257,28 @@ class TextBoxEditorController extends ChangeNotifier
 
   /// Called by the attached text box as a formula opens, changes and closes,
   /// with where its source is laid out — null until it has been, so that
-  /// nothing is placed by where the last formula was.
+  /// nothing is placed by where the last formula was — and the [field] it
+  /// is typed in.
   void reportFormula(
     TextEditorCommands editor,
-    FormulaSession? session, [
+    FormulaSession? session, {
     Rect? anchor,
-  ]) {
+    Widget? field,
+  }) {
     if (!identical(_editor, editor)) return;
-    _setFormula(session, session == null ? null : anchor);
+    _setFormula(
+      session,
+      session == null ? null : anchor,
+      session == null ? null : field,
+    );
   }
 
-  void _setFormula(FormulaSession? session, Rect? anchor) {
+  void _setFormula(FormulaSession? session, Rect? anchor, Widget? field) {
     void apply() {
       if (_disposed) return;
       formula.value = session;
       formulaAnchor.value = anchor;
+      formulaField.value = field;
     }
 
     // Like [_notify], never in the middle of a build.
@@ -311,6 +323,7 @@ class TextBoxEditorController extends ChangeNotifier
     _disposed = true;
     formula.dispose();
     formulaAnchor.dispose();
+    formulaField.dispose();
     formulaSyntax.dispose();
     super.dispose();
   }

@@ -9,7 +9,7 @@ import '../bytes.dart';
 ///
 /// Written from Microsoft's description of the format ([MS-PATCH] "LZX
 /// DELTA Compression and Decompression", which LZX in cabinets is the
-/// original of): a sliding window of 2^[windowBits] bytes; blocks that are
+/// original of): a sliding window of 2^`windowBits` bytes; blocks that are
 /// verbatim, aligned-offset or stored; Huffman trees sent as the difference
 /// from the block before, themselves coded by a small "pretree"; and three
 /// repeated match offsets carried from block to block.
@@ -43,7 +43,9 @@ final class LzxDecoder {
   late final Uint8List _mainLengths;
   final Uint8List _lengthLengths = Uint8List(_lengthSymbols);
 
-  int _r0 = 1, _r1 = 1, _r2 = 1;
+  int _r0 = 1;
+  int _r1 = 1;
+  int _r2 = 1;
 
   bool _started = false;
   int _translationSize = 0;

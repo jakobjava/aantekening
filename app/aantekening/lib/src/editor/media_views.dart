@@ -68,7 +68,6 @@ class AssetImageView extends ConsumerWidget {
                     MediaFit.cover => BoxFit.cover,
                     MediaFit.stretch => BoxFit.fill,
                   },
-                  filterQuality: FilterQuality.medium,
                   gaplessPlayback: true,
                 );
               },

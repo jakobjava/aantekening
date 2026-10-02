@@ -104,7 +104,7 @@ class _Typeset extends StatelessWidget {
       child: Center(
         heightFactor: 1,
         child: latex.trim().isEmpty
-            ? Text(
+            ? const Text(
                 'Type a formula',
                 style: TextStyle(
                   fontSize: 13,

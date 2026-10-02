@@ -89,7 +89,6 @@ class InkStroke {
   double xAt(int index) => points[index * stride];
   double yAt(int index) => points[index * stride + 1];
   double pressureAt(int index) => points[index * stride + 2];
-  double tiltAt(int index) => points[index * stride + 3];
 
   /// The stroke's bounding box, inflated by half the maximum drawn width.
   ///

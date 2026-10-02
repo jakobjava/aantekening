@@ -67,7 +67,7 @@ const Map<String, String> greekLetters = <String, String>{
   'mu': r'\mu',
   'nu': r'\nu',
   'xi': r'\xi',
-  'omicron': r'o',
+  'omicron': 'o',
   'pi': r'\pi',
   'varpi': r'\varpi',
   'rho': r'\rho',

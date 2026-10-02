@@ -14,7 +14,6 @@ export 'src/backups.dart';
 export 'src/bin_repository.dart';
 export 'src/database.dart';
 export 'src/draft_storing.dart';
-export 'src/embedding_repository.dart';
 export 'src/files/entity_files.dart';
 export 'src/files/folder_mirror.dart';
 export 'src/files/notes_folder.dart';

@@ -7,8 +7,11 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
+import '../aantekening_canvas.dart' show InfiniteCanvas;
 import 'canvas_viewport.dart';
+import 'infinite_canvas.dart' show InfiniteCanvas;
 import 'lasso.dart';
+import 'selection_handles.dart';
 import 'spatial_index.dart';
 import 'tools.dart';
 
@@ -54,6 +57,13 @@ class CanvasController extends ChangeNotifier {
   CanvasTool _tool = CanvasTool.select;
   PenSettings _pen = PenSettings.defaultPen;
   PenSettings _highlighter = PenSettings.defaultHighlighter;
+
+  /// Whether presses, and selections dragged across the page, pass over
+  /// the element [id] to what lies beneath it, as though it were not there:
+  /// the host's placeholders, such as the empty text box behind a caret.
+  bool Function(String id) passesOver = _takesPresses;
+
+  static bool _takesPresses(String id) => false;
 
   final SpatialIndex _index = SpatialIndex();
   final Map<String, NoteElement> _byId = <String, NoteElement>{};
@@ -145,12 +155,6 @@ class CanvasController extends ChangeNotifier {
 
   /// Whether there are unsaved edits.
   bool get isDirty => _dirty;
-
-  /// Whether a stroke is currently being drawn.
-  bool get isDrawing => _drawing;
-
-  /// The in-progress stroke's samples, for the wet-ink overlay.
-  List<double> get wetPoints => List<double>.unmodifiable(_wetPoints);
 
   /// The stroke in progress as it would be kept now: as it is being drawn,
   /// or as the shape it became.
@@ -605,10 +609,6 @@ class CanvasController extends ChangeNotifier {
 
   // --------------------------------------------------------------- selection
 
-  /// The elements intersecting the visible region, in paint order.
-  List<NoteElement> visibleElements(Size size) =>
-      elementsIn(viewport.visibleBounds(size));
-
   /// The elements intersecting [region] of the page, in paint order.
   List<NoteElement> elementsIn(Aabb region) {
     final ids = _index.query(region);
@@ -621,7 +621,8 @@ class CanvasController extends ChangeNotifier {
   Aabb get contentBounds => _contentBounds ??= _document.contentBounds;
   Aabb? _contentBounds;
 
-  /// The topmost unlocked element at a page-space point.
+  /// The topmost unlocked element at a page-space point, not one presses
+  /// pass over ([passesOver]).
   ///
   /// Turned elements are tested against their turned shape, and ink only near
   /// its strokes: a page of handwriting has a large bounding box that is
@@ -637,7 +638,7 @@ class CanvasController extends ChangeNotifier {
     NoteElement? best;
     for (final id in _index.query(probe)) {
       final element = _byId[id];
-      if (element == null || element.locked) continue;
+      if (element == null || element.locked || passesOver(id)) continue;
       final hit = element is InkElement
           ? element.hitsStroke(page.dx, page.dy, hitSlop + 2)
           : element.frame.containsPoint(page.dx, page.dy, slop: hitSlop);
@@ -645,6 +646,15 @@ class CanvasController extends ChangeNotifier {
       if (best == null || element.z >= best.z) best = element;
     }
     return best;
+  }
+
+  /// Whether a press at [page], on [hit], lands on several things picked
+  /// together, and so is for all of them: on one of them, or on the paper
+  /// between them inside the box about them.
+  bool pressesGroup(Offset page, NoteElement? hit) {
+    if (_selection.length < 2) return false;
+    if (hit != null) return _selection.contains(hit.id);
+    return SelectionFrame.around(selectedElements)?.contains(page) ?? false;
   }
 
   /// The topmost part of the background at a page-space point: what a
@@ -740,7 +750,7 @@ class CanvasController extends ChangeNotifier {
 
     for (final id in _index.query(bounds)) {
       final element = _byId[id];
-      if (element == null || element.locked) continue;
+      if (element == null || element.locked || passesOver(id)) continue;
       if (element is! InkElement) {
         if (takesWhole(element)) _selection.add(id);
         continue;
@@ -786,7 +796,7 @@ class CanvasController extends ChangeNotifier {
       ..clear()
       ..addAll(<String>[
         for (final element in _document.elements)
-          if (!element.locked) element.id,
+          if (!element.locked && !passesOver(element.id)) element.id,
       ]);
     _changed();
   }
@@ -797,11 +807,14 @@ class CanvasController extends ChangeNotifier {
     _changed();
   }
 
+  /// The element of [id] on the page, if it is there: found at once, where
+  /// looking through the page takes as long as it is.
+  NoteElement? elementById(String id) => _byId[id];
+
   /// The selected elements, in paint order.
-  List<NoteElement> get selectedElements => <NoteElement>[
-    for (final element in _document.elements)
-      if (_selection.contains(element.id)) element,
-  ];
+  List<NoteElement> get selectedElements =>
+      <NoteElement>[for (final id in _selection) ?_byId[id]]
+        ..sort((a, b) => a.z.compareTo(b.z));
 
   /// The bounding box of the selection, or null when nothing is selected.
   Aabb? get selectionBounds {

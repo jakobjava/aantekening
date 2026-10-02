@@ -1,6 +1,7 @@
 # 10. Formulas stored as LaTeX, typed in place in either syntax
 
-**Status:** accepted; supersedes ADR 6
+**Status:** accepted; supersedes ADR 6; the source is drawn over the text
+rather than laid out in it since ADR 33
 
 ## Context
 

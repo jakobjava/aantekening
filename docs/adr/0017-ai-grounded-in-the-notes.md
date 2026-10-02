@@ -141,7 +141,8 @@ nothing. What it has to become:
   OpenAI API is a preset. New capabilities of models are new fields of
   `ModelCapabilities`, and new tools are new `ToolSpec`s.
 * Search for the AI uses full-text search with any of a question's words,
-  ranked by BM25; embeddings are stored per model but not used for it yet.
+  ranked by BM25. The schema keeps a table for embeddings, which nothing
+  writes yet.
 * A notebook too large for the context is read through its overview and the
   tools, which a model without tools cannot do: it gets the passages that
   match each question.

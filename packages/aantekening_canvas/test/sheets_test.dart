@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/gestures.dart';
@@ -537,10 +535,8 @@ void main() {
 
       final render =
           key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-      final image = (await tester.runAsync(() => render.toImage()))!;
-      final bytes = (await tester.runAsync(
-        () => image.toByteData(format: ui.ImageByteFormat.rawRgba),
-      ))!;
+      final image = (await tester.runAsync(render.toImage))!;
+      final bytes = (await tester.runAsync(image.toByteData))!;
       int red(Offset at) =>
           bytes.getUint8((at.dy.round() * image.width + at.dx.round()) * 4);
       final shown = controller.viewport.toScreen(Offset(350, height + 20));

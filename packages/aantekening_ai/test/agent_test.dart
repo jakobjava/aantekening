@@ -123,9 +123,9 @@ final Notes notes = Notes(<String, (String, PageDocument)>{
       id: 'p2',
       elements: <NoteElement>[
         box('b2', 'Force is mass times acceleration.'),
-        PdfElement(
+        const PdfElement(
           id: 'slide',
-          frame: const Frame(x: 0, y: 200, width: 400, height: 500),
+          frame: Frame(x: 0, y: 200, width: 400, height: 500),
           createdAt: 0,
           updatedAt: 0,
           assetId: 'a',

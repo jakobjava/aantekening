@@ -55,6 +55,10 @@ is what lets the model be tested exhaustively and moved onto an isolate. The
 canvas not depending on `_math` or a PDF engine is what lets it stay a
 general-purpose surface while the app decides what an element looks like.
 
+A widget whose state does a great deal — the text box, the page editor,
+the canvas — is one library of several files, each one concern of it, as an
+extension on the state (ADR 34).
+
 ## Data flow for one keystroke
 
 1. The editor mutates its `CanvasController`, producing a **new**

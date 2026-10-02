@@ -1,19 +1,17 @@
-import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:aantekening/src/editor/media_views.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/text/block_paragraph.dart';
-import 'package:aantekening/src/editor/text/block_view.dart';
 import 'package:aantekening/src/editor/text/block_widgets.dart';
-import 'package:aantekening/src/editor/media_views.dart';
 import 'package:aantekening/src/editor/text/cheat_sheet.dart';
-import 'package:aantekening/src/editor/text/table_view.dart';
+import 'package:aantekening/src/editor/text/formula_overlay.dart';
 import 'package:aantekening/src/editor/text/formula_preview.dart';
 import 'package:aantekening/src/editor/text/shrink_to_width.dart';
+import 'package:aantekening/src/editor/text/table_view.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/editor/text/text_styles.dart';
 import 'package:aantekening/src/providers.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
@@ -22,6 +20,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'editor_harness.dart';
@@ -37,27 +36,20 @@ List<NoteElement> selectedOnCanvas(WidgetTester tester) =>
             as SelectionPainter)
         .selected;
 
+/// What draws the source of the formula being edited over the text.
+RenderFormulaLayer formulaLayerOf(WidgetTester tester) =>
+    tester.renderObject<RenderFormulaLayer>(find.byType(FormulaLayer));
+
+/// The formula being edited, as it is drawn over the text.
+FormulaOverlay overlayOf(WidgetTester tester) =>
+    tester.widget<FormulaLayer>(find.byType(FormulaLayer)).formula!;
+
 void main() {
   late AantekeningStore store;
-  late Directory assets;
   late String pageId;
-
-  setUp(() async {
-    EditableText.debugDeterministicCursor = true;
-    assets = Directory.systemTemp.createTempSync('aantekening_text_test_');
-    store = AantekeningStore.inMemory(assetDirectory: assets);
-    final notebook = await store.library.createNotebook(title: 'Notes');
-    final section = await store.library.createSection(
-      notebookId: notebook.id,
-      title: 'Section',
-    );
-    pageId = (await store.pages.createPage(sectionId: section.id)).id;
-  });
-
-  tearDown(() async {
-    EditableText.debugDeterministicCursor = false;
-    await store.close();
-    if (assets.existsSync()) assets.deleteSync(recursive: true);
+  useTestPage((made, id) {
+    store = made;
+    pageId = id;
   });
 
   testWidgets('clicking empty canvas starts a text box that takes typing', (
@@ -214,9 +206,9 @@ void main() {
   });
 
   group('formulas', () {
-    /// The caret's paragraph as the input method sees it, the formula being
-    /// edited shown as its source. The room laid out either side of that
-    /// source stands in the text as a placeholder, which is left out here.
+    /// What the input method sees: the caret's paragraph, or in a formula
+    /// being edited, its source alone. Formulas stand in a paragraph as a
+    /// placeholder each, which is left out here.
     String typedLine(WidgetTester tester) =>
         (tester.testTextInput.editingState!['text'] as String).replaceAll(
           '\uFFFC',
@@ -261,7 +253,7 @@ void main() {
       );
       expect(inFormula(tester), isTrue);
       // Typed in the line itself, as its source; typeset only beneath.
-      expect(typedLine(tester), 'Area pi r^2');
+      expect(typedLine(tester), 'pi r^2');
       expect(typesetInBox(), findsNothing);
       expect(
         find.descendant(
@@ -448,15 +440,15 @@ void main() {
     ) async {
       await tester.runAsync(() async {
         final page = PageDocument.empty(id: pageId).withElementAdded(
-          TextElement(
+          const TextElement(
             id: 'box',
-            frame: const Frame(x: 100, y: 100, width: 60, height: 60),
+            frame: Frame(x: 100, y: 100, width: 60, height: 60),
             createdAt: 0,
             updatedAt: 0,
-            blocks: const <TextBlock>[
+            blocks: <TextBlock>[
               TextBlock(
                 runs: <TextRun>[
-                  TextRun.math(r'a+b+c+d+e+f+g+h+i+j', MathMode.latex),
+                  TextRun.math('a+b+c+d+e+f+g+h+i+j', MathMode.latex),
                 ],
               ),
             ],
@@ -487,7 +479,7 @@ void main() {
         kind: PointerDeviceKind.mouse,
       );
       await tester.pumpAndSettle();
-      expect(typedLine(tester), 'mean (a + b)/2', reason: 'shown in Simple');
+      expect(typedLine(tester), '(a + b)/2', reason: 'shown in Simple');
       expect(find.byType(FormulaPreview), findsOneWidget);
 
       await press(tester, LogicalKeyboardKey.enter);
@@ -564,8 +556,9 @@ void main() {
       await press(tester, LogicalKeyboardKey.arrowLeft);
       await tester.pumpAndSettle();
       expect(inFormula(tester), isTrue, reason: 'formula reopened');
-      expect(typedLine(tester), 'so x');
-      expect(typesetInBox(), findsNothing);
+      expect(typedLine(tester), 'x');
+      // Its place in the text is kept, blank, the source drawn over it.
+      expect(overlayOf(tester).source.text, 'x');
 
       await type(tester, '2');
       expect(blocksOf(tester).single.runs.last.text, 'x 2');
@@ -599,7 +592,7 @@ void main() {
       );
     });
 
-    testWidgets('the formula has room of its own beside the text', (
+    testWidgets('the source is typed across the box, on the formula\'s line', (
       tester,
     ) async {
       await openEditor(tester, store, pageId);
@@ -612,121 +605,101 @@ void main() {
       final paragraph = tester.renderObject<RenderBlockParagraph>(
         find.byType(BlockParagraph),
       );
-      final formula = paragraph.decoration.formula!;
-      final box = paragraph.formulaRects(formula.start, formula.end).single;
-      final letter = paragraph.rangeRects(0, 1).single;
-      expect(box.left, greaterThanOrEqualTo(letter.right));
-      // The caret stands inside the box, not on its edge.
-      final caret = paragraph.caretRect(paragraph.decoration.caret!);
-      expect(caret.left, greaterThan(box.left));
-      expect(caret.right, lessThan(box.right));
-    });
-
-    testWidgets('the box round a formula is only on the lines it is on', (
-      tester,
-    ) async {
-      // However narrow the box, the room laid out either side of the source
-      // may wrap onto a line of its own; nothing is drawn there.
-      const block = TextBlock(
-        runs: <TextRun>[
-          TextRun('one two three'),
-          TextRun.math('alpha+beta', MathMode.latex),
-        ],
+      final layer = formulaLayerOf(tester);
+      final field = MatrixUtils.transformRect(
+        layer.getTransformTo(null),
+        layer.formulaBox!,
       );
-      final view = BlockView(block, openRun: 1);
-      final layout = view.runAt(1);
-
-      for (var width = 40.0; width <= 240; width += 3) {
-        await tester.pumpWidget(
-          MaterialApp(
-            home: Center(
-              child: SizedBox(
-                width: width,
-                child: Builder(
-                  builder: (context) => BlockParagraph(
-                    decoration: BlockDecoration(
-                      formula: TextRange(
-                        start: layout.outerStart,
-                        end: layout.outerEnd,
-                      ),
-                    ),
-                    paint: const BlockPaint(
-                      caretColor: Color(0xFF000000),
-                      selectionColor: Color(0xFF000000),
-                      formulaColor: Color(0xFFE9F0FC),
-                      composingColor: Color(0xFF000000),
-                      matchColor: Color(0xFF000000),
-                      misspellingColor: Color(0xFF000000),
-                    ),
-                    caretVisible: ValueNotifier<bool>(true),
-                    child: RichText(
-                      text: view.span(
-                        base: RichTextStyles.base(context),
-                        mark: const Color(0xFF000000),
-                      ),
-                      textScaler: TextScaler.noScaling,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+      final letter = MatrixUtils.transformRect(
+        paragraph.getTransformTo(null),
+        paragraph.rangeRects(0, 1).single,
+      );
+      final box = tester.getRect(find.byType(TextBoxEditor));
+      expect(field.left, moreOrLessEquals(box.left));
+      expect(field.right, moreOrLessEquals(box.right));
+      expect(field.top, lessThan(letter.center.dy), reason: 'on its line');
+      expect(field.bottom, greaterThan(letter.center.dy));
+      // Over everything on the page, the frame round the box included.
+      expect(
+        find.descendant(
+          of: find.byType(InfiniteCanvas),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is CustomPaint && widget.painter is FormulaFieldPainter,
           ),
-        );
-        await tester.pump();
-
-        final paragraph = tester.renderObject<RenderBlockParagraph>(
-          find.byType(BlockParagraph),
-        );
-        final source = paragraph.rangeRects(
-          layout.outerStart + 1,
-          layout.outerEnd - 1,
-        );
-        for (final box in paragraph.formulaRects(
-          layout.outerStart,
-          layout.outerEnd,
-        )) {
-          expect(
-            source.any(
-              (rect) => rect.top < box.bottom && rect.bottom > box.top,
-            ),
-            isTrue,
-            reason:
-                'a box at ${box.top} with no formula on its line, '
-                'in a box $width wide',
-          );
-        }
-      }
+        ),
+        findsOneWidget,
+      );
+      // The caret is drawn with the source, inside its box.
+      expect(paragraph.decoration.caret, isNull);
+      final caret = layer.sourceCaretRect(overlayOf(tester).caret!)!;
+      final drawnBox = layer.formulaBox!;
+      expect(caret.left, greaterThan(drawnBox.left));
+      expect(caret.right, lessThan(drawnBox.right));
+      expect(caret.top, greaterThanOrEqualTo(drawnBox.top));
+      expect(caret.bottom, lessThanOrEqualTo(drawnBox.bottom));
     });
 
-    testWidgets('the caret stays inside the box round the formula', (
+    testWidgets('a click on the source below the box places the caret in it', (
       tester,
     ) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
-      await type(tester, 'x');
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await type(tester, 'a + b + c + d + e + f + g + h + i + j + k');
+      await tester.pumpAndSettle();
+      final layer = formulaLayerOf(tester);
+      final field = MatrixUtils.transformRect(
+        layer.getTransformTo(null),
+        layer.formulaBox!,
+      );
+      final box = tester.getRect(find.byType(TextBoxEditor));
+      expect(field.bottom, greaterThan(box.bottom), reason: 'it wraps');
+
+      await tester.tapAt(
+        Offset(field.left + 8, field.bottom - 4),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(inFormula(tester), isTrue);
+      expect(overlayOf(tester).caret, greaterThan(0));
+      expect(
+        overlayOf(tester).caret,
+        lessThan(overlayOf(tester).source.text!.length),
+      );
+    });
+
+    testWidgets('typing a formula moves nothing in its box', (tester) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'Above');
+      await press(tester, LogicalKeyboardKey.enter);
+      await type(tester, 'Below');
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      await press(tester, LogicalKeyboardKey.end);
       await press(tester, LogicalKeyboardKey.equal, alt: true);
       await tester.pumpAndSettle();
+      final box = tester.getRect(find.byType(TextBoxEditor));
+      final below = tester.getRect(find.byType(BlockParagraph).last);
 
-      final paragraph = tester.renderObject<RenderBlockParagraph>(
-        find.byType(BlockParagraph),
-      );
-      final formula = paragraph.decoration.formula!;
-      final box = paragraph.formulaRects(formula.start, formula.end).single;
-      final caret = paragraph.caretRect(
-        paragraph.decoration.caret!,
-        paragraph.decoration.caretAffinity,
-        paragraph.decoration.typingStyle,
-      );
+      await type(tester, 'sum_(i=1)^n i^2 / (n+1) + sqrt(a^2+b^2) + x^2 + y^2');
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(find.byType(TextBoxEditor)), box);
+      expect(tester.getRect(find.byType(BlockParagraph).last), below);
+      // The source runs on over the line beneath instead.
+      final layer = formulaLayerOf(tester);
       expect(
-        caret.top,
-        lessThan(box.top),
-        reason:
-            'the caret in an empty formula is as tall as the room it '
-            'stands in, the box a little less',
+        layer.formulaBox!.bottom,
+        greaterThan(
+          MatrixUtils.transformRect(
+            tester
+                .renderObject<RenderBox>(find.byType(BlockParagraph).last)
+                .getTransformTo(layer),
+            Offset.zero & below.size,
+          ).top,
+        ),
       );
-      final drawn = paragraph.drawnCaret!;
-      expect(drawn.top, greaterThanOrEqualTo(box.top));
-      expect(drawn.bottom, lessThanOrEqualTo(box.bottom));
     });
 
     group('highlighting part of one', () {
@@ -779,15 +752,10 @@ void main() {
         );
         // In the source being typed, what it marks is on its colour too,
         // drawn in the formula's box.
-        final paragraph = tester.renderObject<RenderBlockParagraph>(
-          find.byType(BlockParagraph),
-        );
-        final mark = paragraph.decoration.formulaMarks.single;
+        final overlay = overlayOf(tester);
+        final mark = overlay.marks.single;
         expect(
-          paragraph.paragraph.text.toPlainText().substring(
-            mark.range.start,
-            mark.range.end,
-          ),
+          overlay.source.text!.substring(mark.range.start, mark.range.end),
           'b^2',
         );
         expect(
@@ -882,7 +850,7 @@ void main() {
         await press(tester, LogicalKeyboardKey.arrowLeft);
         await tester.pumpAndSettle();
         expect(inFormula(tester), isTrue);
-        expect(typedLine(tester), 'so highlight(x^2)');
+        expect(typedLine(tester), 'highlight(x^2)');
 
         await press(
           tester,
@@ -891,7 +859,7 @@ void main() {
           shift: true,
         );
         await tester.pumpAndSettle();
-        expect(typedLine(tester), 'so x^2');
+        expect(typedLine(tester), 'x^2');
       });
 
       test("the highlighter's yellow is the formulas' own", () {
@@ -947,16 +915,13 @@ void main() {
       expect(seen, isNotEmpty);
       final placed = tester.getTopLeft(find.byType(FormulaPreview));
       expect(seen.toSet(), <Offset>{placed}, reason: 'it never moved');
-      final paragraph = tester.renderObject<RenderBlockParagraph>(
-        find.byType(BlockParagraph),
-      );
-      final formula = paragraph.decoration.formula!;
+      final layer = formulaLayerOf(tester);
       final box = MatrixUtils.transformRect(
-        paragraph.getTransformTo(null),
-        paragraph.formulaRects(formula.start, formula.end).single,
+        layer.getTransformTo(null),
+        layer.formulaBox!,
       );
       expect(placed.dy, greaterThan(box.bottom));
-      expect((placed.dx - box.left).abs(), lessThan(10), reason: 'under it');
+      expect(placed.dx, moreOrLessEquals(box.left), reason: 'under it');
     });
 
     testWidgets('Done beneath the formula finishes it', (tester) async {
@@ -1097,6 +1062,30 @@ void main() {
 
     final document = await store.pages.loadDocument(pageId);
     expect(document!.extractSearchText(), 'persisted');
+  });
+
+  testWidgets('scrolling does not put off saving what was typed', (
+    tester,
+  ) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await type(tester, 'persisted');
+    await press(tester, LogicalKeyboardKey.escape);
+    // Scrolled on and on, past the autosave delay.
+    for (var i = 0; i < 12; i++) {
+      tester.binding.handlePointerEvent(
+        const PointerScrollEvent(
+          position: Offset(600, 500),
+          scrollDelta: Offset(0, 4),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    final document = await tester.runAsync(
+      () => store.pages.loadDocument(pageId),
+    );
+    expect(document!.extractSearchText(), 'persisted');
+    await tester.pumpAndSettle();
   });
 
   group('OneNote-style caret', () {
@@ -1394,17 +1383,10 @@ void main() {
       expect(formula.isMath, isTrue);
       expect(formula.marks.size, 20);
       // Its source is typed at the size of the text around it too.
-      final source = tester.widget<RichText>(
-        find
-            .descendant(
-              of: find.byType(TextBoxEditor),
-              matching: find.byType(RichText),
-            )
-            .first,
+      expect(
+        overlayOf(tester).source.style!.fontSize,
+        20 * RichTextStyles.unitsPerPoint,
       );
-      final sourceSpan = (source.text as TextSpan).children!.last as TextSpan;
-      final sourceStyle = (sourceSpan.children![1] as TextSpan).style!;
-      expect(sourceStyle.fontSize, 20 * RichTextStyles.unitsPerPoint);
 
       // Finished, it is typeset at that size, and typing goes on at it.
       await press(tester, LogicalKeyboardKey.enter);
@@ -1729,8 +1711,42 @@ void main() {
       bool bandShows(WidgetTester tester) =>
           tester.widget<GrabBand>(find.byType(GrabBand)).visible;
 
-      testWidgets('with a formula begun and left, shows no band, and goes '
-          'leaving nothing to undo', (tester) async {
+      testWidgets('beside a box, lets a click through to the box', (
+        tester,
+      ) async {
+        await openEditor(tester, store, pageId);
+        await startTextBox(tester);
+        await press(tester, LogicalKeyboardKey.keyM, control: true);
+        await type(tester, 'x+y');
+        await press(tester, LogicalKeyboardKey.keyM, control: true);
+        await press(tester, LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        final box = tester.getRect(find.byType(TextBoxEditor));
+        final written = canvasOf(tester).document.elements.single.id;
+
+        // A caret placed just left of the box, whose empty box reaches
+        // over it.
+        await tester.tapAt(
+          Offset(box.left - 8, box.center.dy + 6),
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(canvasOf(tester).document.elements, hasLength(2));
+
+        await tester.tapAt(
+          Offset(box.left + 4, box.center.dy + 6),
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        final editing = tester
+            .widgetList<TextBoxEditor>(find.byType(TextBoxEditor))
+            .where((editor) => editor.isEditing);
+        expect(editing.single.element.id, written);
+        expect(canvasOf(tester).document.elements, hasLength(1));
+      });
+
+      testWidgets('with a formula begun, shows as the box it will be, and '
+          'left, goes leaving nothing to undo', (tester) async {
         await openEditor(tester, store, pageId);
         await startTextBox(tester);
         final canvas = canvasOf(tester);
@@ -1738,8 +1754,8 @@ void main() {
         await press(tester, LogicalKeyboardKey.keyM, control: true);
         await tester.pumpAndSettle();
         expect(inFormula(tester), isTrue);
-        expect(bandShows(tester), isFalse, reason: 'nothing written yet');
-        expect(canvas.selection, isEmpty);
+        expect(bandShows(tester), isTrue, reason: 'a box to type it in');
+        expect(canvas.selection, isEmpty, reason: 'nothing written yet');
 
         await press(tester, LogicalKeyboardKey.keyM, control: true);
         await tester.pumpAndSettle();
@@ -1879,6 +1895,31 @@ void main() {
     });
 
     BlockEmbed embedOf(WidgetTester tester) => blocksOf(tester).single.embed!;
+
+    testWidgets('the caret beside a picture is a line tall, on its foot', (
+      tester,
+    ) async {
+      await savePicture(tester);
+      await openEditor(tester, store, pageId);
+      final object = tester.getRect(find.byType(AssetImageView));
+      await tester.tapAt(
+        Offset(object.right + 40, object.center.dy),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<EmbedBlock>(find.byType(EmbedBlock)).caretSide, 1);
+      final caret = tester.getRect(
+        find.descendant(
+          of: find.byType(EmbedBlock),
+          matching: find.byType(ValueListenableBuilder<bool>),
+        ),
+      );
+      expect(caret.bottom, moreOrLessEquals(object.bottom));
+      expect(caret.height, lessThan(object.height));
+      final line = RichTextStyles.bodySize * 1.4 * object.height / 60;
+      expect(caret.height, moreOrLessEquals(line, epsilon: 0.5));
+    });
 
     testWidgets('clicking a picture picks it', (tester) async {
       await savePicture(tester);
@@ -2461,14 +2502,14 @@ void main() {
       'what is centred', (tester) async {
     await tester.runAsync(() async {
       final page = PageDocument.empty(id: pageId).withElementAdded(
-        TextElement(
+        const TextElement(
           id: 'box',
-          frame: const Frame(x: 100, y: 100, width: 400, height: 60),
+          frame: Frame(x: 100, y: 100, width: 400, height: 60),
           createdAt: 0,
           updatedAt: 0,
           autoWidth: true,
           widthLimit: 200,
-          blocks: const <TextBlock>[
+          blocks: <TextBlock>[
             TextBlock(
               align: BlockAlign.center,
               runs: <TextRun>[TextRun('Title')],

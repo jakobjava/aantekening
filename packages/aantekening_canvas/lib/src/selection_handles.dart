@@ -21,9 +21,6 @@ enum ResizeBehavior {
   /// PDF pages and handwriting do not distort unless a side is dragged; a
   /// side stretches them in its own direction only.
   proportional,
-
-  /// Each axis independently.
-  free,
 }
 
 /// A grab point on the selection box.
@@ -39,12 +36,6 @@ enum SelectionHandle {
 
   /// The knob above the box that turns it.
   rotate;
-
-  bool get isCorner =>
-      this == topLeft ||
-      this == topRight ||
-      this == bottomLeft ||
-      this == bottomRight;
 
   /// Whether this is the middle of a side, which resizes in one direction
   /// only. The whole side can be dragged, not just its handle.
@@ -133,6 +124,15 @@ class SelectionFrame {
     SelectionHandle.rotate => SelectionHandle.rotate,
   });
 
+  /// Whether [page] lies inside the frame.
+  bool contains(Offset page) => Frame(
+    x: center.dx - width / 2,
+    y: center.dy - height / 2,
+    width: width,
+    height: height,
+    rotation: rotation,
+  ).containsPoint(page.dx, page.dy);
+
   /// The four corners in page space, clockwise from the top-left.
   List<Offset> get corners => <Offset>[
     toPage(Offset.zero),
@@ -184,8 +184,6 @@ abstract final class SelectionHandles {
     ImageElement() ||
     PdfElement() ||
     InkElement() => ResizeBehavior.proportional,
-    MathElement() || TableElement() => ResizeBehavior.free,
-    GroupElement() => ResizeBehavior.none,
   };
 
   /// How [selection] may be resized. Several elements scale together,
@@ -207,7 +205,7 @@ abstract final class SelectionHandles {
         SelectionHandle.left,
         SelectionHandle.right,
       ],
-      ResizeBehavior.proportional || ResizeBehavior.free => <SelectionHandle>[
+      ResizeBehavior.proportional => <SelectionHandle>[
         SelectionHandle.topLeft,
         SelectionHandle.topRight,
         SelectionHandle.bottomLeft,
@@ -218,9 +216,7 @@ abstract final class SelectionHandles {
         SelectionHandle.bottom,
       ],
     };
-    final rotatable =
-        !(selection.length == 1 && selection.single is GroupElement);
-    return <SelectionHandle>[...handles, if (rotatable) SelectionHandle.rotate];
+    return <SelectionHandle>[...handles, SelectionHandle.rotate];
   }
 
   /// The corners of the box drawn round [frame], in screen space, pushed out
@@ -350,14 +346,8 @@ abstract final class SelectionHandles {
       case ResizeBehavior.horizontal:
         return _resizeHorizontally(start, handle, delta.dx);
       case ResizeBehavior.proportional:
-      case ResizeBehavior.free:
         if (handle.isSide) return _resizeSide(start, handle, delta);
-        return _resizeCorner(
-          start,
-          handle,
-          delta,
-          proportional: behavior == ResizeBehavior.proportional,
-        );
+        return _resizeCorner(start, handle, delta);
     }
   }
 
@@ -408,16 +398,15 @@ abstract final class SelectionHandles {
   static Frame _resizeCorner(
     Frame start,
     SelectionHandle handle,
-    Offset delta, {
-    required bool proportional,
-  }) {
+    Offset delta,
+  ) {
     final left = handle.movesLeft;
     final top = handle.movesTop;
 
     var width = left ? start.width - delta.dx : start.width + delta.dx;
     var height = top ? start.height - delta.dy : start.height + delta.dy;
 
-    if (proportional && start.width > 0 && start.height > 0) {
+    if (start.width > 0 && start.height > 0) {
       // Follow whichever axis the pointer has moved further along, so the
       // corner stays under the pointer as closely as the ratio allows.
       final scale = math.max(width / start.width, height / start.height);

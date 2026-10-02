@@ -2,15 +2,17 @@
 /// way a desktop delivers them.
 library;
 
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:aantekening/src/commands/command_keys.dart';
 import 'package:aantekening/src/editor/page_editor.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
+import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
-import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
@@ -19,6 +21,31 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+
+/// Makes an in-memory store holding one empty page before each test, and
+/// closes it after; [use] is told of each store and page as it is made. The
+/// caret does not blink, so waiting for the page to settle does not wait on
+/// it.
+void useTestPage(void Function(AantekeningStore store, String pageId) use) {
+  late AantekeningStore store;
+  late Directory assets;
+  setUp(() async {
+    EditableText.debugDeterministicCursor = true;
+    assets = Directory.systemTemp.createTempSync('aantekening_test_');
+    store = AantekeningStore.inMemory(assetDirectory: assets);
+    final notebook = await store.library.createNotebook(title: 'Notes');
+    final section = await store.library.createSection(
+      notebookId: notebook.id,
+      title: 'Section',
+    );
+    use(store, (await store.pages.createPage(sectionId: section.id)).id);
+  });
+  tearDown(() async {
+    EditableText.debugDeterministicCursor = false;
+    await store.close();
+    if (assets.existsSync()) assets.deleteSync(recursive: true);
+  });
+}
 
 /// The page editor over an in-memory workspace, filling a 1200×800 window.
 Future<void> openEditor(
@@ -215,32 +242,38 @@ void _sendDelta(WidgetTester tester, String text) {
   }
 
   final logged = tester.testTextInput.log.length;
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .handlePlatformMessage(
-        SystemChannels.textInput.name,
-        SystemChannels.textInput.codec.encodeMethodCall(
-          MethodCall('TextInputClient.updateEditingStateWithDeltas', <dynamic>[
-            client,
-            <String, dynamic>{
-              'deltas': <Map<String, dynamic>>[
+  // Delivered at once: the message is handled before it returns.
+  unawaited(
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          SystemChannels.textInput.name,
+          SystemChannels.textInput.codec.encodeMethodCall(
+            MethodCall(
+              'TextInputClient.updateEditingStateWithDeltas',
+              <dynamic>[
+                client,
                 <String, dynamic>{
-                  'oldText': old,
-                  'deltaText': text,
-                  'deltaStart': start,
-                  'deltaEnd': end,
-                  'selectionBase': caret,
-                  'selectionExtent': caret,
-                  'selectionAffinity': 'TextAffinity.downstream',
-                  'selectionIsDirectional': false,
-                  'composingBase': -1,
-                  'composingExtent': -1,
+                  'deltas': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'oldText': old,
+                      'deltaText': text,
+                      'deltaStart': start,
+                      'deltaEnd': end,
+                      'selectionBase': caret,
+                      'selectionExtent': caret,
+                      'selectionAffinity': 'TextAffinity.downstream',
+                      'selectionIsDirectional': false,
+                      'composingBase': -1,
+                      'composingExtent': -1,
+                    },
+                  ],
                 },
               ],
-            },
-          ]),
+            ),
+          ),
+          (_) {},
         ),
-        (_) {},
-      );
+  );
 
   // A platform input method applies its own deltas, so it knows the new text
   // without being told; the editor only sends its state when that differs —

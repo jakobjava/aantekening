@@ -267,7 +267,7 @@ void main() {
     test('leaves writing as it was written', () {
       // An S, a spiral, a zigzag of many strokes and a wavy line.
       final s = <Vec2>[
-        ..._round(const Vec2(50, 30), 30, 30, start: 0, turn: -1.5 * math.pi),
+        ..._round(const Vec2(50, 30), 30, 30, turn: -1.5 * math.pi),
         ..._round(
           const Vec2(50, 90),
           30,

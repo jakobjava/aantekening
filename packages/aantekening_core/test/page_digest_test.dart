@@ -81,14 +81,14 @@ void main() {
       expect(
         split(const <TextRun>[
           TextRun('Speed is z. B. 9.81 m/s. It falls! Why? Then '),
-          TextRun.math(r'a. b', MathMode.latex),
+          TextRun.math('a. b', MathMode.latex),
           TextRun(' holds.\nNext line'),
         ]),
         <String>[
           'Speed is z. B. 9.81 m/s.',
           'It falls!',
           'Why?',
-          r'Then a. b holds.',
+          'Then a. b holds.',
           'Next line',
         ],
       );
@@ -239,7 +239,6 @@ void main() {
             BlockEmbed(
               kind: EmbedKind.pdfPage,
               assetId: 'sheet.pdf',
-              pageIndex: 0,
               width: 580,
               height: 750,
             ),
@@ -259,13 +258,13 @@ void main() {
 
     test('shows a printout box lying on a PDF page with the page, and the '
         'writing on either', () {
-      final box = TextElement(
+      final box = const TextElement(
         id: 'box',
-        frame: const Frame(x: 50, y: 450, width: 300, height: 200),
+        frame: Frame(x: 50, y: 450, width: 300, height: 200),
         createdAt: 0,
         updatedAt: 0,
         z: 1,
-        blocks: const <TextBlock>[
+        blocks: <TextBlock>[
           TextBlock.embedded(
             BlockEmbed(
               kind: EmbedKind.image,
@@ -286,9 +285,9 @@ void main() {
 
     test('a small picture is not a sheet for a text box larger than it', () {
       final page = digest(<NoteElement>[
-        ImageElement(
+        const ImageElement(
           id: 'icon',
-          frame: const Frame(x: 10, y: 10, width: 20, height: 20),
+          frame: Frame(x: 10, y: 10, width: 20, height: 20),
           createdAt: 0,
           updatedAt: 0,
           assetId: 'i',

@@ -1,7 +1,10 @@
 /// A conversation with a model, the same whichever provider runs it.
 library;
 
+import 'dart:convert';
 import 'dart:typed_data';
+
+import 'package:meta/meta.dart';
 
 /// Who said something.
 enum ChatRole { user, assistant }
@@ -81,6 +84,7 @@ class Source {
 }
 
 /// What an answer cites: which source, and where in it.
+@immutable
 class Citation {
   const Citation({
     required this.uri,
@@ -218,6 +222,23 @@ final class ToolCallPart extends ChatPart {
   final String id;
   final String name;
   final Map<String, Object?> input;
+
+  /// A tool's [input] read from the JSON the model streamed, or, where it
+  /// came through broken, what arrived, under [invalidInputKey], for the
+  /// model to be told so.
+  static Map<String, Object?> inputFrom(String json) {
+    if (json.trim().isEmpty) return const <String, Object?>{};
+    try {
+      final parsed = jsonDecode(json);
+      if (parsed is Map) return parsed.cast<String, Object?>();
+    } on FormatException {
+      // Answered below.
+    }
+    return <String, Object?>{invalidInputKey: json};
+  }
+
+  /// Where a tool's input that could not be read is kept.
+  static const String invalidInputKey = '__invalid_json';
 
   @override
   Map<String, Object?> toJson() => <String, Object?>{

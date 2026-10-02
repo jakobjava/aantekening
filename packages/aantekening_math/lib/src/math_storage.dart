@@ -26,23 +26,6 @@ abstract final class MathStorage {
             changed = true;
             return element.copyWith(blocks: converted);
           }(),
-          TableElement(:final rows) => () {
-            var tableChanged = false;
-            final converted = <List<TextBlock>>[
-              for (final row in rows)
-                <TextBlock>[
-                  for (final cell in row)
-                    () {
-                      final latex = latexBlock(cell);
-                      if (!identical(latex, cell)) tableChanged = true;
-                      return latex;
-                    }(),
-                ],
-            ];
-            if (!tableChanged) return element;
-            changed = true;
-            return element.copyWith(rows: converted);
-          }(),
           _ => element,
         },
     ];
@@ -54,7 +37,7 @@ abstract final class MathStorage {
   static List<TextBlock> latexBlocks(List<TextBlock> blocks) {
     List<TextBlock>? converted;
     for (var i = 0; i < blocks.length; i++) {
-      final block = latexBlock(blocks[i]);
+      final block = _latexBlock(blocks[i]);
       if (!identical(block, blocks[i])) {
         (converted ??= List<TextBlock>.of(blocks))[i] = block;
       }
@@ -64,7 +47,7 @@ abstract final class MathStorage {
 
   /// [block] with its formulas as LaTeX, or [block] itself if they already
   /// are.
-  static TextBlock latexBlock(TextBlock block) {
+  static TextBlock _latexBlock(TextBlock block) {
     if (!block.runs.any((run) => run.math == MathMode.linear)) return block;
     return block.copyWith(
       runs: <TextRun>[

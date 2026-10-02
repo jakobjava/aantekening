@@ -386,9 +386,9 @@ final class _PageReader {
           for (var i = 1; i + 3 < widths.length; i += 4)
             ByteData.sublistView(widths).getFloat32(i, Endian.little),
       ],
-      bordersVisible: properties[Prop.tableBordersVisible] == null
-          ? true
-          : properties.flag(Prop.tableBordersVisible),
+      bordersVisible:
+          properties[Prop.tableBordersVisible] == null ||
+          properties.flag(Prop.tableBordersVisible),
     );
   }
 

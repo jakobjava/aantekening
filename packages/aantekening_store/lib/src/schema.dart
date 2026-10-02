@@ -3,6 +3,10 @@ library;
 
 import 'package:sqlite3/sqlite3.dart';
 
+import '../aantekening_store.dart' show FolderMirror;
+
+import 'files/folder_mirror.dart' show FolderMirror;
+
 /// Applies and upgrades the database schema.
 ///
 /// The schema version is tracked in SQLite's own `user_version` pragma, so no

@@ -46,6 +46,15 @@ abstract final class AppTheme {
     final buttonText = text.labelLarge;
     const buttonPadding = EdgeInsets.symmetric(horizontal: 12);
     const buttonSize = Size(0, 30);
+    // What every kind of button with words in it shares.
+    final button = ButtonStyle(
+      animationDuration: Duration.zero,
+      shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
+      padding: const WidgetStatePropertyAll<EdgeInsets>(buttonPadding),
+      minimumSize: const WidgetStatePropertyAll<Size>(buttonSize),
+      textStyle: WidgetStatePropertyAll<TextStyle?>(buttonText),
+      elevation: const WidgetStatePropertyAll<double>(0),
+    );
 
     return ThemeData(
       useMaterial3: true,
@@ -86,7 +95,6 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationThemeData(
         isDense: true,
-        filled: false,
         hintStyle: TextStyle(color: tones.faint),
         labelStyle: TextStyle(color: tones.muted),
         floatingLabelStyle: TextStyle(color: tones.muted),
@@ -100,24 +108,13 @@ abstract final class AppTheme {
         border: const OutlineInputBorder(borderRadius: BorderRadius.zero),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: ButtonStyle(
-          animationDuration: Duration.zero,
-          shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
-          padding: const WidgetStatePropertyAll<EdgeInsets>(buttonPadding),
-          minimumSize: const WidgetStatePropertyAll<Size>(buttonSize),
-          textStyle: WidgetStatePropertyAll<TextStyle?>(buttonText),
+        style: button.copyWith(
           foregroundColor: _enabled(tones.text, tones.faint),
           overlayColor: overlay(),
-          elevation: const WidgetStatePropertyAll<double>(0),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
-        style: ButtonStyle(
-          animationDuration: Duration.zero,
-          shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
-          padding: const WidgetStatePropertyAll<EdgeInsets>(buttonPadding),
-          minimumSize: const WidgetStatePropertyAll<Size>(buttonSize),
-          textStyle: WidgetStatePropertyAll<TextStyle?>(buttonText),
+        style: button.copyWith(
           foregroundColor: _enabled(tones.text, tones.faint),
           overlayColor: overlay(),
           side: WidgetStateProperty.resolveWith(
@@ -130,13 +127,7 @@ abstract final class AppTheme {
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
-        style: ButtonStyle(
-          animationDuration: Duration.zero,
-          shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
-          padding: const WidgetStatePropertyAll<EdgeInsets>(buttonPadding),
-          minimumSize: const WidgetStatePropertyAll<Size>(buttonSize),
-          textStyle: WidgetStatePropertyAll<TextStyle?>(buttonText),
-          elevation: const WidgetStatePropertyAll<double>(0),
+        style: button.copyWith(
           backgroundColor: _enabled(tones.emphasis, tones.line),
           foregroundColor: _enabled(tones.onEmphasis, tones.faint),
           overlayColor: WidgetStateProperty.resolveWith(

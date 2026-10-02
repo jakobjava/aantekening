@@ -90,7 +90,7 @@ class AssetStore {
     final rows = _db.select('SELECT * FROM assets WHERE id = ?', <Object?>[
       assetId,
     ]);
-    return rows.isEmpty ? null : _asset(rows.first);
+    return rows.isEmpty ? null : assetOf(rows.first);
   }
 
   /// Fetches asset metadata by content hash.
@@ -98,7 +98,7 @@ class AssetStore {
     final rows = _db.select('SELECT * FROM assets WHERE sha256 = ?', <Object?>[
       sha256Hex,
     ]);
-    return rows.isEmpty ? null : _asset(rows.first);
+    return rows.isEmpty ? null : assetOf(rows.first);
   }
 
   /// The file backing [asset].
@@ -177,7 +177,8 @@ class AssetStore {
     };
   }
 
-  static AssetRef _asset(Row row) => AssetRef(
+  /// The asset a row of the assets table describes.
+  static AssetRef assetOf(Row row) => AssetRef(
     id: str(row, 'id'),
     sha256: str(row, 'sha256'),
     mimeType: str(row, 'mime_type'),

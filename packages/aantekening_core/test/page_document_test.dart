@@ -30,17 +30,17 @@ void main() {
           paperWidth: 816,
         ),
         elements: <NoteElement>[
-          TextElement(
+          const TextElement(
             id: 'el_text',
-            frame: const Frame(x: 10, y: 20, width: 300, height: 120),
+            frame: Frame(x: 10, y: 20, width: 300, height: 120),
             createdAt: _now,
             updatedAt: _now,
             blocks: <TextBlock>[
-              const TextBlock(
+              TextBlock(
                 kind: TextBlockKind.heading1,
                 runs: <TextRun>[TextRun('Chapter', TextMarks(bold: true))],
               ),
-              const TextBlock(
+              TextBlock(
                 kind: TextBlockKind.todo,
                 checked: true,
                 indent: 1,
@@ -64,51 +64,23 @@ void main() {
               ),
             ],
           ),
-          ImageElement(
+          const ImageElement(
             id: 'el_image',
-            frame: const Frame(x: 0, y: 200, width: 400, height: 300),
+            frame: Frame(x: 0, y: 200, width: 400, height: 300),
             createdAt: _now,
             updatedAt: _now,
             assetId: 'asset_a',
             fit: MediaFit.cover,
             altText: 'a diagram',
           ),
-          PdfElement(
+          const PdfElement(
             id: 'el_pdf',
-            frame: const Frame(x: 500, y: 0, width: 612, height: 792),
+            frame: Frame(x: 500, y: 0, width: 612, height: 792),
             createdAt: _now,
             updatedAt: _now,
             assetId: 'asset_b',
             pageIndex: 3,
             extractedText: 'lecture notes',
-          ),
-          MathElement(
-            id: 'el_math',
-            frame: const Frame(x: 0, y: 600, width: 200, height: 60),
-            createdAt: _now,
-            updatedAt: _now,
-            source: r'\frac{a}{b}',
-            mode: MathMode.latex,
-          ),
-          TableElement(
-            id: 'el_table',
-            frame: const Frame(x: 0, y: 700, width: 300, height: 100),
-            createdAt: _now,
-            updatedAt: _now,
-            headerRow: true,
-            columnWidths: const <double>[150, 150],
-            rows: <List<TextBlock>>[
-              <TextBlock>[TextBlock.plain('n'), TextBlock.plain('f(n)')],
-              <TextBlock>[TextBlock.plain('1'), TextBlock.plain('1')],
-            ],
-          ),
-          GroupElement(
-            id: 'el_group',
-            frame: const Frame(x: 0, y: 0, width: 10, height: 10),
-            createdAt: _now,
-            updatedAt: _now,
-            childIds: const <String>['el_text', 'el_math'],
-            label: 'proof',
           ),
         ],
       );
@@ -124,9 +96,6 @@ void main() {
         'ink',
         'image',
         'pdf',
-        'math',
-        'table',
-        'group',
       ]);
 
       final text = restored.elementById('el_text')! as TextElement;
@@ -139,15 +108,66 @@ void main() {
       expect(ink.strokes.single.pointCount, 3);
       expect(ink.strokes.single.tool, InkTool.highlighter);
       expect(ink.strokes.single.pressureAt(1), closeTo(0.9, 1e-6));
+    });
 
-      final math = restored.elementById('el_math')! as MathElement;
-      expect(math.source, r'\frac{a}{b}');
-      expect(math.mode, MathMode.latex);
+    test('reads a formula, a table or a group on the page by itself, from '
+        'before text boxes held them, as what holds them now', () {
+      Map<String, Object?> element(
+        String type,
+        Map<String, Object?> rest,
+      ) => <String, Object?>{
+        'id': 'el_$type',
+        'type': type,
+        'frame': const Frame(x: 100, y: 200, width: 300, height: 60).toJson(),
+        'createdAt': _now,
+        'updatedAt': _now,
+        ...rest,
+      };
+      final document = PageDocument.fromJson(<String, Object?>{
+        'id': 'PAGE03',
+        'canvas': CanvasSettings.defaults.toJson(),
+        'elements': <Object?>[
+          element('math', <String, Object?>{
+            'source': r'\frac{a}{b}',
+            'mode': 'latex',
+          }),
+          element('table', <String, Object?>{
+            'columnWidths': <double>[150, 90],
+            'rows': <Object?>[
+              <Object?>[
+                TextBlock.plain('n').toJson(),
+                TextBlock.plain('f').toJson(),
+              ],
+              <Object?>[
+                TextBlock.plain('1').toJson(),
+                TextBlock.plain('1').toJson(),
+              ],
+            ],
+          }),
+          element('group', <String, Object?>{
+            'childIds': <String>['el_math'],
+          }),
+        ],
+      });
 
-      final table = restored.elementById('el_table')! as TableElement;
-      expect(table.rowCount, 2);
-      expect(table.columnCount, 2);
-      expect(table.rows[1][1].plainText, '1');
+      expect(document.elements.map((e) => e.id), <String>[
+        'el_math',
+        'el_table',
+      ], reason: 'a group held nothing of its own');
+      final formula = document.elementById('el_math')! as TextElement;
+      expect(
+        formula.blocks.single.runs.single,
+        const TextRun.math(r'\frac{a}{b}', MathMode.latex),
+      );
+      expect(formula.frame.x, lessThan(100), reason: 'its text where it was');
+      final table = document.elementById('el_table')! as TextElement;
+      expect(table.blocks.map((b) => b.plainText), <String>[
+        'n',
+        'f',
+        '1',
+        '1',
+      ]);
+      expect(table.blocks[3].cell, const TableCell(1, 1, width: 90));
     });
 
     test('skips unknown element types instead of failing the whole page', () {
@@ -155,7 +175,7 @@ void main() {
         'formatVersion': 99,
         'id': 'PAGE02',
         'revision': 1,
-        'canvas': const CanvasSettings().toJson(),
+        'canvas': CanvasSettings.defaults.toJson(),
         'elements': <Object?>[
           _text('el_keep', 'kept').toJson(),
           <String, Object?>{'id': 'el_future', 'type': 'hologram'},
@@ -193,9 +213,9 @@ void main() {
       final document = PageDocument(
         id: 'PAGE01',
         elements: <NoteElement>[
-          TextElement(
+          const TextElement(
             id: 'box',
-            frame: const Frame(x: 0, y: 0, width: 80, height: 40),
+            frame: Frame(x: 0, y: 0, width: 80, height: 40),
             createdAt: _now,
             updatedAt: _now,
             autoWidth: true,
@@ -220,9 +240,9 @@ void main() {
         id: 'PAGE01',
         elements: <NoteElement>[
           ink,
-          ImageElement(
+          const ImageElement(
             id: 'picture',
-            frame: const Frame(x: 0, y: 20, width: 40, height: 30),
+            frame: Frame(x: 0, y: 20, width: 40, height: 30),
             createdAt: _now,
             updatedAt: _now,
             assetId: 'old',
@@ -345,7 +365,7 @@ void main() {
     test('a page whose content is on it is left as it is', () {
       final page = PageDocument.empty(
         id: 'PAGE08',
-      ).withElementAdded(_text('a', 'first', x: 0, y: 12));
+      ).withElementAdded(_text('a', 'first', y: 12));
 
       expect(identical(page.withContentOnPage(), page), isTrue);
     });
@@ -357,16 +377,20 @@ void main() {
         id: 'PAGE07',
         elements: <NoteElement>[
           _text('t', 'integral of x'),
-          MathElement(
+          const TextElement(
             id: 'm',
-            frame: const Frame(x: 0, y: 0, width: 10, height: 10),
+            frame: Frame(x: 0, y: 0, width: 10, height: 10),
             createdAt: _now,
             updatedAt: _now,
-            source: r'\int x \, dx',
+            blocks: <TextBlock>[
+              TextBlock(
+                runs: <TextRun>[TextRun.math(r'\int x \, dx', MathMode.latex)],
+              ),
+            ],
           ),
-          PdfElement(
+          const PdfElement(
             id: 'p',
-            frame: const Frame(x: 0, y: 0, width: 10, height: 10),
+            frame: Frame(x: 0, y: 0, width: 10, height: 10),
             createdAt: _now,
             updatedAt: _now,
             assetId: 'asset',
@@ -387,16 +411,16 @@ void main() {
       final page = PageDocument(
         id: 'PAGE08',
         elements: <NoteElement>[
-          ImageElement(
+          const ImageElement(
             id: 'i',
-            frame: const Frame(x: 0, y: 0, width: 10, height: 10),
+            frame: Frame(x: 0, y: 0, width: 10, height: 10),
             createdAt: _now,
             updatedAt: _now,
             assetId: 'shared',
           ),
-          PdfElement(
+          const PdfElement(
             id: 'p',
-            frame: const Frame(x: 0, y: 0, width: 10, height: 10),
+            frame: Frame(x: 0, y: 0, width: 10, height: 10),
             createdAt: _now,
             updatedAt: _now,
             assetId: 'shared',
@@ -412,7 +436,7 @@ void main() {
       final page = PageDocument(
         id: 'PAGE09',
         elements: <NoteElement>[
-          _text('a', 'x', x: 0, y: 0),
+          _text('a', 'x'),
           _text('b', 'y', x: 500, y: 300),
         ],
       );
@@ -502,24 +526,6 @@ void main() {
       expect(copy.frame.y, 44);
       expect(copy.createdAt, _now + 5);
       expect(copy.blocks, original.blocks);
-    });
-
-    test('keep a group to the members copied with it', () {
-      final member = _text('member', 'in');
-      final group = GroupElement(
-        id: 'group',
-        frame: const Frame(x: 0, y: 0, width: 10, height: 10),
-        createdAt: _now,
-        updatedAt: _now,
-        childIds: const <String>['member', 'left behind'],
-      );
-      final copies = NoteElement.copiesOf(<NoteElement>[
-        member,
-        group,
-      ], now: _now);
-
-      final copiedGroup = copies.whereType<GroupElement>().single;
-      expect(copiedGroup.childIds, <String>[copies.first.id]);
     });
   });
 }

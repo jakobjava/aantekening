@@ -73,21 +73,21 @@ void main() {
   test('a page names its pictures and files anew', () {
     final document = PageDocument.empty(id: 'p')
         .withElementAdded(
-          ImageElement(
+          const ImageElement(
             id: 'i',
-            frame: const Frame(x: 0, y: 0, width: 1, height: 1),
+            frame: Frame(x: 0, y: 0, width: 1, height: 1),
             createdAt: 1,
             updatedAt: 1,
             assetId: 'old-picture',
           ),
         )
         .withElementAdded(
-          TextElement(
+          const TextElement(
             id: 't',
-            frame: const Frame(x: 0, y: 0, width: 1, height: 1),
+            frame: Frame(x: 0, y: 0, width: 1, height: 1),
             createdAt: 1,
             updatedAt: 1,
-            blocks: const <TextBlock>[
+            blocks: <TextBlock>[
               TextBlock.embedded(
                 BlockEmbed(
                   kind: EmbedKind.file,

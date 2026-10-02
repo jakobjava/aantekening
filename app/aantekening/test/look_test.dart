@@ -9,10 +9,9 @@ import 'package:aantekening/src/look/appearance.dart';
 import 'package:aantekening/src/look/controls.dart';
 import 'package:aantekening/src/look/grain.dart';
 import 'package:aantekening/src/look/tones.dart';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -25,11 +24,11 @@ void main() {
 
     test('prefers the starts of words, and shorter names', () {
       expect(
-        fuzzyScore('np', 'New page')!,
+        fuzzyScore('np', 'New page'),
         greaterThan(fuzzyScore('np', 'Snapping')!),
       );
       expect(
-        fuzzyScore('mech', 'Mechanics')!,
+        fuzzyScore('mech', 'Mechanics'),
         greaterThan(fuzzyScore('mech', 'Quantum mechanics')!),
       );
     });
@@ -176,9 +175,7 @@ void main() {
     });
 
     test('names a pair read back after its preset', () {
-      final read = Appearance.fromJson(
-        const Appearance(dark: Appearance.defaultDark).toJson(),
-      );
+      final read = Appearance.fromJson(const Appearance().toJson());
       expect(read.dark.name, Appearance.defaultDark.name);
     });
 
@@ -209,9 +206,8 @@ void main() {
       final image = await tester.runAsync(
         () => recorder.endRecording().toImage(64, 64),
       );
-      final bytes = (await tester.runAsync(
-        () => image!.toByteData(format: ui.ImageByteFormat.rawRgba),
-      ))!.buffer.asUint8List();
+      final bytes = (await tester.runAsync(() => image!.toByteData()))!.buffer
+          .asUint8List();
 
       var sum = 0;
       var lighter = 0;

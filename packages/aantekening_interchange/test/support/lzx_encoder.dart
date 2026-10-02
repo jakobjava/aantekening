@@ -115,7 +115,9 @@ List<(Uint8List, int)> encodeLzx(
   };
   final mainLengths = Uint8List(256 + 8 * slots);
   final lengthLengths = Uint8List(249);
-  var r0 = 1, r1 = 1, r2 = 1;
+  var r0 = 1;
+  var r1 = 1;
+  var r2 = 1;
 
   // Tokens: greedy matching against earlier text, never across a frame.
   final tokens = <_Token>[];
@@ -202,7 +204,9 @@ List<(Uint8List, int)> encodeLzx(
     }
 
     // Work out the symbols, as the decoder will read them.
-    var s0 = r0, s1 = r1, s2 = r2;
+    var s0 = r0;
+    var s1 = r1;
+    var s2 = r2;
     final symbols = <({int main, int? length, int slot, int footer})>[];
     for (final token in blockTokens) {
       if (token.literal >= 0) {

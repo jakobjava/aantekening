@@ -6,6 +6,9 @@
 /// [PageFormatException] instead.
 library;
 
+import '../../aantekening_core.dart' show PageFormatException;
+import '../document/elements.dart' show PageFormatException;
+
 /// Reads [key] as a [String], falling back to [fallback].
 String readString(
   Map<String, Object?> json,

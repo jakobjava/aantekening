@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon_items.dart'
     show RibbonButton, RibbonLargeButton, mathGalleryOf;
@@ -77,25 +75,10 @@ Future<void> _drag(
 
 void main() {
   late AantekeningStore store;
-  late Directory assets;
   late String pageId;
-
-  setUp(() async {
-    EditableText.debugDeterministicCursor = true;
-    assets = Directory.systemTemp.createTempSync('aantekening_ribbon_test_');
-    store = AantekeningStore.inMemory(assetDirectory: assets);
-    final notebook = await store.library.createNotebook(title: 'Notes');
-    final section = await store.library.createSection(
-      notebookId: notebook.id,
-      title: 'Section',
-    );
-    pageId = (await store.pages.createPage(sectionId: section.id)).id;
-  });
-
-  tearDown(() async {
-    EditableText.debugDeterministicCursor = false;
-    await store.close();
-    if (assets.existsSync()) assets.deleteSync(recursive: true);
+  useTestPage((made, id) {
+    store = made;
+    pageId = id;
   });
 
   test('every structure and symbol on the Math tab typesets', () {

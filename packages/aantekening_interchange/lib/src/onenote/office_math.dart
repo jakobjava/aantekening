@@ -379,7 +379,7 @@ String _character(int rune) {
   return char;
 }
 
-/// A mathematical alphanumeric character ([Unicode] U+1D400–1D7FF, and
+/// A mathematical alphanumeric character (Unicode U+1D400–1D7FF, and
 /// the letterlike symbols standing in its gaps) as a letter or digit in
 /// the style it is drawn in.
 String? _styledLetter(int rune) {

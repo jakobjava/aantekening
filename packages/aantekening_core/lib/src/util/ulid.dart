@@ -55,24 +55,6 @@ abstract final class Ulid {
     return out.toString();
   }
 
-  /// Recovers the creation time encoded in [id].
-  ///
-  /// Throws [FormatException] if [id] is not a well-formed ULID.
-  static DateTime timestampOf(String id) {
-    if (id.length != length) {
-      throw FormatException('Expected a $length character ULID', id);
-    }
-    var millis = 0;
-    for (var i = 0; i < timeChars; i++) {
-      final index = _alphabet.indexOf(id[i].toUpperCase());
-      if (index < 0) {
-        throw FormatException('Invalid ULID character "${id[i]}"', id, i);
-      }
-      millis = (millis << 5) | index;
-    }
-    return DateTime.fromMillisecondsSinceEpoch(millis);
-  }
-
   /// Returns whether [id] is a syntactically valid ULID.
   static bool isValid(String id) {
     if (id.length != length) return false;

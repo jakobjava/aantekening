@@ -7,11 +7,9 @@ import 'dart:convert';
 
 import 'package:aantekening_core/aantekening_core.dart';
 
-import 'anthropic_provider.dart';
 import 'conversation.dart';
 import 'note_context.dart';
 import 'note_reader.dart';
-import 'openai_compatible_provider.dart';
 import 'provider.dart';
 import 'web_search.dart';
 
@@ -125,9 +123,7 @@ class NoteTools {
   /// Runs [call], answering what it asks or saying why it cannot.
   Future<ToolResultPart> run(ToolCallPart call) async {
     final input = call.input;
-    final broken =
-        input[AnthropicProvider.invalidInputKey] ??
-        input[OpenAiCompatibleProvider.invalidInputKey];
+    final broken = input[ToolCallPart.invalidInputKey];
     if (broken != null) {
       return _error(
         call,

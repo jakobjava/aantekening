@@ -3,12 +3,12 @@ import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_interchange/aantekening_interchange.dart';
+import 'package:aantekening_interchange/src/bytes.dart';
 import 'package:aantekening_interchange/src/onenote/model.dart';
 import 'package:aantekening_interchange/src/onenote/notebook_reader.dart';
 import 'package:aantekening_interchange/src/onenote/office_math.dart';
 import 'package:aantekening_interchange/src/onenote/onenote_import.dart';
 import 'package:aantekening_interchange/src/onenote/section_reader.dart';
-import 'package:aantekening_interchange/src/bytes.dart';
 import 'package:aantekening_interchange/src/onestore/revision_store.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -398,10 +398,10 @@ void main() {
     test('draw handwriting where it was, in page units', () {
       final draft = convert(<OnePage>[
         page(<OnePageItem>[
-          OneInk(
+          const OneInk(
             x: 1,
             y: 2,
-            groups: const <OneInk>[],
+            groups: <OneInk>[],
             strokes: <OneStroke>[
               OneStroke(
                 xs: <double>[0, 2540],

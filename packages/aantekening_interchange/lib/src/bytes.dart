@@ -4,6 +4,8 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
+
 /// Thrown when a file is not what it claims to be, or is damaged.
 class FormatDamage implements Exception {
   FormatDamage(this.message);
@@ -59,13 +61,6 @@ final class ByteReader {
     return value;
   }
 
-  int i32() {
-    _need(4);
-    final value = _data.getInt32(position, Endian.little);
-    position += 4;
-    return value;
-  }
-
   int u64() {
     _need(8);
     final value = _data.getUint64(position, Endian.little);
@@ -109,6 +104,7 @@ final class ByteReader {
 }
 
 /// A GUID, compared by value.
+@immutable
 final class Guid {
   Guid(Uint8List bytes) : _bytes = Uint8List.fromList(bytes) {
     if (bytes.length != 16) throw ArgumentError.value(bytes, 'bytes');
@@ -117,7 +113,7 @@ final class Guid {
   /// Parses the usual textual form, braces or not:
   /// `7B5C52E4-D88C-4DA7-AEB1-5378D02996D3`.
   factory Guid.parse(String text) {
-    final hex = text.replaceAll(RegExp(r'[{}-]'), '');
+    final hex = text.replaceAll(RegExp('[{}-]'), '');
     if (hex.length != 32) throw FormatException('Not a GUID', text);
     int byte(int i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
     // The first three groups are stored little-endian.
@@ -139,13 +135,6 @@ final class Guid {
   Uint8List get bytes => Uint8List.fromList(_bytes);
 
   bool get isNil => _bytes.every((byte) => byte == 0);
-
-  /// This GUID with every byte exclusive-ored with [other]'s.
-  Guid xor(Guid other) => Guid(
-    Uint8List.fromList(<int>[
-      for (var i = 0; i < 16; i++) _bytes[i] ^ other._bytes[i],
-    ]),
-  );
 
   @override
   bool operator ==(Object other) {

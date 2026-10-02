@@ -19,12 +19,6 @@ enum DigestKind {
   /// Typed text, and the formulas and tables written in it.
   text,
 
-  /// A formula placed on the page by itself.
-  formula,
-
-  /// A table placed on the page by itself.
-  table,
-
   /// A picture.
   picture,
 
@@ -344,26 +338,6 @@ class _DigestBuilder {
     switch (element) {
       case TextElement():
         return _text(element, onSheet: onSheet, own: sheet);
-      case MathElement(:final source):
-        return DigestItem(
-          elementId: element.id,
-          kind: DigestKind.formula,
-          bounds: element.bounds,
-          passages: <DigestPassage>[DigestPassage('\$\$$source\$\$', link)],
-        );
-      case TableElement(:final rows):
-        return DigestItem(
-          elementId: element.id,
-          kind: DigestKind.table,
-          bounds: element.bounds,
-          passages: <DigestPassage>[
-            for (final row in rows)
-              DigestPassage(
-                '| ${row.map((cell) => RichMarkdown.block(cell)).join(' | ')} |',
-                link,
-              ),
-          ],
-        );
       case ImageElement(:final altText, :final recognizedText):
         return DigestItem(
           elementId: element.id,
@@ -396,8 +370,6 @@ class _DigestBuilder {
       case InkElement():
         // Drawings are gathered up by where they are, in _drawings; writing
         // on a sheet is in the sheet's visual.
-        return null;
-      case GroupElement():
         return null;
     }
   }

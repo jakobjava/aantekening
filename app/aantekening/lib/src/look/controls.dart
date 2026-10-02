@@ -642,31 +642,61 @@ class Swatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tones = context.tones;
     return Tooltip(
       message: name,
-      child: InkWell(
+      child: PickRing(
+        selected: selected,
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: selected ? tones.emphasis : Colors.transparent,
-              width: 1.5,
-            ),
+          width: size,
+          height: size,
+          foregroundDecoration: BoxDecoration(
+            border: Border.all(color: context.tones.line),
           ),
-          child: Container(
-            width: size,
-            height: size,
-            foregroundDecoration: BoxDecoration(
-              border: Border.all(color: tones.line),
-            ),
-            child: switch (color) {
-              final color? => ColoredBox(color: color),
-              null => const CustomPaint(painter: InverseHalves()),
-            },
+          child: switch (color) {
+            final color? => ColoredBox(color: color),
+            null => const CustomPaint(painter: InverseHalves()),
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// [child], to be picked with a click, in a ring of the emphasis while it
+/// is [selected], and on the selection's tint if [filled]: a swatch, or a
+/// tile drawn as what it picks.
+class PickRing extends StatelessWidget {
+  const PickRing({
+    required this.selected,
+    required this.onTap,
+    required this.child,
+    this.padding = const EdgeInsets.all(2),
+    this.filled = false,
+    super.key,
+  });
+
+  final bool selected;
+  final VoidCallback? onTap;
+  final Widget child;
+  final EdgeInsets padding;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final tones = context.tones;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: filled && selected ? tones.selection : null,
+          border: Border.all(
+            color: selected ? tones.emphasis : Colors.transparent,
+            width: 1.5,
           ),
         ),
+        child: child,
       ),
     );
   }

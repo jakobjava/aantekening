@@ -8,12 +8,12 @@ import 'package:aantekening/src/ai/sources_view.dart';
 import 'package:aantekening/src/ai/study_pages.dart';
 import 'package:aantekening/src/ai/summary_sheet.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
+import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
 import 'package:aantekening/src/shell/home_shell.dart';
 import 'package:aantekening/src/shell/library_pane.dart';
 import 'package:aantekening/src/shell/tabs.dart';
-import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
@@ -68,7 +68,7 @@ class FakeProvider implements ChatProvider {
             : '{"title": "Forces", "gist": "What force is.", "sections": '
                   '[{"heading": "Force", "points": [{"text": "Force is mass '
                   'times acceleration.", "sources": ["1.1"]}]}], '
-                  r'"formulas": [{"latex": "F = ma", "meaning": "force", '
+                  '"formulas": [{"latex": "F = ma", "meaning": "force", '
                   '"sources": ["1.1"]}], "beyond": ["Mass is in kg."]}',
       );
       yield done;

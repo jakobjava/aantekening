@@ -1,7 +1,7 @@
 import 'package:aantekening/src/arrangement/arrangement.dart';
 import 'package:aantekening/src/editor/ribbon/ribbon_layout.dart';
-import 'package:aantekening/src/shell/sidebar_state.dart';
 import 'package:aantekening/src/editor/trackpad.dart';
+import 'package:aantekening/src/shell/sidebar_state.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -130,11 +130,8 @@ void main() {
         PointerHoverEvent(position: at, kind: PointerDeviceKind.mouse);
     PointerPanZoomStartEvent gesture(Offset at) =>
         PointerPanZoomStartEvent(position: at);
-    PointerScrollEvent wheel(Offset at) => PointerScrollEvent(
-      position: at,
-      scrollDelta: const Offset(0, 40),
-      kind: PointerDeviceKind.mouse,
-    );
+    PointerScrollEvent wheel(Offset at) =>
+        PointerScrollEvent(position: at, scrollDelta: const Offset(0, 40));
 
     test('aims a gesture at the pointer, not at where it is reported', () {
       final aim = TrackpadAim()..aim(hover(const Offset(400, 300)));

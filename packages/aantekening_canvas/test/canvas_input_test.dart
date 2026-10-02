@@ -1,9 +1,8 @@
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
-import 'package:aantekening_canvas/src/page_space.dart';
 import 'package:aantekening_canvas/src/element_transforms.dart';
+import 'package:aantekening_canvas/src/page_space.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -63,6 +62,34 @@ Widget _host(
   ),
 );
 
+/// Right-clicks the page at each of [pages], on a canvas where each
+/// element claims presses if [claims]; returns where the canvas reported
+/// the menus asked for.
+Future<List<Offset>> _rightClick(
+  WidgetTester tester,
+  CanvasController controller,
+  List<Offset> pages, {
+  bool claims = false,
+}) async {
+  final reported = <Offset>[];
+  await tester.pumpWidget(
+    _host(
+      controller,
+      claimsPointer: claims ? (element, page) => true : null,
+      onContextMenu: (page, global) => reported.add(page),
+    ),
+  );
+  for (final page in pages) {
+    await tester.tapAt(
+      controller.viewport.toScreen(page),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pump();
+  }
+  return reported;
+}
+
 void main() {
   group('the background', () {
     CanvasController withPicture() => CanvasController()
@@ -96,16 +123,9 @@ void main() {
       tester,
     ) async {
       final controller = withPicture();
-      final reported = <Offset>[];
-      await tester.pumpWidget(
-        _host(controller, onContextMenu: (page, global) => reported.add(page)),
-      );
-      await tester.tapAt(
-        controller.viewport.toScreen(const Offset(150, 100)),
-        kind: PointerDeviceKind.mouse,
-        buttons: kSecondaryMouseButton,
-      );
-      await tester.pump();
+      final reported = await _rightClick(tester, controller, <Offset>[
+        const Offset(150, 100),
+      ]);
 
       expect(reported.single.dx, closeTo(150, 0.01));
       expect(reported.single.dy, closeTo(100, 0.01));
@@ -115,23 +135,58 @@ void main() {
     testWidgets('a right-click on what claims presses is left to it', (
       tester,
     ) async {
-      final controller = withPicture();
-      final reported = <Offset>[];
-      await tester.pumpWidget(
-        _host(
-          controller,
-          claimsPointer: (element, page) => true,
-          onContextMenu: (page, global) => reported.add(page),
-        ),
-      );
-      await tester.tapAt(
-        controller.viewport.toScreen(const Offset(150, 100)),
-        kind: PointerDeviceKind.mouse,
-        buttons: kSecondaryMouseButton,
-      );
-      await tester.pump();
+      final reported = await _rightClick(tester, withPicture(), <Offset>[
+        const Offset(150, 100),
+      ], claims: true);
       expect(reported, isEmpty);
     });
+  });
+
+  group('things picked together', () {
+    CanvasController picked() => CanvasController()
+      ..loadDocument(
+        PageDocument.empty(id: 'p')
+            .withElementAdded(_textBox('box', x: 20, y: 20))
+            .withElementAdded(_image('picture', x: 300, y: 300)),
+      )
+      ..selectAll(<String>['box', 'picture']);
+
+    testWidgets('are right-clicked together, on what would claim it alone', (
+      tester,
+    ) async {
+      final controller = picked();
+      final reported = await _rightClick(tester, controller, <Offset>[
+        const Offset(60, 40), // on the box
+        const Offset(250, 250), // on the paper between them
+      ], claims: true);
+      expect(reported, hasLength(2));
+      expect(controller.selection, <String>{'box', 'picture'});
+    });
+
+    test('are pressed together, anywhere in the box about them', () {
+      final controller = picked();
+      final box = controller.document.elementById('box');
+      expect(controller.pressesGroup(const Offset(60, 40), box), isTrue);
+      expect(controller.pressesGroup(const Offset(250, 250), null), isTrue);
+      expect(controller.pressesGroup(const Offset(700, 40), null), isFalse);
+      controller.select('box');
+      expect(controller.pressesGroup(const Offset(60, 40), box), isFalse);
+    });
+  });
+
+  test('what presses pass over is neither hit nor picked', () {
+    final controller = CanvasController()
+      ..loadDocument(
+        PageDocument.empty(id: 'p')
+            .withElementAdded(_image('picture'))
+            .withElementAdded(_textBox('caret', x: 10, y: 10)),
+      )
+      ..passesOver = (id) => id == 'caret';
+    expect(controller.hitTest(const Offset(20, 20))?.id, 'picture');
+    controller.selectEverything();
+    expect(controller.selection, <String>{'picture'});
+    controller.selectIn(const Aabb(0, 0, 400, 400));
+    expect(controller.selection, <String>{'picture'});
   });
 
   group('SelectionHandles', () {
@@ -232,9 +287,9 @@ void main() {
     });
 
     test('a turned text box keeps its top edge while resized', () {
-      final box = TextElement(
+      final box = const TextElement(
         id: 't',
-        frame: const Frame(x: 0, y: 0, width: 200, height: 60, rotation: 0.6),
+        frame: Frame(x: 0, y: 0, width: 200, height: 60, rotation: 0.6),
         createdAt: 0,
         updatedAt: 0,
       );
@@ -462,12 +517,10 @@ void main() {
 
       final first = await tester.startGesture(
         const Offset(300, 300),
-        kind: PointerDeviceKind.touch,
         pointer: 1,
       );
       final second = await tester.startGesture(
         const Offset(500, 300),
-        kind: PointerDeviceKind.touch,
         pointer: 2,
       );
       await first.moveTo(const Offset(200, 300));
@@ -543,9 +596,7 @@ void main() {
       final image = (await tester.runAsync(
         () => layer.toImage(const Rect.fromLTWH(0, 0, 800, 600)),
       ))!;
-      final pixels = (await tester.runAsync(
-        () => image.toByteData(format: ui.ImageByteFormat.rawRgba),
-      ))!;
+      final pixels = (await tester.runAsync(image.toByteData))!;
       int red(int x, int y) => pixels.getUint8((y * 800 + x) * 4);
       int green(int x, int y) => pixels.getUint8((y * 800 + x) * 4 + 1);
       expect((red(320, 300), green(320, 300)), (0xD9, 0x30));
@@ -1223,8 +1274,8 @@ void main() {
     test('takes objects whose middle it is drawn round, not those it only '
         'touches', () {
       final controller = CanvasController()
-        ..addElement(_image('inside', x: 0, y: 0))
-        ..addElement(_image('touched', x: 150, y: 0));
+        ..addElement(_image('inside'))
+        ..addElement(_image('touched', x: 150));
 
       controller.selectWithin(
         Lasso(const Offset(-10, -10))

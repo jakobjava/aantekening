@@ -6,6 +6,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../look/controls.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 
@@ -60,28 +61,21 @@ class _TemplateTile extends StatelessWidget {
       button: true,
       selected: selected,
       label: template.label,
-      child: InkWell(
+      child: PickRing(
+        selected: selected,
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
-          decoration: BoxDecoration(
-            color: selected ? tones.selection : null,
-            border: Border.all(
-              color: selected ? tones.emphasis : Colors.transparent,
-              width: 1.5,
+        padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
+        filled: true,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SheetThumbnail(template: template, size: size),
+            const SizedBox(height: 4),
+            Text(
+              template.label,
+              style: TextStyle(fontSize: 11.5, color: tones.text),
             ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              SheetThumbnail(template: template, size: size),
-              const SizedBox(height: 4),
-              Text(
-                template.label,
-                style: TextStyle(fontSize: 11.5, color: tones.text),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );

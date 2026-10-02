@@ -133,18 +133,6 @@ final class WordTable {
     existing.add(WordEntry(word, flags, initialCapital: initialCapital));
   }
 
-  /// Marks [word] as forbidden, as removing it from a dictionary does.
-  void forbid(String word) {
-    final entries = _words[word];
-    if (entries == null) {
-      add(word, FlagSet.of(<int>[_rules.forbiddenWord]));
-      return;
-    }
-    for (final entry in entries) {
-      entry.flags = entry.flags.withFlag(_rules.forbiddenWord);
-    }
-  }
-
   /// A line's word and flags, without the morphological fields that may
   /// follow: `word/flags po:noun`.
   (String, FlagSet) _split(String line) {

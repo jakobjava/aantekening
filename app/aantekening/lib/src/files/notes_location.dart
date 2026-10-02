@@ -111,9 +111,6 @@ class NotesLocation {
   /// new ones if there are none.
   Future<void> openAt(String folder) => _keepAt(folder);
 
-  /// Keeps the notes in the app's own folder again.
-  Future<void> openDefault() => _keepAt(null);
-
   Future<void> _keepAt(String? folder) async {
     await _flush();
     final preferences = await _ref.read(preferencesProvider.future);

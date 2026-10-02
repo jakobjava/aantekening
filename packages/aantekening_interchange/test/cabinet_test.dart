@@ -113,7 +113,7 @@ void main() {
 
     test('fails on damaged data rather than reading past it', () {
       final input = sampleText(20000);
-      final frames = encodeLzx(input, windowBits: 16);
+      final frames = encodeLzx(input);
       final (data, size) = frames.single;
       final damaged = Uint8List.fromList(data)..fillRange(4, 40, 0xFF);
       expect(
@@ -135,9 +135,9 @@ void main() {
       final cabinet = writeCabinet(
         files,
         compression: 3 | (16 << 8),
-        encode: (all) => encodeLzx(all, windowBits: 16),
+        encode: encodeLzx,
       );
-      final read = Cabinet.read(BytesSource(cabinet)).readAll();
+      final read = Cabinet.read(BytesSource(cabinet)).contents;
       expect(read.keys, <String>[
         'Open Notebook.onetoc2',
         'Grüppe/Einträge.one',
@@ -162,7 +162,7 @@ void main() {
         ],
       );
       expect(
-        Cabinet.read(BytesSource(cabinet)).readAll()['Open Notebook.onetoc2'],
+        Cabinet.read(BytesSource(cabinet)).contents['Open Notebook.onetoc2'],
         files['Open Notebook.onetoc2'],
       );
     });
@@ -171,11 +171,11 @@ void main() {
       final cabinet = writeCabinet(
         files,
         compression: 3 | (16 << 8),
-        encode: (all) => encodeLzx(all, windowBits: 16),
+        encode: encodeLzx,
       );
       cabinet[cabinet.length - 30] ^= 0x40;
       expect(
-        () => Cabinet.read(BytesSource(cabinet)).readAll(),
+        () => Cabinet.read(BytesSource(cabinet)).contents,
         throwsA(isA<FormatDamage>()),
       );
     });
@@ -208,4 +208,19 @@ void main() {
       );
     });
   });
+}
+
+extension on Cabinet {
+  /// Every file's bytes, in memory.
+  Map<String, Uint8List> get contents {
+    final builders = <String, BytesBuilder>{};
+    read(
+      onBytes: (file, bytes) =>
+          (builders[file.name] ??= BytesBuilder()).add(bytes),
+      onFile: (file) => builders.putIfAbsent(file.name, BytesBuilder.new),
+    );
+    return <String, Uint8List>{
+      for (final entry in builders.entries) entry.key: entry.value.takeBytes(),
+    };
+  }
 }

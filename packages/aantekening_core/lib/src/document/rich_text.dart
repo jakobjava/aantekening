@@ -1,6 +1,7 @@
 /// The rich-text model used inside text elements.
 library;
 
+import 'package:meta/meta.dart';
 import '../util/json_read.dart';
 
 /// The syntax a formula is written in.
@@ -43,6 +44,7 @@ enum BlockAlign { start, center, end }
 ///
 /// Marks serialise only the fields that differ from the default, which keeps
 /// unformatted documents — by far the common case — close to plain text on disk.
+@immutable
 class TextMarks {
   const TextMarks({
     this.bold = false,
@@ -141,9 +143,6 @@ class TextMarks {
   /// A copy in the typeface [font], or in the page's own with null.
   TextMarks withFont(String? font) => _with(font: () => font);
 
-  /// A copy raised or lowered as [script] says, or on the line with null.
-  TextMarks withScript(TextScript? script) => _with(script: () => script);
-
   /// Only the marks a formula can carry: colour and size. Formulas are
   /// typeset by their own rules, so bold or underline mean nothing to them,
   /// and a highlight on one is part of its LaTeX, whole or in part.
@@ -241,6 +240,7 @@ class TextMarks {
 /// exactly where it was typed and its source is what search indexes. It is
 /// never merged with a neighbouring run: two formulas typed side by side stay
 /// two formulas.
+@immutable
 class TextRun {
   const TextRun(this.text, [this.marks = TextMarks.none]) : math = null;
 
@@ -318,6 +318,7 @@ enum EmbedKind {
 /// Embeds reference assets by identifier, like the free-standing image and PDF
 /// elements do, so the same picture can sit inside a text box on one page and
 /// on its own on another while being stored once.
+@immutable
 class BlockEmbed {
   const BlockEmbed({
     required this.kind,
@@ -358,17 +359,6 @@ class BlockEmbed {
         text: text ?? this.text,
         name: name,
       );
-
-  /// This embed showing the asset [assetId] instead.
-  BlockEmbed withAsset(String assetId) => BlockEmbed(
-    kind: kind,
-    assetId: assetId,
-    width: width,
-    height: height,
-    pageIndex: pageIndex,
-    text: text,
-    name: name,
-  );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'kind': kind.name,
@@ -414,6 +404,7 @@ class BlockEmbed {
 /// ending in cell marks. Everything a paragraph can do, a cell can: carry
 /// formulas, lists and pictures, be selected, searched and spell-checked.
 /// Several blocks in a row naming the same cell are that cell's lines.
+@immutable
 class TableCell {
   const TableCell(
     this.row,
@@ -497,6 +488,7 @@ class TableCell {
 /// A block without spacing is laid out as the page lays out what is typed
 /// on it; one with spacing, as it was laid out where it was written, so
 /// that handwriting over it still falls on its lines.
+@immutable
 class BlockSpacing {
   const BlockSpacing({this.before = 0, this.after = 0, this.line});
 
@@ -531,6 +523,7 @@ class BlockSpacing {
 }
 
 /// One paragraph-level block of rich text, or an embedded object.
+@immutable
 class TextBlock {
   const TextBlock({
     this.kind = TextBlockKind.paragraph,

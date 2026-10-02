@@ -299,7 +299,7 @@ class _Run {
         final close = stat.lastIndexOf(')');
         final name = stat
             .substring(open + 1, close)
-            .replaceAll(RegExp(r'[0-9]+'), '#');
+            .replaceAll(RegExp('[0-9]+'), '#');
         final fields = stat.substring(close + 2).split(' ');
         final ticks = int.parse(fields[11]) + int.parse(fields[12]);
         times[name] = (times[name] ?? 0) + ticks;

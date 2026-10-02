@@ -10,10 +10,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers.dart';
 import '../look/controls.dart';
 import '../look/marks.dart';
 import '../look/tones.dart';
+import '../providers.dart';
 import '../shell/library_actions.dart';
 import '../shell/library_menu.dart';
 import '../shell/panel_focus.dart';
