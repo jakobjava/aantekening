@@ -62,6 +62,10 @@ class Tones extends ThemeExtension<Tones> {
   /// Behind the panes beside the page, a shade off [base].
   final Color pane;
 
+  /// What sheets of paper lie on, for a page shown as pages: dark enough
+  /// that white paper stands out on it.
+  Color get desk => _mix(base, text, 0.1);
+
   /// Behind what the pointer is over.
   final Color hover;
 

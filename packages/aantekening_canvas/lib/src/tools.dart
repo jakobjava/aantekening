@@ -27,10 +27,18 @@ enum CanvasTool {
   shape,
 
   /// Remove whole strokes under the pointer.
-  eraser;
+  eraser,
+
+  /// Draw a loop round what to pick out: handwriting stroke by stroke,
+  /// anything else whose middle it takes in. What is picked is moved,
+  /// resized and turned as with [select]; nothing is typed.
+  lasso;
 
   /// Whether this tool lays down ink.
   bool get draws => this == pen || this == highlighter || this == shape;
+
+  /// Whether what this tool picks stays picked while it is in hand.
+  bool get selects => this == select || this == lasso;
 }
 
 /// The settings of an inking tool.
@@ -115,6 +123,9 @@ enum PenButtonAction {
   /// Picks, moves and resizes, as the select tool does.
   select('Select'),
 
+  /// Picks what a loop is drawn round, as the lasso does.
+  lasso('Lasso select'),
+
   /// Moves the page.
   scroll('Scroll');
 
@@ -130,7 +141,7 @@ enum PenButtonAction {
 class PenButtons {
   const PenButtons({
     this.first = PenButtonAction.erase,
-    this.second = PenButtonAction.select,
+    this.second = PenButtonAction.lasso,
   });
 
   final PenButtonAction first;

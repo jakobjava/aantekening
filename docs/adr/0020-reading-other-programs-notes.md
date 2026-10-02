@@ -46,8 +46,11 @@ Then, on the page, in page units — half-inches are 48, HIMETRIC 96/2540:
   underline, strikethrough, raised and lowered text, highlight and links;
   their alignment, and OneNote's own spacing — lines as high as the typeface
   sets them, not as this app spaces what is typed (`BlockSpacing`), so
-  handwriting over the text still falls on its lines; their bullets as
-  written — ○, ▪, ➢ — numbers and to-do boxes; their depth.
+  handwriting over the text still falls on its lines — or exactly as far
+  apart as OneNote set them, unless that is closer than the type is tall,
+  as OneNote keeps some paragraphs and shows them as the typeface sets
+  them; their bullets as written — ○, ▪, ➢ — numbers and to-do boxes;
+  their depth.
 * **Tables** become the text box's table, cell by cell, with column widths,
   shading and borders shown or not.
 * **Equations** are Office math: each structure's object says what it is, so

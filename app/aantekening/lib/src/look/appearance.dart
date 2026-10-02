@@ -63,6 +63,7 @@ class Appearance {
     this.accentOn = false,
     this.font = InterfaceFont.sans,
     this.scale = 1,
+    this.grain = 0,
   });
 
   /// Light, dark, or as the system is set.
@@ -86,6 +87,10 @@ class Appearance {
 
   /// How large everything is drawn, 1 being as designed.
   final double scale;
+
+  /// How strong a grain is laid over the whole window, from none at 0 to
+  /// the most at 1.
+  final double grain;
 
   static const ColourPair defaultLight = ColourPair(
     'White',
@@ -144,6 +149,7 @@ class Appearance {
     bool? accentOn,
     InterfaceFont? font,
     double? scale,
+    double? grain,
   }) => Appearance(
     mode: mode ?? this.mode,
     light: light ?? this.light,
@@ -152,6 +158,7 @@ class Appearance {
     accentOn: accentOn ?? this.accentOn,
     font: font ?? this.font,
     scale: scale ?? this.scale,
+    grain: grain ?? this.grain,
   );
 
   /// This appearance with [brightness]'s colours changed to [pair].
@@ -168,6 +175,7 @@ class Appearance {
     'accentOn': accentOn,
     'font': font.name,
     'scale': scale,
+    'grain': grain,
   };
 
   /// Reads what [toJson] wrote, leniently: what is missing or not understood
@@ -189,6 +197,10 @@ class Appearance {
         final num scale when scales.contains(scale.toDouble()) =>
           scale.toDouble(),
         _ => start.scale,
+      },
+      grain: switch (json['grain']) {
+        final num grain => grain.toDouble().clamp(0, 1),
+        _ => start.grain,
       },
     );
   }
@@ -220,11 +232,12 @@ class Appearance {
       other.accent == accent &&
       other.accentOn == accentOn &&
       other.font == font &&
-      other.scale == scale;
+      other.scale == scale &&
+      other.grain == grain;
 
   @override
   int get hashCode =>
-      Object.hash(mode, light, dark, accent, accentOn, font, scale);
+      Object.hash(mode, light, dark, accent, accentOn, font, scale, grain);
 }
 
 /// The appearance chosen, saved as it changes.

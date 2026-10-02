@@ -98,13 +98,13 @@ class _PageMinimapState extends State<PageMinimap> {
     _drawn.removeWhere((id, _) => _controller.document.elementById(id) == null);
   }
 
-  /// Brings the page point under [local] to the middle of the view.
+  /// Brings the part of the page under [local] to the middle of the view.
   void _centreOn(Offset local, _MapPlacement placement) {
-    final page = placement.toPage(local);
-    final view = _controller.viewport.visibleBounds(_controller.viewSize);
-    _controller.viewport = CanvasViewport(
-      origin: Offset(page.dx - view.width / 2, page.dy - view.height / 2),
-      zoom: _controller.viewport.zoom,
+    final view = _controller.viewport;
+    final middle = placement.toView(local);
+    final size = _controller.viewSize / view.zoom;
+    _controller.viewport = view.copyWith(
+      origin: Offset(middle.dx - size.width / 2, middle.dy - size.height / 2),
     );
   }
 
@@ -141,6 +141,19 @@ class _PageMinimapState extends State<PageMinimap> {
               child: Stack(
                 fit: StackFit.expand,
                 children: <Widget>[
+                  // Sheets, drawn as the page shows them.
+                  if (_controller.document.canvas.sheetsShown
+                      case final sheets?)
+                    RepaintBoundary(
+                      child: CustomPaint(
+                        painter: BackgroundPainter(
+                          background: _controller.document.canvas.background,
+                          view: _mapView,
+                          sheets: sheets,
+                          desk: context.tones.pane,
+                        ),
+                      ),
+                    ),
                   RepaintBoundary(
                     child: CanvasPreview(
                       controller: _controller,
@@ -215,6 +228,10 @@ class _MapPlacement {
   factory _MapPlacement.of(CanvasController controller, Size size) {
     final across = ScrollSpan.of(controller, Axis.horizontal);
     final down = ScrollSpan.of(controller, Axis.vertical);
+    final view = controller.viewport;
+    // From as far back as the view goes: the page's corner, or the desk
+    // about its sheets.
+    final first = controller.originRange(view.zoom).min;
     final scale = math.min(
       PageMinimap.maxScale,
       size.width / math.max(1, across.extent),
@@ -226,15 +243,17 @@ class _MapPlacement {
     final travel = down.extent - down.length;
     final offset = travel > 0 ? overflow * (down.start / travel) : 0.0;
     final viewport = CanvasViewport(
-      origin: Offset(0, offset / scale),
+      origin: Offset(first.dx, first.dy + offset / scale),
       zoom: scale,
+      fold: view.fold,
     );
-    final view = controller.viewport.visibleBounds(controller.viewSize);
     return _MapPlacement(
       viewport,
-      Rect.fromPoints(
-        viewport.toScreen(Offset(view.left, view.top)),
-        viewport.toScreen(Offset(view.right, view.bottom)),
+      Rect.fromLTWH(
+        (view.origin.dx - viewport.origin.dx) * scale,
+        (view.origin.dy - viewport.origin.dy) * scale,
+        across.length * scale,
+        down.length * scale,
       ),
     );
   }
@@ -245,7 +264,8 @@ class _MapPlacement {
   /// Where the view is on the map.
   final Rect viewOnMap;
 
-  Offset toPage(Offset local) => viewport.toPage(local);
+  /// The point of the view's space at [local] on the map.
+  Offset toView(Offset local) => viewport.origin + local / viewport.zoom;
 }
 
 /// The part of the page in view, marked on the map; it follows the view

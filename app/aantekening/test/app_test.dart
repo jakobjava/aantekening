@@ -14,6 +14,7 @@ import 'package:aantekening/src/shell/library_pane.dart';
 import 'package:aantekening/src/shell/page_list_pane.dart';
 import 'package:aantekening/src/shell/sidebar.dart';
 import 'package:aantekening/src/shell/library_actions.dart';
+import 'package:aantekening/src/shell/new_page_dialog.dart';
 import 'package:aantekening/src/shell/sidebar_state.dart';
 import 'package:aantekening/src/shell/tab_strip.dart';
 import 'package:aantekening/src/shell/tabs.dart';
@@ -458,10 +459,50 @@ void main() {
 
       await tester.tap(find.byTooltip(RegExp('^New page')));
       await tester.pumpAndSettle();
+      // As the last page was made: one canvas, unless chosen otherwise.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
 
       final title = tester.widget<EditableText>(titleField);
       expect(title.controller.text, isEmpty);
       expect(title.focusNode.hasFocus, isTrue);
+      expect(inPanes(find.text('Untitled page')), findsOneWidget);
+    });
+  });
+
+  group('a new page', () {
+    CanvasController canvasShown(WidgetTester tester) =>
+        tester.widget<InfiniteCanvas>(find.byType(InfiniteCanvas)).controller;
+
+    testWidgets('starts as pages on the paper chosen, and the next is '
+        'offered the same', (tester) async {
+      await openPage(tester);
+
+      await tester.tap(find.byTooltip(RegExp('^New page')));
+      await tester.pumpAndSettle();
+      expect(find.text('Squared'), findsNothing, reason: 'a canvas has none');
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NewPageDialog),
+          matching: find.text('Pages'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Squared'));
+      await tester.tap(find.text('Letter'));
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+
+      final sheets = canvasShown(tester).document.canvas.sheetsShown!;
+      expect(sheets.templates, <SheetTemplate>[SheetTemplate.grid]);
+      expect(sheets.size, SheetSize.letter);
+      expect(inPanes(find.text('Untitled page')), findsOneWidget);
+
+      await tester.tap(find.byTooltip(RegExp('^New page')));
+      await tester.pumpAndSettle();
+      expect(find.text('Squared'), findsOneWidget, reason: 'pages, as before');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
       expect(inPanes(find.text('Untitled page')), findsOneWidget);
     });
   });
@@ -535,6 +576,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Mechanics'), findsOneWidget);
       expect(await store.bin.list(), isEmpty);
+    });
+
+    testWidgets('the message that something is in the bin goes by itself', (
+      tester,
+    ) async {
+      await openPage(tester);
+
+      await rightClick(tester, find.text('Mechanics'));
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(find.text('“Mechanics” is in the bin.'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(find.text('“Mechanics” is in the bin.'), findsNothing);
     });
 
     testWidgets('the bin restores what was deleted, and deletes it for good '

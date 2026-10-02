@@ -8,6 +8,7 @@ import '../util/geometry.dart';
 import '../util/json_read.dart';
 import '../util/ulid.dart';
 import 'elements.dart';
+import 'sheets.dart';
 
 /// The ruling drawn behind a page's content.
 enum PageBackgroundKind { blank, grid, ruled, dotted }
@@ -71,6 +72,8 @@ class CanvasSettings {
   const CanvasSettings({
     this.background = PageBackground.defaults,
     this.paperWidth,
+    this.layout = NoteLayout.canvas,
+    this.sheets,
   });
 
   static const CanvasSettings defaults = CanvasSettings();
@@ -85,24 +88,56 @@ class CanvasSettings {
   /// rule does.
   final double? paperWidth;
 
+  /// Whether the page is shown as one paper or as sheets.
+  final NoteLayout layout;
+
+  /// The sheets the page is cut into while shown as [NoteLayout.pages]:
+  /// kept while it is shown as one paper, so that shown as sheets again it
+  /// has those it had. Null for a page never shown as sheets.
+  final Sheets? sheets;
+
+  /// The sheets the page is shown on, if it is shown as sheets.
+  Sheets? get sheetsShown => layout == NoteLayout.pages ? sheets : null;
+
   CanvasSettings copyWith({
     PageBackground? background,
     double? paperWidth,
     bool clearPaperWidth = false,
+    NoteLayout? layout,
+    Sheets? sheets,
   }) => CanvasSettings(
     background: background ?? this.background,
     paperWidth: clearPaperWidth ? null : (paperWidth ?? this.paperWidth),
+    layout: layout ?? this.layout,
+    sheets: sheets ?? this.sheets,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'background': background.toJson(),
     if (paperWidth != null) 'paperWidth': paperWidth,
+    if (layout != NoteLayout.canvas) 'layout': layout.name,
+    if (sheets case final sheets?) 'sheets': sheets.toJson(),
   };
 
-  static CanvasSettings fromJson(Map<String, Object?> json) => CanvasSettings(
-    background: PageBackground.fromJson(readObject(json, 'background')),
-    paperWidth: readDoubleOrNull(json, 'paperWidth'),
-  );
+  static CanvasSettings fromJson(Map<String, Object?> json) {
+    final layout = readEnum(
+      json,
+      'layout',
+      NoteLayout.values,
+      NoteLayout.canvas,
+    );
+    final sheets = switch (readObjectOrNull(json, 'sheets')) {
+      final sheets? => Sheets.fromJson(sheets),
+      null => null,
+    };
+    return CanvasSettings(
+      background: PageBackground.fromJson(readObject(json, 'background')),
+      paperWidth: readDoubleOrNull(json, 'paperWidth'),
+      // Shown as sheets, a page always has some.
+      layout: layout,
+      sheets: layout == NoteLayout.pages ? sheets ?? Sheets() : sheets,
+    );
+  }
 }
 
 /// The full contents of one page.

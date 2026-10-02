@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'canvas_viewport.dart';
+import 'lasso.dart';
 import 'spatial_index.dart';
 import 'tools.dart';
 
@@ -44,8 +45,12 @@ class CanvasController extends ChangeNotifier {
   ///
   /// Set by the canvas during layout, which is why assigning it does not
   /// notify: it describes the window, not the page, and nothing needs to
-  /// rebuild because it changed.
+  /// rebuild because it changed. Sheets kept in the middle of the view are
+  /// moved to the middle of a new size by [settleView].
   Size viewSize = Size.zero;
+
+  /// The sheets the page is shown as, or null for one paper.
+  SheetFold? _fold;
   CanvasTool _tool = CanvasTool.select;
   PenSettings _pen = PenSettings.defaultPen;
   PenSettings _highlighter = PenSettings.defaultHighlighter;
@@ -185,7 +190,17 @@ class CanvasController extends ChangeNotifier {
   /// from its top-left corner at the zoom in use.
   void loadDocument(PageDocument document) {
     _document = document;
-    _view.value = CanvasViewport(zoom: viewport.zoom);
+    _fold = _foldOf(document);
+    // From the top: of one paper, its corner; of sheets, the desk above
+    // the first.
+    final zoom = viewport.zoom;
+    _view.value = _within(
+      CanvasViewport(
+        origin: _fold == null ? Offset.zero : originRange(zoom).min,
+        zoom: zoom,
+        fold: _fold,
+      ),
+    );
     _undoStack.clear();
     _redoStack.clear();
     _selection.clear();
@@ -223,26 +238,74 @@ class CanvasController extends ChangeNotifier {
 
   // ---------------------------------------------------------------- viewport
 
-  /// Moves the view, stopping it at the page's top and left edges.
-  set viewport(CanvasViewport value) {
-    final origin = value.origin;
-    stretchTo(
-      origin.dx >= 0 && origin.dy >= 0
-          ? value
-          : CanvasViewport(
-              origin: Offset(math.max(0, origin.dx), math.max(0, origin.dy)),
-              zoom: value.zoom,
-            ),
-    );
-  }
+  /// Moves the view, stopping it at the page's edges ([originRange]).
+  set viewport(CanvasViewport value) => stretchTo(_within(value));
 
-  /// Moves the view to [value] as it is, even past the page's top and left
-  /// edges: a scroll stretched beyond them, on its way back.
+  /// Moves the view to [value] as it is, even past the page's edges: a
+  /// scroll stretched beyond them, on its way back. It is seen through the
+  /// page's own fold, whatever [value] was made with.
   void stretchTo(CanvasViewport value) {
-    if (viewport == value) return;
-    _view.value = value;
+    final shown = value.withFold(_fold);
+    if (viewport == shown) return;
+    _view.value = shown;
     notifyListeners();
   }
+
+  /// The sheets the page is shown as, or null for one paper.
+  SheetFold? get fold => _fold;
+
+  /// How much desk, in screen pixels, the view shows about sheets at their
+  /// edges.
+  static const double deskMargin = 24;
+
+  /// How much desk, in screen pixels, the view shows below the last sheet:
+  /// room for what is put there to add another
+  /// ([InfiniteCanvas.afterSheets]).
+  static const double deskFoot = 72;
+
+  /// Where the view's origin may lie at [zoom], for the view's size.
+  ///
+  /// One paper is seen anywhere from its top-left corner on, without end.
+  /// Sheets are seen with a little desk about them, and no further: across,
+  /// in the middle while they are narrower than the view; down, from above
+  /// the first to below the last, and in the middle while they are shorter.
+  ({Offset min, Offset max}) originRange(double zoom) {
+    final fold = _fold;
+    if (fold == null) return (min: Offset.zero, max: Offset.infinite);
+    final margin = deskMargin / zoom;
+    (double, double) along(double extent, double shown, {double? end}) {
+      final after = end ?? margin;
+      final free = extent + margin + after - shown;
+      if (free <= 0) {
+        final middle = (extent + after - margin - shown) / 2;
+        return (middle, middle);
+      }
+      return (-margin, extent + after - shown);
+    }
+
+    final (left, right) = along(fold.width, viewSize.width / zoom);
+    final (top, bottom) = along(
+      fold.extent,
+      viewSize.height / zoom,
+      end: deskFoot / zoom,
+    );
+    return (min: Offset(left, top), max: Offset(right, bottom));
+  }
+
+  /// [value] moved just far enough to lie within [originRange].
+  CanvasViewport _within(CanvasViewport value) {
+    final range = originRange(value.zoom);
+    final origin = value.origin;
+    final within = Offset(
+      origin.dx.clamp(range.min.dx, range.max.dx),
+      origin.dy.clamp(range.min.dy, range.max.dy),
+    );
+    return within == origin ? value : value.copyWith(origin: within);
+  }
+
+  /// Brings the view within the page's edges once more: after the view
+  /// changed size, which moves where sheets lie in the middle of it.
+  void settleView() => viewport = viewport;
 
   /// The page-space point at the centre of the view.
   Offset get viewCenter =>
@@ -260,12 +323,16 @@ class CanvasController extends ChangeNotifier {
   void zoomAtCenter(double factor) =>
       zoomBy(factor, Offset(viewSize.width / 2, viewSize.height / 2));
 
-  /// Frames the whole page within a view of [size].
+  /// Frames the whole page within a view of [size]: on sheets, the whole
+  /// of the sheet in the middle of the view.
   void zoomToFit(Size size) {
-    final bounds = contentBounds;
+    final fold = _fold;
+    final bounds = fold == null
+        ? contentBounds
+        : _document.canvas.sheets!.bandOf(currentSheet);
     viewport = bounds.isEmpty
-        ? const CanvasViewport()
-        : viewport.fit(bounds, size);
+        ? CanvasViewport(fold: fold)
+        : viewport.fit(bounds, size, padding: fold == null ? 48 : deskMargin);
   }
 
   /// Resets to 100% zoom around the centre of the view.
@@ -277,7 +344,15 @@ class CanvasController extends ChangeNotifier {
   /// Scrolls just far enough to show [bounds] with [margin] screen pixels
   /// around it, or, if it does not fit, to show its top-left part.
   void reveal(Aabb bounds, {double margin = 48}) {
-    final visible = viewport.visibleBounds(viewSize);
+    // In the view's space, where sheets have gaps between them.
+    final view = viewport;
+    final visible = Aabb(
+      view.origin.dx,
+      view.origin.dy,
+      view.origin.dx + viewSize.width / view.zoom,
+      view.origin.dy + viewSize.height / view.zoom,
+    );
+    bounds = view.inView(bounds);
     final pad = viewport.toPageDistance(margin);
     double along(double start, double end, double viewStart, double viewEnd) {
       if (start - pad >= viewStart && end + pad <= viewEnd) return viewStart;
@@ -288,12 +363,210 @@ class CanvasController extends ChangeNotifier {
           : start - pad;
     }
 
-    viewport = CanvasViewport(
+    viewport = view.copyWith(
       origin: Offset(
         along(bounds.left, bounds.right, visible.left, visible.right),
         along(bounds.top, bounds.bottom, visible.top, visible.bottom),
       ),
-      zoom: viewport.zoom,
+    );
+  }
+
+  // ------------------------------------------------------------------ sheets
+
+  /// The sheets of [document], if it is shown as sheets.
+  static SheetFold? _foldOf(PageDocument document) =>
+      switch (document.canvas.sheetsShown) {
+        final sheets? => SheetFold.of(sheets),
+        null => null,
+      };
+
+  /// The sheet in the middle of the view, of a page shown as sheets; 0 on
+  /// one paper.
+  int get currentSheet {
+    final fold = _fold;
+    if (fold == null) return 0;
+    return fold.sheetNear(
+      viewport.origin.dy + viewSize.height / 2 / viewport.zoom,
+    );
+  }
+
+  /// Shows the page as [layout]: as one paper, or cut into sheets — as
+  /// wide as its widest writing, and as many as hold all of it.
+  ///
+  /// Nothing on the page moves: shown as it was again, it is as it was.
+  /// The point in the middle of the view stays there, and sheets wider
+  /// than the view are shown whole across it.
+  void setLayout(NoteLayout layout) {
+    final canvas = _document.canvas;
+    if (canvas.layout == layout) return;
+    final middle = Offset(viewSize.width / 2, viewSize.height / 2);
+    final kept = viewport.toPage(middle);
+    final sheets = layout == NoteLayout.pages
+        ? (canvas.sheets ?? Sheets()).fittedTo(contentBounds)
+        : canvas.sheets;
+    // A way of seeing the page, not a change to it: no undo step.
+    _apply(
+      _document.copyWith(
+        revision: _document.revision + 1,
+        canvas: canvas.copyWith(layout: layout, sheets: sheets),
+      ),
+      recordUndo: false,
+    );
+    var zoom = viewport.zoom;
+    final fold = _fold;
+    if (fold != null && viewSize.width > 2 * deskMargin) {
+      zoom = math.min(zoom, (viewSize.width - 2 * deskMargin) / fold.width);
+    }
+    final shown = CanvasViewport(zoom: zoom, fold: fold);
+    viewport = shown.copyWith(origin: shown.toView(kept) - middle / zoom);
+  }
+
+  /// Adds a sheet printed with [template] before the one at [index] — after
+  /// the last for [index] equal to how many there are — moving what lies
+  /// on the sheets from there on down by one.
+  void insertSheet(int index, SheetTemplate template) =>
+      insertSheets(index, <SheetTemplate>[template]);
+
+  /// Adds a sheet for each of [templates] before the one at [index], moving
+  /// what lies on the sheets from there on down by as many, and puts
+  /// [onThem] on the page, placed where it is to lie on the new sheets: all
+  /// one change, undone as one.
+  void insertSheets(
+    int index,
+    List<SheetTemplate> templates, {
+    List<NoteElement> onThem = const <NoteElement>[],
+  }) {
+    final sheets = _document.canvas.sheetsShown;
+    if (sheets == null || templates.isEmpty) return;
+    final at = index.clamp(0, sheets.count);
+    var next = _remapSheets(
+      (sheet) => sheet < at ? sheet : sheet + templates.length,
+      sheets.copyWith(
+        templates: <SheetTemplate>[...sheets.templates]
+          ..insertAll(at, templates),
+      ),
+    );
+    for (final element in onThem) {
+      next = next.withElementAdded(element);
+    }
+    _apply(next);
+  }
+
+  /// Takes away the sheet at [index], and what lies on it, moving what lies
+  /// on the sheets after it up by one. The only sheet is kept.
+  void removeSheet(int index) {
+    final sheets = _document.canvas.sheetsShown;
+    if (sheets == null || sheets.count < 2) return;
+    if (index < 0 || index >= sheets.count) return;
+    _apply(
+      _remapSheets(
+        (sheet) => sheet < index
+            ? sheet
+            : sheet == index
+            ? null
+            : sheet - 1,
+        sheets.copyWith(
+          templates: <SheetTemplate>[...sheets.templates]..removeAt(index),
+        ),
+      ),
+    );
+  }
+
+  /// Moves the sheet at [from], with what lies on it, to be the sheet at
+  /// [to], the sheets between moving up or down by one to make room.
+  void moveSheet(int from, int to) {
+    final sheets = _document.canvas.sheetsShown;
+    if (sheets == null) return;
+    final last = sheets.count - 1;
+    if (from < 0 || from > last || from == to) return;
+    final target = to.clamp(0, last);
+    final order = <int>[for (var i = 0; i <= last; i++) i]
+      ..removeAt(from)
+      ..insert(target, from);
+    final placeOf = <int, int>{
+      for (final (place, sheet) in order.indexed) sheet: place,
+    };
+    _apply(
+      _remapSheets(
+        (sheet) => placeOf[sheet] ?? sheet,
+        sheets.copyWith(
+          templates: <SheetTemplate>[
+            for (final sheet in order) sheets.templates[sheet],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Prints [template] on the sheet at [sheet], or on every sheet if null.
+  void setSheetTemplate(SheetTemplate template, {int? sheet}) {
+    final sheets = _document.canvas.sheetsShown;
+    if (sheets == null) return;
+    final next = sheets.copyWith(
+      templates: <SheetTemplate>[
+        for (var i = 0; i < sheets.count; i++)
+          sheet == null || i == sheet ? template : sheets.templates[i],
+      ],
+    );
+    if (next == sheets) return;
+    _apply(
+      _document.copyWith(
+        revision: _document.revision + 1,
+        canvas: _document.canvas.copyWith(sheets: next),
+      ),
+    );
+  }
+
+  /// The page with what lies on each sheet moved to the sheet [placeOf]
+  /// says — or taken away, where it says none — and shown on [sheets].
+  ///
+  /// What lies on a sheet is what has its middle there: each stroke of
+  /// handwriting by itself, so the strokes of one run of ink written over
+  /// two sheets go each with its own.
+  PageDocument _remapSheets(int? Function(int sheet) placeOf, Sheets sheets) {
+    final height = sheets.height;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    // How far down what lies on [bounds] moves, or null if it goes.
+    double? moveOf(Aabb bounds) {
+      final sheet = (bounds.centerY / height).floor();
+      final place = placeOf(sheet);
+      return place == null ? null : (place - sheet) * height;
+    }
+
+    final elements = <NoteElement>[];
+    for (final element in _document.elements) {
+      if (element is InkElement) {
+        var changed = false;
+        final strokes = <InkStroke>[];
+        for (final stroke in element.strokes) {
+          final move = moveOf(stroke.bounds);
+          if (move != 0) changed = true;
+          if (move == null) continue;
+          strokes.add(
+            move == 0
+                ? stroke
+                : stroke.transformed(Affine2D.translation(0, move)),
+          );
+        }
+        if (!changed) {
+          elements.add(element);
+        } else if (strokes.isNotEmpty) {
+          elements.add(element.withStrokes(strokes, updatedAt: now));
+        }
+        continue;
+      }
+      final move = moveOf(element.bounds);
+      if (move == null) continue;
+      elements.add(
+        move == 0
+            ? element
+            : element.withFrame(element.frame.translate(0, move)),
+      );
+    }
+    return _document.copyWith(
+      revision: _document.revision + 1,
+      canvas: _document.canvas.copyWith(sheets: sheets),
+      elements: elements,
     );
   }
 
@@ -305,7 +578,7 @@ class CanvasController extends ChangeNotifier {
     // Switching tools ends the current run of ink, so the next stroke starts a
     // fresh element rather than joining strokes made with a different pen.
     _activeInkElementId = null;
-    if (value != CanvasTool.select) _selection.clear();
+    if (!value.selects) _selection.clear();
     _changed();
   }
 
@@ -435,29 +708,53 @@ class CanvasController extends ChangeNotifier {
   /// Objects are taken whole when the marquee touches them. Handwriting is
   /// taken stroke by stroke: strokes mostly inside the marquee are split off
   /// into an element of their own and selected, so one word can be picked out
-  /// of a page of notes, as with OneNote's lasso.
-  void selectIn(Aabb region, {bool additive = false}) {
+  /// of a page of notes.
+  void selectIn(Aabb region, {bool additive = false}) => _selectWhere(
+    region,
+    region.containsPoint,
+    takesWhole: (_) => true,
+    additive: additive,
+  );
+
+  /// Selects everything [lasso] is drawn round: objects whose middle it
+  /// takes in, and handwriting stroke by stroke, as [selectIn] does.
+  void selectWithin(Lasso lasso, {bool additive = false}) => _selectWhere(
+    lasso.bounds,
+    lasso.containsPoint,
+    takesWhole: (element) =>
+        lasso.containsPoint(element.bounds.centerX, element.bounds.centerY),
+    additive: additive,
+  );
+
+  /// Selects what lies [inside] a region about [bounds]: of the objects
+  /// touching the box, those it [takesWhole], and the strokes mostly inside.
+  void _selectWhere(
+    Aabb bounds,
+    bool Function(double x, double y) inside, {
+    required bool Function(NoteElement element) takesWhole,
+    required bool additive,
+  }) {
     if (!additive) _selection.clear();
     var next = _document;
     final now = DateTime.now().millisecondsSinceEpoch;
 
-    for (final id in _index.query(region)) {
+    for (final id in _index.query(bounds)) {
       final element = _byId[id];
       if (element == null || element.locked) continue;
       if (element is! InkElement) {
-        _selection.add(id);
+        if (takesWhole(element)) _selection.add(id);
         continue;
       }
-      final inside = <InkStroke>[];
-      final outside = <InkStroke>[];
+      final taken = <InkStroke>[];
+      final left = <InkStroke>[];
       for (final stroke in element.strokes) {
-        final taken =
-            stroke.bounds.intersects(region) &&
-            stroke.fractionInside(region) >= 0.5;
-        (taken ? inside : outside).add(stroke);
+        final takes =
+            stroke.bounds.intersects(bounds) &&
+            stroke.fractionInside(inside) >= 0.5;
+        (takes ? taken : left).add(stroke);
       }
-      if (inside.isEmpty) continue;
-      if (outside.isEmpty) {
+      if (taken.isEmpty) continue;
+      if (left.isEmpty) {
         _selection.add(id);
         continue;
       }
@@ -466,9 +763,9 @@ class CanvasController extends ChangeNotifier {
         frame: element.frame,
         createdAt: element.createdAt,
         updatedAt: now,
-      ).withStrokes(inside);
+      ).withStrokes(taken);
       next = next
-          .withElementReplaced(element.withStrokes(outside, updatedAt: now))
+          .withElementReplaced(element.withStrokes(left, updatedAt: now))
           .withElementAdded(split);
       _selection.add(split.id);
       if (_activeInkElementId == id) _activeInkElementId = null;
@@ -914,15 +1211,41 @@ class CanvasController extends ChangeNotifier {
   void undo() {
     if (_undoStack.isEmpty) return;
     _redoStack.add(_document);
-    _document = _undoStack.removeLast();
+    _document = _shownAsNow(_undoStack.removeLast());
     _afterHistoryChange();
   }
 
   void redo() {
     if (_redoStack.isEmpty) return;
     _undoStack.add(_document);
-    _document = _redoStack.removeLast();
+    _document = _shownAsNow(_redoStack.removeLast());
     _afterHistoryChange();
+  }
+
+  /// [document], from the history, shown as the page is now: as one paper
+  /// or as sheets is how the page is seen, which undo leaves as it is.
+  PageDocument _shownAsNow(PageDocument document) {
+    final now = _document.canvas;
+    final canvas = document.canvas;
+    if (canvas.layout == now.layout) return document;
+    return _withSheetsHolding(
+      document.copyWith(
+        canvas: canvas.copyWith(
+          layout: now.layout,
+          sheets: canvas.sheets ?? now.sheets,
+        ),
+      ),
+    );
+  }
+
+  /// [document] with as many sheets as hold all of it, if it is shown as
+  /// sheets: what is put below the last adds sheets enough to lie on.
+  static PageDocument _withSheetsHolding(PageDocument document) {
+    final sheets = document.canvas.sheetsShown;
+    if (sheets == null) return document;
+    final holding = sheets.holding(document.contentBounds);
+    if (identical(holding, sheets)) return document;
+    return document.copyWith(canvas: document.canvas.copyWith(sheets: holding));
   }
 
   void _afterHistoryChange() {
@@ -964,7 +1287,7 @@ class CanvasController extends ChangeNotifier {
     if (identical(next, _document)) return;
 
     if (recordUndo) _record(_document);
-    _document = next;
+    _document = _withSheetsHolding(next);
     if (markDirty) _dirty = true;
     _reindex();
     _selection.removeWhere((id) => !_byId.containsKey(id));
@@ -983,6 +1306,11 @@ class CanvasController extends ChangeNotifier {
   /// of handwriting does not index all of it again.
   void _reindex() {
     _contentBounds = null;
+    final fold = _foldOf(_document);
+    if (fold != _fold) {
+      _fold = fold;
+      _view.value = _within(viewport.withFold(fold));
+    }
     final gone = _byId.keys.toSet();
     for (final element in _document.elements) {
       final id = element.id;

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'editor/text/text_styles.dart';
 import 'look/appearance.dart';
+import 'look/grain.dart';
 import 'look/theme.dart';
 import 'preferences.dart';
 import 'shell/home_shell.dart';
@@ -22,7 +23,11 @@ class AantekeningApp extends ConsumerWidget {
     // Nothing is drawn until the appearance chosen is known, so the window
     // does not open in one and change to another.
     if (ref.watch(preferencesProvider).isLoading) return const SizedBox();
-    final appearance = ref.watch(appearanceProvider);
+    // The grain is laid over the window by [Grain] alone: moving its slider
+    // builds no theme again.
+    final appearance = ref.watch(
+      appearanceProvider.select((appearance) => appearance.copyWith(grain: 0)),
+    );
     return MaterialApp(
       title: 'aantekening',
       debugShowCheckedModeBanner: false,
@@ -34,8 +39,9 @@ class AantekeningApp extends ConsumerWidget {
       // Scroll behaviour is widened so that the canvas and the navigation panes
       // respond to a trackpad and a stylus, not only to a mouse wheel.
       scrollBehavior: const _AppScrollBehavior(),
-      builder: (context, child) =>
-          InterfaceScale(scale: appearance.scale, child: child!),
+      builder: (context, child) => Grain(
+        child: InterfaceScale(scale: appearance.scale, child: child!),
+      ),
       home: const HomeShell(),
     );
   }

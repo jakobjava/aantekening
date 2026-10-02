@@ -92,6 +92,34 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('a box shows its band to the pointer only while it can be '
+      'moved by it', (tester) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await type(tester, 'Hello');
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    bool bandShows() => tester.widget<GrabBand>(find.byType(GrabBand)).visible;
+    expect(bandShows(), isFalse);
+
+    // The mouse that started the box is still over the window.
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    Future<void> hoverOverBox() async {
+      await mouse.moveTo(const Offset(900, 600));
+      await tester.pump();
+      await mouse.moveTo(tester.getCenter(find.byType(TextBoxEditor)));
+      await tester.pump();
+    }
+
+    await press(tester, LogicalKeyboardKey.keyP);
+    await hoverOverBox();
+    expect(bandShows(), isFalse, reason: 'a pen writes over it');
+
+    await press(tester, LogicalKeyboardKey.keyV);
+    await hoverOverBox();
+    expect(bandShows(), isTrue);
+  });
+
   testWidgets('letters that are tool shortcuts are typed, not obeyed', (
     tester,
   ) async {
@@ -2469,5 +2497,22 @@ void main() {
       ),
     );
     expect(title.center.dx, moreOrLessEquals(box.center.dx, epsilon: 1));
+  });
+
+  test('lines set closer than the type is tall are set as the typeface '
+      'sets them', () {
+    const base = TextStyle(fontSize: 11 * RichTextStyles.unitsPerPoint);
+    final natural = RichTextStyles.spacedStyle(base, BlockSpacing.tight);
+    // OneNote keeps some paragraphs with lines exactly three points apart.
+    final tooClose = RichTextStyles.spacedStyle(
+      base,
+      const BlockSpacing(line: 3),
+    );
+    expect(tooClose.height, natural.height);
+    final spaced = RichTextStyles.spacedStyle(
+      base,
+      const BlockSpacing(line: 22),
+    );
+    expect(spaced.height, closeTo(2, 1e-9), reason: 'twice the type');
   });
 }

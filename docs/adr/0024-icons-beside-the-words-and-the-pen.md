@@ -1,6 +1,7 @@
 # 24. Icons beside the words, and the pen as it is held
 
-**Status:** accepted; revises ADR 18's words-only buttons, and adds to ADR 23
+**Status:** accepted; revises ADR 18's words-only buttons, and adds to ADR
+23; the pen's second button lassos as it starts, by ADR 31
 
 ## Context
 

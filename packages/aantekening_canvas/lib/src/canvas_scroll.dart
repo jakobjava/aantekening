@@ -6,14 +6,15 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 
 import 'canvas_controller.dart';
-import 'canvas_viewport.dart';
 
 /// Where the view is along one axis of the page, for a scrollbar or a map
-/// of the page to show.
+/// of the page to show, in the view's space, from as far back as the view
+/// goes ([CanvasController.originRange]).
 ///
-/// A page runs on without end to the right and down, so how far it scrolls
-/// is made up: from its top-left corner to half a view past its content, and
-/// never short of where the view already is.
+/// One paper runs on without end to the right and down, so how far it
+/// scrolls is made up: from its top-left corner to half a view past its
+/// content, and never short of where the view already is. Sheets scroll as
+/// far as the view goes about them.
 @immutable
 class ScrollSpan {
   const ScrollSpan({
@@ -24,11 +25,21 @@ class ScrollSpan {
 
   /// The span of [controller]'s page and view along [axis].
   factory ScrollSpan.of(CanvasController controller, Axis axis) {
-    final visible = controller.viewport.visibleBounds(controller.viewSize);
-    final content = controller.contentBounds;
+    final view = controller.viewport;
     final vertical = axis == Axis.vertical;
-    final start = vertical ? visible.top : visible.left;
-    final length = vertical ? visible.height : visible.width;
+    final (first, last) = _reach(controller, axis);
+    final start = (vertical ? view.origin.dy : view.origin.dx) - first;
+    final length =
+        (vertical ? controller.viewSize.height : controller.viewSize.width) /
+        view.zoom;
+    if (view.fold != null) {
+      return ScrollSpan(
+        extent: math.max(start + length, last - first + length),
+        start: start,
+        length: length,
+      );
+    }
+    final content = controller.contentBounds;
     final contentEnd = content.isEmpty
         ? 0.0
         : (vertical ? content.bottom : content.right);
@@ -37,6 +48,14 @@ class ScrollSpan {
       start: start,
       length: length,
     );
+  }
+
+  /// The first and last place the view's origin goes along [axis].
+  static (double, double) _reach(CanvasController controller, Axis axis) {
+    final range = controller.originRange(controller.viewport.zoom);
+    return axis == Axis.vertical
+        ? (range.min.dy, range.max.dy)
+        : (range.min.dx, range.max.dx);
   }
 
   /// How far the page scrolls along the axis, in page units.
@@ -65,14 +84,15 @@ class ScrollSpan {
 /// Scrolling a canvas along one axis.
 extension ScrollTo on CanvasController {
   /// Scrolls the view along [axis] so that it begins at [start], in page
-  /// units, the other axis left as it is.
+  /// units from as far back as it goes, as a [ScrollSpan] has it; the other
+  /// axis left as it is.
   void scrollTo(Axis axis, double start) {
     final origin = viewport.origin;
-    viewport = CanvasViewport(
+    final at = start + ScrollSpan._reach(this, axis).$1;
+    viewport = viewport.copyWith(
       origin: axis == Axis.vertical
-          ? Offset(origin.dx, start)
-          : Offset(start, origin.dy),
-      zoom: viewport.zoom,
+          ? Offset(origin.dx, at)
+          : Offset(at, origin.dy),
     );
   }
 }

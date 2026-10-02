@@ -233,8 +233,10 @@ abstract final class SelectionHandles {
       height: frame.height + inset * 2,
       rotation: frame.rotation,
     );
+    // Moved whole with what it frames, on sheets.
     return <Offset>[
-      for (final corner in padded.corners) viewport.toScreen(corner),
+      for (final corner in padded.corners)
+        viewport.toScreenWith(corner, frame.center),
     ];
   }
 

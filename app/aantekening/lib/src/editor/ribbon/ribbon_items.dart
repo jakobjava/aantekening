@@ -29,6 +29,7 @@ import '../text/math_templates.dart';
 import '../text/text_box_controller.dart';
 import '../text/text_styles.dart';
 import '../text/typefaces.dart';
+import '../sheet_choices.dart';
 import 'ribbon_layout.dart';
 import 'ribbon_state.dart';
 import 'shape_glyph.dart';
@@ -196,7 +197,14 @@ AppIcon? ribbonIconOf(RibbonItem item) => switch (item) {
   RibbonItem.textBox => AppIcon.textBox,
   RibbonItem.picture => AppIcon.picture,
   RibbonItem.pdf => AppIcon.pdf,
+  RibbonItem.addSheet => AppIcon.addSheet,
+  RibbonItem.paper => AppIcon.paper,
+  RibbonItem.deleteSheet => AppIcon.bin,
+  RibbonItem.moveSheetUp => AppIcon.sheetUp,
+  RibbonItem.moveSheetDown => AppIcon.sheetDown,
+  RibbonItem.pageLayout => AppIcon.sheets,
   RibbonItem.select => AppIcon.select,
+  RibbonItem.lasso => AppIcon.lasso,
   RibbonItem.eraser => AppIcon.eraser,
   RibbonItem.pen => AppIcon.pen,
   RibbonItem.highlighter => AppIcon.highlighter,
@@ -265,6 +273,9 @@ class RibbonItemView extends ConsumerWidget {
             onPressed: () => commands.onToolSelected(tool),
           ),
         );
+
+    void run(AppCommand command) =>
+        ref.read(commandHandlersProvider).run(command);
 
     Widget large(
       AppCommand command,
@@ -444,6 +455,7 @@ class RibbonItemView extends ConsumerWidget {
         onPressed: commands.onFormula,
       ),
       RibbonItem.select => tool(CanvasTool.select, AppCommand.selectTool),
+      RibbonItem.lasso => tool(CanvasTool.lasso, AppCommand.lassoTool),
       RibbonItem.eraser => tool(CanvasTool.eraser, AppCommand.eraser),
       RibbonItem.pen => _CanvasSelect<int>(
         canvas: canvas,
@@ -495,6 +507,53 @@ class RibbonItemView extends ConsumerWidget {
         ),
       ),
       RibbonItem.fitPage => large(AppCommand.fitPage, commands.onFitPage),
+      RibbonItem.pageLayout => _CanvasSelect<bool>(
+        canvas: canvas,
+        select: () => canvas.fold != null,
+        builder: (context, sheets) => large(
+          AppCommand.pageLayout,
+          () => run(AppCommand.pageLayout),
+          selected: sheets,
+        ),
+      ),
+      RibbonItem.addSheet => _CanvasSelect<bool>(
+        canvas: canvas,
+        select: () => canvas.fold != null,
+        builder: (context, sheets) => large(
+          AppCommand.addSheet,
+          sheets ? () => run(AppCommand.addSheet) : null,
+        ),
+      ),
+      RibbonItem.deleteSheet => _CanvasSelect<bool>(
+        canvas: canvas,
+        select: () => (canvas.fold?.count ?? 0) > 1,
+        builder: (context, several) => RibbonButton(
+          face: face,
+          tooltip: bindings.tooltip(AppCommand.deleteSheet, describe: true),
+          onPressed: several ? () => run(AppCommand.deleteSheet) : null,
+        ),
+      ),
+      RibbonItem.paper => _PaperMenu(canvas: canvas),
+      RibbonItem.moveSheetUp || RibbonItem.moveSheetDown => _CanvasSelect<bool>(
+        canvas: canvas,
+        // Whether the sheet in view has one to go past that way.
+        select: () {
+          final count = canvas.fold?.count ?? 0;
+          final to =
+              canvas.currentSheet + (item == RibbonItem.moveSheetUp ? -1 : 1);
+          return to >= 0 && to < count;
+        },
+        builder: (context, can) {
+          final command = item == RibbonItem.moveSheetUp
+              ? AppCommand.moveSheetUp
+              : AppCommand.moveSheetDown;
+          return RibbonButton(
+            face: face,
+            tooltip: bindings.tooltip(command, describe: true),
+            onPressed: can ? () => run(command) : null,
+          );
+        },
+      ),
       RibbonItem.pagePreview => large(
         AppCommand.pagePreview,
         ref.read(minimapProvider.notifier).toggle,
@@ -782,11 +841,12 @@ class ColourBar extends StatelessWidget {
         width: 18,
         height: 4,
         margin: const EdgeInsets.only(top: 1),
-        decoration: BoxDecoration(
-          color: color == NoteColors.inverse ? null : Color(color | 0xFF000000),
-          gradient: color == NoteColors.inverse ? Swatch.inverseFill : null,
+        foregroundDecoration: BoxDecoration(
           border: Border.all(color: context.tones.line, width: 0.5),
         ),
+        child: color == NoteColors.inverse
+            ? const CustomPaint(painter: InverseHalves())
+            : ColoredBox(color: Color(color | 0xFF000000)),
       ),
     ],
   );
@@ -1276,6 +1336,73 @@ class _ShapesGalleryState extends State<_ShapesGallery> {
   }
 }
 
+/// What is printed on the sheet in view, to choose, and the choice to
+/// print that on every sheet.
+class _PaperMenu extends StatefulWidget {
+  const _PaperMenu({required this.canvas});
+
+  final CanvasController canvas;
+
+  @override
+  State<_PaperMenu> createState() => _PaperMenuState();
+}
+
+class _PaperMenuState extends State<_PaperMenu> {
+  final MenuController _menu = MenuController();
+
+  @override
+  Widget build(BuildContext context) {
+    final canvas = widget.canvas;
+    return _CanvasSelect<(Sheets?, int)>(
+      canvas: canvas,
+      select: () => (canvas.document.canvas.sheetsShown, canvas.currentSheet),
+      builder: (context, value) {
+        final (sheets, sheet) = value;
+        final current = sheets?.templates[sheet];
+        return MenuAnchor(
+          controller: _menu,
+          menuChildren: <Widget>[
+            if (sheets != null && current != null) ...<Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                child: SmallCaps('Sheet ${sheet + 1}'),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: SizedBox(
+                  width: 3 * 78,
+                  child: SheetTemplatePicker(
+                    selected: current,
+                    size: sheets.size,
+                    onSelected: (template) {
+                      _menu.close();
+                      canvas.setSheetTemplate(template, sheet: sheet);
+                    },
+                  ),
+                ),
+              ),
+              const Divider(height: 12),
+              MenuItemButton(
+                onPressed: sheets.templates.every((t) => t == current)
+                    ? null
+                    : () => canvas.setSheetTemplate(current),
+                child: Text('${current.label} on every sheet'),
+              ),
+            ],
+          ],
+          child: RibbonButton(
+            face: ribbonFaceOf(RibbonItem.paper),
+            tooltip: 'Paper\nWhat is printed on the sheet in view',
+            onPressed: sheets == null
+                ? null
+                : () => _menu.isOpen ? _menu.close() : _menu.open(),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// One shape in the gallery, drawn as it is drawn on the page.
 class _ShapeTile extends StatelessWidget {
   const _ShapeTile({
@@ -1326,6 +1453,9 @@ class _InkColourGallery extends StatelessWidget {
   /// Custom colours shown after the presets.
   static const int _recent = 4;
 
+  /// How large a colour's swatch is.
+  static const double _swatch = 18;
+
   @override
   Widget build(BuildContext context) {
     final canvas = commands.canvas;
@@ -1339,7 +1469,6 @@ class _InkColourGallery extends StatelessWidget {
               ? 'Highlighter'
               : 'Pen';
           final colours = <({int color, String name})>[
-            if (settings.tool != InkTool.highlighter) NotePalette.inverse,
             ...NotePalette.presets,
             for (final color in recent.take(_recent))
               (color: color, name: NotePalette.nameOf(color)),
@@ -1348,27 +1477,35 @@ class _InkColourGallery extends StatelessWidget {
             commands,
             settings.copyWith(color: NotePalette.opaque(color)),
           );
+          Widget swatch(({int color, String name}) entry) => NoteSwatch(
+            color: entry.color,
+            name: '$owner colour: ${entry.name}',
+            selected: entry.color == NotePalette.opaque(settings.color),
+            size: _swatch,
+            onTap: () => pick(entry.color),
+          );
 
           return SizedBox(
             height: RibbonMetrics.content,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                for (var i = 0; i < colours.length; i += 2)
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      for (final entry in colours.skip(i).take(2))
-                        NoteSwatch(
-                          color: entry.color,
-                          name: '$owner colour: ${entry.name}',
-                          selected:
-                              entry.color == NotePalette.opaque(settings.color),
-                          size: 18,
-                          onTap: () => pick(entry.color),
-                        ),
-                    ],
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    // No colour of its own, the inverse stands apart, in a
+                    // column of its own, the place beneath it left empty.
+                    if (settings.tool != InkTool.highlighter)
+                      swatch(NotePalette.inverse),
+                    for (var i = 0; i < colours.length; i += 2)
+                      Column(
+                        children: <Widget>[
+                          for (final entry in colours.skip(i).take(2))
+                            swatch(entry),
+                        ],
+                      ),
+                  ],
+                ),
                 RibbonButton(
                   face: const Mark(MarkShape.add),
                   tooltip: 'More colours…',

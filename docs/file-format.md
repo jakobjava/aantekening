@@ -13,11 +13,23 @@ notes folder (see [The notes folder](#the-notes-folder)), the `body` blob of
   "canvas": {
     "background": { "kind": "grid", "spacing": 24,
                     "lineColor": 520093696, "paperColor": 4294967295 },
-    "paperWidth": 816                    // optional printable-width guide
+    "paperWidth": 816,                   // optional printable-width guide
+    "layout": "pages",                   // optional: "canvas" (the default)
+    "sheets": {                          // the sheets, once ever shown as pages
+      "size": "a4",                      // "a4" or "letter"
+      "scale": 1,                        // how many times the paper's size
+      "templates": ["lined", "grid"]     // one a sheet: blank, lined, grid,
+    }                                    //   dotted, music or cornell
   },
   "elements": [ /* … */ ]
 }
 ```
+
+A page shown as pages is the same page cut into `sheets`: bands a sheet
+tall from its top, one after another, `size` times `scale` in page units
+(A4 is 793.7 by 1122.5, Letter 816 by 1056), as many as there are
+`templates`. Nothing in `elements` changes with `layout`; the sheets are
+kept when the page is shown as one paper again, to go back to (ADR 32).
 
 ## Elements
 

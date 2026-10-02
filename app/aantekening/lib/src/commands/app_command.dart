@@ -175,6 +175,30 @@ enum AppCommand {
   insertTextBox('Insert text box', CommandGroup.page, null, <KeyChord>[]),
   insertPicture('Insert picture', CommandGroup.page, null, <KeyChord>[]),
   insertPdf('Insert PDF printout', CommandGroup.page, null, <KeyChord>[]),
+  addSheet(
+    'Add sheet',
+    CommandGroup.page,
+    'Another sheet of paper after the one in view, printed as you choose',
+    <KeyChord>[KeyChord(LogicalKeyboardKey.enter, control: true, shift: true)],
+  ),
+  moveSheetUp(
+    'Move sheet up',
+    CommandGroup.page,
+    'The sheet in view, with what is on it, before the one above',
+    <KeyChord>[],
+  ),
+  moveSheetDown(
+    'Move sheet down',
+    CommandGroup.page,
+    'The sheet in view, with what is on it, after the one below',
+    <KeyChord>[],
+  ),
+  deleteSheet(
+    'Delete sheet',
+    CommandGroup.page,
+    'The sheet in view, and what is on it',
+    <KeyChord>[],
+  ),
   selectTool(
     'Type and select',
     CommandGroup.tools,
@@ -183,6 +207,12 @@ enum AppCommand {
       KeyChord(LogicalKeyboardKey.keyV),
       KeyChord(LogicalKeyboardKey.keyT),
     ],
+  ),
+  lassoTool(
+    'Lasso select',
+    CommandGroup.tools,
+    'Draw round what to pick out: handwriting stroke by stroke',
+    <KeyChord>[KeyChord(LogicalKeyboardKey.keyL)],
   ),
   pen('Pen', CommandGroup.tools, null, <KeyChord>[
     KeyChord(LogicalKeyboardKey.keyP),
@@ -215,8 +245,15 @@ enum AppCommand {
   fitPage(
     'Fit page',
     CommandGroup.view,
-    'Everything on the page in view',
+    'Everything on the page in view, or the whole of the sheet in view',
     <KeyChord>[],
+  ),
+  pageLayout(
+    'Pages or canvas',
+    CommandGroup.view,
+    'Shows the page as sheets, or as one paper without end; nothing on it '
+        'moves',
+    <KeyChord>[KeyChord(LogicalKeyboardKey.keyL, control: true, shift: true)],
   ),
   pagePreview(
     'Page preview',

@@ -15,6 +15,7 @@ export 'src/document/page_document.dart';
 export 'src/document/rich_text.dart';
 export 'src/document/rich_text_editing.dart';
 export 'src/document/shape_recognizer.dart';
+export 'src/document/sheets.dart';
 export 'src/document/table_editing.dart';
 export 'src/document/text_tables.dart';
 export 'src/interchange/drafts.dart';

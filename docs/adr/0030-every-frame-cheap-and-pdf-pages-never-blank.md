@@ -1,7 +1,7 @@
 # 30. Every frame cheap, and PDF pages that never go blank
 
 **Status:** accepted; revises how ADR 21's page is drawn, and how ADR 27's
-page follows a zoom
+page follows a zoom; its ink drawn sheet by sheet on pages, by ADR 32
 
 ## Context
 

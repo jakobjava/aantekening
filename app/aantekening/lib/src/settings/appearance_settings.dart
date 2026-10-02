@@ -1,5 +1,5 @@
 /// How the interface looks: light or dark, its colours, the accent, the
-/// typeface and the size.
+/// typeface, the size and the grain.
 library;
 
 import 'dart:async';
@@ -119,6 +119,36 @@ class AppearanceSettings extends ConsumerWidget {
                 labelOf: (scale) => '${(scale * 100).round()}%',
                 onSelected: (scale) =>
                     update((appearance) => appearance.copyWith(scale: scale)),
+              ),
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: 'Grain',
+          description:
+              'A fine grain over the whole window, the pages included, as '
+              'on paper or film.',
+          children: <Widget>[
+            SettingRow(
+              label: 'Strength',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  LevelSlider(
+                    label: 'Grain',
+                    value: appearance.grain,
+                    onChanged: (grain) => update(
+                      (appearance) => appearance.copyWith(grain: grain),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    appearance.grain == 0
+                        ? 'None'
+                        : '${(appearance.grain * 100).round()}%',
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                ],
               ),
             ),
           ],

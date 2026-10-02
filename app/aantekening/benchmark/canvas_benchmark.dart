@@ -16,7 +16,8 @@
 /// (`.onepkg`), whose heaviest page is used instead, or the page whose title
 /// holds `AANTEKENING_BENCH_PAGE`. Nothing is read from or written to the
 /// notes, the settings or the keychain: the page is kept in memory, its
-/// files in a temporary folder.
+/// files in a temporary folder. With `AANTEKENING_BENCH_LAYOUT=pages` the
+/// page is shown as pages, cut into sheets.
 library;
 
 import 'dart:async';
@@ -88,6 +89,11 @@ Future<void> main() async {
   await container.read(libraryActionsProvider).openPageId(pageId);
   // The page across the window, as it is read, with the sidebar closed.
   container.read(sidebarProvider.notifier).close();
+  // Shown as pages, if asked: the same page, cut into sheets.
+  if (Platform.environment['AANTEKENING_BENCH_LAYOUT'] == 'pages') {
+    await _wait(const Duration(milliseconds: 300));
+    (_canvas().widget as InfiniteCanvas).controller.setLayout(NoteLayout.pages);
+  }
 
   // Opened, and its PDF pages drawn.
   await _wait(const Duration(seconds: 4));
@@ -170,7 +176,8 @@ Future<void> main() async {
     ..writeln(
       'Canvas benchmark — page ${_canvasRect().width.round()}×'
       '${_canvasRect().height.round()}, '
-      '${PlatformDispatcher.instance.views.first.devicePixelRatio}× pixels',
+      '${PlatformDispatcher.instance.views.first.devicePixelRatio}× pixels, '
+      'shown as ${(_canvas().widget as InfiniteCanvas).controller.document.canvas.layout.label.toLowerCase()}',
     );
   for (final run in runs) {
     run.report(out, timings);
@@ -187,12 +194,17 @@ Future<void> _wait(Duration duration) => Future<void>.delayed(duration);
 
 /// Where the page is on screen.
 Rect _canvasRect() {
-  Rect? found;
+  final box = _canvas().renderObject! as RenderBox;
+  return box.localToGlobal(Offset.zero) & box.size;
+}
+
+/// The page, as the window shows it.
+Element _canvas() {
+  Element? found;
   void visit(Element element) {
     if (found != null) return;
     if (element.widget is InfiniteCanvas) {
-      final box = element.renderObject! as RenderBox;
-      found = box.localToGlobal(Offset.zero) & box.size;
+      found = element;
       return;
     }
     element.visitChildElements(visit);

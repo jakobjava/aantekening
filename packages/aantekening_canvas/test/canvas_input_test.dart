@@ -579,7 +579,7 @@ void main() {
       expect(stroke.yAt(0), stroke.yAt(1), reason: 'a level line');
     });
 
-    testWidgets("a pen's buttons erase and select, and its other end erases", (
+    testWidgets("a pen's buttons erase and lasso, and its other end erases", (
       tester,
     ) async {
       final controller = CanvasController()..setTool(CanvasTool.pen);
@@ -614,10 +614,11 @@ void main() {
       );
       expect(controller.document.elements, hasLength(1));
 
-      // The second picks what it drags round, and does not move the page.
-      await stroke(
-        const Offset(50, 250),
-        const Offset(300, 100),
+      // The second picks what it draws a loop round, and does not move the
+      // page.
+      await _drawRound(
+        tester,
+        const Rect.fromLTRB(80, 260, 320, 340),
         buttons: kPrimaryButton | kSecondaryStylusButton,
       );
       expect(controller.selection, hasLength(1));
@@ -1152,6 +1153,87 @@ void main() {
 
       expect(controller.selection, isEmpty);
       expect(taps, hasLength(1));
+    });
+  });
+
+  group('the lasso', () {
+    CanvasController withInk() => CanvasController()
+      ..addElement(
+        InkElement(
+          id: 'ink',
+          frame: const Frame(x: 0, y: 0, width: 1, height: 1),
+          createdAt: 0,
+          updatedAt: 0,
+        ).withStrokes(<InkStroke>[
+          _line(100, 100, 300, 100),
+          _line(100, 300, 300, 300),
+        ]),
+      )
+      ..setTool(CanvasTool.lasso);
+
+    testWidgets('picks the strokes it is drawn round, and keeps them while '
+        'in hand', (tester) async {
+      final controller = withInk();
+      await tester.pumpWidget(_host(controller));
+
+      await _drawRound(tester, const Rect.fromLTRB(80, 260, 320, 340));
+
+      final picked = controller.selectedElements.single as InkElement;
+      expect(picked.strokes.single.yAt(0), 300);
+      expect(controller.document.elements, hasLength(2));
+      controller.setTool(CanvasTool.select);
+      expect(controller.selection, hasLength(1), reason: 'still picked');
+      controller.setTool(CanvasTool.lasso);
+      expect(controller.selection, hasLength(1));
+    });
+
+    testWidgets('moves what it picked from anywhere in its box', (
+      tester,
+    ) async {
+      final controller = withInk();
+      await tester.pumpWidget(_host(controller));
+      await _drawRound(tester, const Rect.fromLTRB(80, 60, 320, 340));
+      final picked = controller.selection.single;
+
+      // Between the strokes, on neither.
+      await tester.dragFrom(
+        const Offset(200, 200),
+        const Offset(0, 50),
+        kind: PointerDeviceKind.stylus,
+      );
+      await tester.pump();
+
+      final moved = controller.document.elementById(picked)! as InkElement;
+      expect(moved.bounds.centerY, closeTo(250, 1));
+      expect(controller.selection, <String>{picked});
+    });
+
+    testWidgets('taps pick what they land on, and nothing elsewhere', (
+      tester,
+    ) async {
+      final controller = withInk();
+      await tester.pumpWidget(_host(controller));
+
+      await tester.tapAt(const Offset(200, 100), kind: PointerDeviceKind.mouse);
+      expect(controller.selection, <String>{'ink'});
+      await tester.tapAt(const Offset(500, 500), kind: PointerDeviceKind.mouse);
+      expect(controller.selection, isEmpty);
+    });
+
+    test('takes objects whose middle it is drawn round, not those it only '
+        'touches', () {
+      final controller = CanvasController()
+        ..addElement(_image('inside', x: 0, y: 0))
+        ..addElement(_image('touched', x: 150, y: 0));
+
+      controller.selectWithin(
+        Lasso(const Offset(-10, -10))
+            .extendedTo(const Offset(220, -10))
+            .extendedTo(const Offset(220, 110))
+            .extendedTo(const Offset(-10, 110)),
+      );
+
+      expect(controller.selection, <String>{'inside'});
     });
   });
 
@@ -1752,6 +1834,29 @@ void main() {
       expect(largest, lessThan(20));
     });
   });
+}
+
+/// Draws a loop round [round] with a pen, pressed with [buttons].
+Future<void> _drawRound(
+  WidgetTester tester,
+  Rect round, {
+  int buttons = kPrimaryButton,
+}) async {
+  final pen = await tester.startGesture(
+    round.topLeft,
+    kind: PointerDeviceKind.stylus,
+    buttons: buttons,
+  );
+  for (final corner in <Offset>[
+    round.topRight,
+    round.bottomRight,
+    round.bottomLeft,
+    round.topLeft,
+  ]) {
+    await pen.moveTo(corner);
+  }
+  await pen.up();
+  await tester.pump();
 }
 
 InkStroke _line(double x0, double y0, double x1, double y1) =>

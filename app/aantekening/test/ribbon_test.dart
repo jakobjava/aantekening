@@ -227,6 +227,51 @@ void main() {
     expect(canvas.highlighterSettings.width, 40);
   });
 
+  testWidgets('a sheet is added printed as chosen, and moved', (tester) async {
+    await store.pages.saveDocument(
+      pageId,
+      PageDocument(
+        id: pageId,
+        canvas: CanvasSettings(
+          layout: NoteLayout.pages,
+          sheets: Sheets(templates: const <SheetTemplate>[SheetTemplate.lined]),
+        ),
+      ),
+    );
+    await openEditor(tester, store, pageId);
+    final canvas = _commands(tester).canvas;
+    List<SheetTemplate> templates() =>
+        canvas.document.canvas.sheetsShown!.templates;
+
+    // Asked, and Enter takes what the sheet in view is printed with.
+    await tester.tap(find.byTooltip(RegExp('^Add sheet')).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Add a sheet after sheet 1'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(templates(), <SheetTemplate>[
+      SheetTemplate.lined,
+      SheetTemplate.lined,
+    ]);
+
+    // A click takes another; the new sheet is shown.
+    await tester.tap(find.byTooltip(RegExp('^Add sheet')).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Music'));
+    await tester.pumpAndSettle();
+    expect(templates(), hasLength(3));
+    expect(templates()[canvas.currentSheet], SheetTemplate.music);
+
+    final shown = canvas.currentSheet;
+    // The ribbon scrolls to it, in a window too narrow for all of Home.
+    await tester.ensureVisible(find.byTooltip(RegExp('^Move sheet up')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip(RegExp('^Move sheet up')));
+    await tester.pumpAndSettle();
+    expect(templates()[shown - 1], SheetTemplate.music);
+    expect(canvas.currentSheet, shown - 1, reason: 'followed');
+  });
+
   testWidgets('a shape chosen on the Draw tab is dragged out in the pen', (
     tester,
   ) async {

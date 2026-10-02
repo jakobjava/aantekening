@@ -192,11 +192,16 @@ class GrabBand extends StatelessWidget {
     required this.height,
     required this.visible,
     required this.active,
+    this.movable = true,
     super.key,
   });
 
   final double height;
   final bool visible;
+
+  /// Whether a drag on it would move the box, which only the selecting tool
+  /// does: a pen over it shows its own nib.
+  final bool movable;
 
   /// Whether the box is the one being typed in or picked, drawn a shade
   /// stronger.
@@ -206,7 +211,7 @@ class GrabBand extends StatelessWidget {
   Widget build(BuildContext context) {
     // Drawn on the paper, so in the paper's colours rather than the theme's.
     return MouseRegion(
-      cursor: SystemMouseCursors.move,
+      cursor: movable ? SystemMouseCursors.move : MouseCursor.defer,
       child: SizedBox(
         height: height,
         child: visible

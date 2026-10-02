@@ -145,15 +145,17 @@ class RenderPageSpace extends RenderBox
 
   /// From the child's coordinates to this box's: page units from the
   /// region's corner, to the view's pixels, moved to the nearest device
-  /// pixel.
+  /// pixel. On sheets, the child lays out the view's space.
   Matrix4 get _transform {
     final viewport = _view.value;
     final zoom = viewport.zoom;
     final ratio = _devicePixelRatio;
     double snapped(double at) => (at * ratio).roundToDouble() / ratio;
+    // On sheets, the region's corner as the view lays it out.
+    final corner = viewport.toView(Offset(_region.left, _region.top));
     return Matrix4.translationValues(
-      snapped((_region.left - viewport.origin.dx) * zoom),
-      snapped((_region.top - viewport.origin.dy) * zoom),
+      snapped((corner.dx - viewport.origin.dx) * zoom),
+      snapped((corner.dy - viewport.origin.dy) * zoom),
       0,
     )..scaleByDouble(zoom, zoom, 1, 1);
   }

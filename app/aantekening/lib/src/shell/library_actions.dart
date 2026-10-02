@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import 'new_page_choice.dart';
 import 'tabs.dart';
 import 'tree_rows.dart';
 
@@ -281,7 +282,11 @@ class LibraryActions {
       notebookId: notebook.id,
       title: 'Notes',
     );
-    final page = await store.pages.createPage(sectionId: section.id);
+    // As the last page made started, without asking.
+    final page = await store.pages.createPage(
+      sectionId: section.id,
+      canvas: _ref.read(newPageChoiceProvider).canvas,
+    );
     _changed();
     openPage(notebookId: notebook.id, sectionId: section.id, pageId: page.id);
   }
@@ -304,20 +309,50 @@ class LibraryActions {
   }
 
   /// Creates a page at the end of [sectionId], or of [parentId]'s subpages,
-  /// and opens it with the caret in its title.
-  Future<void> createPage({required String sectionId, String? parentId}) async {
+  /// shown as [canvas] has it, and opens it with the caret in its title.
+  Future<void> createPage({
+    required String sectionId,
+    String? parentId,
+    CanvasSettings canvas = CanvasSettings.defaults,
+  }) async {
     final store = await _store;
     final section = await store.library.findSection(sectionId);
     if (section == null) return;
     final page = await store.pages.createPage(
       sectionId: sectionId,
       parentId: parentId,
+      canvas: canvas,
     );
     _changed();
     _ref.read(titleFocusProvider.notifier).request(page.id);
     openPage(
       notebookId: section.notebookId,
       sectionId: sectionId,
+      pageId: page.id,
+    );
+  }
+
+  /// Creates a page titled [title] after the others in the section of
+  /// [besidePageId], holding what [document] makes for it, and opens it.
+  Future<void> createPageHolding({
+    required String besidePageId,
+    required String title,
+    required PageDocument Function(String pageId) document,
+  }) async {
+    final store = await _store;
+    final beside = await store.pages.findPage(besidePageId);
+    if (beside == null) return;
+    final section = await store.library.findSection(beside.sectionId);
+    if (section == null) return;
+    final page = await store.pages.createPage(
+      sectionId: section.id,
+      title: title,
+    );
+    await store.pages.saveDocument(page.id, document(page.id));
+    _changed();
+    openPage(
+      notebookId: section.notebookId,
+      sectionId: section.id,
       pageId: page.id,
     );
   }

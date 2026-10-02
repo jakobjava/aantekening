@@ -1,11 +1,17 @@
+import 'dart:ui' as ui;
+
 import 'package:aantekening/src/commands/app_command.dart';
 import 'package:aantekening/src/commands/editor_keys.dart';
 import 'package:aantekening/src/commands/fuzzy.dart';
 import 'package:aantekening/src/commands/key_chord.dart';
 import 'package:aantekening/src/commands/shortcuts.dart';
 import 'package:aantekening/src/look/appearance.dart';
+import 'package:aantekening/src/look/controls.dart';
+import 'package:aantekening/src/look/grain.dart';
 import 'package:aantekening/src/look/tones.dart';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -150,6 +156,7 @@ void main() {
         accent: const Color(0xFF7B5CE0),
         font: InterfaceFont.mono,
         scale: 1.25,
+        grain: 0.35,
       );
       expect(Appearance.fromJson(appearance.toJson()), appearance);
     });
@@ -161,9 +168,11 @@ void main() {
           'mode': 'sideways',
           'scale': 7,
           'font': 'Comic',
+          'grain': 'lots',
         }),
         const Appearance(),
       );
+      expect(Appearance.fromJson(<String, Object?>{'grain': 3}).grain, 1);
     });
 
     test('names a pair read back after its preset', () {
@@ -179,6 +188,96 @@ void main() {
         const ColourPair('', Color(0xFFFFFFFF), Color(0xFFDDDDDD)).hardToRead,
         isTrue,
       );
+    });
+  });
+
+  group('Grain', () {
+    testWidgets('lightens as much as it darkens, so it changes no colour', (
+      tester,
+    ) async {
+      final noise = (await tester.runAsync(() => GrainNoise.tile))!;
+      final recorder = ui.PictureRecorder();
+      const size = Size(64, 64);
+      final canvas = Canvas(
+        recorder,
+      )..drawRect(Offset.zero & size, Paint()..color = const Color(0xFF808080));
+      GrainPainter(
+        noise: noise,
+        strength: 1,
+        pixelRatio: 1,
+      ).paint(canvas, size);
+      final image = await tester.runAsync(
+        () => recorder.endRecording().toImage(64, 64),
+      );
+      final bytes = (await tester.runAsync(
+        () => image!.toByteData(format: ui.ImageByteFormat.rawRgba),
+      ))!.buffer.asUint8List();
+
+      var sum = 0;
+      var lighter = 0;
+      var darker = 0;
+      for (var i = 0; i < bytes.length; i += 4) {
+        sum += bytes[i];
+        if (bytes[i] > 0x80) lighter++;
+        if (bytes[i] < 0x80) darker++;
+      }
+      expect(sum / (bytes.length / 4), closeTo(0x80, 2));
+      expect(lighter, greaterThan(1000));
+      expect(darker, greaterThan(1000));
+    });
+
+    testWidgets('lays nothing over the window when there is none', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Grain(child: Text('page')),
+          ),
+        ),
+      );
+      expect(find.byType(CustomPaint), findsNothing);
+    });
+  });
+
+  group('LevelSlider', () {
+    testWidgets('is set by pressing, dragging and the arrow keys', (
+      tester,
+    ) async {
+      var level = 0.5;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: StatefulBuilder(
+              builder: (context, setState) => LevelSlider(
+                label: 'Grain',
+                value: level,
+                width: 200,
+                onChanged: (value) => setState(() => level = value),
+              ),
+            ),
+          ),
+        ),
+      );
+      final slider = find.byType(LevelSlider);
+
+      await tester.tapAt(tester.getTopLeft(slider) + const Offset(50, 12));
+      expect(level, closeTo(0.25, 1e-9));
+      await tester.dragFrom(
+        tester.getTopLeft(slider) + const Offset(50, 12),
+        const Offset(500, 0),
+      );
+      expect(level, 1, reason: 'no further than its end');
+
+      await tester.tap(slider);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump();
+      expect(level, closeTo(0.45, 1e-9));
+      await tester.sendKeyEvent(LogicalKeyboardKey.home);
+      await tester.pump();
+      expect(level, 0);
     });
   });
 

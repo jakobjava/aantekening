@@ -8,6 +8,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import 'canvas_controller.dart';
@@ -16,6 +17,7 @@ import 'canvas_painters.dart';
 import 'canvas_scope.dart';
 import 'canvas_viewport.dart';
 import 'element_transforms.dart';
+import 'lasso.dart';
 import 'page_space.dart';
 import 'selection_handles.dart';
 import 'tools.dart';
@@ -82,6 +84,8 @@ class InfiniteCanvas extends StatefulWidget {
     this.header,
     this.trackpadPanScale = 1,
     this.selectionColor,
+    this.deskColor,
+    this.afterSheets,
     this.penButtons = const PenButtons(),
     this.shapesOnHold = true,
     this.touchpadFingers,
@@ -132,6 +136,14 @@ class InfiniteCanvas extends StatefulWidget {
   /// select, are drawn in: the theme's primary colour, if not given.
   final Color? selectionColor;
 
+  /// What lies about a page shown as sheets.
+  final Color? deskColor;
+
+  /// What is shown below the last sheet of a page shown as sheets, in the
+  /// middle of it: a button to add another, say. A press on it is its own,
+  /// and draws nothing on the page.
+  final Widget? afterSheets;
+
   /// What a pen does pressed with one of its buttons held. Its other end,
   /// where a pen has an eraser, always erases.
   final PenButtons penButtons;
@@ -158,6 +170,7 @@ enum _PointerAction {
   move,
   transform,
   marquee,
+  lasso,
 
   /// A touch on empty canvas: a tap if it stays put, a pan if it moves.
   panOrTap,
@@ -271,6 +284,13 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   Offset? _marqueeAnchor;
   Aabb? _marquee;
+  Lasso? _lasso;
+
+  /// The pointer last pressed on [InfiniteCanvas.afterSheets].
+  int? _afterSheetsPointer;
+
+  /// The sheet the line being drawn began on, of a page shown as pages.
+  int? _strokeSheet;
 
   /// Where the pen came to rest while drawing, how far it may tremble
   /// there and still be at rest, and the wait for it to stay there long
@@ -373,6 +393,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   // ----------------------------------------------------------------- pointer
 
   void _onPointerDown(PointerDownEvent event) {
+    if (event.pointer == _afterSheetsPointer) return;
     _motion.brake();
     _placeNib(event);
     if (event.kind == PointerDeviceKind.mouse) {
@@ -409,6 +430,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       case _PointerAction.draw when _controller.tool == CanvasTool.shape:
         _controller.beginShape(page);
       case _PointerAction.draw:
+        _strokeSheet = _sheetAt(event.localPosition);
         _controller.beginStroke(
           page,
           pressure: _normalizedPressure(event),
@@ -421,6 +443,11 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       case _PointerAction.marquee:
         _marqueeAnchor = page;
         _marquee = Aabb(page.dx, page.dy, page.dx, page.dy);
+        if (!HardwareKeyboard.instance.isShiftPressed) {
+          _controller.clearSelection();
+        }
+      case _PointerAction.lasso:
+        _lasso = Lasso(page);
         if (!HardwareKeyboard.instance.isShiftPressed) {
           _controller.clearSelection();
         }
@@ -470,6 +497,14 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     }
 
     switch (_action) {
+      // Written off the sheet it began on, a line is cut there, as it would
+      // be at the edge of paper, not drawn along the edge.
+      case _PointerAction.draw
+          when _strokeSheet != null &&
+              !_controller.isShaping &&
+              _controller.tool != CanvasTool.shape &&
+              _sheetAt(event.localPosition) != _strokeSheet:
+        break;
       case _PointerAction.draw:
         _controller.extendStroke(
           page,
@@ -508,6 +543,15 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
             math.max(anchor.dy, page.dy),
           );
         });
+      case _PointerAction.lasso:
+        final lasso = _lasso;
+        // A point for every couple of pixels the loop goes round.
+        if (lasso == null ||
+            (page - lasso.points.last).distance <
+                _controller.viewport.toPageDistance(2)) {
+          break;
+        }
+        setState(() => _lasso = lasso.extendedTo(page));
       case _PointerAction.claimed:
       case _PointerAction.pinch:
       case _PointerAction.none:
@@ -539,6 +583,15 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
             band,
             additive: HardwareKeyboard.instance.isShiftPressed,
           );
+        }
+      case _PointerAction.lasso:
+        final additive = HardwareKeyboard.instance.isShiftPressed;
+        final lasso = _lasso;
+        if (_dragged && lasso != null) {
+          _controller.selectWithin(lasso, additive: additive);
+        } else if (_controller.hitTest(page) case final hit?) {
+          // A tap picks what it lands on, as the select tool's does.
+          _controller.select(hit.id, additive: additive);
         }
       case _PointerAction.panOrTap:
       case _PointerAction.pan:
@@ -600,6 +653,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       _activePointer = null;
       _marquee = null;
       _marqueeAnchor = null;
+      _lasso = null;
       _transform = null;
       _touchVelocity = null;
     });
@@ -631,6 +685,12 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     )) {
       return _PointerAction.pan;
     }
+    // The desk about sheets is held to move them, unless the press is on
+    // a handle of what is picked, which may reach out over it.
+    if (_onDesk(event.localPosition) &&
+        _handleAt(event, _controller.selectedElements) == null) {
+      return _PointerAction.pan;
+    }
     // A pen's other end erases, and its buttons do what they were given to.
     if (event.kind == PointerDeviceKind.invertedStylus) {
       _pressed(null);
@@ -643,6 +703,8 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
           return _PointerAction.erase;
         case PenButtonAction.select:
           return _resolveSelectAction(event, page);
+        case PenButtonAction.lasso:
+          return _resolveLassoAction(event, page);
         case PenButtonAction.scroll:
           return _PointerAction.pan;
         case PenButtonAction.none || null:
@@ -669,7 +731,76 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
         return _PointerAction.erase;
       case CanvasTool.select:
         return _resolveSelectAction(event, page);
+      case CanvasTool.lasso:
+        return _resolveLassoAction(event, page);
     }
+  }
+
+  /// Whether [screen] lies on the desk about the sheets of a page shown as
+  /// pages.
+  bool _onDesk(Offset screen) =>
+      _controller.fold != null && _sheetAt(screen) == null;
+
+  /// The sheet [screen] lies on, of a page shown as pages; null on the desk
+  /// about them, or on one paper.
+  int? _sheetAt(Offset screen) {
+    final view = _controller.viewport;
+    final fold = view.fold;
+    if (fold == null) return null;
+    final at = view.origin + screen / view.zoom;
+    final sheet = fold.sheetNear(at.dy);
+    return fold.sheetInView(sheet).contains(at) ? sheet : null;
+  }
+
+  /// The handle of the [selected] elements [event] presses on, if any.
+  SelectionHandle? _handleAt(
+    PointerDownEvent event,
+    List<NoteElement> selected,
+  ) => selected.isEmpty
+      ? null
+      : SelectionHandles.hitTest(
+          selected,
+          _controller.viewport,
+          event.localPosition,
+          reach: event.kind == PointerDeviceKind.touch
+              ? SelectionHandles.touchReach
+              : SelectionHandles.mouseReach,
+        );
+
+  /// A lasso's press: on the selection's handles, it resizes or turns it;
+  /// anywhere in its box, it moves it; anywhere else, it draws a loop.
+  _PointerAction _resolveLassoAction(PointerDownEvent event, Offset page) {
+    final selected = _controller.selectedElements;
+    if (_onSelectionHandle(event, page, selected) case final action?) {
+      return action;
+    }
+    final frame = SelectionFrame.around(selected);
+    if (frame != null && _frameContains(frame, page)) {
+      _pressed(selected.length == 1 ? selected.single : null);
+      return _PointerAction.move;
+    }
+    _pressed(null);
+    return _PointerAction.lasso;
+  }
+
+  /// A press on one of the handles about the [selected] elements: a resize
+  /// or a turn of them, or null if it is on none.
+  _PointerAction? _onSelectionHandle(
+    PointerDownEvent event,
+    Offset page,
+    List<NoteElement> selected,
+  ) {
+    final handle = _handleAt(event, selected);
+    final frame = SelectionFrame.around(selected);
+    if (handle == null || frame == null) return null;
+    _transform = _TransformGesture(
+      handle: handle,
+      originals: selected,
+      frame: frame,
+      pressPage: page,
+    );
+    _pressed(selected.length == 1 ? selected.single : null);
+    return _PointerAction.transform;
   }
 
   _PointerAction _resolveSelectAction(PointerDownEvent event, Offset page) {
@@ -678,26 +809,8 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
     // Handles come first: they sit on and around the box, where a press would
     // otherwise land on an element or on empty canvas.
-    if (selected.isNotEmpty) {
-      final handle = SelectionHandles.hitTest(
-        selected,
-        _controller.viewport,
-        event.localPosition,
-        reach: event.kind == PointerDeviceKind.touch
-            ? SelectionHandles.touchReach
-            : SelectionHandles.mouseReach,
-      );
-      final frame = SelectionFrame.around(selected);
-      if (handle != null && frame != null) {
-        _transform = _TransformGesture(
-          handle: handle,
-          originals: selected,
-          frame: frame,
-          pressPage: page,
-        );
-        _pressed(selected.length == 1 ? selected.single : null);
-        return _PointerAction.transform;
-      }
+    if (_onSelectionHandle(event, page, selected) case final action?) {
+      return action;
     }
 
     final grips = widget.grips;
@@ -876,6 +989,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
       _activePointer = null;
       _marquee = null;
       _marqueeAnchor = null;
+      _lasso = null;
       _transform = null;
     });
     _syncZooming();
@@ -1122,8 +1236,12 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   }
 
   /// Puts the nib where [event] is, if a mouse or a pen: a finger has no
-  /// cursor.
+  /// cursor, and the desk about sheets is not written on.
   void _placeNib(PointerEvent event) {
+    if (_onDesk(event.localPosition)) {
+      _nib.value = null;
+      return;
+    }
     _nib.value = switch (event.kind) {
       PointerDeviceKind.mouse ||
       PointerDeviceKind.stylus => (at: event.localPosition, erasing: false),
@@ -1136,7 +1254,9 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   }
 
   MouseCursor _cursorAt(Offset screen) {
-    if (_controller.tool != CanvasTool.select) return MouseCursor.defer;
+    // The desk is held to move the sheets on it.
+    if (_onDesk(screen) && !_onHandle(screen)) return SystemMouseCursors.grab;
+    if (!_controller.tool.selects) return MouseCursor.defer;
     final selected = _controller.selectedElements;
     if (selected.isNotEmpty) {
       final handle = SelectionHandles.hitTest(
@@ -1149,7 +1269,16 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
         return _cursorForHandle(handle, frame?.rotation ?? 0);
       }
     }
-    final hit = _controller.hitTest(_controller.viewport.toPage(screen));
+    final page = _controller.viewport.toPage(screen);
+    // What a press would pick up and move: with the lasso, the selection
+    // alone, anywhere in its box.
+    if (_controller.tool == CanvasTool.lasso) {
+      final frame = SelectionFrame.around(selected);
+      return frame != null && _frameContains(frame, page)
+          ? SystemMouseCursors.move
+          : MouseCursor.defer;
+    }
+    final hit = _controller.hitTest(page);
     return hit == null ? MouseCursor.defer : SystemMouseCursors.move;
   }
 
@@ -1195,7 +1324,15 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     return RepaintBoundary(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          _size = constraints.biggest;
+          final size = constraints.biggest;
+          if (size != _size && _controller.fold != null) {
+            // Sheets lie in the middle of the view: once it is this size,
+            // they are put in the middle of it.
+            SchedulerBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _controller.settleView();
+            });
+          }
+          _size = size;
           final controller = _controller..viewSize = _size;
 
           return Listener(
@@ -1229,6 +1366,8 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
                             background: controller.document.canvas.background,
                             view: controller.view,
                             paperWidth: controller.document.canvas.paperWidth,
+                            sheets: controller.document.canvas.sheetsShown,
+                            desk: widget.deskColor ?? const Color(0xFFE4E4E4),
                           ),
                         ),
                       ),
@@ -1243,6 +1382,18 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
                       header: widget.header,
                       headerInteractive: controller.tool == CanvasTool.select,
                     ),
+                    if (widget.afterSheets case final after?
+                        when controller.fold != null)
+                      CustomSingleChildLayout(
+                        delegate: _AfterSheets(controller.view),
+                        child: Listener(
+                          // Pressed, it is the press's alone: the canvas,
+                          // which hears of it after, leaves it be.
+                          onPointerDown: (event) =>
+                              _afterSheetsPointer = event.pointer,
+                          child: after,
+                        ),
+                      ),
                     IgnorePointer(
                       child: RepaintBoundary(
                         child: CustomPaint(
@@ -1253,6 +1404,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
                                 widget.selectionColor ??
                                 Theme.of(context).colorScheme.primary,
                             marquee: _marquee,
+                            lasso: _lasso,
                           ),
                         ),
                       ),
@@ -1285,7 +1437,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   /// Whether a mouse press at [screen] would take hold of the selection's
   /// handles or sides.
   bool _onHandle(Offset screen) {
-    if (_controller.tool != CanvasTool.select) return false;
+    if (!_controller.tool.selects) return false;
     final selected = _controller.selectedElements;
     return selected.isNotEmpty &&
         SelectionHandles.hitTest(selected, _controller.viewport, screen) !=
@@ -1293,10 +1445,11 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   }
 
   /// The pen, highlighter and eraser show their nib instead
-  /// ([NibPainter]); a shape is placed as precisely as a crosshair can.
+  /// ([NibPainter]); a shape is placed, and a lasso drawn, as precisely as
+  /// a crosshair can.
   static MouseCursor _cursorFor(CanvasTool tool) => NibPainter.draws(tool)
       ? SystemMouseCursors.none
-      : tool == CanvasTool.shape
+      : tool == CanvasTool.shape || tool == CanvasTool.lasso
       ? SystemMouseCursors.precise
       : SystemMouseCursors.basic;
 }
@@ -1480,7 +1633,7 @@ class _PageContentState extends State<_PageContent> {
             // text box its caret, a PDF page its rendered image — while
             // others are added, removed or scrolled out of view around it.
             key: ValueKey<String>(element.id),
-            frame: element.frame,
+            frame: widget.view.value.frameInView(element.frame),
             child: GestureDetector(
               onDoubleTap: onDoubleTap == null
                   ? null
@@ -1502,9 +1655,12 @@ class _PageContentState extends State<_PageContent> {
     if (!_isZooming || _zoom == 0) _zoom = viewport.zoom;
     final shown = controller.elementsIn(region);
     final origin = Offset(region.left, region.top);
-    // The painters draw in page space moved to the region's corner.
+    // The painters draw in page space moved to the region's corner; on
+    // sheets, each sheet's part moved down by the gaps above it.
     final fromOrigin = CanvasViewport(origin: origin);
+    final fold = viewport.fold;
     final pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
+    final devicePixelsPerUnit = _zoom * pixelRatio;
     final pixelsPerUnit = widget.still ? _zoom * pixelRatio : null;
     InkTiles? tilesOf(InkLayer layer) => widget.still ? null : _inkTiles[layer];
     // Zooming out, the ink stays as tiles, drawn again for the zoom the
@@ -1525,8 +1681,10 @@ class _PageContentState extends State<_PageContent> {
           if (element.locked == locked && element is! InkElement)
             ?_place(before, element, pressable: !locked),
       ],
-      origin: origin,
+      // The elements are placed where the view lays them out.
+      origin: viewport.toView(origin),
       header: header,
+      headerFrame: header == null ? null : viewport.frameInView(header.frame),
       headerInteractive: widget.headerInteractive,
     );
 
@@ -1559,6 +1717,8 @@ class _PageContentState extends State<_PageContent> {
                 tileScale: tileScale,
                 zooming: zooming,
                 pixelRatio: pixelRatio,
+                fold: fold,
+                devicePixelsPerUnit: devicePixelsPerUnit,
               ),
             ),
             RepaintBoundary(child: layer(false, header: widget.header)),
@@ -1576,11 +1736,18 @@ class _PageContentState extends State<_PageContent> {
                   tileScale: tileScale,
                   zooming: zooming,
                   pixelRatio: pixelRatio,
+                  fold: fold,
+                  devicePixelsPerUnit: devicePixelsPerUnit,
                 ),
               ),
             if (!widget.still)
               paint(
-                WetInkPainter(controller: controller, viewport: fromOrigin),
+                WetInkPainter(
+                  controller: controller,
+                  viewport: fromOrigin,
+                  fold: fold,
+                  devicePixelsPerUnit: devicePixelsPerUnit,
+                ),
               ),
           ],
         ),
@@ -1598,15 +1765,19 @@ class _ElementLayer extends StatelessWidget {
     required this.placed,
     required this.origin,
     required this.header,
+    required this.headerFrame,
     required this.headerInteractive,
   });
 
   /// The elements' widgets, each a [PlacedOnPage].
   final List<Widget> placed;
 
-  /// The page point at the layer's top-left corner.
+  /// The point of the view's space at the layer's top-left corner.
   final Offset origin;
   final CanvasHeader? header;
+
+  /// Where the header lies in the view's space.
+  final Frame? headerFrame;
 
   /// Whether the header takes presses: only with the select tool, so a pen
   /// can write over it.
@@ -1623,7 +1794,7 @@ class _ElementLayer extends StatelessWidget {
         if (header != null)
           PlacedOnPage(
             key: const ValueKey<String>('header'),
-            frame: header.frame,
+            frame: headerFrame ?? header.frame,
             child: IgnorePointer(
               ignoring: !headerInteractive,
               child: header.child,
@@ -1633,6 +1804,35 @@ class _ElementLayer extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Lays out [InfiniteCanvas.afterSheets] below the last sheet, in the
+/// middle of it, following the view by itself.
+class _AfterSheets extends SingleChildLayoutDelegate {
+  _AfterSheets(this.view) : super(relayout: view);
+
+  final ValueListenable<CanvasViewport> view;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      constraints.loosen();
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final viewport = view.value;
+    final fold = viewport.fold;
+    if (fold == null) return Offset(0, size.height);
+    final zoom = viewport.zoom;
+    final middle = (fold.width / 2 - viewport.origin.dx) * zoom;
+    final bottom = (fold.extent - viewport.origin.dy) * zoom;
+    return Offset(
+      middle - childSize.width / 2,
+      bottom + (CanvasController.deskFoot - childSize.height) / 2,
+    );
+  }
+
+  @override
+  bool shouldRelayout(_AfterSheets old) => old.view != view;
 }
 
 /// Takes pointer presses on the selection's handles and sides, so that they

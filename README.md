@@ -1,8 +1,9 @@
 # aantekening
 
 A note-taking app for Linux, Windows and Android, in the spirit of OneNote:
-an endless page to type, write and draw on anywhere, with real mathematics,
-PDFs to annotate, and an AI that studies your notes with you.
+an endless page to type, write and draw on anywhere — or sheets of ruled,
+squared or blank paper, one after another, as in GoodNotes — with real
+mathematics, PDFs to annotate, and an AI that studies your notes with you.
 
 Every note is a plain file in a folder you choose, so OneDrive, Dropbox or
 Syncthing can keep it on all your computers. A local search index keeps
@@ -14,7 +15,12 @@ thousands of pages instant.
   around what you type. Draw with a pressure-sensitive pen or highlighter;
   hold the pen still and a stroke becomes the shape it was drawn as, or drag
   out shapes, axes and solids from the Draw tab. Move, resize and rotate
-  anything.
+  anything, or pick out handwriting with the lasso.
+- **Or pages, as in a paper notebook.** Show any page as sheets of A4 or
+  Letter — blank, lined, squared, dotted, music staves or Cornell — in the
+  middle of the window, and add sheets as the notes grow; a PDF goes a page
+  to a sheet. Switch between pages and the endless canvas at any time: the
+  notes are cut into sheets and put back together, never moved.
 - **Rich text.** Headings, lists, to-dos, tables, code, fonts, colours —
   one of them the inverse of whatever is beneath — and Markdown shortcuts,
   with spell checking in several languages at once.
@@ -113,7 +119,9 @@ To measure how smoothly, and at what cost, a heavy page scrolls and zooms
 — the time each frame takes and the processor time spent, thread by thread
 — build the benchmark in profile mode and run it on the desktop to measure.
 It makes up its page, or uses the heaviest page of a OneNote package named
-by `AANTEKENING_BENCH_NOTES`; nothing is read from or written to the notes:
+by `AANTEKENING_BENCH_NOTES`, shown as pages with
+`AANTEKENING_BENCH_LAYOUT=pages`; nothing is read from or written to the
+notes:
 
 ```bash
 cd app/aantekening

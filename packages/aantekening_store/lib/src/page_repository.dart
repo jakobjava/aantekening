@@ -85,11 +85,13 @@ class PageRepository {
 
   // ------------------------------------------------------------ page creation
 
-  /// Creates an empty page at the end of [sectionId].
+  /// Creates an empty page at the end of [sectionId], shown as [canvas]
+  /// has it: as one paper, or as sheets.
   Future<PageRef> createPage({
     required String sectionId,
     String title = '',
     String? parentId,
+    CanvasSettings canvas = CanvasSettings.defaults,
   }) async {
     final now = _now;
     final page = PageRef(
@@ -103,7 +105,7 @@ class PageRepository {
     );
     _db.transaction(() {
       _insert(page);
-      _writeBody(page.id, PageDocument.empty(id: page.id));
+      _writeBody(page.id, PageDocument(id: page.id, canvas: canvas));
       _reindex(page.id, page.title, '');
     });
     return page;

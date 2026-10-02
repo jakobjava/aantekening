@@ -451,6 +451,22 @@ void main() {
       expect(controller.hitTest(const Offset(-900, -900)), isNull);
     });
 
+    test('a lasso holds what its loop goes round', () {
+      // An L: the corner it leaves out is outside.
+      final lasso = Lasso(Offset.zero)
+          .extendedTo(const Offset(100, 0))
+          .extendedTo(const Offset(100, 50))
+          .extendedTo(const Offset(50, 50))
+          .extendedTo(const Offset(50, 100))
+          .extendedTo(const Offset(0, 100));
+
+      expect(lasso.containsPoint(25, 75), isTrue);
+      expect(lasso.containsPoint(75, 25), isTrue);
+      expect(lasso.containsPoint(75, 75), isFalse);
+      expect(lasso.containsPoint(150, 25), isFalse);
+      expect(lasso.bounds, const Aabb(0, 0, 100, 100));
+    });
+
     test('marquee selection takes everything it covers', () {
       final controller = CanvasController()
         ..addElement(_text('a', x: 0, y: 0))

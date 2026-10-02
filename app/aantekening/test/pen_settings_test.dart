@@ -44,7 +44,11 @@ void main() {
 
     final canvas = tester.widget<InfiniteCanvas>(find.byType(InfiniteCanvas));
     expect(canvas.penButtons.first, PenButtonAction.scroll);
-    expect(canvas.penButtons.second, PenButtonAction.select);
+    expect(
+      canvas.penButtons.second,
+      PenButtonAction.lasso,
+      reason: 'as it starts',
+    );
     expect(canvas.shapesOnHold, isFalse);
     expect(
       tester.widget<Ribbon>(find.byType(Ribbon)).commands.canvas.inkSmoothing,

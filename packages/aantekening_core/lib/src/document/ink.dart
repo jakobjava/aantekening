@@ -168,15 +168,16 @@ class InkStroke {
     );
   }
 
-  /// The share of this stroke's samples that fall inside [region].
-  double fractionInside(Aabb region) {
+  /// The share of this stroke's samples that fall [inside] a region: a
+  /// marquee's box, or the loop of a lasso.
+  double fractionInside(bool Function(double x, double y) inside) {
     final count = pointCount;
     if (count == 0) return 0;
-    var inside = 0;
+    var taken = 0;
     for (var i = 0; i < count; i++) {
-      if (region.containsPoint(xAt(i), yAt(i))) inside++;
+      if (inside(xAt(i), yAt(i))) taken++;
     }
-    return inside / count;
+    return taken / count;
   }
 
   /// Whether the drawn line passes within [radius] of ([x], [y]).

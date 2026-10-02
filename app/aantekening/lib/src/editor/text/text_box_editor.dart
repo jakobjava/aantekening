@@ -3461,9 +3461,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
     // typed in is — and goes with the rest of the selection's marks when the
     // paper is pressed, though typing ends only as the press does. Emptied,
     // it keeps its band while it is typed in.
+    // Hovered over with a pen in hand, it is only paper being written on.
+    final hovering = _hovering && widget.interactive;
     final showChrome =
         !widget.caretOnly &&
-        (empty ? widget.isEditing : widget.selected || _hovering);
+        (empty ? widget.isEditing : widget.selected || hovering);
     final content = Stack(
       children: <Widget>[
         Padding(
@@ -3496,6 +3498,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
             height: TextBoxEditor.grabBand,
             visible: showChrome,
             active: widget.isEditing || widget.selected,
+            movable: widget.interactive,
           ),
         ),
       ],
@@ -3525,8 +3528,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
           behavior: HitTestBehavior.opaque,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              border:
-                  _hovering && !widget.isEditing && widget.interactive && !empty
+              border: hovering && !widget.isEditing && !empty
                   ? Border.all(color: RichTextStyles.boxOutline)
                   : null,
             ),

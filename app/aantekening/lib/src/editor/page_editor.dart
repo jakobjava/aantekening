@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
 import '../ai/ai_view.dart';
 import '../command_menu.dart';
@@ -29,6 +30,8 @@ import '../look/motion.dart';
 import '../look/tones.dart';
 import '../providers.dart';
 import '../search/search_panel.dart';
+import '../shell/library_actions.dart';
+import '../shell/new_page_choice.dart';
 import '../spelling/proofreader.dart';
 import '../spelling/spelling.dart';
 import 'element_views.dart';
@@ -36,6 +39,8 @@ import 'media_import.dart';
 import 'note_clipboard.dart';
 import 'page_minimap.dart';
 import 'page_title.dart';
+import 'printout_place.dart';
+import 'sheet_choices.dart';
 import 'pen_preferences.dart';
 import 'ribbon/mini_toolbar.dart';
 import 'ribbon/ribbon.dart';
@@ -844,6 +849,35 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       return;
     }
 
+    final sheets = _controller.document.canvas.sheetsShown;
+    if (kind == MediaKind.pdf) {
+      final place = await choosePrintoutPlace(
+        context,
+        pages: items.length,
+        places: <PrintoutPlace>[
+          if (sheets != null) PrintoutPlace.newSheets,
+          PrintoutPlace.here,
+          PrintoutPlace.newPage,
+        ],
+      );
+      if (place == null || !mounted) return;
+      switch (place) {
+        case PrintoutPlace.newPage:
+          await _printAsNewPage(items);
+          return;
+        case PrintoutPlace.newSheets || PrintoutPlace.here when sheets != null:
+          _printOnSheets(
+            items,
+            sheets,
+            onNew: place == PrintoutPlace.newSheets,
+          );
+          return;
+        case PrintoutPlace.newSheets || PrintoutPlace.here:
+          // On one paper: down the page, as a picture goes.
+          break;
+      }
+    }
+
     final width = _controller.document.canvas.paperWidth ?? _defaultMediaWidth;
     final center = _controller.viewCenter;
     var y = center.dy - 120;
@@ -875,6 +909,108 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       ..setTool(CanvasTool.select)
       ..addElements(elements)
       ..selectAll(elements.map((element) => element.id));
+  }
+
+  /// [printout]'s pages, each on a sheet of its own — new sheets after the
+  /// one in view, [onNew], or else the sheets from the one in view on — as
+  /// large as the sheet takes it, in its middle, to be written on.
+  void _printOnSheets(
+    List<BlockEmbed> printout,
+    Sheets sheets, {
+    required bool onNew,
+  }) {
+    final first = _controller.currentSheet + (onNew ? 1 : 0);
+    // On sheets of their own, they are what the sheets are printed with.
+    final placed = _onSheets(printout, sheets, first, background: onNew);
+    _controller.setTool(CanvasTool.select);
+    if (onNew) {
+      _controller.insertSheets(first, <SheetTemplate>[
+        for (final _ in printout) SheetTemplate.blank,
+      ], onThem: placed);
+    } else {
+      // Sheets enough to lie on are added as they are needed.
+      _controller
+        ..addElements(placed)
+        ..selectAll(placed.map((element) => element.id));
+    }
+    _controller.reveal(sheets.bandOf(first));
+  }
+
+  /// [printout]'s pages on the sheets from [first] on, each as large as its
+  /// sheet takes it, in its middle: set as their background, to be written
+  /// over, if [background].
+  static List<NoteElement> _onSheets(
+    List<BlockEmbed> printout,
+    Sheets sheets,
+    int first, {
+    required bool background,
+  }) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    NoteElement placed(int sheet, BlockEmbed page) {
+      final element = page.toElement(
+        frame: _onSheet(page.aspectRatio, sheets, sheet),
+        now: now,
+      );
+      return background ? element.withLocked(true) : element;
+    }
+
+    return <NoteElement>[
+      for (final (i, page) in printout.indexed) placed(first + i, page),
+    ];
+  }
+
+  /// [printout] as a page of its own, beside this one and named after its
+  /// file: shown as pages, a sheet of the size last chosen for one to each
+  /// of its pages, set as its background. A book, say, to read and write
+  /// in.
+  Future<void> _printAsNewPage(List<BlockEmbed> printout) async {
+    final store = _store;
+    final pageId = widget.pageId;
+    if (store == null || pageId == null || printout.isEmpty) return;
+    final file = await store.assets.find(printout.first.assetId);
+    final sheets = Sheets(
+      size: ref.read(newPageChoiceProvider).size,
+      templates: <SheetTemplate>[for (final _ in printout) SheetTemplate.blank],
+    );
+    await ref
+        .read(libraryActionsProvider)
+        .createPageHolding(
+          besidePageId: pageId,
+          title: p.basenameWithoutExtension(file?.originalName ?? 'Printout'),
+          document: (id) {
+            var document = PageDocument(
+              id: id,
+              canvas: CanvasSettings(layout: NoteLayout.pages, sheets: sheets),
+            );
+            for (final element in _onSheets(
+              printout,
+              sheets,
+              0,
+              background: true,
+            )) {
+              document = document.withElementAdded(element);
+            }
+            return document;
+          },
+        );
+  }
+
+  /// Where something [aspectRatio] wide to its height lies on [sheet], as
+  /// large as the sheet takes it, in its middle.
+  static Frame _onSheet(double aspectRatio, Sheets sheets, int sheet) {
+    var width = sheets.width;
+    var height = width / aspectRatio;
+    if (height > sheets.height) {
+      height = sheets.height;
+      width = height * aspectRatio;
+    }
+    final band = sheets.bandOf(sheet);
+    return Frame(
+      x: (sheets.width - width) / 2,
+      y: band.top + (sheets.height - height) / 2,
+      width: width,
+      height: height,
+    );
   }
 
   void _showMessage(String message) {
@@ -1132,11 +1268,83 @@ class _PageEditorState extends ConsumerState<PageEditor> {
           _ribbonCommands.onFitPage,
           enabled: () => _pageShowing,
         ),
+        AppCommand.pageLayout: CommandAction(
+          _toggleLayout,
+          enabled: () => _pageShowing,
+        ),
+        AppCommand.addSheet: CommandAction(
+          () => unawaited(_addSheet(after: _controller.currentSheet)),
+          enabled: () => _pageShowing && _controller.fold != null,
+        ),
+        AppCommand.moveSheetUp: CommandAction(
+          () => _moveSheet(-1),
+          enabled: () => _pageShowing && _canMoveSheet(-1),
+        ),
+        AppCommand.moveSheetDown: CommandAction(
+          () => _moveSheet(1),
+          enabled: () => _pageShowing && _canMoveSheet(1),
+        ),
+        AppCommand.deleteSheet: CommandAction(
+          _deleteSheet,
+          enabled: () => _pageShowing && (_controller.fold?.count ?? 0) > 1,
+        ),
       };
+
+  /// Shows the page as pages, or as one canvas, whichever it is not.
+  void _toggleLayout() {
+    _stopEditing();
+    _controller.setLayout(
+      _controller.fold == null ? NoteLayout.pages : NoteLayout.canvas,
+    );
+  }
+
+  /// Asks what the sheet to add after the one at [after] is printed with —
+  /// as that one is, unless another is chosen — then adds it, and shows it.
+  Future<void> _addSheet({required int after}) async {
+    final sheets = _controller.document.canvas.sheetsShown;
+    if (sheets == null) return;
+    final template = await chooseSheetTemplate(
+      context,
+      title: 'Add a sheet after sheet ${after + 1}',
+      selected: sheets.templates[after],
+      size: sheets.size,
+      action: 'Add',
+    );
+    if (template == null || !mounted) return;
+    _controller
+      ..insertSheet(after + 1, template)
+      ..reveal(sheets.bandOf(after + 1));
+  }
+
+  /// Whether the sheet in view can move [by] one, up or down.
+  bool _canMoveSheet(int by) {
+    final fold = _controller.fold;
+    if (fold == null) return false;
+    final to = _controller.currentSheet + by;
+    return to >= 0 && to < fold.count;
+  }
+
+  /// Moves the sheet in view [by] one, up or down, and follows it.
+  void _moveSheet(int by) {
+    if (!_canMoveSheet(by)) return;
+    final to = _controller.currentSheet + by;
+    _controller
+      ..moveSheet(to - by, to)
+      ..reveal(_controller.document.canvas.sheetsShown!.bandOf(to));
+  }
+
+  /// Takes away the sheet in view, saying so, with a way to put it back.
+  void _deleteSheet() {
+    final sheet = _controller.currentSheet;
+    _controller.removeSheet(sheet);
+    ScaffoldMessenger.maybeOf(context)
+        ?.showUndoable('Sheet ${sheet + 1} is deleted.', _controller.undo);
+  }
 
   static const List<(AppCommand, CanvasTool)> _tools =
       <(AppCommand, CanvasTool)>[
         (AppCommand.selectTool, CanvasTool.select),
+        (AppCommand.lassoTool, CanvasTool.lasso),
         (AppCommand.pen, CanvasTool.pen),
         (AppCommand.highlighter, CanvasTool.highlighter),
         (AppCommand.shapes, CanvasTool.shape),
@@ -1406,6 +1614,16 @@ class _PageEditorState extends ConsumerState<PageEditor> {
             ),
             trackpadPanScale: _trackpadPanScale,
             selectionColor: context.tones.paperEmphasis,
+            deskColor: context.tones.desk,
+            afterSheets: SmallButton(
+              '+  Add sheet',
+              tooltip: ref
+                  .watch(shortcutsProvider)
+                  .tooltip(AppCommand.addSheet, describe: true),
+              onPressed: () => unawaited(
+                _addSheet(after: (_controller.fold?.count ?? 1) - 1),
+              ),
+            ),
             penButtons: pen.buttons,
             shapesOnHold: pen.shapesOnHold,
             touchpadFingers: touchpadFingers,

@@ -13,6 +13,7 @@ import '../files/export_flow.dart';
 import '../look/icons.dart';
 import '../look/motion.dart';
 import 'library_actions.dart';
+import 'new_page_dialog.dart';
 
 /// The name shown for [node], which for a page without a title is a
 /// stand-in.
@@ -62,7 +63,7 @@ Future<void> showLibraryMenu(
     Section(:final id, :final notebookId) => <MenuCommand>[
       MenuCommand(
         'New page',
-        () => actions.createPage(sectionId: id),
+        () => createChosenPage(context, ref, sectionId: id),
         icon: AppIcon.page,
       ),
       MenuCommand(
@@ -79,12 +80,13 @@ Future<void> showLibraryMenu(
     PageRef(:final id, :final sectionId) => <MenuCommand>[
       MenuCommand(
         'New page',
-        () => actions.createPage(sectionId: sectionId),
+        () => createChosenPage(context, ref, sectionId: sectionId),
         icon: AppIcon.page,
       ),
       MenuCommand(
         'New subpage',
-        () => actions.createPage(sectionId: sectionId, parentId: id),
+        () =>
+            createChosenPage(context, ref, sectionId: sectionId, parentId: id),
         icon: AppIcon.page,
       ),
     ],
@@ -215,17 +217,10 @@ Future<void> deleteToBin(
   final messenger = ScaffoldMessenger.maybeOf(context);
   final actions = ref.read(libraryActionsProvider);
   await actions.delete(node);
-  messenger
-    ?..hideCurrentSnackBar()
-    ..showPlainSnackBar(
-      SnackBar(
-        content: Text('“${displayTitle(node)}” is in the bin.'),
-        action: SnackBarAction(
-          label: 'Undo',
-          onPressed: () => unawaited(actions.restore(node)),
-        ),
-      ),
-    );
+  messenger?.showUndoable(
+    '“${displayTitle(node)}” is in the bin.',
+    () => unawaited(actions.restore(node)),
+  );
 }
 
 /// The dialog behind [promptForName].

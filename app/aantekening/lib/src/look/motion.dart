@@ -24,6 +24,20 @@ extension PlainMessages on ScaffoldMessengerState {
     snackBar,
     snackBarAnimationStyle: AnimationStyle.noAnimation,
   );
+
+  /// Says [message] in place of what was said before, with a way to [undo]
+  /// what it tells of. It goes by itself after a while, as any message
+  /// does: one with an action otherwise stays until it is closed.
+  void showUndoable(String message, VoidCallback undo) {
+    hideCurrentSnackBar();
+    showPlainSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: SnackBarAction(label: 'Undo', onPressed: undo),
+        persist: false,
+      ),
+    );
+  }
 }
 
 /// Pages that replace each other at once.

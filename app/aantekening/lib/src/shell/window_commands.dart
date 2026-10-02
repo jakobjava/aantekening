@@ -19,6 +19,7 @@ import '../settings/settings_view.dart';
 import '../spelling/spelling.dart';
 import 'library_actions.dart';
 import 'library_menu.dart';
+import 'new_page_dialog.dart';
 import 'sidebar_state.dart';
 import 'tabs.dart';
 
@@ -104,12 +105,16 @@ Map<AppCommand, CommandAction> windowCommands(
       enabled: () => tab().hasChoice,
     ),
     AppCommand.newPage: CommandAction(
-      () => unawaited(library().createPage(sectionId: tab().sectionId!)),
+      () => unawaited(
+        createChosenPage(context, ref, sectionId: tab().sectionId!),
+      ),
       enabled: () => tab().sectionId != null,
     ),
     AppCommand.newSubpage: CommandAction(
       () => unawaited(
-        library().createPage(
+        createChosenPage(
+          context,
+          ref,
           sectionId: tab().sectionId!,
           parentId: tab().pageId,
         ),

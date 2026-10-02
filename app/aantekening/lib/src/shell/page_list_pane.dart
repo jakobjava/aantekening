@@ -20,6 +20,7 @@ import 'library_actions.dart';
 import 'library_menu.dart';
 import 'library_pane.dart';
 import 'list_order.dart';
+import 'new_page_dialog.dart';
 import 'panel_focus.dart';
 import 'sidebar_state.dart';
 import 'tree_rows.dart';
@@ -34,7 +35,6 @@ class PageListPane extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sectionId = ref.watch(selectedSectionProvider);
-    final actions = ref.read(libraryActionsProvider);
     final bindings = ref.watch(shortcutsProvider);
 
     // The rows paint their hover and selection on the nearest Material.
@@ -49,7 +49,7 @@ class PageListPane extends ConsumerWidget {
             actionTooltip: bindings.tooltip(AppCommand.newPage),
             onAction: sectionId == null
                 ? null
-                : () => actions.createPage(sectionId: sectionId),
+                : () => createChosenPage(context, ref, sectionId: sectionId),
           ),
           Expanded(
             child: sectionId == null
@@ -97,7 +97,7 @@ class _PageListState extends ConsumerState<_PageList> {
       commands: () => <MenuCommand>[
         MenuCommand(
           'New page',
-          () => actions.createPage(sectionId: sectionId),
+          () => createChosenPage(context, ref, sectionId: sectionId),
           shortcut: ref
               .read(shortcutsProvider)
               .of(AppCommand.newPage)

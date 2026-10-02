@@ -244,13 +244,17 @@ abstract final class RichTextStyles {
 
   /// [style] for a block laid out with [spacing]: its lines as high as the
   /// spacing says, or as its typeface sets them.
+  ///
+  /// Lines set closer than the type is tall are set as the typeface sets
+  /// them, as OneNote shows them: a paragraph it keeps with lines exactly
+  /// three points apart shows its fourteen-point text a line at a time, not
+  /// written over itself.
   static TextStyle spacedStyle(TextStyle style, BlockSpacing spacing) {
     final natural = withNaturalHeight(style);
     final line = spacing.line;
     final size = style.fontSize ?? bodySize;
-    return line == null
-        ? natural
-        : natural.copyWith(height: line * unitsPerPoint / size);
+    if (line == null || line * unitsPerPoint < size) return natural;
+    return natural.copyWith(height: line * unitsPerPoint / size);
   }
 
   /// The source of the formula being edited: code-like, in [accent] — that

@@ -6,6 +6,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'marks.dart';
 import 'tones.dart';
@@ -381,6 +382,168 @@ class _Choice extends StatelessWidget {
   }
 }
 
+/// A level from 0 to 1, set by pressing or dragging along a line, or with
+/// the arrow keys.
+class LevelSlider extends StatefulWidget {
+  const LevelSlider({
+    required this.value,
+    required this.onChanged,
+    required this.label,
+    this.width = 180,
+    super.key,
+  });
+
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  /// What the level is of, for a screen reader.
+  final String label;
+  final double width;
+
+  @override
+  State<LevelSlider> createState() => _LevelSliderState();
+}
+
+class _LevelSliderState extends State<LevelSlider> {
+  /// How far an arrow key moves it.
+  static const double _step = 0.05;
+
+  static const double _height = 24;
+
+  final FocusNode _focus = FocusNode(debugLabel: 'LevelSlider');
+  bool _focused = false;
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _set(double value) {
+    final level = value.clamp(0.0, 1.0);
+    if (level != widget.value) widget.onChanged(level);
+  }
+
+  /// Set where it is pressed, and from then on by the keys too.
+  void _setAt(Offset local) {
+    _focus.requestFocus();
+    _set(local.dx / widget.width);
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.arrowUp) {
+      _set(widget.value + _step);
+    } else if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowDown) {
+      _set(widget.value - _step);
+    } else if (key == LogicalKeyboardKey.home) {
+      _set(0);
+    } else if (key == LogicalKeyboardKey.end) {
+      _set(1);
+    } else {
+      return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tones = context.tones;
+    String percent(double level) => '${(level.clamp(0.0, 1.0) * 100).round()}%';
+    return Semantics(
+      slider: true,
+      label: widget.label,
+      value: percent(widget.value),
+      increasedValue: percent(widget.value + _step),
+      decreasedValue: percent(widget.value - _step),
+      onIncrease: () => _set(widget.value + _step),
+      onDecrease: () => _set(widget.value - _step),
+      child: Focus(
+        focusNode: _focus,
+        onKeyEvent: _onKey,
+        onFocusChange: (focused) => setState(() => _focused = focused),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) => _setAt(details.localPosition),
+            onHorizontalDragStart: (details) => _setAt(details.localPosition),
+            onHorizontalDragUpdate: (details) => _setAt(details.localPosition),
+            child: CustomPaint(
+              size: Size(widget.width, _height),
+              painter: _LevelPainter(
+                level: widget.value,
+                line: tones.strongLine,
+                filled: tones.emphasis,
+                knob: tones.base,
+                focused: _focused,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LevelPainter extends CustomPainter {
+  const _LevelPainter({
+    required this.level,
+    required this.line,
+    required this.filled,
+    required this.knob,
+    required this.focused,
+  });
+
+  final double level;
+  final Color line;
+  final Color filled;
+  final Color knob;
+  final bool focused;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final middle = size.height / 2;
+    final x = level.clamp(0.0, 1.0) * size.width;
+    canvas
+      ..drawRect(
+        Rect.fromLTRB(0, middle - 1, size.width, middle + 1),
+        Paint()..color = line,
+      )
+      ..drawRect(
+        Rect.fromLTRB(0, middle - 1, x, middle + 1),
+        Paint()..color = filled,
+      );
+    // A square knob, as the colour picker's, kept within the line's ends.
+    final knobAt = x.clamp(5.0, size.width - 5);
+    final square = Rect.fromCenter(
+      center: Offset(knobAt, middle),
+      width: 10,
+      height: 14,
+    );
+    canvas
+      ..drawRect(square, Paint()..color = knob)
+      ..drawRect(
+        square,
+        Paint()
+          ..color = filled
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = focused ? 2.5 : 1.5,
+      );
+  }
+
+  @override
+  bool shouldRepaint(_LevelPainter old) =>
+      old.level != level ||
+      old.line != line ||
+      old.filled != filled ||
+      old.knob != knob ||
+      old.focused != focused;
+}
+
 /// A setting that is on or off: a box to tick, what it is, and what it
 /// does.
 class CheckRow extends StatelessWidget {
@@ -470,15 +633,6 @@ class Swatch extends StatelessWidget {
     super.key,
   }) : color = null;
 
-  /// How the inverse of what lies beneath is shown: black on white paper,
-  /// white on black.
-  static const Gradient inverseFill = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    stops: <double>[0.5, 0.5],
-    colors: <Color>[Color(0xFFFFFFFF), Color(0xFF000000)],
-  );
-
   /// The colour, or null for the inverse of what lies beneath.
   final Color? color;
   final String name;
@@ -504,16 +658,40 @@ class Swatch extends StatelessWidget {
           child: Container(
             width: size,
             height: size,
-            decoration: BoxDecoration(
-              color: color,
-              gradient: color == null ? inverseFill : null,
+            foregroundDecoration: BoxDecoration(
               border: Border.all(color: tones.line),
             ),
+            child: switch (color) {
+              final color? => ColoredBox(color: color),
+              null => const CustomPaint(painter: InverseHalves()),
+            },
           ),
         ),
       ),
     );
   }
+}
+
+/// How the inverse of what lies beneath is shown: white and black, split
+/// from corner to corner, as it is black on white paper and white on
+/// black.
+class InverseHalves extends CustomPainter {
+  const InverseHalves();
+
+  @override
+  void paint(Canvas canvas, Size size) => canvas
+    ..drawRect(Offset.zero & size, Paint()..color = const Color(0xFFFFFFFF))
+    ..drawPath(
+      Path()..addPolygon(<Offset>[
+        size.bottomLeft(Offset.zero),
+        size.topRight(Offset.zero),
+        size.bottomRight(Offset.zero),
+      ], true),
+      Paint()..color = const Color(0xFF000000),
+    );
+
+  @override
+  bool shouldRepaint(InverseHalves old) => false;
 }
 
 /// That something is being worked on: a short bar running along a line —

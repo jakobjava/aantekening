@@ -1,5 +1,5 @@
 /// How the page moves by itself: coasting on after a flick, and springing
-/// back from past its top and left edges, where a scroll may stretch it.
+/// back from past its edges, where a scroll may stretch it.
 library;
 
 import 'dart:math' as math;
@@ -10,12 +10,19 @@ import 'package:flutter/widgets.dart';
 import 'canvas_controller.dart';
 import 'canvas_viewport.dart';
 
-/// Scrolling past the page's top and left edges, which give way a little,
-/// less the further they are pulled, as a list on a phone lets itself be
-/// pulled a short way past its end.
+/// Scrolling past the page's edges ([CanvasController.originRange]), which
+/// give way a little, less the further they are pulled, as a list on a
+/// phone lets itself be pulled a short way past its end.
 extension Stretching on CanvasController {
-  /// Whether the view lies past the page's top or left edge.
-  bool get isStretched => viewport.origin.dx < 0 || viewport.origin.dy < 0;
+  /// Whether the view lies past one of the page's edges.
+  bool get isStretched {
+    final view = viewport;
+    final range = originRange(view.zoom);
+    final origin = view.origin;
+    bool past(double at, double min, double max) => at < min || at > max;
+    return past(origin.dx, range.min.dx, range.max.dx) ||
+        past(origin.dy, range.min.dy, range.max.dy);
+  }
 
   /// Pans by a screen-space [delta] as [panBy] does, but on past the page's
   /// edges, against their pull.
@@ -30,7 +37,34 @@ extension Stretching on CanvasController {
   /// view as far past them as the fingers went, then pulled back.
   void _stretch(CanvasViewport Function(CanvasViewport free) move) =>
       stretchTo(_eachAxis(move(_eachAxis(viewport, _pull)), _give));
+
+  /// [view] with [past] applied to how far, in screen pixels, it lies past
+  /// each edge.
+  CanvasViewport _eachAxis(
+    CanvasViewport view,
+    double Function(double beyond) past,
+  ) {
+    final zoom = view.zoom;
+    final range = originRange(zoom);
+    double along(double start, double min, double max) {
+      if (start < min) return min - past((min - start) * zoom) / zoom;
+      if (start > max) return max + past((start - max) * zoom) / zoom;
+      return start;
+    }
+
+    final origin = view.origin;
+    return view.copyWith(
+      origin: Offset(
+        along(origin.dx, range.min.dx, range.max.dx),
+        along(origin.dy, range.min.dy, range.max.dy),
+      ),
+    );
+  }
 }
+
+/// How near an edge, in screen pixels, a view drawn back to it is put
+/// there.
+const double _still = 0.5;
 
 /// The furthest, in screen pixels, the view goes past an edge, however hard
 /// it is pulled.
@@ -54,22 +88,6 @@ double _pull(double shown) {
 double _tanh(double x) {
   final e = math.exp(-2 * x);
   return (1 - e) / (1 + e);
-}
-
-/// [view] with [past] applied to how far, in screen pixels, it lies past
-/// each edge.
-CanvasViewport _eachAxis(
-  CanvasViewport view,
-  double Function(double beyond) past,
-) {
-  final zoom = view.zoom;
-  double along(double start) =>
-      start >= 0 ? start : -past(-start * zoom) / zoom;
-  final origin = view.origin;
-  return CanvasViewport(
-    origin: Offset(along(origin.dx), along(origin.dy)),
-    zoom: zoom,
-  );
 }
 
 /// Moves a canvas's view by itself, frame by frame: on after a flick,
@@ -223,21 +241,45 @@ class CanvasMotion {
     // Past an edge, a flick still going out is stopped quickly, and the
     // view is drawn back once it has.
     final view = controller.viewport;
+    final range = controller.originRange(view.zoom);
     final brake = math.exp(-seconds / _brake);
     final back = math.exp(-seconds / _return);
-    (double, double) along(double start, double velocity) {
-      if (start >= 0) return (start, velocity);
-      if (velocity > 0 && velocity * brake > 20) {
+    (double, double) along(
+      double start,
+      double velocity,
+      double min,
+      double max,
+    ) {
+      if (start >= min && start <= max) return (start, velocity);
+      final edge = start < min ? min : max;
+      // A positive velocity pans the view back towards the page's start:
+      // out past the start's edge, and in from past the far one.
+      final outwards = start < min ? velocity : -velocity;
+      if (outwards > 0 && outwards * brake > 20) {
         return (start, velocity * brake);
       }
-      final shown = start * back;
-      return (shown * view.zoom > -0.5 ? 0 : shown, math.min(velocity, 0));
+      final shown = edge + (start - edge) * back;
+      final settled = ((shown - edge) * view.zoom).abs() < _still;
+      return (
+        settled ? edge : shown,
+        start < min ? math.min(velocity, 0) : math.max(velocity, 0),
+      );
     }
 
-    final (x, dx) = along(view.origin.dx, _velocity.dx);
-    final (y, dy) = along(view.origin.dy, _velocity.dy);
+    final (x, dx) = along(
+      view.origin.dx,
+      _velocity.dx,
+      range.min.dx,
+      range.max.dx,
+    );
+    final (y, dy) = along(
+      view.origin.dy,
+      _velocity.dy,
+      range.min.dy,
+      range.max.dy,
+    );
     _velocity = Offset(dx, dy);
-    controller.stretchTo(CanvasViewport(origin: Offset(x, y), zoom: view.zoom));
+    controller.stretchTo(view.copyWith(origin: Offset(x, y)));
     if (_velocity.distance < 20 && !_gliding && !controller.isStretched) {
       _velocity = Offset.zero;
       _ticker.stop();

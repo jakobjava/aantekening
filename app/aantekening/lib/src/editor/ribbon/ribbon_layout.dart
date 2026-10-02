@@ -9,7 +9,8 @@ import '../../arrangement/arrangement.dart';
 
 /// A ribbon tab.
 enum RibbonTab {
-  /// What is used most: undo, and formatting text.
+  /// What is used most: undo, formatting text, and the sheets of a page
+  /// shown as pages.
   home('Home'),
 
   /// Adding things to the page.
@@ -60,7 +61,13 @@ enum RibbonItem {
   picture('Picture', large: true),
   pdf('PDF printout', large: true),
   insertFormula('Formula', large: true),
+  addSheet('Add sheet', large: true),
+  paper('Paper'),
+  moveSheetUp('Move up'),
+  moveSheetDown('Move down'),
+  deleteSheet('Delete sheet'),
   select('Select', large: true),
+  lasso('Lasso select', large: true),
   eraser('Eraser', large: true),
   pen('Pen', large: true),
   highlighter('Highlighter', large: true),
@@ -71,6 +78,7 @@ enum RibbonItem {
   zoomOut('Zoom out'),
   zoomLevel('Actual size', large: true),
   fitPage('Fit page', large: true),
+  pageLayout('Pages', large: true),
   pagePreview('Page preview', large: true),
   resetRibbon('Reset ribbon', large: true),
   mathFraction('Fraction', large: true),
@@ -132,8 +140,16 @@ enum RibbonGroup implements ArrangementGroup<RibbonItem> {
     RibbonItem.pdf,
   ]),
   symbols(RibbonTab.insert, 'Formulas', <RibbonItem>[RibbonItem.insertFormula]),
+  sheets(RibbonTab.home, 'Pages', <RibbonItem>[
+    RibbonItem.addSheet,
+    RibbonItem.paper,
+    RibbonItem.moveSheetUp,
+    RibbonItem.moveSheetDown,
+    RibbonItem.deleteSheet,
+  ]),
   tools(RibbonTab.draw, 'Tools', <RibbonItem>[
     RibbonItem.select,
+    RibbonItem.lasso,
     RibbonItem.eraser,
   ]),
   pens(RibbonTab.draw, 'Pens', <RibbonItem>[
@@ -175,7 +191,10 @@ enum RibbonGroup implements ArrangementGroup<RibbonItem> {
     RibbonItem.zoomLevel,
     RibbonItem.fitPage,
   ]),
-  page(RibbonTab.view, 'Page', <RibbonItem>[RibbonItem.pagePreview]),
+  page(RibbonTab.view, 'Page', <RibbonItem>[
+    RibbonItem.pageLayout,
+    RibbonItem.pagePreview,
+  ]),
   ribbon(RibbonTab.view, 'Ribbon', <RibbonItem>[RibbonItem.resetRibbon]);
 
   const RibbonGroup(this.tab, this.label, this.defaults);

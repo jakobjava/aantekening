@@ -11,6 +11,7 @@ enum AppIcon {
   undo,
   redo,
   select,
+  lasso,
   eraser,
   pen,
   highlighter,
@@ -48,6 +49,11 @@ enum AppIcon {
   link,
   page,
   export,
+  sheets,
+  addSheet,
+  paper,
+  sheetUp,
+  sheetDown,
 }
 
 /// [icon], [size] across, in the colour of the icons here — which follows
@@ -177,6 +183,21 @@ class _IconPainter extends CustomPainter {
         ], closed: true);
         through(<(double, double)>[(4, 7), (2.5, 11), (4, 12.5), (8, 11)]);
         through(<(double, double)>[(2, 14.5), (14, 14.5)]);
+      case AppIcon.lasso:
+        // A loop, open at the bottom where its tail hangs from.
+        canvas.drawPath(
+          Path()..addArc(
+            Rect.fromCenter(
+              center: at(8.5, 6.5),
+              width: 11 * unit,
+              height: 8 * unit,
+            ),
+            2,
+            5.4,
+          ),
+          line,
+        );
+        through(<(double, double)>[(6.2, 10.1), (5, 12.3), (6.5, 14.5)]);
       case AppIcon.eraser:
         through(<(double, double)>[
           (9, 2.5),
@@ -186,6 +207,27 @@ class _IconPainter extends CustomPainter {
         ], closed: true);
         through(<(double, double)>[(6.2, 5.3), (10.7, 9.8)]);
         through(<(double, double)>[(8, 14.5), (14, 14.5)]);
+      case AppIcon.sheets:
+        // Two sheets, one behind the other.
+        through(<(double, double)>[(6, 2.5), (13.5, 2.5), (13.5, 11)]);
+        box(2.5, 5, 10.5, 14);
+      case AppIcon.addSheet:
+        box(3, 2, 11, 14);
+        through(<(double, double)>[(12.5, 10), (12.5, 15)]);
+        through(<(double, double)>[(10, 12.5), (15, 12.5)]);
+      case AppIcon.sheetUp || AppIcon.sheetDown:
+        if (icon == AppIcon.sheetDown) {
+          canvas
+            ..translate(0, size.height)
+            ..scale(1, -1);
+        }
+        // A sheet, and an arrow beside it.
+        box(2, 4, 9, 14);
+        through(<(double, double)>[(12.5, 13), (12.5, 3)]);
+        through(<(double, double)>[(10, 5.5), (12.5, 3), (15, 5.5)]);
+      case AppIcon.paper:
+        box(3, 2, 13, 14);
+        rows(5, <double>[6, 8.5, 11], to: 11);
       case AppIcon.textBox:
         box(2, 3, 14, 13);
         through(<(double, double)>[(5, 6), (11, 6)]);
