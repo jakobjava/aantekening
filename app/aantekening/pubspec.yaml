@@ -1,7 +1,7 @@
 name: aantekening
 description: The aantekening note-taking application.
 publish_to: none
-version: 0.1.3+4
+version: 0.1.4+5
 
 resolution: workspace
 
