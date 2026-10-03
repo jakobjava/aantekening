@@ -248,6 +248,14 @@ class MathLexer {
       _offset++;
     }
     final command = source.substring(start, _offset);
+    // LaTeX that is not maths to be read is taken as it is: an environment,
+    // text and the names of fonts and operators, and the delimiter a
+    // \left or a \big sizes.
+    if (command == r'\begin') return _environment(start);
+    if (_delimiterCommands.contains(command)) return _delimited(start);
+    if (_verbatimCommands[command] case final arguments?) {
+      return _verbatim(start, arguments);
+    }
     // A command with a word of its own behaves as that word does: `\sqrt`
     // takes an argument as `sqrt` does.
     final word = mathSymbols[command.substring(1)];
@@ -265,6 +273,188 @@ class MathLexer {
       lexeme: command,
       offset: start,
       latex: command,
+    );
+  }
+
+  /// Commands whose arguments are LaTeX, not linear input — text, names of
+  /// fonts and operators, labels — and how many each takes. Each is taken
+  /// with its arguments as it was typed.
+  static const Map<String, int> _verbatimCommands = <String, int>{
+    r'\text': 1,
+    r'\textbf': 1,
+    r'\textit': 1,
+    r'\textrm': 1,
+    r'\textsf': 1,
+    r'\texttt': 1,
+    r'\textup': 1,
+    r'\textnormal': 1,
+    r'\mbox': 1,
+    r'\emph': 1,
+    r'\intertext': 1,
+    r'\shortintertext': 1,
+    r'\operatorname': 1,
+    r'\DeclareMathOperator': 2,
+    r'\mathrm': 1,
+    r'\mathbf': 1,
+    r'\mathit': 1,
+    r'\mathsf': 1,
+    r'\mathtt': 1,
+    r'\mathbb': 1,
+    r'\mathcal': 1,
+    r'\mathfrak': 1,
+    r'\mathscr': 1,
+    r'\boldsymbol': 1,
+    r'\bm': 1,
+    r'\tag': 1,
+    r'\label': 1,
+    r'\ref': 1,
+    r'\eqref': 1,
+    r'\color': 1,
+    r'\textcolor': 2,
+    r'\colorbox': 2,
+    r'\hspace': 1,
+    r'\mspace': 1,
+    r'\newcommand': 2,
+    r'\renewcommand': 2,
+  };
+
+  /// Commands taking a delimiter after them, to size: `\left(`, `\bigl[`.
+  static const Set<String> _delimiterCommands = <String>{
+    r'\left',
+    r'\right',
+    r'\middle',
+    r'\big',
+    r'\Big',
+    r'\bigg',
+    r'\Bigg',
+    r'\bigl',
+    r'\Bigl',
+    r'\biggl',
+    r'\Biggl',
+    r'\bigr',
+    r'\Bigr',
+    r'\biggr',
+    r'\Biggr',
+    r'\bigm',
+    r'\Bigm',
+    r'\biggm',
+    r'\Biggm',
+  };
+
+  /// The command begun at [start], its name read, with a star after it and
+  /// [arguments] groups in braces — and any in brackets among them — as it
+  /// was typed.
+  Token _verbatim(int start, int arguments) {
+    if (_offset < source.length && source[_offset] == '*') _offset++;
+    var left = arguments;
+    while (left > 0) {
+      final next = _skipSpaces(_offset);
+      if (next >= source.length) break;
+      final open = source[next];
+      if (open != '{' && open != '[') break;
+      _offset = _closing(next, open, open == '{' ? '}' : ']');
+      if (open == '{') left--;
+    }
+    return _rawFrom(start);
+  }
+
+  /// `\begin{name}` at [start], its name not yet read, up to the
+  /// `\end{name}` that closes it, environments of the same name within it
+  /// counted: all of it LaTeX, as it was typed.
+  Token _environment(int start) {
+    final open = _skipSpaces(_offset);
+    final close = open < source.length && source[open] == '{'
+        ? source.indexOf('}', open)
+        : -1;
+    if (close < 0) {
+      diagnostics.add(
+        MathDiagnostic(start, r'"\begin" needs a name: \begin{cases}'),
+      );
+      return _rawFrom(start);
+    }
+    final name = source.substring(open + 1, close);
+    final begin = '\\begin{$name}';
+    final end = '\\end{$name}';
+    var depth = 1;
+    var at = close + 1;
+    while (depth > 0) {
+      final nextEnd = source.indexOf(end, at);
+      if (nextEnd < 0) {
+        diagnostics.add(MathDiagnostic(start, 'Missing "$end"'));
+        _offset = source.length;
+        return _rawFrom(start);
+      }
+      final nextBegin = source.indexOf(begin, at);
+      if (nextBegin >= 0 && nextBegin < nextEnd) {
+        depth++;
+        at = nextBegin + begin.length;
+      } else {
+        depth--;
+        at = nextEnd + end.length;
+      }
+    }
+    _offset = at;
+    return _rawFrom(start);
+  }
+
+  /// The sizing command begun at [start], its name read, with the delimiter
+  /// it sizes: a character, or a command such as `\langle`.
+  Token _delimited(int start) {
+    var at = _skipSpaces(_offset);
+    if (at < source.length) {
+      if (source[at] == r'\') {
+        at++;
+        if (at < source.length && _isLetter(source[at])) {
+          while (at < source.length && _isLetter(source[at])) {
+            at++;
+          }
+        } else if (at < source.length) {
+          at++;
+        }
+      } else {
+        at++;
+      }
+    }
+    _offset = at;
+    return _rawFrom(start);
+  }
+
+  /// Where the group opened by [open] at [from] closes, groups within it of
+  /// the same kind counted and escaped characters skipped: just past its
+  /// closing [close], or the end of the source.
+  int _closing(int from, String open, String close) {
+    var depth = 0;
+    for (var i = from; i < source.length; i++) {
+      final char = source[i];
+      if (char == r'\') {
+        i++;
+      } else if (char == open) {
+        depth++;
+      } else if (char == close && --depth == 0) {
+        return i + 1;
+      }
+    }
+    diagnostics.add(MathDiagnostic(from, 'Missing "$close"'));
+    return source.length;
+  }
+
+  int _skipSpaces(int from) {
+    var at = from;
+    while (at < source.length && _isWhitespace(source[at])) {
+      at++;
+    }
+    return at;
+  }
+
+  /// The source from [start] to where reading has got, as LaTeX passed
+  /// through.
+  Token _rawFrom(int start) {
+    final latex = source.substring(start, _offset);
+    return Token(
+      type: TokenType.raw,
+      lexeme: latex,
+      offset: start,
+      latex: latex,
     );
   }
 

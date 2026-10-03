@@ -55,18 +55,16 @@ class RenderShrinkToWidth extends RenderProxyBox {
     size = constraints.constrain(natural * _scale);
   }
 
+  /// Where the baseline falls, measured without laying out — as text is
+  /// measured in a table's cell to size its column — taken as the foot of
+  /// the child: a formula cannot say where its baseline is until it is
+  /// laid out, and asked, its typesetter fails. Laid out, it sits on its
+  /// own baseline ([computeDistanceToActualBaseline]).
   @override
   double? computeDryBaseline(
     BoxConstraints constraints,
     TextBaseline baseline,
-  ) {
-    final child = this.child;
-    if (child == null) return null;
-    final free = _free(constraints);
-    final distance = child.getDryBaseline(free, baseline);
-    if (distance == null) return null;
-    return distance * _scaleIn(constraints, child.getDryLayout(free).width);
-  }
+  ) => child == null ? null : computeDryLayout(constraints).height;
 
   @override
   double? computeDistanceToActualBaseline(TextBaseline baseline) {

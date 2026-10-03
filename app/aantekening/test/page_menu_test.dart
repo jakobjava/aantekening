@@ -4,6 +4,7 @@ import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/look/marks.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:aantekening_math/aantekening_math.dart' show TikzView;
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -229,6 +230,116 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(blocksOf(tester).where((block) => block.isEmbed), hasLength(2));
+    });
+
+    testWidgets('cut, is pasted onto the paper as a picture of its own', (
+      tester,
+    ) async {
+      mockClipboard(tester);
+      await savePage(tester, (asset) => <NoteElement>[boxWith(asset)]);
+      await openEditor(tester, store, pageId);
+      await tester.tapAt(
+        tester.getCenter(find.byType(AssetImageView)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.keyX, control: true);
+      await tester.pumpAndSettle();
+
+      // A click on the paper leaves a bare caret there; pasted at it, the
+      // picture lies on the page by itself.
+      await tester.tapAt(const Offset(560, 520), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.keyV, control: true);
+      await tester.pumpAndSettle();
+
+      final pictures = elementsOf(tester).whereType<ImageElement>().toList();
+      expect(pictures, hasLength(1));
+      expect(pictures.single.frame.width, 120);
+      expect(pictures.single.frame.height, 60);
+      final boxes = elementsOf(tester).whereType<TextElement>();
+      expect(boxes.single.id, 'box', reason: 'no box made for it');
+      expect(boxes.single.blocks.any((block) => block.isEmbed), isFalse);
+
+      // Pasted again with nothing being typed, it goes on the page too.
+      await press(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.keyV, control: true);
+      await tester.pumpAndSettle();
+      expect(elementsOf(tester).whereType<ImageElement>(), hasLength(2));
+      expect(elementsOf(tester).whereType<TextElement>(), hasLength(1));
+    });
+
+    testWidgets('a TikZ picture cut out goes on the page as itself, and '
+        'its source is edited there', (tester) async {
+      mockClipboard(tester);
+      const source = r'\tikz \draw (0,0) -- (2,1);';
+      await tester.runAsync(
+        () => store.pages.saveDocument(
+          pageId,
+          PageDocument(
+            id: pageId,
+            elements: const <NoteElement>[
+              TextElement(
+                id: 'box',
+                frame: Frame(x: 100, y: 100, width: 320, height: 160),
+                createdAt: 0,
+                updatedAt: 0,
+                blocks: <TextBlock>[
+                  TextBlock(runs: <TextRun>[TextRun('above')]),
+                  TextBlock.embedded(BlockEmbed.tikz(source)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      await openEditor(tester, store, pageId);
+      final drawn = tester.getRect(find.byType(TikzView));
+      await tester.tapAt(drawn.center, kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.keyX, control: true);
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(560, 520), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.keyV, control: true);
+      await tester.pumpAndSettle();
+
+      final picture = elementsOf(tester).whereType<TikzElement>().single;
+      expect(picture.source, source);
+      expect(picture.frame.width, closeTo(drawn.width, 1), reason: 'as drawn');
+      expect(picture.frame.height, closeTo(drawn.height, 1));
+      expect(elementsOf(tester).whereType<TextElement>().single.id, 'box');
+      expect(
+        tester.getRect(find.byType(TikzView)).width,
+        closeTo(drawn.width, 1),
+      );
+
+      // Its source is edited from its menu, as one step.
+      final on = tester.getCenter(find.byType(TikzView));
+      await rightClick(tester, on);
+      await tester.tap(menuItem('Edit TikZ source'));
+      await tester.pumpAndSettle();
+      final field = find.descendant(
+        of: find.widgetWithText(AlertDialog, 'TikZ picture'),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(field, r'\tikz \draw (0,0) -- (2,2);');
+      await tester.pumpAndSettle();
+      await tester.enterText(field, r'\tikz \draw (0,0) -- (2,3);');
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.enter, control: true);
+      await tester.pumpAndSettle();
+      final edited = elementsOf(tester).whereType<TikzElement>().single;
+      expect(edited.source, r'\tikz \draw (0,0) -- (2,3);');
+      expect(
+        edited.frame.height / edited.frame.width,
+        greaterThan(picture.frame.height / picture.frame.width),
+        reason: 'as tall as its drawing makes it',
+      );
+      canvasOf(tester).undo();
+      await tester.pumpAndSettle();
+      expect(elementsOf(tester).whereType<TikzElement>().single.source, source);
     });
 
     testWidgets('is set as the background where it lies, in one step', (

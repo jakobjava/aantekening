@@ -1,7 +1,8 @@
 # 10. Formulas stored as LaTeX, typed in place in either syntax
 
 **Status:** accepted; supersedes ADR 6; the source is drawn over the text
-rather than laid out in it since ADR 33
+rather than laid out in it since ADR 33; Simple syntax reads LaTeX among it
+as LaTeX since ADR 36
 
 ## Context
 

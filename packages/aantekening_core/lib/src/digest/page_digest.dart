@@ -322,6 +322,9 @@ class _DigestBuilder {
   /// [element] for a reader, or null for one with nothing to say — a group,
   /// whose members say it, an empty box, or writing on a sheet, which its
   /// sheet's visual shows.
+  /// A TikZ picture, told of as it is written.
+  static String _tikz(String source) => '[TikZ picture]\n$source';
+
   DigestItem? _describe(NoteElement element) {
     final link = NoteLink.page(document.id, elementId: element.id);
     final background = element.locked
@@ -367,6 +370,15 @@ class _DigestBuilder {
           ],
           notes: <String>[...background, ...written],
         );
+      case TikzElement(:final source):
+        return DigestItem(
+          elementId: element.id,
+          kind: DigestKind.picture,
+          bounds: element.bounds,
+          visualIds: <String>[?sheet?.id],
+          passages: <DigestPassage>[DigestPassage(_tikz(source), link)],
+          notes: <String>[...background, ...written],
+        );
       case InkElement():
         // Drawings are gathered up by where they are, in _drawings; writing
         // on a sheet is in the sheet's visual.
@@ -405,7 +417,9 @@ class _DigestBuilder {
         continue;
       }
       final embed = block.embed;
-      if (embed != null) {
+      if (embed?.source case final source?) {
+        passages.add(DigestPassage(_tikz(source), link));
+      } else if (embed != null) {
         final pdf = embed.kind == EmbedKind.pdfPage;
         final visual =
             shown ??

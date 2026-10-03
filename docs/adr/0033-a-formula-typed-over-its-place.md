@@ -1,7 +1,9 @@
 # 33. A formula typed over its place, and a caret that lets presses through
 
 **Status:** accepted; revises how ADR 10 shows the formula being edited, and
-how ADR 26's caret takes presses
+how ADR 26's caret takes presses. Where the source and the typeset formula
+go is revised by ADR 37: the formula is typeset in its place, the source
+beneath its line, and there is no preview.
 
 ## Context
 

@@ -42,7 +42,7 @@ extension _Hover on _InfiniteCanvasState {
       );
       if (handle != null) {
         final frame = SelectionFrame.around(selected);
-        return _cursorForHandle(handle, frame?.rotation ?? 0);
+        return SelectionHandles.cursorFor(handle, frame?.rotation ?? 0);
       }
     }
     final page = _controller.viewport.toPage(screen);
@@ -56,25 +56,6 @@ extension _Hover on _InfiniteCanvasState {
     }
     final hit = _controller.hitTest(page);
     return hit == null ? MouseCursor.defer : SystemMouseCursors.move;
-  }
-
-  /// A resize cursor pointing the way the handle drags, turned with the box.
-  static MouseCursor _cursorForHandle(SelectionHandle handle, double rotation) {
-    final base = switch (handle) {
-      SelectionHandle.rotate => null,
-      SelectionHandle.left || SelectionHandle.right => 0.0,
-      SelectionHandle.top || SelectionHandle.bottom => math.pi / 2,
-      SelectionHandle.topLeft || SelectionHandle.bottomRight => math.pi / 4,
-      SelectionHandle.topRight || SelectionHandle.bottomLeft => -math.pi / 4,
-    };
-    if (base == null) return SystemMouseCursors.grab;
-    final octant = (((base + rotation) / (math.pi / 4)).round()) % 4;
-    return switch (octant) {
-      0 => SystemMouseCursors.resizeLeftRight,
-      1 => SystemMouseCursors.resizeUpLeftDownRight,
-      2 => SystemMouseCursors.resizeUpDown,
-      _ => SystemMouseCursors.resizeUpRightDownLeft,
-    };
   }
 
   double get _eraserRadius => eraserRadiusIn(_controller.viewport);

@@ -14,6 +14,7 @@ import 'about_settings.dart';
 import 'ai_settings.dart';
 import 'appearance_settings.dart';
 import 'files_settings.dart';
+import 'formula_settings.dart';
 import 'keyboard_settings.dart';
 import 'layout_settings.dart';
 import 'pen_settings.dart';
@@ -29,6 +30,11 @@ enum SettingsPage {
   layout('Layout', 'The ribbon, the sidebar and the page', AppIcon.layout),
   pen('Pen', 'Smoothing, its buttons, and shapes', AppIcon.pen),
   keyboard('Keyboard', 'Every shortcut, and changing them', AppIcon.keyboard),
+  formulas(
+    'Formulas',
+    'Your own commands and TikZ styles for every formula',
+    AppIcon.latex,
+  ),
   spelling(
     'Spelling',
     'Languages, dictionaries and your own words',
@@ -259,6 +265,7 @@ class _PageBody extends StatelessWidget {
         SettingsPage.layout => const LayoutSettings(),
         SettingsPage.pen => const PenSettingsPage(),
         SettingsPage.keyboard => const KeyboardSettings(),
+        SettingsPage.formulas => const FormulaSettings(),
         SettingsPage.spelling => const SpellingSettingsPage(),
         SettingsPage.ai => const AiSettingsPage(),
         SettingsPage.files => const FilesSettings(),

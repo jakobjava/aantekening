@@ -92,7 +92,6 @@ extension _Storage on _PageEditorState {
     final tool = _controller.tool;
     if (tool.draws) _lastInkTool = tool;
     _syncBoxFormatting();
-    _placeFormulaPanel();
 
     final editingId = _editingId;
     final editing = editingId == null

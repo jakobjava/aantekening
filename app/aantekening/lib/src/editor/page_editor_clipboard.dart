@@ -14,7 +14,8 @@ extension _Clipboard on _PageEditorState {
   }
 
   /// Pastes what was copied — as it was, or as its text only — onto the
-  /// page: things from the page as copies of them, text in a new box. With
+  /// page: things from the page as copies of them, pictures and PDF pages
+  /// from a box as themselves, text in a new box. With
   /// [at], a place on the page, that is where it goes; else copies go a step
   /// on from what they copy, and a box into the middle of the view.
   Future<void> _paste({Offset? at, bool textOnly = false}) async {
@@ -26,6 +27,9 @@ extension _Clipboard on _PageEditorState {
     switch (clip) {
       case ElementsClip(:final elements):
         _pasteElements(elements, at: at);
+      // Pictures and PDF pages alone go on the page by themselves.
+      case TextClip(:final asElements?):
+        _pasteElements(asElements, at: at ?? _controller.viewCenter);
       case TextClip(:final blocks):
         _pasteBox(blocks, at: at);
       case PlainClip(:final plain):
@@ -120,10 +124,39 @@ extension _Clipboard on _PageEditorState {
       ..setBackground(picture.id, background: true, recordUndo: false);
   }
 
+  /// Opens the source of the TikZ picture [id] in a window of its own, the
+  /// picture drawn again as it changes, one undo step for it all. Emptied,
+  /// the picture goes.
+  Future<void> _editTikz(String id) async {
+    final picture = _controller.elementById(id);
+    if (picture is! TikzElement) return;
+    var recorded = false;
+    await editTikzSource(
+      context,
+      source: picture.source,
+      onChanged: (source) {
+        final current = _controller.elementById(id);
+        if (current is! TikzElement) return;
+        _controller.replaceElement(
+          current.copyWith(
+            source: source,
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+          recordUndo: !recorded,
+        );
+        recorded = true;
+      },
+    );
+    final edited = _controller.elementById(id);
+    if (edited is TikzElement && edited.source.trim().isEmpty) {
+      _controller.removeElements(<String>{id});
+    }
+  }
+
   /// The menu a right-click on the page opens, at [page], [global] on
   /// screen: the Home tab's text formatting, cutting, copying and pasting,
-  /// setting a picture or PDF page as the background or taking it out, and
-  /// deleting.
+  /// editing a TikZ picture's source, setting a picture, PDF page or TikZ
+  /// picture as the background or taking it out, and deleting.
   ///
   /// What was right-clicked is picked first, so the menu acts on it: a box
   /// by its band, too, as a box. Things picked together stay picked, and
@@ -183,6 +216,12 @@ extension _Clipboard on _PageEditorState {
           ),
         ],
         <MenuCommand>[
+          if (picture is TikzElement)
+            MenuCommand(
+              'Edit TikZ source',
+              () => unawaited(_editTikz(picture.id)),
+              icon: AppIcon.latex,
+            ),
           if (picture != null)
             MenuCommand(
               'Set picture as background',

@@ -19,6 +19,8 @@ export 'src/document/sheets.dart';
 export 'src/document/table_editing.dart';
 export 'src/document/text_tables.dart';
 export 'src/interchange/drafts.dart';
+export 'src/latex/latex_preamble.dart';
+export 'src/latex/latex_source.dart';
 export 'src/link/note_link.dart';
 export 'src/search/search_terms.dart';
 export 'src/tree/hierarchy.dart';

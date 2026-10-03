@@ -112,7 +112,10 @@ extension _Typing on TextBoxEditorState {
       final marks = _typingMarks();
       final pending = _pendingMarks;
       _commit(
-        RichTextEditing.insertText(_blocks, _selection, line, marks: marks),
+        _centringKeptToFormula(
+          _selection.start.block,
+          RichTextEditing.insertText(_blocks, _selection, line, marks: marks),
+        ),
         EditKind.typing,
       );
       _pendingMarks = pending;
@@ -138,7 +141,10 @@ extension _Typing on TextBoxEditorState {
   void _paragraphBreak() {
     _commit(
       TableEditing.insertBreak(_blocks, _selection) ??
-          RichTextEditing.insertParagraphBreak(_blocks, _selection),
+          _centringKeptToFormula(
+            _selection.start.block,
+            RichTextEditing.insertParagraphBreak(_blocks, _selection),
+          ),
       EditKind.other,
     );
   }

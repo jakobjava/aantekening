@@ -29,6 +29,7 @@ import '../../ast/types.dart';
 import '../../font/metrics/font_metrics_data.dart';
 import '../../utils/log.dart';
 
+import 'ams_macros.dart';
 import 'functions.dart';
 import 'macro_expander.dart';
 import 'parse_error.dart';
@@ -112,6 +113,9 @@ const digitToNumber = {
 
 // ignore: avoid_positional_boolean_parameters
 String newcommand(MacroContext context, bool existsOK, bool nonexistsOK) {
+  // aantekening: the starred form differs only in what its arguments may
+  // hold.
+  if (context.future().text == '*') context.popToken();
   var arg = context.consumeArgs(1)[0];
   if (arg.length != 1) {
     throw ParseException("\\newcommand's first argument must be a macro name");
@@ -354,8 +358,10 @@ final Map<String, MacroDefinition> builtinMacros = {
 // \renewcommand{\macro}[args]{definition}
 // TODO: Optional arguments: \newcommand{\macro}[args][default]{definition}
 
+  // aantekening: a command defined again is defined anew, as a note's
+  // preamble defines \\R, say, which is defined here already.
   '\\newcommand': MacroDefinition.fromCtxString(
-      (context) => newcommand(context, false, true)),
+      (context) => newcommand(context, true, true)),
   '\\renewcommand': MacroDefinition.fromCtxString(
       (context) => newcommand(context, true, false)),
   '\\providecommand': MacroDefinition.fromCtxString(
@@ -605,14 +611,10 @@ final Map<String, MacroDefinition> builtinMacros = {
 
 // \tag@in@display form of \tag
 // TODO tag
+  // aantekening: a formula is one equation, so its tag is set after it.
   '\\tag': MacroDefinition.fromString("\\@ifstar\\tag@literal\\tag@paren"),
   '\\tag@paren': MacroDefinition.fromString("\\tag@literal{({#1})}"),
-  '\\tag@literal': MacroDefinition.fromCtxString((context) {
-    if (context.macros.get("\\df@tag") != null) {
-      throw ParseException("Multiple \\tag");
-    }
-    return "\\gdef\\df@tag{\\text{#1}}";
-  }),
+  '\\tag@literal': MacroDefinition.fromString("\\qquad\\text{#1}"),
 
 // \renewcommand{\bmod}{\nonscript\mskip-\medmuskip\mkern5mu\mathbin
 //   {\operator@font mod}\penalty900
@@ -869,4 +871,5 @@ final Map<String, MacroDefinition> builtinMacros = {
   '\\grayI': MacroDefinition.fromString("\\textcolor{##21242c}{#1}"),
   '\\kaBlue': MacroDefinition.fromString("\\textcolor{##314453}{#1}"),
   '\\kaGreen': MacroDefinition.fromString("\\textcolor{##71B307}{#1}"),
+  ...amsMacros,
 };

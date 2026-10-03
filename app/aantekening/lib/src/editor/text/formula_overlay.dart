@@ -1,5 +1,5 @@
 /// The source of the formula being edited, drawn over the text of its box
-/// rather than laid out in it.
+/// beneath the line the formula is typeset in, rather than laid out in it.
 library;
 
 import 'dart:ui' show BoxHeightStyle;
@@ -11,7 +11,8 @@ import 'package:flutter/widgets.dart';
 import 'block_paragraph.dart';
 
 /// The formula being edited, as it is drawn over the text: its source, and
-/// the caret, selection and highlights in it, in offsets of the source.
+/// the caret, selection and highlights in it, in offsets of the source, and
+/// what is wrong with it, if anything is.
 @immutable
 class FormulaOverlay {
   const FormulaOverlay({
@@ -22,6 +23,8 @@ class FormulaOverlay {
     this.selection,
     this.composing,
     this.marks = const <({TextRange range, Color color})>[],
+    this.problem,
+    this.inWindow = false,
   });
 
   /// Keys the [BlockParagraph] the formula is in.
@@ -45,6 +48,13 @@ class FormulaOverlay {
   /// What the highlights in the source mark, each drawn on its colour.
   final List<({TextRange range, Color color})> marks;
 
+  /// What keeps the source from being typeset as it stands, beneath it.
+  final TextSpan? problem;
+
+  /// Whether the source is typed in a window of its own
+  /// ([showFormulaWindow]) rather than beneath the line.
+  final bool inWindow;
+
   @override
   bool operator ==(Object other) =>
       other is FormulaOverlay &&
@@ -54,7 +64,9 @@ class FormulaOverlay {
       other.caret == caret &&
       other.selection == selection &&
       other.composing == composing &&
-      listEquals(other.marks, marks);
+      listEquals(other.marks, marks) &&
+      other.problem == problem &&
+      other.inWindow == inWindow;
 
   @override
   int get hashCode => Object.hash(
@@ -65,6 +77,8 @@ class FormulaOverlay {
     selection,
     composing,
     Object.hashAll(marks),
+    problem,
+    inWindow,
   );
 }
 
@@ -77,10 +91,13 @@ class FormulaChanges extends ChangeNotifier {
 /// The text of a box, laying out the source of the formula being edited to
 /// be drawn over it ([FormulaFieldPainter]).
 ///
-/// The source is laid out across the whole box, its padding included, from
-/// its first line on the formula's, onto as many lines beneath as it needs.
-/// The text keeps the place the formula had, so nothing in it moves as the
-/// source is typed.
+/// The formula is typeset in its place in the text as it is typed, outlined;
+/// its source is laid out in a field across the whole box, its padding
+/// included, just beneath the line the formula is in, on as many lines as it
+/// needs. The field covers what is beneath rather than pushing it down.
+///
+/// While the source is typed in a window of its own
+/// ([FormulaOverlay.inWindow]) only the formula is outlined.
 class FormulaLayer extends SingleChildRenderObjectWidget {
   const FormulaLayer({
     required this.formula,
@@ -135,14 +152,26 @@ class RenderFormulaLayer extends RenderProxyBox {
   /// The room above and below the source, inside the field round it.
   static const double _padding = 1;
 
+  /// The room between the line the formula is in and the field beneath.
+  static const double _gap = 3;
+
   final TextPainter _painter = TextPainter(
     textDirection: TextDirection.ltr,
     textScaler: TextScaler.noScaling,
     textWidthBasis: TextWidthBasis.longestLine,
   );
 
+  /// What is wrong with the source, laid out beneath it.
+  final TextPainter _problem = TextPainter(
+    textDirection: TextDirection.ltr,
+    textScaler: TextScaler.noScaling,
+  );
+
   /// The field the source is typed in, in this layer's units, once placed.
   Rect? _box;
+
+  /// The formula as it is typeset in the text, in this layer's units.
+  Rect? _slot;
 
   FormulaOverlay? _formula;
   set formula(FormulaOverlay? value) {
@@ -175,6 +204,7 @@ class RenderFormulaLayer extends RenderProxyBox {
   @override
   void dispose() {
     _painter.dispose();
+    _problem.dispose();
     super.dispose();
   }
 
@@ -192,6 +222,10 @@ class RenderFormulaLayer extends RenderProxyBox {
     return _painter.getPositionForOffset(local - _textOrigin).offset;
   }
 
+  /// Whether [local], a point in this layer's units, is on the formula as it
+  /// is typeset in the text.
+  bool onFormula(Offset local) => _slot?.inflate(2).contains(local) ?? false;
+
   /// The caret at [offset] in the source, in this layer's units.
   Rect? sourceCaretRect(int offset) {
     if (_box == null) return null;
@@ -206,6 +240,7 @@ class RenderFormulaLayer extends RenderProxyBox {
   void performLayout() {
     super.performLayout();
     _box = null;
+    _slot = null;
     _changes.changed();
     final formula = _formula;
     final paragraph = formula?.paragraph.currentContext?.findRenderObject();
@@ -214,29 +249,37 @@ class RenderFormulaLayer extends RenderProxyBox {
         !paragraph.hasSize) {
       return;
     }
-    final boxes = paragraph.paragraph.getBoxesForSelection(
-      TextSelection(baseOffset: formula.place, extentOffset: formula.place + 1),
+    final selection = TextSelection(
+      baseOffset: formula.place,
+      extentOffset: formula.place + 1,
     );
-    if (boxes.isEmpty) return;
-    final place = MatrixUtils.transformRect(
-      paragraph.getTransformTo(this),
-      boxes.first.toRect(),
+    final tight = paragraph.paragraph.getBoxesForSelection(selection);
+    final line = paragraph.paragraph.getBoxesForSelection(
+      selection,
+      boxHeightStyle: BoxHeightStyle.max,
     );
+    if (tight.isEmpty || line.isEmpty) return;
+    final toLayer = paragraph.getTransformTo(this);
+    _slot = MatrixUtils.transformRect(toLayer, tight.first.toRect());
+    final lineBottom = MatrixUtils.transformRect(
+      toLayer,
+      line.first.toRect(),
+    ).bottom;
+
+    if (formula.inWindow) return;
 
     final across = size.width;
     _painter
       ..text = formula.source
       ..layout(minWidth: across, maxWidth: across);
-    final lines = _painter.computeLineMetrics();
-    final firstLine = lines.isEmpty
-        ? _painter.preferredLineHeight
-        : lines.first.height;
-    // Its first line on the formula's, as the text was typed there.
+    final problem = formula.problem;
+    _problem.text = problem;
+    if (problem != null) _problem.layout(maxWidth: across);
     _box = Rect.fromLTWH(
       -_outset.left,
-      place.center.dy - firstLine / 2 - _padding,
+      lineBottom + _gap,
       across + _outset.horizontal,
-      _painter.height + 2 * _padding,
+      _painter.height + (problem == null ? 0 : _problem.height) + 2 * _padding,
     );
   }
 
@@ -244,8 +287,21 @@ class RenderFormulaLayer extends RenderProxyBox {
   /// [caretShows], onto [canvas] in this layer's units.
   void paintField(Canvas canvas, {required bool caretShows}) {
     final formula = _formula;
+    if (formula == null || !attached) return;
+    final outline = _blockPaint.formulaOutline;
+    final stroke = outline == null
+        ? null
+        : (Paint()
+            ..color = outline
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = _blockPaint.caretWidth * 0.7 * screenPixelIn(this));
+    final slot = _slot;
+    if (stroke != null && slot != null) {
+      canvas.drawRect(slot.inflate(1), stroke);
+    }
     final box = _box;
-    if (formula == null || box == null || !attached) return;
+    if (box == null) return;
+
     final text = _textOrigin;
     List<Rect> rangeRects(int start, int end) => <Rect>[
       for (final rect in _painter.getBoxesForSelection(
@@ -263,6 +319,9 @@ class RenderFormulaLayer extends RenderProxyBox {
       }
     }
     _painter.paint(canvas, text);
+    if (formula.problem != null) {
+      _problem.paint(canvas, text + Offset(0, _painter.height));
+    }
 
     final selection = formula.selection;
     if (selection != null && !selection.isCollapsed) {
@@ -284,17 +343,7 @@ class RenderFormulaLayer extends RenderProxyBox {
         );
       }
     }
-
-    final outline = _blockPaint.formulaOutline;
-    if (outline != null) {
-      canvas.drawRect(
-        box,
-        Paint()
-          ..color = outline
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = _blockPaint.caretWidth * 0.7 * screenPixelIn(this),
-      );
-    }
+    if (stroke != null) canvas.drawRect(box, stroke);
 
     final caret = formula.caret;
     if (caret != null && caretShows) {

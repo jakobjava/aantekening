@@ -223,7 +223,11 @@ class MathParser {
     }
     if (_check(TokenType.operator) && _prefixes.contains(_current.latex)) {
       final operator = _advance();
-      return UnaryNode(operator.latex, _parseScriptOperand());
+      // A sign with nothing after it is the script itself: the charge of
+      // `H_3O^+`, `e^-`.
+      return _startsPrimary(_current)
+          ? UnaryNode(operator.latex, _parseScriptOperand())
+          : SymbolNode(operator.latex);
     }
     // Deliberately a primary rather than a full postfix: consuming further
     // scripts here would swallow the `^n` of `sum_(i=1)^n` into the subscript.
@@ -270,7 +274,7 @@ class MathParser {
 
       case TokenType.command:
         _advance();
-        return SymbolNode(token.latex);
+        return _parseCommand(token);
 
       case TokenType.raw:
         _advance();
@@ -403,6 +407,32 @@ class MathParser {
     }
   }
 
+  /// [command], read already, with the groups typed against it, in braces
+  /// or brackets, read as its arguments.
+  MathNode _parseCommand(Token command) {
+    final arguments = <({bool optional, MathNode content})>[];
+    var end = command.offset + command.lexeme.length;
+    while (_current.offset == end &&
+        (_check(TokenType.leftBrace) || _check(TokenType.leftBracket))) {
+      final optional = _check(TokenType.leftBracket);
+      _advance();
+      final MathNode content;
+      if (optional) {
+        content = _parseListUntil(TokenType.rightBracket, ']');
+      } else if (_matched(TokenType.rightBrace)) {
+        content = const SequenceNode(<MathNode>[]);
+      } else {
+        content = _parseListUntil(TokenType.rightBrace, '}');
+      }
+      arguments.add((optional: optional, content: content));
+      final closer = _tokens[_index - 1];
+      end = closer.offset + closer.lexeme.length;
+    }
+    return arguments.isEmpty
+        ? SymbolNode(command.latex)
+        : CommandNode(command.latex, arguments);
+  }
+
   /// Reads the `(a, b; c, d)` of a grid: cells separated by commas, rows by
   /// semicolons.
   List<List<MathNode>> _parseGrid(Token construct) {
@@ -447,6 +477,9 @@ class MathParser {
       final child = _parseListUntil(TokenType.rightParen, ')');
       return child;
     }
+    // LaTeX's own form, `\overbrace{a+b}^n`: the group is the argument, and
+    // a script after it the construct's.
+    if (_check(TokenType.leftBrace)) return _unwrap(_parsePrimary());
     if (_check(TokenType.end)) {
       diagnostics.add(
         MathDiagnostic(

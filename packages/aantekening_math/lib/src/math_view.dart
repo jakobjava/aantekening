@@ -8,7 +8,10 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_math_fork/tex.dart' show TexParser;
 
 import 'linear_math.dart';
+import 'packages/latex_packages.dart';
 import 'renderer_latex.dart';
+import 'tikz/tikz_picture.dart';
+import 'tikz/tikz_view.dart';
 
 /// Renders a formula written in [mode].
 ///
@@ -22,6 +25,7 @@ class MathView extends StatelessWidget {
     super.key,
     this.displayStyle = true,
     this.textStyle,
+    this.packages = false,
   });
 
   /// Renders the formula held by [element].
@@ -36,32 +40,88 @@ class MathView extends StatelessWidget {
 
   final TextStyle? textStyle;
 
+  /// Whether the packages LaTeX documents use for physics, chemistry and
+  /// units — physics, mhchem, siunitx — are read: in a formula brought in
+  /// as LaTeX ([LatexPackages]).
+  final bool packages;
+
+  /// [latex] as the typesetter is given it: with the commands it defines
+  /// itself and what [preamble] sets written into it, and the packages'
+  /// commands written out if it may use them, [packages].
+  static String prepared(
+    String latex, {
+    LatexPreamble? preamble,
+    bool packages = false,
+  }) {
+    // What the formula defines itself — a picture's `\newcommand`s and
+    // `\def`s, before it uses them — is written out as a preamble's is.
+    final own = LatexPreamble();
+    final written = own.apply(own.takeFrom(latex));
+    final applied = preamble == null ? written : preamble.apply(written);
+    return packages ? LatexPackages.expand(applied) : applied;
+  }
+
+  /// What keeps [latex] from being typeset, or null where nothing does;
+  /// [preamble] and [packages] as for [prepared].
+  static String? problemIn(
+    String latex, {
+    LatexPreamble? preamble,
+    bool packages = false,
+  }) {
+    final ready = prepared(latex, preamble: preamble, packages: packages);
+    if (TikzPicture.holds(ready)) return TikzPicture.problemIn(ready);
+    return switch (_parse(ready)) {
+      (_, final error?) => error.message,
+      _ => null,
+    };
+  }
+
+  /// [latex] read by the typesetter, or why it cannot be.
+  static (SyntaxTree?, ParseException?) _parse(String latex) {
+    try {
+      return (
+        SyntaxTree(
+          greenRoot: typesetHighlights(
+            TexParser(
+              RendererLatex.of(latex),
+              const TexParserSettings(),
+            ).parse(),
+          ),
+        ),
+        null,
+      );
+    } on ParseException catch (e) {
+      return (null, e);
+    } on Object catch (e) {
+      // The typesetter's own parser can fail in ways it does not describe.
+      return (null, ParseException('$e'));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (source.trim().isEmpty) {
       return _Placeholder(style: textStyle);
     }
-
-    final latex = RendererLatex.of(LinearMath.latexFor(mode, source));
-    SyntaxTree? tree;
-    ParseException? error;
-    try {
-      tree = SyntaxTree(
-        greenRoot: typesetHighlights(
-          TexParser(latex, const TexParserSettings()).parse(),
-        ),
-      );
-    } on ParseException catch (e) {
-      error = e;
-    } on Object catch (e) {
-      // The typesetter's own parser can fail in ways it does not describe.
-      error = ParseException('$e');
+    final latex = prepared(
+      LinearMath.latexFor(mode, source),
+      preamble: MathPreamble.of(context),
+      packages: packages,
+    );
+    final style = textStyle ?? DefaultTextStyle.of(context).style;
+    if (TikzPicture.holds(latex)) {
+      try {
+        return TikzView(picture: TikzPicture.read(latex), style: style);
+      } on FormatException catch (e) {
+        return _MathError(message: e.message, source: source, style: style);
+      }
     }
+    final (tree, error) = _parse(latex);
     return Math(
       ast: tree,
       parseError: error,
       mathStyle: displayStyle ? MathStyle.display : MathStyle.text,
-      textStyle: textStyle ?? DefaultTextStyle.of(context).style,
+      textStyle: style,
       // A formula that TeX itself rejects still has to show something, or the
       // page would appear to lose content while it is being edited.
       onErrorFallback: (error) => _MathError(
@@ -127,6 +187,26 @@ class MathView extends StatelessWidget {
         )
         as T;
   }
+}
+
+/// What every formula beneath it is typeset with: the commands and TikZ
+/// styles the person has set ([LatexPreamble]).
+class MathPreamble extends InheritedWidget {
+  const MathPreamble({required this.preamble, required super.child, super.key});
+
+  final LatexPreamble preamble;
+
+  /// The preamble the formulas at [context] are typeset with, if any.
+  static LatexPreamble? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<MathPreamble>()?.preamble;
+
+  /// [of], outside a build: nothing is built again when it changes.
+  static LatexPreamble? read(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<MathPreamble>()?.preamble;
+
+  @override
+  bool updateShouldNotify(MathPreamble oldWidget) =>
+      !identical(oldWidget.preamble, preamble);
 }
 
 class _Placeholder extends StatelessWidget {

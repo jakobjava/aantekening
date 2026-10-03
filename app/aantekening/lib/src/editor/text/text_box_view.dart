@@ -161,31 +161,46 @@ extension _View on TextBoxEditorState {
       0,
       source.length,
     );
+    final style = RichTextStyles.formulaSource(
+      RichTextStyles.blockStyleOf(block, RichTextStyles.base(context)),
+      run.marks,
+      accent: context.tones.paperEmphasis,
+    );
+    final problem = _problem;
     return FormulaOverlay(
       paragraph: _contentKeys[formula.block],
       place: _viewFor(formula.block).runAt(formula.run).viewStart,
-      source: TextSpan(
-        text: source,
-        style: RichTextStyles.formulaSource(
-          RichTextStyles.blockStyleOf(block, RichTextStyles.base(context)),
-          run.marks,
-          accent: context.tones.paperEmphasis,
-        ),
-      ),
+      source: TextSpan(text: source, style: style),
+      problem: problem == null
+          ? null
+          : TextSpan(
+              text: problem,
+              style: style.copyWith(
+                fontSize: (style.fontSize ?? RichTextStyles.bodySize) * 0.8,
+                color: context.tones.paperEmphasis,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+      inWindow: _window != null,
       caret: focused && base == extent ? extent : null,
       selection: base == extent
           ? null
           : TextSelection(baseOffset: base, extentOffset: extent),
       composing: _input.composing.isValid ? _input.composing : null,
-      marks: <({TextRange range, Color color})>[
+      marks: _sourceMarks(source),
+    );
+  }
+
+  /// What the highlights in [source], the formula being edited, mark, each
+  /// with its colour.
+  List<({TextRange range, Color color})> _sourceMarks(String source) =>
+      <({TextRange range, Color color})>[
         for (final mark in HighlightSource.all(source, _source.syntax))
           (
             range: TextRange(start: mark.bodyStart, end: mark.bodyEnd),
             color: Color(0xFF000000 | mark.color),
           ),
-      ],
-    );
-  }
+      ];
 
   /// [table], each of its cells a column of its lines.
   Widget _buildTable(
@@ -264,6 +279,8 @@ extension _View on TextBoxEditorState {
           padding: EdgeInsets.only(left: indent, top: 2, bottom: 4),
           child: EmbedBlock(
             embed: block.embed!,
+            style: base,
+            align: block.align,
             objectKey: _contentKeys[index],
             selected: _embedSelected(index),
             caretSide:
@@ -295,7 +312,7 @@ extension _View on TextBoxEditorState {
         text: view.span(
           base: base,
           mark: context.tones.paperEmphasis,
-          opened: _openedAs,
+          open: _shown,
         ),
         textAlign: RichTextStyles.alignOf(block),
         // A box sizing itself to its text measures its longest line, and

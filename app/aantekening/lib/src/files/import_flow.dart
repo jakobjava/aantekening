@@ -25,6 +25,7 @@ const List<NotesImporter> importers = <NotesImporter>[
   OneNoteImporter(),
   XournalImporter(),
   XournalImporter(folders: true),
+  LatexImporter(),
   AantekeningImporter(),
 ];
 

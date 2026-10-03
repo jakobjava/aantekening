@@ -79,9 +79,33 @@ extension _Elements on _PageEditorState {
     return widget;
   }
 
+  /// Keeps the frame of the TikZ picture [id] as tall as its drawing,
+  /// [drawn] large unscaled, makes it at its width: a picture its source
+  /// changed, or brought in without knowing its size.
+  void _keepProportions(String id, Size drawn) {
+    final picture = _controller.elementById(id);
+    if (picture is! TikzElement || drawn.isEmpty) return;
+    final frame = picture.frame;
+    final height = frame.width * drawn.height / drawn.width;
+    if ((height - frame.height).abs() < 0.5) return;
+    // What the drawing makes it, not an edit of its own.
+    _controller.replaceElement(
+      picture.withFrame(frame.copyWith(height: height)),
+      recordUndo: false,
+      markDirty: false,
+    );
+  }
+
   Widget _elementWidget(_ElementBuild built) {
     final element = built.element;
-    if (element is! TextElement) return CanvasElementView(element: element);
+    if (element is! TextElement) {
+      return CanvasElementView(
+        element: element,
+        onDrawn: element is TikzElement
+            ? (drawn) => _keepProportions(element.id, drawn)
+            : null,
+      );
+    }
     final id = element.id;
     return TextBoxEditor(
       element: element,

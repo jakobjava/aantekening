@@ -25,7 +25,13 @@ thousands of pages instant.
   one of them the inverse of whatever is beneath — and Markdown shortcuts,
   with spell checking in several languages at once.
 - **Mathematics in the line.** Type a formula in LaTeX or a simple syntax
-  (`sum_(i=1)^n i^2`, `mat(1, 2; 3, 4)`) and it is typeset as you write.
+  (`sum_(i=1)^n i^2`, `mat(1, 2; 3, 4)`) and it is typeset in its place as
+  you write, its source in a strip beneath, or a window of its own once
+  it is long.
+- **TikZ pictures.** Draw with TikZ and its libraries — shapes, arrows,
+  decorations, patterns, angles, matrices and pgfplots graphs — as
+  pictures in the text, resized like photos, their source a right-click
+  away.
 - **PDFs and pictures.** Insert them to annotate. PDFs stay sharp at any
   zoom and their text is searchable.
 - **Organised like a notebook.** Notebooks, nested sections, pages and
@@ -39,7 +45,9 @@ thousands of pages instant.
 - **Safe with your notes.** Files are written whole or not at all. A clash
   between two computers keeps both versions. Daily backups can be restored.
 - **Import.** OneNote notebooks (`.onepkg`, `.one`) and Xournal++ documents
-  (`.xopp`), with their layout, formatting, handwriting and equations.
+  (`.xopp`), with their layout, formatting, handwriting and equations; LaTeX
+  documents (`.tex`), or LaTeX pasted in, as text and typeset formulas, with
+  TikZ pictures, physics, mhchem and siunitx.
 - **Calm to look at.** Light and dark, one accent colour, and no animations:
   everything appears at once.
 
@@ -88,7 +96,7 @@ On Windows you also need [Visual Studio](https://visualstudio.microsoft.com/down
 ```
 packages/aantekening_core          the model and page format (pure Dart)
 packages/aantekening_store         the notes folder, SQLite index, search, backups
-packages/aantekening_interchange   importing from OneNote and Xournal++
+packages/aantekening_interchange   importing from OneNote, Xournal++ and LaTeX
 packages/aantekening_canvas        the canvas engine
 packages/aantekening_math          Simple syntax ⇄ LaTeX, typesetting
 packages/aantekening_ai            AI providers, citations, the note agent

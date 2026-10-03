@@ -12,7 +12,21 @@ extension _Clipboard on TextBoxEditorState {
       if (cut && mounted && _formula != null) _replaceInFormula('');
       return;
     }
-    final fragment = RichTextEditing.slice(_blocks, _selection);
+    var fragment = RichTextEditing.slice(_blocks, _selection);
+    // A TikZ picture takes the size it is drawn at, to keep on the page by
+    // itself.
+    for (final (i, block) in fragment.indexed) {
+      final object = _object(_selection.start.block + i);
+      if (block.embed?.source == null || object == null) continue;
+      fragment = RichTextEditing.replaceEmbed(
+        fragment,
+        i,
+        block.embed!.copyWith(
+          width: object.size.width,
+          height: object.size.height,
+        ),
+      );
+    }
     await NoteClipboard.copy(
       TextClip(RichTextEditing.plainTextOf(fragment), fragment),
     );
@@ -34,11 +48,22 @@ extension _Clipboard on TextBoxEditorState {
       _replaceInFormula(clip.plain.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' '));
       return;
     }
+    // At a bare caret, things from the page are pasted as themselves, on the
+    // page; and so are pictures and PDF pages taken out of a box alone.
+    final objects = TextBoxEditor.isEmpty(_blocks)
+        ? switch (clip) {
+            ElementsClip(:final elements) => elements,
+            TextClip(:final asElements) => asElements,
+            PlainClip() => null,
+          }
+        : null;
+    if (objects != null) {
+      widget.onPasteElements?.call(objects);
+      return;
+    }
     final blocks = switch (clip) {
       PlainClip() => null,
       TextClip(:final blocks) => blocks,
-      // At a bare caret, things from the page are pasted as themselves.
-      ElementsClip() when TextBoxEditor.isEmpty(_blocks) => null,
       ElementsClip(:final asBlocks) => asBlocks,
     };
     if (blocks != null) {

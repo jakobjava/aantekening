@@ -2,6 +2,7 @@
 library;
 
 import 'package:meta/meta.dart';
+import '../latex/latex_source.dart';
 import '../util/json_read.dart';
 
 /// The syntax a formula is written in.
@@ -242,14 +243,22 @@ class TextMarks {
 /// two formulas.
 @immutable
 class TextRun {
-  const TextRun(this.text, [this.marks = TextMarks.none]) : math = null;
+  const TextRun(this.text, [this.marks = TextMarks.none])
+    : math = null,
+      imported = false;
 
   /// A formula written in [mode], optionally coloured or sized through
   /// [marks] (see [TextMarks.forFormula]).
   const TextRun.math(this.text, MathMode mode, [this.marks = TextMarks.none])
-    : math = mode;
+    : math = mode,
+      imported = false;
 
-  const TextRun._(this.text, this.marks, this.math);
+  /// A formula brought in as LaTeX, from a document or a passage of one.
+  const TextRun.imported(this.text, [this.marks = TextMarks.none])
+    : math = MathMode.latex,
+      imported = true;
+
+  const TextRun._(this.text, this.marks, this.math, this.imported);
 
   final String text;
   final TextMarks marks;
@@ -257,25 +266,39 @@ class TextRun {
   /// The syntax of this run's formula, or null for ordinary text.
   final MathMode? math;
 
+  /// Whether this formula was brought in as LaTeX ([TextRun.imported]): it
+  /// stays LaTeX, typed as LaTeX alone, and is typeset with the packages
+  /// documents use as well as what a formula typed here can use.
+  final bool imported;
+
   bool get isMath => math != null;
 
-  TextRun copyWith({String? text, TextMarks? marks}) =>
-      TextRun._(text ?? this.text, marks ?? this.marks, math);
+  /// This run with [text], [marks] or, for a formula, the syntax [math]
+  /// changed; a formula brought in stays one.
+  TextRun copyWith({String? text, TextMarks? marks, MathMode? math}) =>
+      TextRun._(
+        text ?? this.text,
+        marks ?? this.marks,
+        this.math == null ? null : math ?? this.math,
+        imported,
+      );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'text': text,
     if (!marks.isEmpty) 'marks': marks.toJson(),
     if (math != null) 'math': math!.name,
+    if (imported) 'imported': true,
   };
 
   static TextRun fromJson(Map<String, Object?> json) {
     final text = readString(json, 'text');
     final math = json['math'];
     if (math is String) {
-      return TextRun.math(
+      return TextRun._(
         text,
-        readEnum(json, 'math', MathMode.values, MathMode.linear),
         TextMarks.fromJson(readObject(json, 'marks')).forFormula,
+        readEnum(json, 'math', MathMode.values, MathMode.linear),
+        json['imported'] == true,
       );
     }
     return TextRun(text, TextMarks.fromJson(readObject(json, 'marks')));
@@ -286,14 +309,16 @@ class TextRun {
       other is TextRun &&
       other.text == text &&
       other.marks == marks &&
-      other.math == math;
+      other.math == math &&
+      other.imported == imported;
 
   @override
-  int get hashCode => Object.hash(text, marks, math);
+  int get hashCode => Object.hash(text, marks, math, imported);
 
   @override
-  String toString() =>
-      math == null ? 'TextRun(${_quote(text)})' : 'Math(${_quote(text)})';
+  String toString() => math == null
+      ? 'TextRun(${_quote(text)})'
+      : '${imported ? 'Imported' : 'Math'}(${_quote(text)})';
 
   static String _quote(String text) => "'${text.replaceAll('\n', r'\n')}'";
 }
@@ -310,6 +335,9 @@ enum EmbedKind {
   /// A file of any kind, attached: shown as its name, and opened with
   /// whatever opens it.
   file,
+
+  /// A TikZ picture, drawn from its source ([BlockEmbed.source]).
+  tikz,
 }
 
 /// An image, a PDF page or an attached file placed inside a text box, on a
@@ -328,7 +356,18 @@ class BlockEmbed {
     this.pageIndex = 0,
     this.text,
     this.name,
+    this.source,
   });
+
+  /// The TikZ picture [source] draws, as large as it is drawn, or [width]
+  /// wide; [height] is what it was last drawn at, for it on the page by
+  /// itself.
+  const BlockEmbed.tikz(String this.source, {this.width = 0, this.height = 0})
+    : kind = EmbedKind.tikz,
+      assetId = '',
+      pageIndex = 0,
+      text = null,
+      name = null;
 
   final EmbedKind kind;
   final String assetId;
@@ -337,7 +376,9 @@ class BlockEmbed {
   final int pageIndex;
 
   /// Preferred size in page units. The box shrinks an embed that is wider than
-  /// itself, keeping this aspect ratio.
+  /// itself, keeping this aspect ratio. A TikZ picture is as tall as its
+  /// drawing makes it at its width, and 0 wide while it is as large as it is
+  /// drawn.
   final double width;
   final double height;
 
@@ -347,18 +388,26 @@ class BlockEmbed {
   /// The file's name, for an attached file.
   final String? name;
 
+  /// The LaTeX a TikZ picture is drawn from.
+  final String? source;
+
   double get aspectRatio => height > 0 ? width / height : 1;
 
-  BlockEmbed copyWith({double? width, double? height, String? text}) =>
-      BlockEmbed(
-        kind: kind,
-        assetId: assetId,
-        width: width ?? this.width,
-        height: height ?? this.height,
-        pageIndex: pageIndex,
-        text: text ?? this.text,
-        name: name,
-      );
+  BlockEmbed copyWith({
+    double? width,
+    double? height,
+    String? text,
+    String? source,
+  }) => BlockEmbed(
+    kind: kind,
+    assetId: assetId,
+    width: width ?? this.width,
+    height: height ?? this.height,
+    pageIndex: pageIndex,
+    text: text ?? this.text,
+    name: name,
+    source: source ?? this.source,
+  );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'kind': kind.name,
@@ -368,6 +417,7 @@ class BlockEmbed {
     'height': height,
     if (text != null) 'text': text,
     if (name != null) 'name': name,
+    if (source != null) 'source': source,
   };
 
   static BlockEmbed fromJson(Map<String, Object?> json) => BlockEmbed(
@@ -378,6 +428,7 @@ class BlockEmbed {
     height: readDouble(json, 'height', 240),
     text: readStringOrNull(json, 'text'),
     name: readStringOrNull(json, 'name'),
+    source: readStringOrNull(json, 'source'),
   );
 
   @override
@@ -389,11 +440,12 @@ class BlockEmbed {
       other.width == width &&
       other.height == height &&
       other.text == text &&
-      other.name == name;
+      other.name == name &&
+      other.source == source;
 
   @override
   int get hashCode =>
-      Object.hash(kind, assetId, pageIndex, width, height, text, name);
+      Object.hash(kind, assetId, pageIndex, width, height, text, name, source);
 }
 
 /// Where a block sits in a table: the cell it is in, and how wide that
@@ -700,6 +752,21 @@ class TextBlock {
         cell: cell,
       );
     }
+    final runs = <TextRun>[
+      for (final run in readObjectList(json, 'runs')) TextRun.fromJson(run),
+    ];
+    // A picture kept as a formula on a line of its own, before pictures
+    // were objects in the text, is read as one.
+    if (runs case [TextRun(math: MathMode.latex, :final text)]
+        when LatexSource.isPicture(text)) {
+      return TextBlock.embedded(
+        BlockEmbed.tikz(text),
+        indent: readInt(json, 'indent'),
+        align: align,
+        spacing: spacing,
+        cell: cell,
+      );
+    }
     return TextBlock(
       kind: readEnum(
         json,
@@ -707,9 +774,7 @@ class TextBlock {
         TextBlockKind.values,
         TextBlockKind.paragraph,
       ),
-      runs: <TextRun>[
-        for (final run in readObjectList(json, 'runs')) TextRun.fromJson(run),
-      ],
+      runs: runs,
       indent: readInt(json, 'indent'),
       checked: readBool(json, 'checked'),
       bullet: readEnum(json, 'bullet', BulletStyle.values, BulletStyle.disc),

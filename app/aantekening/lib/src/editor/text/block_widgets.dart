@@ -1,11 +1,13 @@
 /// The pieces a text box is drawn with besides its text: list markers, the
-/// band along its top, pictures and PDF pages, and the measure of its size.
+/// band along its top, pictures, PDF pages and TikZ pictures, and the
+/// measure of its size.
 library;
 
 import 'dart:math' as math;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -235,67 +237,96 @@ class GrabBand extends StatelessWidget {
   }
 }
 
-/// A corner of an object in a text box, which resizes it when dragged.
-///
-/// An object keeps its proportions, as a picture on the page does, so every
-/// corner sets the width and the height follows.
-enum EmbedCorner {
-  topLeft(-1, -1),
-  topRight(1, -1),
-  bottomLeft(-1, 1),
-  bottomRight(1, 1);
-
-  const EmbedCorner(this.x, this.y);
-
-  /// Which way this corner lies from the middle of the object: -1 towards the
-  /// left or the top, 1 towards the right or the bottom.
-  final int x;
-  final int y;
-
-  /// Where the handle's centre sits on an object of [size].
-  Offset centerIn(Size size) =>
-      Offset(x < 0 ? 0 : size.width, y < 0 ? 0 : size.height);
-
-  MouseCursor get cursor => x == y
-      ? SystemMouseCursors.resizeUpLeftDownRight
-      : SystemMouseCursors.resizeUpRightDownLeft;
-
-  /// How much wider the object becomes as this corner is dragged by [drag]:
-  /// away from the object's middle widens it, and both directions count, so a
-  /// corner dragged along its diagonal follows the pointer.
-  double widening(Offset drag, double aspectRatio) =>
-      (drag.dx * x + drag.dy * aspectRatio * y) / 2;
-}
-
 /// Where the handles of an object in a text box are, shared by the object
 /// that draws them and the editor that takes hold of them.
 ///
-/// They are the page's own handles, in the page's sizes: drawn in screen
-/// pixels, so they stay the same size however far the page is zoomed, and
-/// grabbed from the same distance.
+/// They are the page's own (`SelectionHandles`): the outline pushed out
+/// round the object and the handles as large, at its corners and the middles
+/// of its sides, in screen pixels, so they stay the same size however far
+/// the page is zoomed, and are grabbed from the same distance.
 abstract final class EmbedHandles {
-  static const double size = SelectionHandles.size;
-  static const double reach = SelectionHandles.mouseReach;
-
-  /// Line width of the outline round a picked object and of the ring round
-  /// each of its handles.
-  static const double stroke = 1.5;
-
-  /// The corner a press at [local] takes hold of on an object of [object],
-  /// or null where it takes hold of none. [pixel] is a screen pixel in the
-  /// object's own units.
-  static EmbedCorner? at(Size object, Offset local, {required double pixel}) {
-    EmbedCorner? found;
-    var nearest = reach * pixel;
-    for (final corner in EmbedCorner.values) {
-      final distance = (corner.centerIn(object) - local).distance;
-      if (distance <= nearest) {
-        nearest = distance;
-        found = corner;
-      }
-    }
-    return found;
+  /// The corners of the outline round an object [object] large, clockwise
+  /// from the top-left, in screen pixels from its own top-left corner;
+  /// [pixel] is a screen pixel in its units.
+  static List<Offset> outline(Size object, double pixel) {
+    final box = (Offset.zero & object / pixel).inflate(
+      SelectionHandles.outlineInset,
+    );
+    return <Offset>[box.topLeft, box.topRight, box.bottomRight, box.bottomLeft];
   }
+
+  /// Where each handle of an object [object] large is, in screen pixels.
+  static Map<SelectionHandle, Offset> positions(Size object, double pixel) =>
+      SelectionHandles.positionsOn(
+        outline(object, pixel),
+        SelectionHandles.resizing,
+      );
+
+  /// The handle a press at [local] takes hold of on an object [object]
+  /// large, or null where it takes hold of none: a handle, or a side
+  /// anywhere along it.
+  static SelectionHandle? at(
+    Size object,
+    Offset local, {
+    required double pixel,
+  }) {
+    final box = outline(object, pixel);
+    return SelectionHandles.hitTestOn(
+      positions(object, pixel),
+      SelectionHandles.sidesOn(box, SelectionHandles.resizing),
+      local / pixel,
+    );
+  }
+
+  /// How much wider an object [aspectRatio] wide to its height becomes as
+  /// [handle] is dragged by [drag]: away from its middle widens it. A corner
+  /// follows the pointer along its diagonal, both directions counting; a
+  /// side, across itself. The object keeps its proportions either way.
+  static double widening(
+    SelectionHandle handle,
+    Offset drag,
+    double aspectRatio,
+  ) {
+    final across = drag.dx * (handle.movesLeft ? -1 : 1);
+    final down = drag.dy * aspectRatio * (handle.movesTop ? -1 : 1);
+    return switch (handle) {
+      SelectionHandle.left || SelectionHandle.right => across,
+      SelectionHandle.top || SelectionHandle.bottom => down,
+      _ => (across + down) / 2,
+    };
+  }
+}
+
+/// Draws the outline and handles round a picked object, as the page draws
+/// them round an element.
+class _PickedPainter extends CustomPainter {
+  const _PickedPainter({required this.pixel, required this.accent});
+
+  /// A screen pixel in the object's units.
+  final double pixel;
+  final Color accent;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas
+      ..save()
+      ..scale(pixel);
+    SelectionHandles.paintOutline(
+      canvas,
+      EmbedHandles.outline(size, pixel),
+      accent,
+    );
+    SelectionHandles.paintHandles(
+      canvas,
+      EmbedHandles.positions(size, pixel),
+      accent,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_PickedPainter oldDelegate) =>
+      oldDelegate.pixel != pixel || oldDelegate.accent != accent;
 }
 
 /// A picture or PDF page on its own line inside a text box.
@@ -327,17 +358,26 @@ class EmbedStandIn extends StatelessWidget {
 class EmbedBlock extends StatelessWidget {
   const EmbedBlock({
     required this.embed,
+    required this.style,
     required this.selected,
     required this.caretSide,
     required this.caretVisible,
     required this.caretColor,
     required this.caretWidth,
     required this.caretHeight,
+    this.align = BlockAlign.start,
     this.objectKey,
     super.key,
   });
 
   final BlockEmbed embed;
+
+  /// The style of the text round it, which a TikZ picture is drawn in: at
+  /// its size, in its colour.
+  final TextStyle style;
+
+  /// Where across the box the object sits.
+  final BlockAlign align;
 
   /// Keys the object itself, whose size is what it is drawn at, so the text
   /// box can find where its corners are.
@@ -364,114 +404,99 @@ class EmbedBlock extends StatelessWidget {
     // page draws them round an element, so zooming does not change them.
     final pixel = selected ? 1 / CanvasScope.zoomOf(context) : 1.0;
     return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = math.min(embed.width, constraints.maxWidth);
-        final height = width / embed.aspectRatio;
-        final side = caretSide;
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: SizedBox(
-            key: objectKey,
-            width: width,
-            height: height,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                Positioned.fill(
-                  child: EmbedStandIns.within(context)
-                      ? EmbedStandIn(embed: embed)
-                      : switch (embed.kind) {
-                          EmbedKind.image => AssetImageView(
-                            assetId: embed.assetId,
-                          ),
-                          EmbedKind.pdfPage => PdfPageView(
-                            assetId: embed.assetId,
-                            pageIndex: embed.pageIndex,
-                          ),
-                          EmbedKind.file => AttachedFileView(embed: embed),
-                        },
-                ),
-                if (selected) ...<Widget>[
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: mark.withValues(alpha: 0.18),
-                        border: Border.all(
-                          color: mark,
-                          width: EmbedHandles.stroke * pixel,
-                        ),
-                      ),
-                    ),
-                  ),
-                  for (final corner in EmbedCorner.values)
-                    _CornerHandle(
-                      corner: corner,
-                      object: Size(width, height),
-                      color: mark,
-                      pixel: pixel,
-                    ),
-                ],
-                if (side != null)
-                  Positioned(
-                    left: side == 0 ? -caretWidth - 1 : null,
-                    right: side == 1 ? -caretWidth - 1 : null,
-                    height: math.min(caretHeight, height),
-                    bottom: 0,
-                    child: ValueListenableBuilder<bool>(
-                      valueListenable: caretVisible,
-                      builder: (context, visible, _) => Container(
-                        width: caretWidth,
-                        color: visible ? caretColor : Colors.transparent,
-                      ),
-                    ),
-                  ),
-              ],
+      builder: (context, constraints) => Align(
+        alignment: switch (align) {
+          BlockAlign.start => Alignment.centerLeft,
+          BlockAlign.center => Alignment.center,
+          BlockAlign.end => Alignment.centerRight,
+        },
+        // The object sets the size; what is drawn round it fits that.
+        child: Stack(
+          key: objectKey,
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            _object(context, constraints.maxWidth),
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, drawn) => _marks(drawn.biggest, mark, pixel),
+              ),
             ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// The grab point at one corner of a selected object. The press that drags it
-/// is handled by the text box, which owns the object's size.
-class _CornerHandle extends StatelessWidget {
-  const _CornerHandle({
-    required this.corner,
-    required this.object,
-    required this.color,
-    required this.pixel,
-  });
-
-  final EmbedCorner corner;
-  final Size object;
-  final Color color;
-
-  /// A screen pixel in the object's own units.
-  final double pixel;
-
-  @override
-  Widget build(BuildContext context) {
-    final size = EmbedHandles.size * pixel;
-    final center = corner.centerIn(object);
-    return Positioned(
-      left: center.dx - size / 2,
-      top: center.dy - size / 2,
-      child: MouseRegion(
-        cursor: corner.cursor,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: color,
-            border: Border.all(
-              color: const Color(0xFFFFFFFF),
-              width: EmbedHandles.stroke * pixel,
-            ),
-          ),
+          ],
         ),
       ),
+    );
+  }
+
+  /// The object, at most [widest] wide.
+  Widget _object(BuildContext context, double widest) {
+    if (embed.source case final source?) return _picture(source, widest);
+    final width = math.min(embed.width, widest);
+    return SizedBox(
+      width: width,
+      height: width / embed.aspectRatio,
+      child: EmbedStandIns.within(context)
+          ? EmbedStandIn(embed: embed)
+          : switch (embed.kind) {
+              EmbedKind.image => AssetImageView(assetId: embed.assetId),
+              EmbedKind.pdfPage => PdfPageView(
+                assetId: embed.assetId,
+                pageIndex: embed.pageIndex,
+              ),
+              EmbedKind.file => AttachedFileView(embed: embed),
+              EmbedKind.tikz => const SizedBox.shrink(),
+            },
+    );
+  }
+
+  /// The TikZ picture [source] draws, as tall as it makes it: as large as
+  /// it is drawn in [style] until it is resized, and never wider than
+  /// [widest].
+  Widget _picture(String source, double widest) {
+    final drawn = MathView(
+      source: source,
+      mode: MathMode.latex,
+      textStyle: style,
+    );
+    if (embed.width <= 0) {
+      return ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: widest),
+        child: FittedBox(fit: BoxFit.scaleDown, child: drawn),
+      );
+    }
+    return SizedBox(
+      width: math.min(embed.width, widest),
+      child: FittedBox(fit: BoxFit.fitWidth, child: drawn),
+    );
+  }
+
+  /// The frame and handles round the object, [size] large, while it is
+  /// picked, and the caret beside it.
+  Widget _marks(Size size, Color mark, double pixel) {
+    final side = caretSide;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        if (selected)
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _PickedPainter(pixel: pixel, accent: mark),
+            ),
+          ),
+        if (side != null)
+          Positioned(
+            left: side == 0 ? -caretWidth - 1 : null,
+            right: side == 1 ? -caretWidth - 1 : null,
+            height: math.min(caretHeight, size.height),
+            bottom: 0,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: caretVisible,
+              builder: (context, visible, _) => Container(
+                width: caretWidth,
+                color: visible ? caretColor : Colors.transparent,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

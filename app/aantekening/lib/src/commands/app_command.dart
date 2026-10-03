@@ -175,6 +175,13 @@ enum AppCommand {
   insertTextBox('Insert text box', CommandGroup.page, null, <KeyChord>[]),
   insertPicture('Insert picture', CommandGroup.page, null, <KeyChord>[]),
   insertPdf('Insert PDF printout', CommandGroup.page, null, <KeyChord>[]),
+  insertLatex(
+    'Insert LaTeX…',
+    CommandGroup.page,
+    'Put LaTeX — a passage or a whole document — into the notes as text and '
+        'formulas',
+    <KeyChord>[],
+  ),
   addSheet(
     'Add sheet',
     CommandGroup.page,

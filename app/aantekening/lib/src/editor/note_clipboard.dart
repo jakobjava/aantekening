@@ -24,6 +24,44 @@ final class TextClip extends NoteClip {
   const TextClip(super.plain, this.blocks);
 
   final List<TextBlock> blocks;
+
+  /// The space left between pictures pasted onto the page from text, in
+  /// page units.
+  static const double _gap = 8;
+
+  static const Size _unknownSize = Size(240, 160);
+
+  /// The pictures, PDF pages and TikZ pictures this holds, on the page by
+  /// themselves: as large as they were in the text, one beneath the other
+  /// from the page's origin. Null where it holds anything else, text or a
+  /// file, which stays text.
+  List<NoteElement>? get asElements {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final objects = <NoteElement>[];
+    var y = 0.0;
+    for (final block in blocks) {
+      final embed = block.embed;
+      if (embed == null) {
+        // The empty lines a picture was cut from with.
+        if (block.length == 0) continue;
+        return null;
+      }
+      if (embed.kind == EmbedKind.file) return null;
+      // A TikZ picture whose size is not known yet takes a picture's, and
+      // its drawing's proportions once it is drawn.
+      final size = embed.width > 0 && embed.height > 0
+          ? Size(embed.width, embed.height)
+          : _unknownSize;
+      objects.add(
+        embed.toElement(
+          frame: Frame(x: 0, y: y, width: size.width, height: size.height),
+          now: now,
+        ),
+      );
+      y += size.height + _gap;
+    }
+    return objects.isEmpty ? null : objects;
+  }
 }
 
 /// Whole things on the page: text boxes, pictures, PDF pages, drawings.

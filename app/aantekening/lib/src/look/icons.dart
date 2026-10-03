@@ -19,6 +19,9 @@ enum AppIcon {
   picture,
   pdf,
   formula,
+
+  /// A page with a formula on it: LaTeX to put in.
+  latex,
   cheatSheet,
   spelling,
   languages,
@@ -263,6 +266,22 @@ class _IconPainter extends CustomPainter {
           (6.5, 13),
           (9.5, 3),
           (14, 3),
+        ]);
+      case AppIcon.latex:
+        through(<(double, double)>[
+          (3, 2),
+          (10, 2),
+          (13, 5),
+          (13, 14),
+          (3, 14),
+        ], closed: true);
+        through(<(double, double)>[(10, 2), (10, 5), (13, 5)]);
+        through(<(double, double)>[
+          (5, 10),
+          (6, 9.5),
+          (7.4, 12),
+          (8.8, 7),
+          (11, 7),
         ]);
       case AppIcon.cheatSheet:
         box(3, 2, 13, 14);

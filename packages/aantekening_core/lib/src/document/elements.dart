@@ -145,6 +145,7 @@ sealed class NoteElement {
       'ink' => InkElement.fromJson(json),
       'image' => ImageElement.fromJson(json),
       'pdf' => PdfElement.fromJson(json),
+      'tikz' => TikzElement.fromJson(json),
       // A formula or a table on the page by itself, from before they were
       // written in text boxes, is read as a text box holding it; a group,
       // which nothing made, is left out, its members staying.
@@ -251,13 +252,14 @@ final class TextElement extends NoteElement {
   @override
   Iterable<String> get assetIds => <String>{
     for (final block in blocks)
-      if (block.embed case final embed?) embed.assetId,
+      if (block.embed case final embed? when embed.assetId.isNotEmpty)
+        embed.assetId,
   };
 
   @override
   void writeSearchText(StringBuffer out) {
     for (final block in blocks) {
-      final embedText = block.embed?.text;
+      final embedText = block.embed?.text ?? block.embed?.source;
       if (embedText != null) out.write(embedText);
       for (final run in block.runs) {
         out.write(run.text);
@@ -692,8 +694,80 @@ final class PdfElement extends NoteElement {
   );
 }
 
-/// Pictures, PDF pages and files sit on the page by themselves or in a text
-/// box, as objects in its text; these are the one's terms for the other.
+/// A TikZ picture on the page by itself, drawn from its [source] to fill its
+/// frame, as a picture fills its own.
+final class TikzElement extends NoteElement {
+  const TikzElement({
+    required super.id,
+    required super.frame,
+    required super.createdAt,
+    required super.updatedAt,
+    required this.source,
+    super.z,
+    super.locked,
+  });
+
+  /// The LaTeX it is drawn from: a `tikzpicture` environment or a `\tikz`.
+  final String source;
+
+  @override
+  String get type => 'tikz';
+
+  @override
+  BlockEmbed get asEmbed =>
+      BlockEmbed.tikz(source, width: frame.width, height: frame.height);
+
+  @override
+  void writeSearchText(StringBuffer out) => out.writeln(source);
+
+  TikzElement copyWith({
+    Frame? frame,
+    int? z,
+    bool? locked,
+    int? updatedAt,
+    String? source,
+  }) => TikzElement(
+    id: id,
+    frame: frame ?? this.frame,
+    createdAt: createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    source: source ?? this.source,
+    z: z ?? this.z,
+    locked: locked ?? this.locked,
+  );
+
+  @override
+  TikzElement withFrame(Frame frame) => copyWith(frame: frame);
+
+  @override
+  TikzElement withZ(int z) => copyWith(z: z);
+
+  @override
+  TikzElement withLocked(bool locked) => copyWith(locked: locked);
+
+  @override
+  TikzElement touch(int timestamp) => copyWith(updatedAt: timestamp);
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+    ...baseJson(),
+    'source': source,
+  };
+
+  static TikzElement fromJson(Map<String, Object?> json) => TikzElement(
+    id: readString(json, 'id'),
+    frame: Frame.fromJson(readObject(json, 'frame')),
+    createdAt: readInt(json, 'createdAt'),
+    updatedAt: readInt(json, 'updatedAt'),
+    source: readString(json, 'source'),
+    z: readInt(json, 'z'),
+    locked: readBool(json, 'locked'),
+  );
+}
+
+/// Pictures, PDF pages, files and TikZ pictures sit on the page by
+/// themselves or in a text box, as objects in its text; these are the one's
+/// terms for the other.
 extension EmbedOnPage on BlockEmbed {
   /// This object on the page by itself, in [frame], made at [now].
   NoteElement toElement({required Frame frame, required int now}) =>
@@ -714,6 +788,13 @@ extension EmbedOnPage on BlockEmbed {
           assetId: assetId,
           pageIndex: pageIndex,
           extractedText: text,
+        ),
+        EmbedKind.tikz => TikzElement(
+          id: Ulid.generate(),
+          frame: frame,
+          createdAt: now,
+          updatedAt: now,
+          source: source ?? '',
         ),
         // A file has no element of its own: on the page by itself it is a
         // text box holding just it.

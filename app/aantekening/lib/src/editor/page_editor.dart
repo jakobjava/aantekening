@@ -6,6 +6,8 @@ import 'dart:math' as math;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:aantekening_interchange/aantekening_interchange.dart'
+    show LatexText;
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/foundation.dart';
@@ -35,6 +37,7 @@ import '../shell/new_page_choice.dart';
 import '../spelling/proofreader.dart';
 import '../spelling/spelling.dart';
 import 'element_views.dart';
+import 'latex_dialog.dart';
 import 'media_import.dart';
 import 'note_clipboard.dart';
 import 'page_minimap.dart';
@@ -46,7 +49,7 @@ import 'ribbon/ribbon.dart';
 import 'sheet_choices.dart';
 import 'text/box_formatting.dart';
 import 'text/cheat_sheet.dart';
-import 'text/formula_preview.dart';
+import 'text/formula_window.dart' show editTikzSource;
 import 'text/math_syntax.dart';
 import 'text/math_templates.dart';
 import 'text/text_box_controller.dart';
@@ -154,6 +157,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
           _ribbonCommands.onInsertPdf,
           enabled: () => _pageShowing,
         ),
+        AppCommand.insertLatex: CommandAction(
+          _ribbonCommands.onInsertLatex,
+          enabled: () => _pageShowing,
+        ),
         AppCommand.zoomIn: CommandAction(
           _ribbonCommands.onZoomIn,
           enabled: () => _pageShowing,
@@ -201,14 +208,6 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   final ValueNotifier<bool> _saving = ValueNotifier<bool>(false);
   late final BoxFormatting _boxFormatting = BoxFormatting(_controller);
 
-  /// Where on screen the source of the formula being edited is, for its
-  /// preview.
-  final ValueNotifier<Rect?> _formulaOnScreen = ValueNotifier<Rect?>(null);
-
-  /// Whether that is known yet. The preview waits for it rather than
-  /// appearing somewhere else first and then jumping beneath the formula.
-  final ValueNotifier<bool> _formulaPlaced = ValueNotifier<bool>(false);
-
   /// The tab showing before a formula brought the Math tab forward, to go
   /// back to when it is finished.
   RibbonTab? _tabBeforeMath;
@@ -232,6 +231,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     onInsertTextBox: _insertTextBox,
     onInsertImage: () => unawaited(_insertMedia(MediaKind.image)),
     onInsertPdf: () => unawaited(_insertMedia(MediaKind.pdf)),
+    onInsertLatex: () => unawaited(_insertLatex()),
     onZoomIn: () => _controller.zoomAtCenter(_zoomStep),
     onZoomOut: () => _controller.zoomAtCenter(1 / _zoomStep),
     onFitPage: () => _controller.zoomToFit(_controller.viewSize),
@@ -319,8 +319,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       ..passesOver = _onlyCaret
       ..addListener(_onCanvasChanged);
     _stopTracingView = traceViewOf(_controller);
-    _textController.formula.addListener(_onFormulaChanged);
-    _textController.formulaAnchor.addListener(_placeFormulaPanel);
+    _textController.formulaField.addListener(_onFormulaChanged);
     // The syntax formulas are typed in is the person's preference, which a
     // text box can switch too.
     _textController.formulaSyntax
@@ -367,15 +366,12 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     if (pageId != null && _ready && _controller.isDirty) {
       unawaited(_persist(pageId, _controller.document));
     }
-    _textController.formula.removeListener(_onFormulaChanged);
-    _textController.formulaAnchor.removeListener(_placeFormulaPanel);
+    _textController.formulaField.removeListener(_onFormulaChanged);
     _textController.formulaSyntax.removeListener(_onSyntaxChosen);
     _controller.dispose();
     _textController.dispose();
     _canvasFocus.dispose();
     _saving.dispose();
-    _formulaOnScreen.dispose();
-    _formulaPlaced.dispose();
     super.dispose();
   }
 
@@ -433,7 +429,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     return Column(
       children: <Widget>[
         if (_error case final error?) _ErrorBanner(error: error),
-        if (_ready) Expanded(child: _scrolled(_pageArea(pageId, highlight))),
+        if (_ready) Expanded(child: _scrolled(_canvas(pageId, highlight))),
       ],
     );
   }
@@ -482,34 +478,6 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       ],
     );
   }
-
-  /// The page, and over it the preview of the formula being typed.
-  Widget _pageArea(String pageId, SearchTerms? highlight) => Stack(
-    children: <Widget>[
-      Positioned.fill(child: _canvas(pageId, highlight)),
-      // The formula being edited is typed in its text box and shown
-      // typeset beneath, at a size that does not change with zoom.
-      Positioned.fill(
-        child: ValueListenableBuilder<bool>(
-          valueListenable: _formulaPlaced,
-          builder: (context, placed, _) => !placed
-              ? const SizedBox.shrink()
-              : ValueListenableBuilder<FormulaSession?>(
-                  valueListenable: _textController.formula,
-                  builder: (context, session, _) => session == null
-                      ? const SizedBox.shrink()
-                      : CustomSingleChildLayout(
-                          delegate: _BelowFormula(_formulaOnScreen),
-                          child: FormulaPreview(
-                            session: session,
-                            onDone: _textController.finishFormula,
-                          ),
-                        ),
-                ),
-        ),
-      ),
-    ],
-  );
 
   Widget _canvas(String pageId, SearchTerms? highlight) {
     final pen = ref.watch(penPreferencesProvider);

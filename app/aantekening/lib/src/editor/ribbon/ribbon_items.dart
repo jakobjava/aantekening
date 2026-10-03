@@ -51,6 +51,7 @@ class RibbonCommands {
     required this.onInsertTextBox,
     required this.onInsertImage,
     required this.onInsertPdf,
+    required this.onInsertLatex,
     required this.onZoomIn,
     required this.onZoomOut,
     required this.onFitPage,
@@ -71,6 +72,10 @@ class RibbonCommands {
   final VoidCallback onInsertTextBox;
   final VoidCallback onInsertImage;
   final VoidCallback onInsertPdf;
+
+  /// Asks for LaTeX, and puts it into the text being edited, or onto the
+  /// page.
+  final VoidCallback onInsertLatex;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
   final VoidCallback onFitPage;
@@ -367,9 +372,13 @@ class RibbonItemView extends ConsumerWidget {
           onPressed: commands.onFormula,
         ),
       ),
-      RibbonItem.formulaSyntax => const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 2, vertical: 3),
-        child: MathSyntaxToggle(),
+      RibbonItem.formulaSyntax => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+        child: _TextCommand(
+          text: text,
+          builder: (state, _) =>
+              MathSyntaxToggle(latexOnly: state.inFormula && state.latexOnly),
+        ),
       ),
       RibbonItem.mathCheatSheet => RibbonLargeButton(
         label: item.label,
@@ -420,6 +429,17 @@ class RibbonItemView extends ConsumerWidget {
         tooltip:
             '${EditorKey.formula.tooltip}\nWritten in place, in a text box',
         onPressed: commands.onFormula,
+      ),
+      RibbonItem.insertLatex => _TextCommand(
+        text: text,
+        builder: (state, enabled) => RibbonLargeButton(
+          label: item.label,
+          icon: icon,
+          tooltip: text.isActive
+              ? 'Put LaTeX — text and formulas — into the text box'
+              : 'Put LaTeX — text and formulas — onto the page, in a text box',
+          onPressed: commands.onInsertLatex,
+        ),
       ),
       RibbonItem.select => tool(CanvasTool.select, AppCommand.selectTool),
       RibbonItem.lasso => tool(CanvasTool.lasso, AppCommand.lassoTool),

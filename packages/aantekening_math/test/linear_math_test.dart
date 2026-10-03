@@ -73,6 +73,13 @@ void main() {
     test('allows a negative exponent', () {
       expectLatex('x^-1', 'x^{-1}');
     });
+
+    test('takes a sign alone as a charge', () {
+      expectLatex('H_3O^+', 'H_3 O^+');
+      expectLatex('H_3O^+ + OH^-', 'H_3 O^+ + O H^-');
+      expectLatex('(e^-)', r'\left( e^- \right)');
+      expectLatex('x^-a b', 'x^{-a} b');
+    });
   });
 
   group('roots', () {

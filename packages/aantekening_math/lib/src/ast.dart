@@ -358,6 +358,29 @@ final class MatrixNode extends MathNode {
   }
 }
 
+/// A LaTeX command with the groups typed against it — `\overbrace{a+b}`,
+/// `\xleftarrow[a]{b}` — taken as one, so a script after it is the whole
+/// command's.
+final class CommandNode extends MathNode {
+  const CommandNode(this.command, this.arguments);
+
+  final String command;
+
+  /// Each group in order, and whether it was in brackets: an optional one.
+  final List<({bool optional, MathNode content})> arguments;
+
+  @override
+  void writeLatex(StringBuffer out) {
+    out.write(command);
+    for (final (:optional, :content) in arguments) {
+      out
+        ..write(optional ? '[' : '{')
+        ..write(content.toLatex())
+        ..write(optional ? ']' : '}');
+    }
+  }
+}
+
 /// LaTeX passed through as it is: a command the linear syntax has no word
 /// for, or a fragment quoted in backticks.
 final class RawNode extends MathNode {

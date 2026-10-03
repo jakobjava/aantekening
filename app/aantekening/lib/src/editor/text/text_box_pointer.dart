@@ -27,6 +27,25 @@ extension _Pointer on TextBoxEditorState {
     }
     final box = context.findRenderObject();
     if (box is! RenderBox) return;
+    // A handle of a picked picture or PDF page resizes it rather than moving
+    // the caret or the box, though it lies a little outside the object, over
+    // the lines beside it or the band. The object stays picked while it is
+    // dragged.
+    final grabbed = _handleAt(event.position);
+    if (grabbed != null) {
+      if (!widget.isEditing) widget.onStartEditing?.call();
+      _focusNode.requestFocus();
+      final index = grabbed.block;
+      _select(RichSelection(RichPosition(index, 0), RichPosition(index, 1)));
+      _resize = (
+        block: index,
+        handle: grabbed.handle,
+        from: event.position,
+        width: _object(index)!.size.width,
+      );
+      return;
+    }
+
     if (box.globalToLocal(event.position).dy < TextBoxEditor.grabBand) {
       // The band picks the box up whole, as a box rather than the text in
       // it, so typing in it ends: the page shows it picked, everything in it
@@ -73,22 +92,6 @@ extension _Pointer on TextBoxEditorState {
     }
     if (!widget.isEditing) widget.onStartEditing?.call();
     _focusNode.requestFocus();
-
-    // A corner of a picture or PDF page resizes it rather than moving the
-    // caret. The object is picked as the drag starts, so its handles stay in
-    // view while it is dragged.
-    final corner = _cornerAt(hit.position.block, event.position);
-    if (corner != null) {
-      final index = hit.position.block;
-      _select(RichSelection(RichPosition(index, 0), RichPosition(index, 1)));
-      _resize = (
-        block: index,
-        corner: corner,
-        from: event.position,
-        width: _object(index)!.size.width,
-      );
-      return;
-    }
 
     _clicks.press(event.position);
     _dragPointer = event.pointer;
@@ -211,12 +214,16 @@ extension _Pointer on TextBoxEditorState {
   }
 
   /// Where in the source of the formula being edited a point at [global]
-  /// lands, if it is on the source drawn over the text.
+  /// lands, if it is on the source drawn beneath the formula; where the
+  /// caret already is, if it is on the formula typeset in the text.
   RichPosition? _hitInOpenFormula(Offset global, _OpenFormula formula) {
     final layer = _formulaLayerBox;
     final span = _formulaSpan(formula);
     if (layer == null || span == null) return null;
-    final offset = layer.sourceOffsetAt(layer.globalToLocal(global));
+    final local = layer.globalToLocal(global);
+    final offset = layer.onFormula(local)
+        ? _selection.extent.offset - span.start
+        : layer.sourceOffsetAt(local);
     if (offset == null) return null;
     return RichPosition(
       formula.block,
@@ -279,18 +286,21 @@ extension _Pointer on TextBoxEditorState {
     );
   }
 
-  /// The corner of the object on block [index] that a press at [global]
-  /// takes hold of, or null where the press takes hold of none: a handle is
-  /// only there while the object is picked.
-  EmbedCorner? _cornerAt(int index, Offset global) {
-    final object = _embedSelected(index) ? _object(index) : null;
-    return object == null
-        ? null
-        : EmbedHandles.at(
-            object.size,
-            object.globalToLocal(global),
-            pixel: screenPixelIn(object),
-          );
+  /// The handle of a picked object in the text that a press at [global]
+  /// takes hold of, and the block the object is on; null where it takes
+  /// hold of none. Handles are only there while an object is picked.
+  ({int block, SelectionHandle handle})? _handleAt(Offset global) {
+    for (var index = 0; index < _blocks.length; index++) {
+      final object = _embedSelected(index) ? _object(index) : null;
+      if (object == null) continue;
+      final handle = EmbedHandles.at(
+        object.size,
+        object.globalToLocal(global),
+        pixel: logicalPixelIn(object),
+      );
+      if (handle != null) return (block: index, handle: handle);
+    }
+    return null;
   }
 
   /// Resizes the object being dragged so that its corner follows the pointer.
@@ -309,17 +319,17 @@ extension _Pointer on TextBoxEditorState {
     final widest = widget.element.autoWidth
         ? _widest
         : math.max(_minEmbedWidth, (row?.size.width ?? 0) - indent);
+    // As it is drawn: a TikZ picture is as tall as its drawing makes it.
+    final aspect = object.size.aspectRatio;
     final width =
-        (resize.width + resize.corner.widening(drag, embed.aspectRatio)).clamp(
-          _minEmbedWidth,
-          widest,
-        );
-    if ((width - embed.width).abs() < 0.5) return;
+        (resize.width + EmbedHandles.widening(resize.handle, drag, aspect))
+            .clamp(_minEmbedWidth, widest);
+    if ((width - object.size.width).abs() < 0.5) return;
     _commit((
       blocks: RichTextEditing.replaceEmbed(
         _blocks,
         resize.block,
-        embed.copyWith(width: width, height: width / embed.aspectRatio),
+        embed.copyWith(width: width, height: width / aspect),
       ),
       selection: _selection,
     ), EditKind.resizing);
@@ -337,17 +347,10 @@ extension _Pointer on TextBoxEditorState {
     if (event.pointer != _dragPointer || _clicks.count != 1) return;
     final formula = _formula;
     if (formula != null) {
-      // A drag that starts in the formula being edited selects within it.
-      final paragraph = _paragraph(formula.block);
-      final span = _formulaSpan(formula);
-      if (paragraph == null || span == null) return;
-      final view = _viewFor(formula.block);
-      final position = paragraph.paragraph.getPositionForOffset(
-        paragraph.globalToLocal(event.position),
-      );
-      final model = view.toModel(position.offset).clamp(span.start, span.end);
-      final extent = RichPosition(formula.block, model);
-      if (extent != _selection.extent) {
+      // A drag that starts in the formula being edited selects within its
+      // source.
+      final extent = _hitInOpenFormula(event.position, formula);
+      if (extent != null && extent != _selection.extent) {
         _select(RichSelection(_selection.base, extent));
       }
       return;

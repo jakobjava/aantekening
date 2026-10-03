@@ -143,13 +143,13 @@ class BlockView {
 
   /// Builds the span the layout draws, with links drawn in [mark].
   ///
-  /// The formula being edited keeps the place it had when it was [opened],
-  /// as LaTeX, empty for a new one: as large as it was typeset then, and
-  /// blank, its source being drawn over it.
+  /// The formula being edited is typeset as it is [open], as LaTeX: as its
+  /// source last could be, its source being drawn beneath it; empty while
+  /// nothing typesets, as for a new one.
   InlineSpan span({
     required TextStyle base,
     required Color mark,
-    String opened = '',
+    String open = '',
   }) {
     final blockStyle = RichTextStyles.blockStyleOf(block, base);
     final display = isDisplayFormula;
@@ -158,7 +158,7 @@ class BlockView {
       style: blockStyle,
       children: <InlineSpan>[
         for (var i = 0; i < block.runs.length; i++)
-          _runSpan(block.runs[i], i, blockStyle, display, mark, opened),
+          _runSpan(block.runs[i], i, blockStyle, display, mark, open),
       ],
     );
   }
@@ -169,7 +169,7 @@ class BlockView {
     TextStyle blockStyle,
     bool display,
     Color mark,
-    String opened,
+    String open,
   ) {
     if (!run.isMath) {
       return TextSpan(
@@ -185,35 +185,22 @@ class BlockView {
       link: mark,
     );
     final style = marks == null ? blockStyle : blockStyle.merge(marks);
-    if (index == openRun) {
+    if (index == openRun && open.trim().isEmpty) {
       return WidgetSpan(
         alignment: PlaceholderAlignment.baseline,
         baseline: TextBaseline.alphabetic,
-        child: opened.trim().isEmpty
-            ? _room(
-                RichTextStyles.emptyFormulaWidth,
-                RichTextStyles.formulaSource(
-                  blockStyle,
-                  run.marks,
-                  accent: mark,
-                ),
-              )
-            : Opacity(
-                opacity: 0,
-                child: TypesetFormulas.of(
-                  opened,
-                  MathMode.latex,
-                  display,
-                  style,
-                ),
-              ),
+        child: _room(
+          RichTextStyles.emptyFormulaWidth,
+          RichTextStyles.formulaSource(blockStyle, run.marks, accent: mark),
+        ),
       );
     }
     final formula = TypesetFormulas.of(
-      run.text,
-      run.math!,
+      index == openRun ? open : run.text,
+      index == openRun ? MathMode.latex : run.math!,
       display,
       inverted ? style.copyWith(color: RichTextStyles.inverse.color) : style,
+      packages: run.imported,
     );
     return WidgetSpan(
       alignment: PlaceholderAlignment.baseline,
@@ -275,17 +262,19 @@ abstract final class TypesetFormulas {
   /// lines whose boxes would otherwise meet.
   static const double _clearance = 0.1;
 
-  static final LinkedHashMap<(String, MathMode, bool, TextStyle), Widget>
-  _cache = LinkedHashMap<(String, MathMode, bool, TextStyle), Widget>();
+  static final LinkedHashMap<(String, MathMode, bool, TextStyle, bool), Widget>
+  _cache = LinkedHashMap<(String, MathMode, bool, TextStyle, bool), Widget>();
 
-  /// The widget for [source], typeset in display style when [display] is set.
+  /// The widget for [source], typeset in display style when [display] is set,
+  /// reading the packages LaTeX brought in uses if [packages] is.
   static Widget of(
     String source,
     MathMode mode,
     bool display,
-    TextStyle style,
-  ) {
-    final key = (source, mode, display, style);
+    TextStyle style, {
+    bool packages = false,
+  }) {
+    final key = (source, mode, display, style, packages);
     final cached = _cache.remove(key);
     if (cached != null) return _cache[key] = cached;
 
@@ -302,6 +291,7 @@ abstract final class TypesetFormulas {
           mode: mode,
           displayStyle: display,
           textStyle: style,
+          packages: packages,
         ),
       ),
     );

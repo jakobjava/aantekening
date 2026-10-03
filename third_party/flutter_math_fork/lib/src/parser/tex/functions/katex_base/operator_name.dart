@@ -31,9 +31,19 @@ GreenNode _operatorNameHandler(TexParser parser, FunctionContext context) {
   var name = parser.parseArgNode(mode: null, optional: false)!;
   final scripts =
       parser.parseScripts(allowLimits: context.funcName == '\\operatorname*');
-  final body = parser.parseGroup(context.funcName,
-          optional: false, greediness: 1, mode: null, consumeSpaces: true) ??
-      EquationRowNode.empty();
+  // aantekening: what follows is taken as the operator's argument only where
+  // it can be one: another operator — \liminf after \limsup, say — or
+  // anything else taking arguments of its own stands by itself.
+  parser.consumeSpaces();
+  final next = functions[parser.fetch().text];
+  final body = next != null && next.greediness <= 1
+      ? EquationRowNode.empty()
+      : parser.parseGroup(context.funcName,
+              optional: false,
+              greediness: 1,
+              mode: null,
+              consumeSpaces: true) ??
+          EquationRowNode.empty();
 
   name = StyleNode(
     children: name.expandEquationRow(),

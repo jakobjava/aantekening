@@ -54,6 +54,53 @@ void main() {
     expect(block.copyWith(kind: TextBlockKind.paragraph).marker, isNull);
   });
 
+  test(
+    'a TikZ picture is an object, its source kept, a formula read as one',
+    () {
+      const picture = BlockEmbed.tikz(
+        '\\begin{tikzpicture}\n  \\draw (0,0) -- (1,0);\n\\end{tikzpicture}',
+      );
+      expect(BlockEmbed.fromJson(picture.toJson()), picture);
+      expect(picture.copyWith(width: 90).source, picture.source);
+      const box = TextElement(
+        id: 'b',
+        frame: Frame(x: 0, y: 0, width: 100, height: 100),
+        createdAt: 0,
+        updatedAt: 0,
+        blocks: <TextBlock>[TextBlock.embedded(picture)],
+      );
+      expect(box.assetIds, isEmpty, reason: 'it is stored in the text');
+
+      // On the page by itself it is a picture of its own, and back in text
+      // as large as it was there.
+      final alone = picture.toElement(frame: box.frame, now: 1) as TikzElement;
+      expect(alone.source, picture.source);
+      final again = NoteElement.fromJson(alone.toJson());
+      expect(again, isA<TikzElement>());
+      expect((again! as TikzElement).source, picture.source);
+      expect(alone.asEmbed.source, picture.source);
+      expect(alone.asEmbed.width, box.frame.width);
+      expect(alone.assetIds, isEmpty);
+
+      // Kept as a formula alone on its line, it is read as a picture; in a
+      // line of text it stays a formula.
+      final formula = TextBlock(
+        runs: <TextRun>[TextRun.imported(picture.source!)],
+        align: BlockAlign.center,
+      );
+      final read = TextBlock.fromJson(formula.toJson());
+      expect(read.embed, picture);
+      expect(read.align, BlockAlign.center);
+      const inLine = TextBlock(
+        runs: <TextRun>[
+          TextRun('A dot: '),
+          TextRun.imported(r'\tikz\fill circle (1pt);'),
+        ],
+      );
+      expect(TextBlock.fromJson(inLine.toJson()), inLine);
+    },
+  );
+
   test('attached files keep their names, and go on the page in a box', () {
     const embed = BlockEmbed(
       kind: EmbedKind.file,

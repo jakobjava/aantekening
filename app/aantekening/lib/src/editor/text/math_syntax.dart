@@ -36,25 +36,31 @@ final mathSyntaxProvider = NotifierProvider<MathSyntaxController, MathMode>(
 );
 
 /// The switch between Simple and LaTeX syntax, as the Math tab and the
-/// formula being edited show it.
+/// cheat sheet show it. While a formula that can only be typed as LaTeX is
+/// open, [latexOnly], it shows LaTeX, and switching waits until that
+/// formula is finished.
 class MathSyntaxToggle extends ConsumerWidget {
-  const MathSyntaxToggle({super.key});
+  const MathSyntaxToggle({this.latexOnly = false, super.key});
+
+  final bool latexOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => ChoiceRow<MathMode>(
     choices: const <MathMode>[MathMode.linear, MathMode.latex],
-    selected: ref.watch(mathSyntaxProvider),
+    selected: latexOnly ? MathMode.latex : ref.watch(mathSyntaxProvider),
     compact: true,
     labelOf: (mode) => switch (mode) {
       MathMode.linear => 'Simple',
       MathMode.latex => 'LaTeX',
     },
-    tooltipOf: (mode) => EditorKey.formulaSyntax.tooltipOf(switch (mode) {
-      MathMode.linear =>
-        'Type it as you would say it: x^2, a/b, sqrt(x), sum_(i=1)^n',
-      MathMode.latex =>
-        r'Type LaTeX, as formulas are stored: x^{2}, \frac{a}{b}',
-    }),
+    tooltipOf: (mode) => latexOnly
+        ? 'Brought in as LaTeX, or a TikZ picture: typed as LaTeX'
+        : EditorKey.formulaSyntax.tooltipOf(switch (mode) {
+            MathMode.linear =>
+              'Type it as you would say it: x^2, a/b, sqrt(x), sum_(i=1)^n',
+            MathMode.latex =>
+              r'Type LaTeX, as formulas are stored: x^{2}, \frac{a}{b}',
+          }),
     onSelected: ref.read(mathSyntaxProvider.notifier).set,
   );
 }

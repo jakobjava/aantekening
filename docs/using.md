@@ -6,7 +6,10 @@ The default tool types and selects: click empty paper and start typing, click
 a text box to place the caret, drag a box by the band along its top. Click a
 picture, PDF page or ink to select it; drag across empty paper to select
 several. Drag a corner to resize in proportion, a side to stretch that way,
-and the knob above the box to rotate (hold Shift for 15° steps).
+and the knob above the box to rotate (hold Shift for 15° steps). A picture,
+PDF page or TikZ picture in a text box is picked by a click too, with the
+same handles; there a side keeps its proportions as well. Cut out of a box
+and pasted on empty paper, it lies on the page by itself again.
 
 **Lasso select** (L), beside it on the Draw tab, picks what a loop is drawn
 round: handwriting stroke by stroke, so one word can be taken out of a line,
@@ -162,11 +165,20 @@ right-click a cell to add or remove rows and columns.
 
 ## Formulas
 
-Press Alt+= and type; the formula is typeset live beneath, and in the line
-once finished (Enter or Esc). Its source is typed over the text, so nothing
-around it moves until it is finished. Arrowing into or clicking a formula
-shows its source again. Tab moves to the next place a structure left to fill in. A
-formula alone on its line is typeset large; end it with `#` to centre it.
+Press Alt+= and type. The formula is typeset in its place as you type,
+outlined, and its source is typed in a strip just beneath its line, as wide
+as the box, over the text below rather than pushing it down. While the
+source is not yet a formula — a bracket still open — the formula stays as it
+last was and the strip says what is missing. Once the source is longer
+than 80 characters, or on more than one line, it moves to a window of its
+own, typeset in its place behind it all the same; it comes back beneath the
+line once it is shorter than 60 and on one line. Enter or Esc finishes it,
+in the window too; Shift+Enter there starts a new line. Arrowing into or
+clicking a formula shows its source again. Tab moves to the next place a
+structure left to fill in. A formula alone on its line is typeset large;
+end it with `#` to centre it. Finishing a centred formula takes the caret
+on to the start of the line beneath, and text typed beside one, or a line
+broken off it, is not centred.
 
 Formulas are stored as LaTeX and can be typed in LaTeX or in the Simple
 syntax, which **Math → Cheat sheet** lists in full:
@@ -176,7 +188,99 @@ syntax, which **Math → Cheat sheet** lists in full:
 `bmat`, `vmat`, `matrix`), `cases(x, x>0; -x, x<0)`, `abs(x)`, `norm(v)`,
 `set(1, 2)`, `binom(n, k)`, `n!`, `f'(x)`, `ket(psi)`, `bra(phi)`,
 `braket(phi, H, psi)`, Greek letters by name, `oo`, `->`, `<=`, `!=`, `+-`,
-`*`, `"text"`. Any `\command`, or LaTeX in backticks, passes through as it is.
+`*`, `"text"`. LaTeX can be typed among it: a `\command` with its braces —
+whose contents are read as Simple, `\boxed{a/b}` — environments
+(`\begin{align} … \end{align}`), text and fonts (`\text{…}`, `\mathbb{R}`)
+and `\left(` … `\right)` as they are, and anything in backticks.
+
+The typesetter reads amsmath, amssymb and mathtools as notes use them:
+`align`, `gather`, `equation`, `multline`, `split`, `alignat`, `cases`, the
+matrices (`pmatrix*[r]` too), `\tag`, `\dfrac`, `\binom`, `\overset`,
+`\xrightarrow`, `\boxed`, `\substack`, `\iint`, `\operatorname*`, and the
+rest. A formula is one equation: `\tag{2}` is set after it, and labels and
+numbering show nothing. `\newcommand`, `\def` and `\DeclareMathOperator`
+define commands for the formula they are in.
+
+**Settings → Formulas** holds your own preamble: commands
+(`\newcommand{\Rn}{\mathbb{R}^n}`, `\DeclareMathOperator`, `\def`) and TikZ
+styles (`\tikzset`) that every formula is typeset with.
+
+A TikZ picture — `\begin{tikzpicture} … \end{tikzpicture}` or `\tikz …;` —
+on a line of its own is a picture in the text, as a photo is: a click picks
+it, its corners resize it, and **right-click → Edit TikZ source** opens its
+source in a window, the picture drawn again as you type; Ctrl+Enter
+finishes. The window is as tall as the source, and scrolls only once it
+fills the screen; Ctrl+Z and Ctrl+Y undo and redo what was typed there.
+Cut out of the text and pasted on the paper, it lies on the page by
+itself, as a picture does, and is edited there the same way. A picture may
+define its own commands — `\def`, `\newcommand` with an optional first
+argument — before it uses them. A picture typed as a formula alone on its line becomes one when
+it is finished; one in a line of text stays a formula, typed as LaTeX.
+
+It is drawn as LaTeX draws it, at the size of the text around it:
+`\draw`, `\fill`, `\filldraw`, `\path`, `\shade`, `\node`, `\coordinate`,
+`\pic`, `\matrix`, scopes, `\foreach` and styles (`/.style`, `\tikzset`);
+lines (`--`, `-|`, `|-`), curves (`.. controls ..`, `to[bend left]`,
+`edge`), `rectangle`, `circle`, `ellipse`, `arc`, `grid`, `parabola`, `sin`,
+`cos` and `plot` (of coordinates or a function); nodes placed on paths,
+beside each other (`right=of a`) and labelled, their text typeset as LaTeX;
+colours (`red!30!blue`), line widths, dashes, rounded corners, opacity,
+shading, and scaling, shifting and rotating. Of TikZ's libraries:
+
+* **arrows** and **arrows.meta**: `->`, `-stealth`, `-{Latex[open]}`,
+  `*-o`, `|-{Bracket}`, `-Square`, `-Kite`.
+* **calc**: `($(a)!0.5!(b)$)`, `($(a)!1cm!(b)$)`, `($(a)!0.5!90:(b)$)`,
+  `($(a)!(c)!(b)$)` and sums such as `($(a) + 2*(1,0)$)`.
+* **positioning**, **fit** (`fit=(a)(b)`) and **through**
+  (`circle through=(b)`).
+* **shapes.geometric**: `diamond`, `regular polygon`, `star`,
+  `isosceles triangle`, `trapezium`, `semicircle`.
+* **intersections**: `name path=a`, `name intersections={of=a and b, by=x}`.
+* **angles** and **quotes**: `\pic[draw, "$\alpha$"] {angle=a--b--c}`,
+  `{right angle=a--b--c}`, `edge["$x$"]`, `node["label" below]`.
+* **decorations**: `zigzag`, `snake`, `coil`, `saw`, `bumps`,
+  `random steps`, `brace` (and `mirror`), `ticks`, `border`, and
+  `markings` with `\arrow{>}` or a `\node` along the path; `postaction`.
+* **patterns**: `north east lines`, `north west lines`, `horizontal lines`,
+  `vertical lines`, `grid`, `crosshatch`, `dots`, `crosshatch dots`.
+* **backgrounds**: `on background layer`, `pgfonlayer`.
+* **matrix**: `matrix of nodes`, `matrix of math nodes`, or `\node`s in
+  cells, named `m-1-2`.
+* **pgfplots**: an `axis` with `\addplot` of a function (`{x^2}`),
+  `coordinates`, a `table`, or a curve (`({cos(x)}, {sin(x)})`), with
+  `\closedcycle`, marks, a legend, `xlabel`, `ylabel`, `title`, `grid`,
+  `xtick`, limits, and `axis lines=box`, `left` or `middle`; other TikZ in
+  it is drawn in the plot's coordinates (`axis cs:`, `rel axis cs:`).
+
+A picture is always typed as LaTeX: it has no Simple syntax.
+
+**Insert → LaTeX** takes LaTeX of any length — a passage, or a whole
+document with its preamble — and puts it into the text box being typed in,
+or a box of its own: paragraphs, `\section`s as headings, lists, tables,
+bold, italic and links as text, `$…$` as formulas in the line, and `\[…\]`,
+`$$…$$` and the display environments as formulas on lines of their own,
+centred, and TikZ pictures, with the styles the document sets for them.
+Commands the LaTeX defines are written out where they are used.
+**Settings → Files → Import → LaTeX** (or **Import notes…** in the command
+palette) does the same with `.tex` files, each a page of the section open.
+
+A formula brought in this way stays LaTeX: it opens as LaTeX whichever
+syntax is chosen, and the switch stays on LaTeX while it is open. It can
+also use the packages documents use for physics, chemistry and units, which
+formulas typed here cannot (they would have no Simple syntax):
+
+- **physics** — sized brackets (`\qty(…)`, `\abs`, `\norm`, `\eval`,
+  `\order`, `\comm`), vectors (`\vb`, `\va`, `\vu`, `\grad`, `\div`,
+  `\curl`, `\laplacian`), derivatives (`\dd`, `\dv`, `\pdv`, `\fdv`),
+  Dirac's notation (`\bra`, `\ket`, `\braket`, `\ketbra`, `\expval`,
+  `\mel`), matrices (`\mqty`, `\pmqty`, `\imat`, `\dmat`, …), operators
+  and `\qq{…}`, `\qif` and the other words set between quads;
+- **mhchem** — `\ce{2H2 + O2 -> 2H2O}`: formulas, charges, isotopes,
+  hydrates, bonds, states, arrows labelled above and below, gas and
+  precipitate; and `\pu{8.314 J K-1 mol-1}`;
+- **siunitx** — `\num`, `\si` and `\unit`, `\SI` and `\qty`, `\ang`, and
+  the ranges and lists, units by name (`\kilo\metre\per\second\squared`,
+  `\km`) or as written (`kg.m/s^2`).
 
 ## The AI
 

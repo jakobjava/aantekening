@@ -51,14 +51,35 @@ const eqnArrayEntries = {
     numArgs: 0,
     handler: _casesHandler,
   ),
-  ['aligned']: EnvSpec(
+  // aantekening: amsmath's display environments are set as the ones they
+  // are made of — a formula is one equation, numbered by nothing.
+  [
+    'aligned',
+    'align',
+    'align*',
+    'flalign',
+    'flalign*',
+    'split',
+  ]: EnvSpec(
     numArgs: 0,
     handler: _alignedHandler,
   ),
   // aantekening: as KaTeX sets it — one column, each row centred and in
   // display style.
-  ['gathered']: EnvSpec(numArgs: 0, handler: _gatheredHandler),
-  ['alignedat']: EnvSpec(numArgs: 1, handler: _alignedAtHandler),
+  [
+    'gathered',
+    'gather',
+    'gather*',
+    'equation',
+    'equation*',
+    'multline',
+    'multline*',
+  ]: EnvSpec(numArgs: 0, handler: _gatheredHandler),
+  [
+    'alignedat',
+    'alignat',
+    'alignat*',
+  ]: EnvSpec(numArgs: 1, handler: _alignedAtHandler),
 };
 
 GreenNode _casesHandler(TexParser parser, EnvContext context) {

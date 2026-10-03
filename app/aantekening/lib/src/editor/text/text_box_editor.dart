@@ -4,11 +4,14 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:aantekening_canvas/aantekening_canvas.dart'
+    show SelectionHandle, SelectionHandles;
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:aantekening_spell/aantekening_spell.dart' show WordSpan;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../../command_menu.dart';
@@ -25,6 +28,7 @@ import 'caret_blink.dart';
 import 'click_count.dart';
 import 'formula_overlay.dart';
 import 'formula_source.dart';
+import 'formula_window.dart';
 import 'list_numbering.dart';
 import 'math_templates.dart';
 import 'table_view.dart';
@@ -280,10 +284,14 @@ class TextBoxEditorState extends State<TextBoxEditor>
   _OpenFormula? _formula;
   final FormulaSource _source = FormulaSource();
 
-  /// The formula being edited as it was typeset when it was opened, as
-  /// LaTeX; empty for a new one. Its place in the text is kept that size
-  /// while it is edited, so nothing around it moves as its source is typed.
-  String _openedAs = '';
+  /// The formula being edited as it is typeset in its place, as LaTeX: its
+  /// source as it last could be, so a slip while typing leaves the formula
+  /// as it was rather than blanking it. Empty for a new one.
+  String _shown = '';
+
+  /// What keeps the source of the formula being edited from being typeset,
+  /// if anything does.
+  String? _problem;
 
   /// Lays out the source of the formula being edited, which is drawn over
   /// everything on the page ([_formulaField]), where that layer is.
@@ -317,9 +325,13 @@ class TextBoxEditorState extends State<TextBoxEditor>
     ),
   );
 
-  /// What the preview was last told about the formula being edited.
-  FormulaSession? _session;
-  Rect? _reportedAnchor;
+  /// The source of the formula being edited as the window it is typed in
+  /// shows it, while it is long enough to be typed in one
+  /// ([FormulaWindow]).
+  ValueNotifier<FormulaWindowSource?>? _window;
+
+  /// Whether the page was last told that a formula is being edited here.
+  bool _reportedOpen = false;
 
   /// The search whose first match was last reported to [TextBoxEditor.onMatchPlaced].
   SearchTerms? _placedMatchesOf;
@@ -358,9 +370,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
   int? _dragPointer;
 
-  /// The object being resized by one of its corners: which block it is on,
-  /// which corner is held, where the drag began and how wide it was then.
-  ({int block, EmbedCorner corner, Offset from, double width})? _resize;
+  /// The object being resized by one of its handles: which block it is on,
+  /// which handle is held, where the drag began and how wide it was then.
+  ({int block, SelectionHandle handle, Offset from, double width})? _resize;
+
+  /// The cursor over a handle of a picked object, while it is over one.
+  MouseCursor? _handleCursor;
 
   /// The table column being resized by its right-hand line: the block the
   /// table starts on, the column, where the drag began and how wide the
@@ -416,7 +431,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       );
       _undoSteps.breakStep();
       _input.sync();
-      // The preview shows what undo left, or closes if the formula is gone.
+      // The formula shows what undo left, or closes if it is gone.
       _reportFormula();
     }
     if (old.controller != widget.controller && widget.isEditing) {
@@ -437,6 +452,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
     widget.proofreader?.removeListener(_onProofread);
     _followSyntax(null);
     widget.controller?.detach(this);
+    // A window left with nothing to type in goes once the frame is done.
+    final window = _window;
+    if (window != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => window.value = null);
+    }
     _input.close();
     _blink.stop();
     _focusNode
@@ -454,9 +474,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
     widget.controller?.attach(this);
     _followSyntax(widget.controller);
     // A click on a formula opens it before the box is attached; tell the
-    // preview now.
+    // page now.
     if (_formula != null) {
-      _session = null;
+      _reportedOpen = false;
       _reportFormula();
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -590,7 +610,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
   void toggleFormula() {
     _focusNode.requestFocus();
     if (_formula != null) {
-      _closeFormula(emit: true);
+      _closeFormula(emit: true, onwards: true);
       return;
     }
     // With a formula selected, the shortcut opens it rather than adding
@@ -646,19 +666,22 @@ class TextBoxEditorState extends State<TextBoxEditor>
   @override
   void finishFormula({bool after = true}) {
     if (_formula == null) return;
-    _closeFormula(emit: true, after: after);
+    _closeFormula(emit: true, after: after, onwards: true);
     _focusNode.requestFocus();
   }
 
   @override
-  void insertEmbeds(List<BlockEmbed> embeds) {
-    if (embeds.isEmpty) return;
+  void insertEmbeds(List<BlockEmbed> embeds) => insertBlocks(<TextBlock>[
+    for (final embed in embeds) TextBlock.embedded(embed),
+  ]);
+
+  @override
+  void insertBlocks(List<TextBlock> blocks) {
+    if (blocks.isEmpty) return;
     _closeFormula(emit: true);
     _focusNode.requestFocus();
     _commit(
-      RichTextEditing.insertFragment(_blocks, _selection, <TextBlock>[
-        for (final embed in embeds) TextBlock.embedded(embed),
-      ]),
+      RichTextEditing.insertFragment(_blocks, _selection, blocks),
       EditKind.other,
     );
   }
@@ -706,6 +729,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
         marks: marks,
         blockKind: block.isEmbed ? TextBlockKind.paragraph : block.kind,
         inFormula: formula != null,
+        latexOnly: _openIsLatexOnly,
         fontSize: sample.size ?? RichTextStyles.defaultPointsFor(block),
         font: sample.font,
         textColor: sample.color,
@@ -776,11 +800,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
         rows.add((_buildTable(table, base, paint, ordinals, focused), 0));
         i = table.end;
       }
-    }
-    if (_formula != null && widget.isEditing) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _reportFormulaAnchor(),
-      );
     }
     if (widget.onMatchPlaced != null &&
         !identical(widget.highlight, _placedMatchesOf)) {
@@ -860,19 +879,36 @@ class TextBoxEditorState extends State<TextBoxEditor>
     return IgnorePointer(
       ignoring: widget.caretOnly,
       child: MouseRegion(
-        cursor: widget.interactive
-            ? SystemMouseCursors.text
-            : MouseCursor.defer,
+        cursor:
+            _handleCursor ??
+            (widget.interactive ? SystemMouseCursors.text : MouseCursor.defer),
         // Only a pointer hovering with no button held counts: one dragging
         // another box across this one is not pointing at it.
         onEnter: (event) {
           if (event.buttons == 0) setState(() => _hovering = true);
         },
-        onHover: (_) {
-          if (!_hovering) setState(() => _hovering = true);
+        onHover: (event) {
+          final grabbed = widget.interactive ? _handleAt(event.position) : null;
+          final cursor = grabbed == null
+              ? null
+              : SelectionHandles.cursorFor(
+                  grabbed.handle,
+                  widget.element.frame.rotation,
+                );
+          if (!_hovering || cursor != _handleCursor) {
+            setState(() {
+              _hovering = true;
+              _handleCursor = cursor;
+            });
+          }
         },
         onExit: (_) {
-          if (_hovering) setState(() => _hovering = false);
+          if (_hovering) {
+            setState(() {
+              _hovering = false;
+              _handleCursor = null;
+            });
+          }
         },
         child: Focus(
           focusNode: _focusNode,

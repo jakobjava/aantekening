@@ -166,7 +166,7 @@ extension _TextEditing on _PageEditorState {
   /// A formula opening brings the Math tab forward, as Office does with its
   /// equation tools; finishing it goes back to where the ribbon was.
   void _onFormulaChanged() {
-    final open = _textController.formula.value != null;
+    final open = _textController.formulaField.value != null;
     if (open != _formulaOpen) {
       _update(() => _formulaOpen = open);
       final ribbon = ref.read(ribbonProvider.notifier);
@@ -182,41 +182,6 @@ extension _TextEditing on _PageEditorState {
         if (before != null && tab == RibbonTab.math) ribbon.show(before);
       }
     }
-    _placeFormulaPanel();
-  }
-
-  /// Works out where on screen the formula being edited is, from where its
-  /// text box reports it and where the box is in view.
-  void _placeFormulaPanel() {
-    final id = _editingId;
-    final element = id == null ? null : _controller.elementById(id);
-    final local = _textController.formulaAnchor.value;
-    if (_textController.formula.value == null ||
-        element == null ||
-        local == null) {
-      _formulaOnScreen.value = null;
-      _formulaPlaced.value = false;
-      return;
-    }
-    final toPage = element.frame.localToPage;
-    final viewport = _controller.viewport;
-    Offset screen(Offset point) {
-      final page = toPage.apply(point.dx, point.dy);
-      return viewport.toScreen(Offset(page.x, page.y));
-    }
-
-    final corners = <Offset>[
-      screen(local.topLeft),
-      screen(local.topRight),
-      screen(local.bottomLeft),
-      screen(local.bottomRight),
-    ];
-    var rect = Rect.fromPoints(corners[0], corners[1]);
-    for (final corner in corners.skip(2)) {
-      rect = rect.expandToInclude(Rect.fromPoints(corner, corner));
-    }
-    _formulaOnScreen.value = rect;
-    _formulaPlaced.value = true;
   }
 
   /// Puts a structure or symbol from the ribbon into the formula being
@@ -255,6 +220,29 @@ extension _TextEditing on _PageEditorState {
       Offset(center.dx - TextBoxEditor.newBoxSize.width / 2, center.dy),
     );
     _startEditing(id, inFormula: true);
+  }
+
+  /// Asks for LaTeX, and puts what it writes — text, formulas, lists,
+  /// tables — into the box being edited at its caret, or into a box of its
+  /// own in the middle of the view.
+  Future<void> _insertLatex() async {
+    final source = await askForLatex(context);
+    if (source == null || !mounted) return;
+    final blocks = LatexText.read(source).blocks;
+    if (blocks.isEmpty) return;
+    if (_textController.isActive) {
+      _textController.insertBlocks(blocks);
+      return;
+    }
+    _controller.setTool(CanvasTool.select);
+    final center = _controller.viewCenter;
+    final box = _newTextBox(
+      Offset(center.dx - TextBoxEditor.maxAutoWidth / 2, center.dy),
+      blocks: blocks,
+    );
+    _controller
+      ..addElement(box)
+      ..select(box.id);
   }
 }
 

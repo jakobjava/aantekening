@@ -12,6 +12,20 @@ extension _Formulas on TextBoxEditorState {
   MathMode get _preferredSyntax =>
       widget.controller?.formulaSyntax.value ?? _source.syntax;
 
+  /// Whether the formula [run], [latex] as LaTeX, can only be typed as
+  /// LaTeX: one brought in as LaTeX, which may use what Simple syntax has no
+  /// words for, and a TikZ picture, which Simple syntax has none for.
+  static bool _latexOnly(TextRun run, String latex) =>
+      run.imported || TikzPicture.holds(latex);
+
+  /// Whether the formula being edited can only be typed as LaTeX.
+  bool get _openIsLatexOnly {
+    final formula = _formula;
+    if (formula == null || !_isMathRun(_blocks, formula)) return false;
+    final run = _blocks[formula.block].runs[formula.run];
+    return _latexOnly(run, _source.latexFor(run.text));
+  }
+
   /// Follows [controller]'s syntax setting, translating the open formula
   /// whenever it changes; null to stop following.
   void _followSyntax(TextBoxEditorController? controller) {
@@ -38,9 +52,10 @@ extension _Formulas on TextBoxEditorState {
   }
 
   /// Shows the open formula in [syntax], translated. What is stored stays
-  /// exactly as it was until something is typed.
+  /// exactly as it was until something is typed. A formula that can only
+  /// be typed as LaTeX stays LaTeX.
   void _switchSyntax(MathMode syntax) {
-    if (syntax == _source.syntax) return;
+    if (syntax == _source.syntax || _openIsLatexOnly) return;
     final formula = _formula;
     if (formula == null || !_isMathRun(_blocks, formula)) {
       _source.syntax = syntax;
@@ -58,7 +73,7 @@ extension _Formulas on TextBoxEditorState {
       _blocks,
       formula.block,
       formula.run,
-      TextRun.math(source, syntax, run.marks),
+      run.copyWith(text: source, math: syntax),
     );
     final span = _formulaSpan(formula)!;
     _update(() {
@@ -85,7 +100,7 @@ extension _Formulas on TextBoxEditorState {
       blocks,
       formula.block,
       formula.run,
-      TextRun.math(_source.latexFor(run.text), MathMode.latex, run.marks),
+      run.copyWith(text: _source.latexFor(run.text), math: MathMode.latex),
     );
   }
 
@@ -105,7 +120,7 @@ extension _Formulas on TextBoxEditorState {
       _blocks,
       formula.block,
       formula.run,
-      TextRun.math(source, _source.syntax, run.marks),
+      run.copyWith(text: source, math: _source.syntax),
     );
   }
 
@@ -120,7 +135,6 @@ extension _Formulas on TextBoxEditorState {
     );
     final start = RichTextEditing.runSpans(edit.blocks[block])[run].start;
     _formula = (block: block, run: run);
-    _openedAs = '';
     _source.closed();
     _commit((
       blocks: edit.blocks,
@@ -134,12 +148,12 @@ extension _Formulas on TextBoxEditorState {
   /// caret at its end or start.
   void _openFormula(_OpenFormula formula, {bool atEnd = true}) {
     if (!_isMathRun(_blocks, formula)) return;
-    _source.syntax = _preferredSyntax;
     final run = _blocks[formula.block].runs[formula.run];
     // Formulas are stored as LaTeX; one from an older page may still be in
     // Simple syntax.
     final legacy = run.math == MathMode.linear;
     final latex = LinearMath.latexFor(run.math!, run.text);
+    _source.syntax = _latexOnly(run, latex) ? MathMode.latex : _preferredSyntax;
     final source = FormulaSource.withCentring(
       FormulaSource.sourceIn(_source.syntax, latex),
       centred:
@@ -148,12 +162,11 @@ extension _Formulas on TextBoxEditorState {
     );
     _source.opened(latex, source);
     _formula = formula;
-    _openedAs = latex;
     _blocks = RichTextEditing.replaceRun(
       _blocks,
       formula.block,
       formula.run,
-      TextRun.math(source, _source.syntax, run.marks),
+      run.copyWith(text: source, math: _source.syntax),
     );
     if (legacy) _emitStored(record: false);
     final span = _formulaSpan(formula)!;
@@ -174,6 +187,23 @@ extension _Formulas on TextBoxEditorState {
   static bool _isAlone(TextBlock block) =>
       block.runs.length == 1 && block.runs.single.isMath;
 
+  /// [edit] of line [index] with what it made of that line, if it was a
+  /// formula centred alone on it, back where lines start wherever it no
+  /// longer is: the centring was the formula's. Text typed beside it, and
+  /// a line broken off it, are not centred.
+  RichEdit _centringKeptToFormula(int index, RichEdit edit) {
+    final before = _blocks[index];
+    if (!_isAlone(before) || before.align != BlockAlign.center) return edit;
+    final blocks = List<TextBlock>.of(edit.blocks);
+    final made = edit.blocks.length > _blocks.length ? 2 : 1;
+    for (var i = index; i < index + made && i < blocks.length; i++) {
+      if (!_isAlone(blocks[i]) && blocks[i].align == BlockAlign.center) {
+        blocks[i] = blocks[i].copyWith(align: BlockAlign.start);
+      }
+    }
+    return (blocks: blocks, selection: edit.selection);
+  }
+
   /// [blocks] with block [index], if it is a formula alone on its line,
   /// centred as its source said: centred if it ended with the centring mark,
   /// back where lines start if it was centred and no longer ends with it.
@@ -191,31 +221,164 @@ extension _Formulas on TextBoxEditorState {
     return <TextBlock>[...blocks]..[index] = block.copyWith(align: align);
   }
 
-  /// Tells the preview about the formula being edited, or that there is none.
+  /// Typesets the formula being edited in its place as its source now
+  /// stands, if it can be, and tells the page whether one is being edited,
+  /// for it to draw the field its source is typed in.
   void _reportFormula() {
-    final controller = widget.controller;
     final formula = _formula;
-    if (formula == null || _formulaSpan(formula) == null) {
-      if (_session == null) return;
-      _session = null;
-      _reportedAnchor = null;
-      controller?.reportFormula(this, null);
+    final open = formula != null && _formulaSpan(formula) != null;
+    if (open) {
+      final run = _blocks[formula.block].runs[formula.run];
+      final source = run.text;
+      final diagnostics = _source.diagnostics(source);
+      final latex = _source.latexFor(source);
+      final problem = diagnostics.isNotEmpty
+          ? diagnostics.first.message
+          : MathView.problemIn(
+              latex,
+              preamble: MathPreamble.read(context),
+              packages: run.imported,
+            );
+      if (problem == null ||
+          FormulaSource.centring(source).formula.trim().isEmpty) {
+        _shown = latex;
+      }
+      _problem = problem;
+    } else {
+      _shown = '';
+      _problem = null;
+    }
+    _placeSource();
+    if (open == _reportedOpen) return;
+    _reportedOpen = open;
+    widget.controller?.reportFormula(this, open ? _formulaField : null);
+  }
+
+  /// Moves the source of the formula being edited into a window of its own
+  /// once it grows long, and back beneath its line once it is short again
+  /// ([FormulaWindow]); while it is in one, shows the window what it now
+  /// is.
+  void _placeSource() {
+    // Nothing on the page is to change while it is being built: this waits
+    // for the frame to end when the formula is changed from outside.
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _placeSource();
+      });
+      return;
+    }
+    final formula = _formula;
+    final span = formula == null ? null : _formulaSpan(formula);
+    final window = _window;
+    if (formula == null || span == null || !widget.isEditing) {
+      if (window != null) _handBack(window);
       return;
     }
     final source = _blocks[formula.block].runs[formula.run].text;
-    final diagnostics = _source.diagnostics(source);
-    final session = FormulaSession(
-      latex: _source.latexFor(source),
-      error: diagnostics.isEmpty ? null : diagnostics.first.message,
+    if (!FormulaWindow.holds(source, already: window != null)) {
+      if (window != null) _handBack(window);
+      return;
+    }
+    final (source: _, :from, :to) = _sourceSelection(formula);
+    final shown = FormulaWindowSource(
+      value: TextEditingValue(
+        text: source,
+        selection: _selection.extent.offset < _selection.base.offset
+            ? TextSelection(baseOffset: to, extentOffset: from)
+            : TextSelection(baseOffset: from, extentOffset: to),
+      ),
+      marks: _sourceMarks(source),
+      problem: _problem,
+      latexOnly: _openIsLatexOnly,
     );
-    if (session == _session) return;
-    _session = session;
-    controller?.reportFormula(
-      this,
-      session,
-      anchor: _reportedAnchor,
-      field: _formulaField,
+    if (window != null) {
+      window.value = shown;
+      return;
+    }
+    final opened = ValueNotifier<FormulaWindowSource?>(shown);
+    _update(() => _window = opened);
+    unawaited(
+      showFormulaWindow(context, source: opened, onChanged: _editInWindow).then(
+        (finished) {
+          if (!finished || !identical(_window, opened)) return;
+          _update(() => _window = null);
+          finishFormula();
+        },
+      ),
     );
+  }
+
+  /// Closes [window], the source of the formula going back beneath its line
+  /// if it is still being edited.
+  void _handBack(ValueNotifier<FormulaWindowSource?> window) {
+    _update(() => _window = null);
+    window.value = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.isEditing) _focusNode.requestFocus();
+    });
+  }
+
+  /// Takes what was typed or selected in the window the formula being
+  /// edited is typed in.
+  void _editInWindow(TextEditingValue value) {
+    final formula = _formula;
+    final span = formula == null ? null : _formulaSpan(formula);
+    if (formula == null || span == null) return;
+    final source = _blocks[formula.block].runs[formula.run].text;
+    final selection = value.selection.isValid
+        ? value.selection
+        : TextSelection.collapsed(offset: value.text.length);
+    RichPosition at(int offset) =>
+        RichPosition(formula.block, span.start + offset);
+    final placed = RichSelection(
+      at(selection.baseOffset),
+      at(selection.extentOffset),
+    );
+    if (value.text == source) {
+      _select(placed);
+      return;
+    }
+    _commit((
+      blocks: RichTextEditing.replaceRunText(
+        _blocks,
+        formula.block,
+        formula.run,
+        value.text,
+      ),
+      selection: placed,
+    ), value.text.length < source.length ? EditKind.deleting : EditKind.typing);
+  }
+
+  /// Opens the source of the TikZ picture on block [index] in the window
+  /// formulas are typed in, the picture drawn again as it changes. Emptied,
+  /// the picture goes.
+  Future<void> _editPicture(int index) async {
+    final source = _blocks[index].embed?.source;
+    if (source == null) return;
+    _undoSteps.breakStep();
+    await editTikzSource(
+      context,
+      source: source,
+      onChanged: (changed) {
+        final embed = _blocks[index].embed;
+        if (embed?.source == null) return;
+        _commit((
+          blocks: RichTextEditing.replaceEmbed(
+            _blocks,
+            index,
+            embed!.copyWith(source: changed),
+          ),
+          selection: _selection,
+        ), EditKind.typing);
+      },
+    );
+    _undoSteps.breakStep();
+    if (!mounted) return;
+    if (_blocks[index].embed?.source?.trim().isEmpty ?? false) {
+      _commit(RichTextEditing.deleteEmbed(_blocks, index), EditKind.deleting);
+    }
+    _focusNode.requestFocus();
   }
 
   /// The layer the source of the formula being edited is drawn in.
@@ -224,32 +387,18 @@ extension _Formulas on TextBoxEditorState {
     return object is RenderFormulaLayer && object.hasSize ? object : null;
   }
 
-  /// Reports where the source of the formula being edited is drawn, in this
-  /// box's own page units, so its preview can sit beneath it.
-  void _reportFormulaAnchor() {
-    final session = _session;
-    if (_formula == null || session == null || !mounted) return;
-    final layer = _formulaLayerBox;
-    final rect = layer?.formulaBox;
-    final box = context.findRenderObject();
-    if (layer == null || rect == null || box is! RenderBox) return;
-    final anchor = MatrixUtils.transformRect(layer.getTransformTo(box), rect);
-    if (anchor == _reportedAnchor) return;
-    _reportedAnchor = anchor;
-    widget.controller?.reportFormula(
-      this,
-      session,
-      anchor: anchor,
-      field: _formulaField,
-    );
-  }
-
   /// Finishes the formula being edited, showing it typeset again, and places
   /// the caret after it (or before it, or at [caretOverride], given in the
   /// offsets of the source). A formula left empty is removed.
+  ///
+  /// Finished [onwards] — with Enter, Esc or Done — a formula centred alone
+  /// on its line leaves the caret at the start of the line after it, a new
+  /// one if there is none, as text goes on beneath a displayed formula:
+  /// after it on its own line the caret would stand in the middle.
   void _closeFormula({
     bool emit = false,
     bool after = true,
+    bool onwards = false,
     RichSelection? caretOverride,
   }) {
     final formula = _formula;
@@ -260,7 +409,6 @@ extension _Formulas on TextBoxEditorState {
     final latex = _source.latexFor(source);
     final (formula: written, :centred) = FormulaSource.centring(source);
     _formula = null;
-    _openedAs = '';
     _source.closed();
     _input.reconfigure();
     _reportFormula();
@@ -298,9 +446,9 @@ extension _Formulas on TextBoxEditorState {
       _blocks,
       formula.block,
       formula.run,
-      TextRun.math(latex, MathMode.latex, run.marks),
+      run.copyWith(text: latex, math: MathMode.latex),
     );
-    final blocks = _centredAsMarked(replaced, formula.block, centred: centred);
+    var blocks = _centredAsMarked(replaced, formula.block, centred: centred);
     final end = span.start + latex.length;
     RichPosition map(RichPosition p) {
       if (p.block != formula.block || p.offset <= span.start) return p;
@@ -310,11 +458,43 @@ extension _Formulas on TextBoxEditorState {
       return RichPosition(p.block, after ? end : span.start);
     }
 
-    final selection = caretOverride == null
+    var selection = caretOverride == null
         ? RichSelection.collapsed(
             RichPosition(formula.block, after ? end : span.start),
           )
         : RichSelection(map(caretOverride.base), map(caretOverride.extent));
+    final line = blocks[formula.block];
+    if (onwards &&
+        after &&
+        caretOverride == null &&
+        line.cell == null &&
+        _isAlone(line) &&
+        line.align == BlockAlign.center) {
+      final next = formula.block + 1;
+      if (next == blocks.length) {
+        blocks = <TextBlock>[...blocks, TextBlock(indent: line.indent)];
+      }
+      selection = RichSelection.collapsed(RichPosition(next, 0));
+    }
+    // A TikZ picture alone on its line is a picture in the text, as one
+    // brought in is.
+    if (_isAlone(line) && TikzPicture.holds(latex)) {
+      blocks = <TextBlock>[...blocks]
+        ..[formula.block] = TextBlock.embedded(
+          BlockEmbed.tikz(latex),
+          indent: line.indent,
+          align: line.align,
+          spacing: line.spacing,
+          cell: line.cell,
+        );
+      RichPosition onPicture(RichPosition p) => p.block == formula.block
+          ? RichPosition(p.block, p.offset > 0 ? 1 : 0)
+          : p;
+      selection = RichSelection(
+        onPicture(selection.base),
+        onPicture(selection.extent),
+      );
+    }
     if (!mounted) {
       _blocks = _wellFormed(blocks);
       _selection = selection;

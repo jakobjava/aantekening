@@ -182,8 +182,9 @@ class VisualRenderer {
           embed.pageIndex,
           pixelWidth,
         ),
-        // A file is no picture to show.
-        EmbedKind.file => Future<ui.Image?>.value(),
+        // A file is no picture to show, and a TikZ picture is told of as it
+        // is written.
+        EmbedKind.file || EmbedKind.tikz => Future<ui.Image?>.value(),
       };
 
   /// A picture or PDF page in a text box, drawn alone.

@@ -62,6 +62,7 @@ enum RibbonItem {
   picture('Picture', large: true, icon: AppIcon.picture),
   pdf('PDF printout', large: true, icon: AppIcon.pdf),
   insertFormula('Formula', large: true, icon: AppIcon.formula),
+  insertLatex('LaTeX', large: true, icon: AppIcon.latex),
   addSheet('Add sheet', large: true, icon: AppIcon.addSheet),
   paper('Paper', icon: AppIcon.paper),
   moveSheetUp('Move up', icon: AppIcon.sheetUp),
@@ -145,7 +146,10 @@ enum RibbonGroup implements ArrangementGroup<RibbonItem> {
     RibbonItem.picture,
     RibbonItem.pdf,
   ]),
-  symbols(RibbonTab.insert, 'Formulas', <RibbonItem>[RibbonItem.insertFormula]),
+  symbols(RibbonTab.insert, 'Formulas', <RibbonItem>[
+    RibbonItem.insertFormula,
+    RibbonItem.insertLatex,
+  ]),
   sheets(RibbonTab.home, 'Pages', <RibbonItem>[
     RibbonItem.addSheet,
     RibbonItem.paper,

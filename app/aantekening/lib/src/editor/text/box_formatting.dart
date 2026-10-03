@@ -135,4 +135,7 @@ class BoxFormatting implements TextEditorCommands {
 
   @override
   void insertEmbeds(List<BlockEmbed> embeds) {}
+
+  @override
+  void insertBlocks(List<TextBlock> blocks) {}
 }

@@ -846,9 +846,10 @@ class SelectionPainter extends CustomPainter {
 
     final frame = SelectionFrame.around(selected);
     if (frame != null) {
-      canvas.drawPath(
-        _polygon(SelectionHandles.outlineOf(frame, viewport)),
-        outline,
+      SelectionHandles.paintOutline(
+        canvas,
+        SelectionHandles.outlineOf(frame, viewport),
+        accent,
       );
       if (showHandles) _drawHandles(canvas, frame);
     }
@@ -903,28 +904,12 @@ class SelectionPainter extends CustomPainter {
         );
     }
 
-    for (final entry in positions.entries) {
-      if (entry.key == SelectionHandle.rotate) continue;
-      final isSide = entry.key.isSide;
-      final upright =
-          entry.key == SelectionHandle.left ||
-          entry.key == SelectionHandle.right;
-      // Handles turn with the box, so a side's bar always lies along it.
-      canvas
-        ..save()
-        ..translate(entry.value.dx, entry.value.dy)
-        ..rotate(frame.rotation);
-      const size = SelectionHandles.size;
-      final handle = Rect.fromCenter(
-        center: Offset.zero,
-        width: isSide && !upright ? size * 2.5 : size,
-        height: upright ? size * 2.5 : size,
-      );
-      canvas
-        ..drawRect(handle, fill)
-        ..drawRect(handle, ring)
-        ..restore();
-    }
+    SelectionHandles.paintHandles(
+      canvas,
+      positions,
+      accent,
+      rotation: frame.rotation,
+    );
   }
 
   static Path _polygon(List<Offset> points) => Path()..addPolygon(points, true);

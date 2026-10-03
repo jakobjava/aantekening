@@ -164,6 +164,12 @@ abstract final class SimpleSyntaxGuide {
       const SyntaxTopic('Words and LaTeX', <SyntaxExample>[
         SyntaxExample('x "if " x > 0', 'Words, in quotes'),
         SyntaxExample(r'\mathscr{L}', 'Any LaTeX command'),
+        SyntaxExample(r'\boxed{a/b}', 'Its braces read as Simple'),
+        SyntaxExample(r'\text{for all } x', 'Text, as LaTeX writes it'),
+        SyntaxExample(
+          r'\begin{aligned} a &= b \\ &= c \end{aligned}',
+          'Environments, as they are',
+        ),
         SyntaxExample(r'`\overset{!}{=}`', 'Any LaTeX, in backticks'),
       ]),
     ],

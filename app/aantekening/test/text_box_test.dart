@@ -6,7 +6,8 @@ import 'package:aantekening/src/editor/text/block_paragraph.dart';
 import 'package:aantekening/src/editor/text/block_widgets.dart';
 import 'package:aantekening/src/editor/text/cheat_sheet.dart';
 import 'package:aantekening/src/editor/text/formula_overlay.dart';
-import 'package:aantekening/src/editor/text/formula_preview.dart';
+import 'package:aantekening/src/editor/text/formula_window.dart';
+import 'package:aantekening/src/editor/text/math_syntax.dart';
 import 'package:aantekening/src/editor/text/shrink_to_width.dart';
 import 'package:aantekening/src/editor/text/table_view.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
@@ -17,7 +18,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide TableCell;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -243,7 +244,7 @@ void main() {
       await type(tester, 'Area ');
       await press(tester, LogicalKeyboardKey.equal, alt: true);
       await tester.pumpAndSettle();
-      expect(find.byType(FormulaPreview), findsOneWidget);
+      expect(formulaLayerOf(tester).formulaBox, isNotNull);
       await type(tester, 'pi r^2');
       await tester.pumpAndSettle();
 
@@ -252,16 +253,10 @@ void main() {
         const TextRun.math(r'\pi r^2', MathMode.latex),
       );
       expect(inFormula(tester), isTrue);
-      // Typed in the line itself, as its source; typeset only beneath.
+      // Typed as its source, beneath its line; typeset in its place as it
+      // is typed.
       expect(typedLine(tester), 'pi r^2');
-      expect(typesetInBox(), findsNothing);
-      expect(
-        find.descendant(
-          of: find.byType(FormulaPreview),
-          matching: find.byType(MathView),
-        ),
-        findsOneWidget,
-      );
+      expect(tester.widget<MathView>(typesetInBox()).source, r'\pi r^2');
 
       await press(tester, LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
@@ -271,7 +266,7 @@ void main() {
       expect(runs.map((run) => run.isMath), <bool>[false, true, false]);
       expect(runs[2].text, ' units');
       expect(inFormula(tester), isFalse);
-      expect(find.byType(FormulaPreview), findsNothing);
+      expect(formulaLayerOf(tester).formulaBox, isNull);
       expect(typesetInBox(), findsOneWidget);
     });
 
@@ -289,7 +284,7 @@ void main() {
         blocksOf(tester).single.runs.single,
         const TextRun.math('x', MathMode.latex),
       );
-      expect(find.byType(FormulaPreview), findsNothing);
+      expect(formulaLayerOf(tester).formulaBox, isNull);
     });
 
     testWidgets('switching syntax translates the formula', (tester) async {
@@ -305,10 +300,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(typedLine(tester), latex);
 
-      // The preview's switch does the same.
+      // The ribbon's switch does the same.
       await tester.tap(
         find.descendant(
-          of: find.byType(FormulaPreview),
+          of: find.byType(MathSyntaxToggle),
           matching: find.text('Simple'),
         ),
       );
@@ -401,13 +396,16 @@ void main() {
       await tester.pumpAndSettle();
       await type(tester, ' #');
       await tester.pumpAndSettle();
-      expect(find.byType(FormulaPreview), findsOneWidget);
+      expect(inFormula(tester), isTrue);
       await press(tester, LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
-      final centred = blocksOf(tester).single;
+      final centred = blocksOf(tester).first;
       expect(centred.align, BlockAlign.center);
       expect(centred.runs.single, const TextRun.math('x^2', MathMode.latex));
       expect(drawnAlign(), TextAlign.center);
+      // Finished, it leaves the caret on a line of its own beneath.
+      expect(blocksOf(tester), hasLength(2));
+      expect(blocksOf(tester).last.align, BlockAlign.start);
 
       // Centred across the box, however narrow the formula.
       final box = tester.getRect(find.byType(TextBoxEditor));
@@ -428,11 +426,47 @@ void main() {
       await press(tester, LogicalKeyboardKey.backspace);
       await press(tester, LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
-      expect(blocksOf(tester).single.align, BlockAlign.start);
+      expect(blocksOf(tester).first.align, BlockAlign.start);
       expect(
-        blocksOf(tester).single.runs.single,
+        blocksOf(tester).first.runs.single,
         const TextRun.math('x^2', MathMode.latex),
       );
+    });
+
+    testWidgets('text goes on where lines start after a centred formula', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await tester.pumpAndSettle();
+      await type(tester, 'x^2 #');
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await type(tester, 'so');
+      await tester.pumpAndSettle();
+      // The caret went on to the line beneath.
+      final lines = blocksOf(tester);
+      expect(lines, hasLength(2));
+      expect(lines[0].align, BlockAlign.center);
+      expect(lines[1].runs.single.text, 'so');
+      expect(lines[1].align, BlockAlign.start);
+
+      // A line broken off the formula's is not centred, nor is text typed
+      // beside it, the formula no longer alone.
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      await press(tester, LogicalKeyboardKey.end);
+      await tester.pumpAndSettle();
+      expect(inFormula(tester), isFalse);
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(blocksOf(tester)[0].align, BlockAlign.center);
+      expect(blocksOf(tester)[1].align, BlockAlign.start);
+      await press(tester, LogicalKeyboardKey.backspace);
+      await type(tester, ' is');
+      await tester.pumpAndSettle();
+      expect(blocksOf(tester)[0].runs.last.text, ' is');
+      expect(blocksOf(tester)[0].align, BlockAlign.start);
     });
 
     testWidgets('a formula wider than its box is made smaller to fit', (
@@ -480,11 +514,213 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(typedLine(tester), '(a + b)/2', reason: 'shown in Simple');
-      expect(find.byType(FormulaPreview), findsOneWidget);
+      expect(inFormula(tester), isTrue);
 
       await press(tester, LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(blocksOf(tester).single.runs.last.text, r'\frac{a+b}{2}');
+    });
+
+    testWidgets('a TikZ picture in a line of text opens as LaTeX', (
+      tester,
+    ) async {
+      const picture = r'\tikz \draw[->] (0,0) -- (1,0) node[right] {$x$};';
+      await savePage(tester, const <TextRun>[
+        TextRun('An arrow: '),
+        TextRun.math(picture, MathMode.latex),
+      ]);
+      await openEditor(tester, store, pageId);
+      expect(find.byType(TikzView), findsOneWidget);
+      expect(blocksOf(tester).single.isEmbed, isFalse);
+
+      await tester.tapAt(
+        tester.getCenter(find.byType(TikzView)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(inFormula(tester), isTrue);
+      expect(overlayOf(tester).source.text, picture, reason: 'Simple has none');
+      final toggle = tester.widget<MathSyntaxToggle>(
+        find.byType(MathSyntaxToggle),
+      );
+      expect(toggle.latexOnly, isTrue);
+
+      // Choosing Simple leaves it as it is.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(MathSyntaxToggle),
+          matching: find.text('Simple'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(overlayOf(tester).source.text, picture);
+      expect(inFormula(tester), isTrue);
+    });
+
+    testWidgets('a TikZ picture on its own line is a picture in the text, '
+        'its source edited from its menu', (tester) async {
+      mockClipboard(tester);
+      const picture =
+          '\\begin{tikzpicture}\n'
+          '  \\draw[->] (0,0) -- (1,0) node[right] {\$x\$};\n'
+          '\\end{tikzpicture}';
+      // Kept as a formula, as pages from before kept it.
+      await savePage(tester, const <TextRun>[
+        TextRun.math(picture, MathMode.latex),
+      ]);
+      await openEditor(tester, store, pageId);
+      expect(find.byType(TikzView), findsOneWidget);
+
+      // A click picks it, as it picks a picture; a corner resizes it.
+      final drawn = tester.getRect(find.byType(EmbedBlock));
+      final object = tester.getRect(find.byType(TikzView));
+      await tester.tapAt(object.center, kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(inFormula(tester), isFalse);
+      expect(
+        tester.widget<EmbedBlock>(find.byType(EmbedBlock)).selected,
+        isTrue,
+      );
+      final gesture = await tester.startGesture(
+        tester.getRect(find.byType(FittedBox)).bottomRight,
+        kind: PointerDeviceKind.mouse,
+      );
+      for (var i = 0; i < 4; i++) {
+        await gesture.moveBy(const Offset(10, 5));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      final resized = blocksOf(tester).single.embed!;
+      expect(resized.kind, EmbedKind.tikz);
+      expect(resized.width, greaterThan(object.width));
+      expect(
+        tester.getRect(find.byType(FittedBox)).width,
+        closeTo(resized.width, 1),
+      );
+      expect(drawn.height, greaterThan(0));
+
+      // Its source is edited from its menu, in a window of its own, the
+      // picture drawn again as it changes.
+      await rightClick(tester, tester.getCenter(find.byType(TikzView)));
+      await tester.tap(find.text('Edit TikZ source'));
+      await tester.pumpAndSettle();
+      final window = find.widgetWithText(AlertDialog, 'TikZ picture');
+      final field = find.descendant(
+        of: window,
+        matching: find.byType(TextField),
+      );
+      expect(tester.widget<TextField>(field).controller!.text, picture);
+      final changed = picture.replaceFirst('{\$x\$}', '{\$y\$}');
+      await tester.enterText(field, changed);
+      await tester.pumpAndSettle();
+      expect(blocksOf(tester).single.embed!.source, changed);
+      expect(blocksOf(tester).single.embed!.width, resized.width);
+      // Enter is a new line there; Ctrl+Enter finishes.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(window, findsOneWidget);
+      await press(tester, LogicalKeyboardKey.enter, control: true);
+      await tester.pumpAndSettle();
+      expect(window, findsNothing);
+      expect(blocksOf(tester).single.embed!.source, changed);
+    });
+
+    /// Opens the source window of a TikZ picture drawn from [source], and
+    /// finds its field.
+    Future<Finder> openSourceOf(WidgetTester tester, String source) async {
+      mockClipboard(tester);
+      await tester.runAsync(
+        () => store.pages.saveDocument(
+          pageId,
+          PageDocument(
+            id: pageId,
+            elements: <NoteElement>[
+              TextElement(
+                id: 'box',
+                frame: const Frame(x: 100, y: 100, width: 300, height: 60),
+                createdAt: 0,
+                updatedAt: 0,
+                blocks: <TextBlock>[
+                  TextBlock.embedded(BlockEmbed.tikz(source)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      await openEditor(tester, store, pageId);
+      await rightClick(tester, tester.getCenter(find.byType(TikzView)));
+      await tester.tap(find.text('Edit TikZ source'));
+      await tester.pumpAndSettle();
+      return find.descendant(
+        of: find.widgetWithText(AlertDialog, 'TikZ picture'),
+        matching: find.byType(TextField),
+      );
+    }
+
+    testWidgets('the source window is as tall as a short source', (
+      tester,
+    ) async {
+      final field = await openSourceOf(tester, r'\tikz \draw (0,0) -- (1,0);');
+      final scroll = tester.state<ScrollableState>(
+        find.descendant(of: field, matching: find.byType(Scrollable)).first,
+      );
+      expect(scroll.position.maxScrollExtent, 0);
+      expect(tester.getSize(field).height, lessThan(100));
+    });
+
+    testWidgets('a long source fills the screen, opens at its top, and '
+        'undoes back to where the change was', (tester) async {
+      final lines = <String>[
+        for (var i = 0; i < 40; i++) '  \\draw (0,0) -- ($i,1);',
+      ];
+      final source =
+          '\\begin{tikzpicture}\n${lines.join('\n')}\n\\end{tikzpicture}';
+      final field = await openSourceOf(tester, source);
+      final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+      expect(tester.getSize(field).height, greaterThan(screen.height / 3));
+      final scroll = tester.state<ScrollableState>(
+        find.descendant(of: field, matching: find.byType(Scrollable)).first,
+      );
+      expect(scroll.position.pixels, 0, reason: 'it opens at its top');
+      expect(scroll.position.maxScrollExtent, greaterThan(0));
+      final controller = tester.widget<TextField>(field).controller!;
+      expect(controller.selection, const TextSelection.collapsed(offset: 0));
+
+      controller.selection = const TextSelection.collapsed(offset: 30);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.pumpAndSettle();
+      expect(controller.text.length, source.length - 1);
+      await press(tester, LogicalKeyboardKey.keyZ, control: true);
+      await tester.pumpAndSettle();
+      expect(controller.text, source);
+      expect(controller.selection, const TextSelection.collapsed(offset: 30));
+      expect(scroll.position.pixels, 0, reason: 'where the change was');
+      expect(blocksOf(tester).single.embed!.source, source);
+      await press(tester, LogicalKeyboardKey.keyY, control: true);
+      await tester.pumpAndSettle();
+      expect(controller.text.length, source.length - 1);
+    });
+
+    testWidgets('a TikZ picture typed alone on its line becomes a picture', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await press(tester, LogicalKeyboardKey.keyM, control: true, shift: true);
+      await type(tester, r'\tikz \draw (0,0) -- (1,1);');
+      await tester.pumpAndSettle();
+      expect(inFormula(tester), isTrue);
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        blocksOf(tester).single.embed,
+        const BlockEmbed.tikz(r'\tikz \draw (0,0) -- (1,1);'),
+      );
+      expect(find.byType(TikzView), findsOneWidget);
     });
 
     testWidgets('formulas from older pages are stored as LaTeX', (
@@ -557,7 +793,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(inFormula(tester), isTrue, reason: 'formula reopened');
       expect(typedLine(tester), 'x');
-      // Its place in the text is kept, blank, the source drawn over it.
+      // Typeset in its place, its source drawn beneath it.
       expect(overlayOf(tester).source.text, 'x');
 
       await type(tester, '2');
@@ -592,7 +828,7 @@ void main() {
       );
     });
 
-    testWidgets('the source is typed across the box, on the formula\'s line', (
+    testWidgets('the source is typed across the box, beneath the formula', (
       tester,
     ) async {
       await openEditor(tester, store, pageId);
@@ -617,8 +853,18 @@ void main() {
       final box = tester.getRect(find.byType(TextBoxEditor));
       expect(field.left, moreOrLessEquals(box.left));
       expect(field.right, moreOrLessEquals(box.right));
-      expect(field.top, lessThan(letter.center.dy), reason: 'on its line');
-      expect(field.bottom, greaterThan(letter.center.dy));
+      expect(
+        field.top,
+        greaterThanOrEqualTo(letter.bottom - 0.5),
+        reason: 'beneath its line',
+      );
+      // The formula is outlined where it is typeset, the click on it
+      // keeping it open.
+      final formula = tester.getRect(typesetInBox());
+      expect(formula.bottom, lessThanOrEqualTo(field.top + 0.5));
+      await tester.tapAt(formula.center, kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(inFormula(tester), isTrue);
       // Over everything on the page, the frame round the box included.
       expect(
         find.descendant(
@@ -638,6 +884,111 @@ void main() {
       expect(caret.right, lessThan(drawnBox.right));
       expect(caret.top, greaterThanOrEqualTo(drawnBox.top));
       expect(caret.bottom, lessThanOrEqualTo(drawnBox.bottom));
+    });
+
+    Finder formulaWindow() => find.widgetWithText(AlertDialog, 'Formula');
+    Finder windowField() =>
+        find.descendant(of: formulaWindow(), matching: find.byType(TextField));
+
+    testWidgets('a long source is typed in a window, Enter finishing it', (
+      tester,
+    ) async {
+      final long = r'\frac{a}{b} + ' * 6;
+      expect(long.length, greaterThan(FormulaWindow.opensPast));
+      await savePage(tester, <TextRun>[TextRun.imported(long)]);
+      await openEditor(tester, store, pageId);
+      await tester.tapAt(
+        tester.getRect(typesetInBox()).center,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(inFormula(tester), isTrue);
+      expect(formulaWindow(), findsOneWidget);
+      expect(tester.widget<TextField>(windowField()).controller!.text, long);
+      // Only the formula is outlined on the page; nothing is typed there.
+      expect(formulaLayerOf(tester).formulaBox, isNull);
+
+      final changed = '$long c';
+      await tester.enterText(windowField(), changed);
+      await tester.pumpAndSettle();
+      expect(tester.widget<MathView>(typesetInBox()).source, changed);
+      await tester.enterText(windowField(), '$changed + \\frac{');
+      await tester.pumpAndSettle();
+      expect(find.textContaining("Expected '}'"), findsOneWidget);
+      expect(tester.widget<MathView>(typesetInBox()).source, changed);
+      await tester.enterText(windowField(), changed);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsNothing);
+      expect(inFormula(tester), isFalse);
+      expect(blocksOf(tester).single.runs.single.text, changed);
+      expect(blocksOf(tester).single.runs.single.imported, isTrue);
+    });
+
+    testWidgets('a source on lines of its own keeps them in its window', (
+      tester,
+    ) async {
+      const formula =
+          '\\begin{cases}\n'
+          '  1 & x > 0 \\\\\n'
+          '  0\n'
+          '\\end{cases}';
+      expect(formula.length, lessThan(FormulaWindow.closesBelow));
+      await savePage(tester, <TextRun>[const TextRun.imported(formula)]);
+      await openEditor(tester, store, pageId);
+      await tester.tapAt(
+        tester.getRect(typesetInBox()).center,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsOneWidget);
+      expect(tester.widget<TextField>(windowField()).controller!.text, formula);
+
+      const more =
+          '\\begin{cases}\n'
+          '  1 & x > 0 \\\\\n'
+          '  0 & x = 0 \\\\\n'
+          '  -1\n'
+          '\\end{cases}';
+      await tester.enterText(windowField(), more);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsNothing);
+      expect(blocksOf(tester).first.runs.single.text, more);
+    });
+
+    testWidgets('a source goes to its window past 80, back only below 60', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await tester.pumpAndSettle();
+      final sum = List<String>.generate(20, (i) => 'x').join(' + ');
+      expect(sum.length, lessThanOrEqualTo(FormulaWindow.opensPast));
+      await type(tester, sum);
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsNothing);
+      await type(tester, ' + y');
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsOneWidget);
+      expect(formulaLayerOf(tester).formulaBox, isNull);
+
+      // Between the two it stays in its window.
+      await tester.enterText(windowField(), 'x' * 70);
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsOneWidget);
+      await tester.enterText(windowField(), 'x' * 59);
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsNothing);
+      expect(inFormula(tester), isTrue);
+      expect(formulaLayerOf(tester).formulaBox, isNotNull);
+      expect(overlayOf(tester).source.text, 'x' * 59);
+      await type(tester, 'y');
+      await tester.pumpAndSettle();
+      expect(overlayOf(tester).source.text, '${'x' * 59}y');
     });
 
     testWidgets('a click on the source below the box places the caret in it', (
@@ -669,7 +1020,9 @@ void main() {
       );
     });
 
-    testWidgets('typing a formula moves nothing in its box', (tester) async {
+    testWidgets('what is typed is laid out as it will be once finished', (
+      tester,
+    ) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
       await type(tester, 'Above');
@@ -678,16 +1031,12 @@ void main() {
       await press(tester, LogicalKeyboardKey.arrowUp);
       await press(tester, LogicalKeyboardKey.end);
       await press(tester, LogicalKeyboardKey.equal, alt: true);
-      await tester.pumpAndSettle();
-      final box = tester.getRect(find.byType(TextBoxEditor));
-      final below = tester.getRect(find.byType(BlockParagraph).last);
-
       await type(tester, 'sum_(i=1)^n i^2 / (n+1) + sqrt(a^2+b^2) + x^2 + y^2');
       await tester.pumpAndSettle();
 
-      expect(tester.getRect(find.byType(TextBoxEditor)), box);
-      expect(tester.getRect(find.byType(BlockParagraph).last), below);
-      // The source runs on over the line beneath instead.
+      final typing = tester.getRect(find.byType(BlockParagraph).last);
+      // The source runs on over the line beneath rather than pushing it
+      // down.
       final layer = formulaLayerOf(tester);
       expect(
         layer.formulaBox!.bottom,
@@ -696,10 +1045,38 @@ void main() {
             tester
                 .renderObject<RenderBox>(find.byType(BlockParagraph).last)
                 .getTransformTo(layer),
-            Offset.zero & below.size,
+            Offset.zero & typing.size,
           ).top,
         ),
       );
+
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(inFormula(tester), isFalse);
+      expect(tester.getRect(find.byType(BlockParagraph).last), typing);
+    });
+
+    testWidgets('a slip while typing leaves the formula as it last was', (
+      tester,
+    ) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await press(tester, LogicalKeyboardKey.keyM, control: true, shift: true);
+      await tester.pumpAndSettle();
+      await type(tester, r'\frac{a}{b}');
+      await tester.pumpAndSettle();
+      expect(tester.widget<MathView>(typesetInBox()).source, r'\frac{a}{b}');
+      expect(overlayOf(tester).problem, isNull);
+
+      await type(tester, r' + \frac{');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<MathView>(typesetInBox()).source,
+        r'\frac{a}{b} + ',
+        reason: 'the last of it that typesets stays in place',
+      );
+      expect(overlayOf(tester).problem, isNotNull, reason: 'said beneath');
     });
 
     group('highlighting part of one', () {
@@ -719,12 +1096,7 @@ void main() {
           blocksOf(tester).single.runs.last.text;
 
       Iterable<String> previewed(WidgetTester tester) => tester
-          .widgetList<MathView>(
-            find.descendant(
-              of: find.byType(FormulaPreview),
-              matching: find.byType(MathView),
-            ),
-          )
+          .widgetList<MathView>(typesetInBox())
           .map((view) => view.source);
 
       testWidgets('marks what is selected, and only that', (tester) async {
@@ -742,7 +1114,7 @@ void main() {
         expect(
           previewed(tester),
           contains(r'a + \colorbox{#FFEF9D}{$b^2$}'),
-          reason: 'the preview shows the highlight',
+          reason: 'the typeset formula shows the highlight',
         );
         expect(inFormula(tester), isTrue);
         expect(
@@ -891,7 +1263,7 @@ void main() {
       expect(paragraph.decoration.selection, isNotNull);
     });
 
-    testWidgets('the preview appears beneath the formula and stays there', (
+    testWidgets('the source is placed beneath the formula at once', (
       tester,
     ) async {
       await openEditor(tester, store, pageId);
@@ -899,42 +1271,31 @@ void main() {
       await type(tester, 'The area is ');
 
       // Alt+=, without a frame drawn in between, so the first frame the
-      // preview could appear in is watched too.
+      // source could appear in is watched too.
       await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.equal);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
-      final seen = <Offset>[];
+      final seen = <Rect>{};
       for (var frame = 0; frame < 6; frame++) {
         await tester.pump(const Duration(milliseconds: 16));
-        final preview = find.byType(FormulaPreview);
-        if (preview.evaluate().isNotEmpty) seen.add(tester.getTopLeft(preview));
+        final box = formulaLayerOf(tester).formulaBox;
+        if (box != null) seen.add(box);
       }
-      await type(tester, 'a');
-      await tester.pumpAndSettle();
-
-      expect(seen, isNotEmpty);
-      final placed = tester.getTopLeft(find.byType(FormulaPreview));
-      expect(seen.toSet(), <Offset>{placed}, reason: 'it never moved');
-      final layer = formulaLayerOf(tester);
-      final box = MatrixUtils.transformRect(
-        layer.getTransformTo(null),
-        layer.formulaBox!,
-      );
-      expect(placed.dy, greaterThan(box.bottom));
-      expect(placed.dx, moreOrLessEquals(box.left), reason: 'under it');
+      expect(seen, hasLength(1), reason: 'it never moved');
     });
 
-    testWidgets('Done beneath the formula finishes it', (tester) async {
+    testWidgets('the ribbon finishes the formula', (tester) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
       await press(tester, LogicalKeyboardKey.equal, alt: true);
       await tester.pumpAndSettle();
       await type(tester, 'e^x');
 
-      await tester.tap(find.text('Done'));
+      final ribbon = tester.widget<Ribbon>(find.byType(Ribbon));
+      ribbon.commands.text.finishFormula();
       await tester.pumpAndSettle();
       expect(inFormula(tester), isFalse);
-      expect(find.byType(FormulaPreview), findsNothing);
+      expect(formulaLayerOf(tester).formulaBox, isNull);
 
       await type(tester, ' grows');
       expect(blocksOf(tester).single.runs.last.text, ' grows');
@@ -1086,6 +1447,138 @@ void main() {
     );
     expect(document!.extractSearchText(), 'persisted');
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('LaTeX of many lines goes in as text and formulas', (
+    tester,
+  ) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await type(tester, 'Notes');
+    await press(tester, LogicalKeyboardKey.enter);
+
+    await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('LaTeX'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      ),
+      'Let \$f(x) = x^2\$. Then\n'
+      '\\begin{align*}\n'
+      "  f'(x) &= 2x \\\\\n"
+      "  f''(x) &= 2\n"
+      '\\end{align*}\n',
+    );
+    await press(tester, LogicalKeyboardKey.enter, control: true);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+    final blocks = blocksOf(tester);
+    expect(blocks.first.plainText, 'Notes');
+    expect(blocks[1].runs[1], const TextRun.imported('f(x) = x^2'));
+    expect(
+      blocks[2].runs.single.text,
+      "\\begin{align*}\n  f'(x) &= 2x \\\\\n  f''(x) &= 2\n\\end{align*}",
+      reason: 'laid out as written',
+    );
+    expect(blocks[2].align, BlockAlign.center);
+    expect(tester.takeException(), isNull, reason: 'typeset as it is');
+  });
+
+  testWidgets('LaTeX brought in stays LaTeX, and reads its packages', (
+    tester,
+  ) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('LaTeX'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      ),
+      r'Water is $\ce{H2O}$, and $\frac{a}{b}$.',
+    );
+    await press(tester, LogicalKeyboardKey.enter, control: true);
+    await tester.pumpAndSettle();
+    final runs = blocksOf(tester).single.runs;
+    expect(runs[1], const TextRun.imported(r'\ce{H2O}'));
+
+    // Opened, a fraction brought in is LaTeX, though Simple is chosen.
+    await tester.tapAt(
+      tester.getCenter(find.byType(MathView).last),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(inFormula(tester), isTrue);
+    expect(
+      overlayOf(tester).source.text,
+      r'\frac{a}{b}',
+      reason: 'not (a)/(b)',
+    );
+    expect(
+      tester.widget<MathSyntaxToggle>(find.byType(MathSyntaxToggle)).latexOnly,
+      isTrue,
+    );
+    await press(tester, LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(
+      blocksOf(tester).single.runs[3],
+      const TextRun.imported(r'\frac{a}{b}'),
+    );
+
+    // mhchem is read in what was brought in, and not in a formula typed.
+    await tester.tapAt(
+      tester.getCenter(find.byType(MathView).first),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(overlayOf(tester).problem, isNull);
+    await press(tester, LogicalKeyboardKey.end, control: true);
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await press(tester, LogicalKeyboardKey.end, control: true);
+    await press(tester, LogicalKeyboardKey.equal, alt: true);
+    await press(tester, LogicalKeyboardKey.keyM, control: true, shift: true);
+    await tester.pumpAndSettle();
+    await type(tester, r'\ce{H2O}');
+    await tester.pumpAndSettle();
+    expect(overlayOf(tester).problem, isNotNull);
+    expect(blocksOf(tester).single.runs.last.imported, isFalse);
+  });
+
+  testWidgets('a formula in a table cell is laid out', (tester) async {
+    await tester.runAsync(
+      () => store.pages.saveDocument(
+        pageId,
+        PageDocument(
+          id: pageId,
+          elements: <NoteElement>[
+            TextElement(
+              id: 'box',
+              frame: const Frame(x: 100, y: 100, width: 300, height: 100),
+              createdAt: 0,
+              updatedAt: 0,
+              blocks: <TextBlock>[
+                const TextBlock(
+                  runs: <TextRun>[TextRun.math('x^2', MathMode.latex)],
+                ).inCell(const TableCell(0, 0)),
+                const TextBlock(runs: <TextRun>[TextRun('four')])
+                    .inCell(const TableCell(0, 1)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    await openEditor(tester, store, pageId);
+    expect(tester.takeException(), isNull);
+    expect(find.byType(MathView), findsOneWidget);
   });
 
   group('OneNote-style caret', () {
@@ -2011,6 +2504,35 @@ void main() {
       await press(tester, LogicalKeyboardKey.keyZ, control: true);
       await tester.pumpAndSettle();
       expect(embedOf(tester).width, picture.width);
+    });
+
+    testWidgets('a picked picture has the page\'s handles, sides and all, '
+        'grabbed as far off on a scaled display', (tester) async {
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await savePicture(tester);
+      await openEditor(tester, store, pageId);
+      final object = tester.getRect(find.byType(AssetImageView));
+      await tester.tapAt(object.center, kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+
+      // The right side's handle stands out from the picture as the page's
+      // do, and a press a few pixels off it still takes hold.
+      final handle =
+          object.centerRight + const Offset(SelectionHandles.outlineInset, 0);
+      final gesture = await tester.startGesture(
+        handle + const Offset(SelectionHandles.mouseReach - 2, 0),
+        kind: PointerDeviceKind.mouse,
+      );
+      for (var i = 0; i < 4; i++) {
+        await gesture.moveBy(const Offset(10, 0));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      final resized = embedOf(tester);
+      expect(resized.width, closeTo(picture.width + 40, 1));
+      expect(resized.aspectRatio, closeTo(picture.aspectRatio, 0.001));
     });
   });
 

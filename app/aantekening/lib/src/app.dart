@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'editor/text/formula_preamble.dart';
 import 'editor/text/text_styles.dart';
 import 'look/appearance.dart';
 import 'look/grain.dart';
@@ -40,7 +41,10 @@ class AantekeningApp extends ConsumerWidget {
       // respond to a trackpad and a stylus, not only to a mouse wheel.
       scrollBehavior: const _AppScrollBehavior(),
       builder: (context, child) => Grain(
-        child: InterfaceScale(scale: appearance.scale, child: child!),
+        child: InterfaceScale(
+          scale: appearance.scale,
+          child: FormulaPreambleScope(child: child!),
+        ),
       ),
       home: const HomeShell(),
     );

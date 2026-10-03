@@ -183,6 +183,7 @@ abstract final class SelectionHandles {
     TextElement() => ResizeBehavior.horizontal,
     ImageElement() ||
     PdfElement() ||
+    TikzElement() ||
     InkElement() => ResizeBehavior.proportional,
   };
 
@@ -236,6 +237,19 @@ abstract final class SelectionHandles {
     ];
   }
 
+  /// The handles that resize something in both directions: its corners,
+  /// and its sides.
+  static const List<SelectionHandle> resizing = <SelectionHandle>[
+    SelectionHandle.topLeft,
+    SelectionHandle.topRight,
+    SelectionHandle.bottomLeft,
+    SelectionHandle.bottomRight,
+    SelectionHandle.left,
+    SelectionHandle.right,
+    SelectionHandle.top,
+    SelectionHandle.bottom,
+  ];
+
   /// The screen-space centre of each handle [selection] offers.
   static Map<SelectionHandle, Offset> positionsFor(
     List<NoteElement> selection,
@@ -243,16 +257,25 @@ abstract final class SelectionHandles {
   ) {
     final frame = SelectionFrame.around(selection);
     if (frame == null) return const <SelectionHandle, Offset>{};
-    final outline = outlineOf(frame, viewport);
-    final topLeft = outline[0];
-    final topRight = outline[1];
-    final bottomRight = outline[2];
-    final bottomLeft = outline[3];
-    final topMid = (topLeft + topRight) / 2;
-    final up = Offset(math.sin(frame.rotation), -math.cos(frame.rotation));
+    return positionsOn(
+      outlineOf(frame, viewport),
+      handlesOf(selection),
+      rotation: frame.rotation,
+    );
+  }
 
+  /// The centre of each of [handles] on the box whose corners are
+  /// [outline], clockwise from the top-left, turned by [rotation].
+  static Map<SelectionHandle, Offset> positionsOn(
+    List<Offset> outline,
+    Iterable<SelectionHandle> handles, {
+    double rotation = 0,
+  }) {
+    final [topLeft, topRight, bottomRight, bottomLeft] = outline;
+    final topMid = (topLeft + topRight) / 2;
+    final up = Offset(math.sin(rotation), -math.cos(rotation));
     return <SelectionHandle, Offset>{
-      for (final handle in handlesOf(selection))
+      for (final handle in handles)
         handle: switch (handle) {
           SelectionHandle.topLeft => topLeft,
           SelectionHandle.topRight => topRight,
@@ -275,18 +298,24 @@ abstract final class SelectionHandles {
   ) {
     final frame = SelectionFrame.around(selection);
     if (frame == null) return const <SelectionHandle, (Offset, Offset)>{};
-    final outline = outlineOf(frame, viewport);
-    return <SelectionHandle, (Offset, Offset)>{
-      for (final handle in handlesOf(selection))
-        if (handle.isSide)
-          handle: switch (handle) {
-            SelectionHandle.left => (outline[0], outline[3]),
-            SelectionHandle.right => (outline[1], outline[2]),
-            SelectionHandle.top => (outline[0], outline[1]),
-            _ => (outline[3], outline[2]),
-          },
-    };
+    return sidesOn(outlineOf(frame, viewport), handlesOf(selection));
   }
+
+  /// The ends of each side among [handles] of the box whose corners are
+  /// [outline].
+  static Map<SelectionHandle, (Offset, Offset)> sidesOn(
+    List<Offset> outline,
+    Iterable<SelectionHandle> handles,
+  ) => <SelectionHandle, (Offset, Offset)>{
+    for (final handle in handles)
+      if (handle.isSide)
+        handle: switch (handle) {
+          SelectionHandle.left => (outline[0], outline[3]),
+          SelectionHandle.right => (outline[1], outline[2]),
+          SelectionHandle.top => (outline[0], outline[1]),
+          _ => (outline[3], outline[2]),
+        },
+  };
 
   /// The handle of [selection] within [reach] of a screen point, if any: a
   /// handle itself, or anywhere along a side that can be dragged.
@@ -295,26 +324,106 @@ abstract final class SelectionHandles {
     CanvasViewport viewport,
     Offset screen, {
     double reach = mouseReach,
+  }) => hitTestOn(
+    positionsFor(selection, viewport),
+    sidesFor(selection, viewport),
+    screen,
+    reach: reach,
+  );
+
+  /// Which of the handles at [positions], or the [sides] that can be
+  /// dragged, lies within [reach] of [point]: the handles first.
+  static SelectionHandle? hitTestOn(
+    Map<SelectionHandle, Offset> positions,
+    Map<SelectionHandle, (Offset, Offset)> sides,
+    Offset point, {
+    double reach = mouseReach,
   }) {
     SelectionHandle? best;
     var bestDistance = reach;
-    for (final entry in positionsFor(selection, viewport).entries) {
-      final distance = (entry.value - screen).distance;
+    for (final entry in positions.entries) {
+      final distance = (entry.value - point).distance;
       if (distance <= bestDistance) {
         best = entry.key;
         bestDistance = distance;
       }
     }
     if (best != null) return best;
-    for (final entry in sidesFor(selection, viewport).entries) {
+    for (final entry in sides.entries) {
       final (from, to) = entry.value;
-      final distance = _distanceToSegment(screen, from, to);
+      final distance = _distanceToSegment(point, from, to);
       if (distance <= bestDistance) {
         best = entry.key;
         bestDistance = distance;
       }
     }
     return best;
+  }
+
+  /// A resize cursor pointing the way [handle] drags, turned with the box
+  /// by [rotation].
+  static MouseCursor cursorFor(SelectionHandle handle, double rotation) {
+    final base = switch (handle) {
+      SelectionHandle.rotate => null,
+      SelectionHandle.left || SelectionHandle.right => 0.0,
+      SelectionHandle.top || SelectionHandle.bottom => math.pi / 2,
+      SelectionHandle.topLeft || SelectionHandle.bottomRight => math.pi / 4,
+      SelectionHandle.topRight || SelectionHandle.bottomLeft => -math.pi / 4,
+    };
+    if (base == null) return SystemMouseCursors.grab;
+    final octant = (((base + rotation) / (math.pi / 4)).round()) % 4;
+    return switch (octant) {
+      0 => SystemMouseCursors.resizeLeftRight,
+      1 => SystemMouseCursors.resizeUpLeftDownRight,
+      2 => SystemMouseCursors.resizeUpDown,
+      _ => SystemMouseCursors.resizeUpRightDownLeft,
+    };
+  }
+
+  /// Draws the box whose corners are [outline] in [accent], in screen
+  /// pixels.
+  static void paintOutline(Canvas canvas, List<Offset> outline, Color accent) =>
+      canvas.drawPath(
+        Path()..addPolygon(outline, true),
+        Paint()
+          ..color = accent
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+
+  /// Draws the resize handles at [positions] in [accent], in screen pixels,
+  /// turned with the box by [rotation]: a square at a corner, a bar along a
+  /// side. The rotation knob is the canvas's own.
+  static void paintHandles(
+    Canvas canvas,
+    Map<SelectionHandle, Offset> positions,
+    Color accent, {
+    double rotation = 0,
+  }) {
+    final fill = Paint()..color = accent;
+    final ring = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    for (final MapEntry(key: handle, value: at) in positions.entries) {
+      if (handle == SelectionHandle.rotate) continue;
+      final upright =
+          handle == SelectionHandle.left || handle == SelectionHandle.right;
+      // Handles turn with the box, so a side's bar always lies along it.
+      canvas
+        ..save()
+        ..translate(at.dx, at.dy)
+        ..rotate(rotation);
+      final rect = Rect.fromCenter(
+        center: Offset.zero,
+        width: handle.isSide && !upright ? size * 2.5 : size,
+        height: upright ? size * 2.5 : size,
+      );
+      canvas
+        ..drawRect(rect, fill)
+        ..drawRect(rect, ring)
+        ..restore();
+    }
   }
 
   static double _distanceToSegment(Offset point, Offset from, Offset to) {

@@ -3,6 +3,7 @@
 library;
 
 import 'ast.dart';
+import 'lexer.dart';
 import 'symbols.dart';
 
 /// Writes [MathNode]s as linear input that parses back to the same LaTeX.
@@ -161,6 +162,15 @@ abstract final class LinearWriter {
     ],
     MatrixNode() => <_Piece>[_Piece(_matrix(node))],
     RawNode(:final latex) => <_Piece>[_raw(latex)],
+    CommandNode(:final command, :final arguments) => <_Piece>[
+      _Piece(
+        <String>[
+          command,
+          for (final (:optional, :content) in arguments)
+            optional ? '[${write(content)}]' : '{${write(content)}}',
+        ].join(),
+      ),
+    ],
     BraketNode(:final kind, :final parts) => <_Piece>[
       _Piece('${kind.name}(${parts.map(write).join(', ')})', apart: true),
     ],
@@ -224,7 +234,16 @@ abstract final class LinearWriter {
     return _raw(latex);
   }
 
-  static _Piece _raw(String latex) => _Piece('`$latex`');
+  /// [latex] as it is, where the linear syntax reads it as LaTeX by itself —
+  /// an environment, text, a font — or else quoted in backticks.
+  static _Piece _raw(String latex) {
+    final tokens = MathLexer(latex).tokenize();
+    final bare =
+        tokens.length == 2 &&
+        tokens.first.type == TokenType.raw &&
+        tokens.first.lexeme == latex;
+    return _Piece(bare ? latex : '`$latex`', apart: bare);
+  }
 
   // ------------------------------------------------------------- structure
 
@@ -257,6 +276,7 @@ abstract final class LinearWriter {
     GroupNode() ||
     MatrixNode() ||
     RawNode() ||
+    CommandNode() ||
     ApplicationNode() ||
     BraketNode() ||
     HighlightNode() => true,

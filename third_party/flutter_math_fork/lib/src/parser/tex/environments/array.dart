@@ -52,6 +52,14 @@ const arrayEntries = {
     'Bmatrix',
     'vmatrix',
     'Vmatrix',
+    // aantekening: mathtools' starred matrices, their columns aligned as
+    // an optional argument says.
+    'matrix*',
+    'pmatrix*',
+    'bmatrix*',
+    'Bmatrix*',
+    'vmatrix*',
+    'Vmatrix*',
   ]: EnvSpec(
     numArgs: 0,
     handler: _matrixHandler,
@@ -270,6 +278,11 @@ GreenNode _arrayHandler(TexParser parser, EnvContext context) {
 }
 
 GreenNode _matrixHandler(TexParser parser, EnvContext context) {
+  final starred = context.envName.endsWith('*');
+  final name = starred
+      ? context.envName.substring(0, context.envName.length - 1)
+      : context.envName;
+  final align = starred ? _columnAlignOption(parser) : null;
   final delimiters = const {
     'matrix': null,
     'pmatrix': ['(', ')'],
@@ -277,12 +290,17 @@ GreenNode _matrixHandler(TexParser parser, EnvContext context) {
     'Bmatrix': ['{', '}'],
     'vmatrix': ['|', '|'],
     'Vmatrix': ['\u2223', '\u2223'],
-  }[context.envName];
-  final res = parseArray(
+  }[name];
+  final parsed = parseArray(
     parser,
     hskipBeforeAndAfter: false,
-    style: _dCellStyle(context.envName),
+    style: _dCellStyle(name),
   );
+  final res = align == null
+      ? parsed
+      : parsed.copyWith(
+          columnAligns: List<MatrixColumnAlign>.filled(parsed.cols, align),
+        );
   return delimiters == null
       ? res
       : LeftRightNode(
@@ -292,6 +310,24 @@ GreenNode _matrixHandler(TexParser parser, EnvContext context) {
             [res].wrapWithEquationRow()
           ],
         );
+}
+
+/// The alignment a starred matrix's optional argument gives every column:
+/// `[l]`, `[c]` or `[r]`; centred where none is given.
+MatrixColumnAlign? _columnAlignOption(TexParser parser) {
+  // Read by itself: an optional argument comes before the ones required,
+  // and the environment's name has been read.
+  if (parser.fetch().text != '[') return null;
+  parser.consume();
+  final symbol = parser.fetch().text;
+  parser.consume();
+  parser.expect(']');
+  return switch (symbol) {
+    'l' => MatrixColumnAlign.left,
+    'c' => MatrixColumnAlign.center,
+    'r' => MatrixColumnAlign.right,
+    _ => throw ParseException('Unknown column alignment: $symbol'),
+  };
 }
 
 GreenNode _smallMatrixHandler(TexParser parser, EnvContext context) =>

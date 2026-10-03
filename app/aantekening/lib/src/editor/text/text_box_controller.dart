@@ -3,7 +3,6 @@ library;
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart' show Widget;
 
@@ -52,6 +51,7 @@ class TextFormatState {
     this.marks = const <MarkKind>{},
     this.blockKind = TextBlockKind.paragraph,
     this.inFormula = false,
+    this.latexOnly = false,
     this.fontSize = 11,
     this.font,
     this.textColor,
@@ -68,6 +68,10 @@ class TextFormatState {
 
   /// Whether a formula is being edited.
   final bool inFormula;
+
+  /// Whether the formula being edited can only be typed as LaTeX: a TikZ
+  /// picture.
+  final bool latexOnly;
 
   /// The font size under the caret, in points.
   final double fontSize;
@@ -87,6 +91,7 @@ class TextFormatState {
       setEquals(other.marks, marks) &&
       other.blockKind == blockKind &&
       other.inFormula == inFormula &&
+      other.latexOnly == latexOnly &&
       other.fontSize == fontSize &&
       other.font == font &&
       other.textColor == textColor &&
@@ -97,30 +102,12 @@ class TextFormatState {
     Object.hashAllUnordered(marks),
     blockKind,
     inFormula,
+    latexOnly,
     fontSize,
     font,
     textColor,
     highlight,
   );
-}
-
-/// The formula being edited, as its preview beneath it needs it.
-@immutable
-class FormulaSession {
-  const FormulaSession({required this.latex, this.error});
-
-  /// The formula as it stands, in LaTeX, as it is stored.
-  final String latex;
-
-  /// Why the Simple syntax typed so far cannot be read in full, if it cannot.
-  final String? error;
-
-  @override
-  bool operator ==(Object other) =>
-      other is FormulaSession && other.latex == latex && other.error == error;
-
-  @override
-  int get hashCode => Object.hash(latex, error);
 }
 
 /// Commands a text box accepts from outside itself.
@@ -152,6 +139,10 @@ abstract interface class TextEditorCommands {
 
   /// Places pictures or PDF pages at the caret, each on its own line.
   void insertEmbeds(List<BlockEmbed> embeds);
+
+  /// Puts [blocks] in place of the selection: text, formulas, lists and
+  /// tables read from elsewhere.
+  void insertBlocks(List<TextBlock> blocks);
 
   /// Sets the font size, in points.
   void setFontSize(double points);
@@ -217,19 +208,9 @@ class TextBoxEditorController extends ChangeNotifier
     if (!identical(_editor, editor)) return;
     _editor = null;
     _state = TextFormatState.none;
-    _setFormula(null, null, null);
+    _setFormula(null);
     _notify();
   }
-
-  /// The formula being edited, for the preview beneath it; null when none
-  /// is.
-  final ValueNotifier<FormulaSession?> formula = ValueNotifier<FormulaSession?>(
-    null,
-  );
-
-  /// Where the source of the formula being edited sits in its text box, in
-  /// the box's own page units, once it has been laid out.
-  final ValueNotifier<Rect?> formulaAnchor = ValueNotifier<Rect?>(null);
 
   /// The source of the formula being edited, for the page to draw over
   /// everything on it; null when no formula is.
@@ -255,29 +236,15 @@ class TextBoxEditorController extends ChangeNotifier
     return template;
   }
 
-  /// Called by the attached text box as a formula opens, changes and closes,
-  /// with where its source is laid out — null until it has been, so that
-  /// nothing is placed by where the last formula was — and the [field] it
-  /// is typed in.
-  void reportFormula(
-    TextEditorCommands editor,
-    FormulaSession? session, {
-    Rect? anchor,
-    Widget? field,
-  }) {
-    if (!identical(_editor, editor)) return;
-    _setFormula(
-      session,
-      session == null ? null : anchor,
-      session == null ? null : field,
-    );
+  /// Called by the attached text box as a formula opens, with the [field]
+  /// its source is typed in, and as it closes, with null.
+  void reportFormula(TextEditorCommands editor, Widget? field) {
+    if (identical(_editor, editor)) _setFormula(field);
   }
 
-  void _setFormula(FormulaSession? session, Rect? anchor, Widget? field) {
+  void _setFormula(Widget? field) {
     void apply() {
       if (_disposed) return;
-      formula.value = session;
-      formulaAnchor.value = anchor;
       formulaField.value = field;
     }
 
@@ -321,8 +288,6 @@ class TextBoxEditorController extends ChangeNotifier
   @override
   void dispose() {
     _disposed = true;
-    formula.dispose();
-    formulaAnchor.dispose();
     formulaField.dispose();
     formulaSyntax.dispose();
     super.dispose();
@@ -352,6 +317,9 @@ class TextBoxEditorController extends ChangeNotifier
 
   @override
   void insertEmbeds(List<BlockEmbed> embeds) => _editor?.insertEmbeds(embeds);
+
+  @override
+  void insertBlocks(List<TextBlock> blocks) => _editor?.insertBlocks(blocks);
 
   @override
   void setFontSize(double points) => _target?.setFontSize(points);

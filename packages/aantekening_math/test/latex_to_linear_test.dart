@@ -84,13 +84,13 @@ void main() {
       r'\braket{\|x\|}': 'braket(norm(x))',
       r'a + \colorbox{#FFEF9D}{$b^2$}': 'a + highlight(b^2)',
       r'\colorbox{#A8E6B0}{$\frac{1}{2}$}': 'highlight(#A8E6B0, 1/2)',
-      r'\colorbox{yellow}{if}': r'`\colorbox{yellow}{if}`',
+      r'\colorbox{yellow}{if}': r'\colorbox{yellow}{if}',
       r'A^\dagger': 'A^dagger',
       r'a \leftrightarrow b': 'a <-> b',
       'a^*': 'a^`*`',
       '[0, 1)': '`[`0, 1`)`',
       r'\begin{aligned} a &= b \end{aligned}':
-          r'`\begin{aligned} a &= b \end{aligned}`',
+          r'\begin{aligned} a &= b \end{aligned}',
       '': '',
     };
     for (final entry in cases.entries) {

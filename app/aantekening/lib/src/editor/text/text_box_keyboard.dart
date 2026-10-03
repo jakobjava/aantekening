@@ -96,7 +96,7 @@ extension _Keyboard on TextBoxEditorState {
 
     if (key == LogicalKeyboardKey.escape) {
       if (_formula != null) {
-        _closeFormula(emit: true);
+        _closeFormula(emit: true, onwards: true);
       } else {
         widget.onExit?.call();
       }
@@ -106,7 +106,7 @@ extension _Keyboard on TextBoxEditorState {
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter) {
       if (_formula != null) {
-        _closeFormula(emit: true);
+        _closeFormula(emit: true, onwards: true);
       } else if (control) {
         _toggleChecked(_selection.extent.block);
       } else {

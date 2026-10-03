@@ -496,14 +496,26 @@ class RenderBlockParagraph extends RenderProxyBox {
 }
 
 /// A screen pixel in [object]'s own units, which differ from pixels as the
-/// page is zoomed.
+/// page is zoomed: one of the display's own, however it scales the window.
 ///
-/// What is drawn on the paper to work with rather than to keep — a caret, the
-/// handles round a picture — is sized in screen pixels through this, so it
+/// What is drawn on the paper to work with rather than to keep — a caret,
+/// the source of a formula — is sized in screen pixels through this, so it
 /// stays the same size however far the page is zoomed.
-double screenPixelIn(RenderObject object) {
+double screenPixelIn(RenderObject object) => _pixelIn(object, ancestor: null);
+
+/// A logical pixel in [object]'s own units: what the page measures its
+/// handles and how near a press must come to them in, on a display that
+/// scales the window as much as on one that does not.
+double logicalPixelIn(RenderObject object) {
+  final root = object.owner?.rootNode;
+  return root is RenderView && root.child != null
+      ? _pixelIn(object, ancestor: root.child)
+      : 1;
+}
+
+double _pixelIn(RenderObject object, {required RenderObject? ancestor}) {
   if (!object.attached) return 1;
-  final scale = object.getTransformTo(null).getMaxScaleOnAxis();
+  final scale = object.getTransformTo(ancestor).getMaxScaleOnAxis();
   return scale > 0 ? 1 / scale : 1;
 }
 

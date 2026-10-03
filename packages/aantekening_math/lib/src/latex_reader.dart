@@ -305,10 +305,13 @@ class LatexReader {
       case '':
         return const RawNode(r'\');
       case 'frac':
+        return FractionNode(_argument(), _argument());
+      // A fraction set larger or smaller than its place would set it keeps
+      // its own command: Simple reads it as written.
       case 'dfrac':
       case 'tfrac':
       case 'cfrac':
-        return FractionNode(_argument(), _argument());
+        return BinaryConstructNode(command, _argument(), _argument());
       case 'sqrt':
         _skipSpace();
         MathNode? index;
@@ -319,9 +322,10 @@ class LatexReader {
         }
         return RootNode(_argument(), index: index);
       case 'binom':
+        return BinaryConstructNode(r'\binom', _argument(), _argument());
       case 'dbinom':
       case 'tbinom':
-        return BinaryConstructNode(r'\binom', _argument(), _argument());
+        return BinaryConstructNode(command, _argument(), _argument());
       case 'stackrel':
       case 'overset':
       case 'underset':

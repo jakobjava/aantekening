@@ -3,8 +3,9 @@ part of 'text_box_editor.dart';
 /// Words spelled wrongly, links, and the menu a right-click opens.
 extension _Menu on TextBoxEditorState {
   /// The menu a right-click at [global] opens: what can be done about a
-  /// word spelled wrongly there, cutting, copying and pasting, and for a
-  /// picture or PDF page, setting it as the page's background.
+  /// word spelled wrongly there, cutting, copying and pasting, for a
+  /// picture or PDF page, setting it as the page's background, and for a
+  /// TikZ picture, editing its source.
   ///
   /// A right-click outside the selection first places the caret there, or
   /// picks the object there, as a click would, so the menu acts on what was
@@ -42,6 +43,7 @@ extension _Menu on TextBoxEditorState {
     final selected = !_selection.isCollapsed;
     final picture = hit != null && hit.embed ? hit.position.block : null;
     final file = picture == null ? null : _fileAt(picture);
+    final tikz = picture != null && _blocks[picture].embed?.source != null;
     final table = hit == null
         ? null
         : TextTables.tableAt(_blocks, hit.position.block);
@@ -131,13 +133,20 @@ extension _Menu on TextBoxEditorState {
             icon: AppIcon.export,
           ),
         ]
-      else if (picture != null && widget.onEmbedToBackground != null)
+      else if (picture != null)
         <MenuCommand>[
-          MenuCommand(
-            'Set picture as background',
-            () => _embedToBackground(picture),
-            icon: AppIcon.picture,
-          ),
+          if (tikz)
+            MenuCommand(
+              'Edit TikZ source',
+              () => unawaited(_editPicture(picture)),
+              icon: AppIcon.latex,
+            ),
+          if (widget.onEmbedToBackground != null)
+            MenuCommand(
+              'Set picture as background',
+              () => _embedToBackground(picture),
+              icon: AppIcon.picture,
+            ),
         ],
     ]);
   }
