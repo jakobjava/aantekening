@@ -12,6 +12,7 @@ import 'package:aantekening/src/editor/text/shrink_to_width.dart';
 import 'package:aantekening/src/editor/text/table_view.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/editor/text/text_styles.dart';
+import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
@@ -894,7 +895,7 @@ void main() {
       tester,
     ) async {
       final long = r'\frac{a}{b} + ' * 6;
-      expect(long.length, greaterThan(FormulaWindow.opensPast));
+      expect(long.length, greaterThan(FormulaWindow.usual));
       await savePage(tester, <TextRun>[TextRun.imported(long)]);
       await openEditor(tester, store, pageId);
       await tester.tapAt(
@@ -934,7 +935,7 @@ void main() {
           '  1 & x > 0 \\\\\n'
           '  0\n'
           '\\end{cases}';
-      expect(formula.length, lessThan(FormulaWindow.closesBelow));
+      expect(formula.length, lessThan(const FormulaWindow().closesBelow));
       await savePage(tester, <TextRun>[const TextRun.imported(formula)]);
       await openEditor(tester, store, pageId);
       await tester.tapAt(
@@ -967,7 +968,7 @@ void main() {
       await press(tester, LogicalKeyboardKey.equal, alt: true);
       await tester.pumpAndSettle();
       final sum = List<String>.generate(20, (i) => 'x').join(' + ');
-      expect(sum.length, lessThanOrEqualTo(FormulaWindow.opensPast));
+      expect(sum.length, lessThanOrEqualTo(FormulaWindow.usual));
       await type(tester, sum);
       await tester.pumpAndSettle();
       expect(formulaWindow(), findsNothing);
@@ -989,6 +990,36 @@ void main() {
       await type(tester, 'y');
       await tester.pumpAndSettle();
       expect(overlayOf(tester).source.text, '${'x' * 59}y');
+    });
+
+    testWidgets('the length a source gets its window past is a setting', (
+      tester,
+    ) async {
+      await openEditor(
+        tester,
+        store,
+        pageId,
+        preferences: Preferences.inMemory(<String, Object?>{
+          'math.windowPast': 40,
+        }),
+      );
+      await startTextBox(tester);
+      await press(tester, LogicalKeyboardKey.equal, alt: true);
+      await tester.pumpAndSettle();
+      await type(tester, 'x' * 40);
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsNothing);
+      await type(tester, 'x');
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsOneWidget);
+
+      // Back beneath its line twenty shorter.
+      await tester.enterText(windowField(), 'x' * 20);
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsOneWidget);
+      await tester.enterText(windowField(), 'x' * 19);
+      await tester.pumpAndSettle();
+      expect(formulaWindow(), findsNothing);
     });
 
     testWidgets('a click on the source below the box places the caret in it', (

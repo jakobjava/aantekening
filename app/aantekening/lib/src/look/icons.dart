@@ -49,6 +49,12 @@ enum AppIcon {
   cut,
   copy,
   paste,
+
+  /// A field with the caret in it: renaming.
+  rename,
+
+  /// An arrow out of a box: opening in a new tab.
+  newTab,
   link,
   page,
   export,
@@ -437,6 +443,17 @@ class _IconPainter extends CustomPainter {
         box(3, 3, 13, 14.5);
         box(6, 1.5, 10, 4.5);
         rows(5.5, <double>[8, 11], to: 10.5);
+      case AppIcon.rename:
+        // The field, open where the caret stands in it.
+        through(<(double, double)>[(9, 5), (2, 5), (2, 11), (9, 11)]);
+        through(<(double, double)>[(13, 5), (14, 5), (14, 11), (13, 11)]);
+        through(<(double, double)>[(11, 2.5), (11, 13.5)]);
+        through(<(double, double)>[(9.5, 2.5), (12.5, 2.5)]);
+        through(<(double, double)>[(9.5, 13.5), (12.5, 13.5)]);
+      case AppIcon.newTab:
+        through(<(double, double)>[(7, 3), (3, 3), (3, 13), (13, 13), (13, 9)]);
+        through(<(double, double)>[(7.5, 8.5), (13.5, 2.5)]);
+        through(<(double, double)>[(9.5, 2.5), (13.5, 2.5), (13.5, 6.5)]);
       case AppIcon.link:
         canvas
           ..translate(8 * unit, 8 * unit)

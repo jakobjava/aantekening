@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart' show Widget;
 
+import 'formula_window.dart';
 import 'math_templates.dart';
 import 'text_styles.dart';
 
@@ -222,6 +223,10 @@ class TextBoxEditorController extends ChangeNotifier
   final ValueNotifier<MathMode> formulaSyntax = ValueNotifier<MathMode>(
     MathMode.linear,
   );
+
+  /// How long a formula's source grows before it is typed in a window. Kept
+  /// in step with the person's setting by the page.
+  FormulaWindow formulaWindow = const FormulaWindow();
 
   MathTemplate? _queuedMath;
 

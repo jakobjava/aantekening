@@ -91,6 +91,7 @@ class LibraryActions {
     String? pageId,
   }) async {
     if (notebookId == null) return;
+    _ref.read(expandedNotebooksProvider.notifier).add(<String>[notebookId]);
     final above = <String>[notebookId];
     if (sectionId != null) {
       final sections = await _ref.read(sectionTreeProvider(notebookId).future);
@@ -100,7 +101,7 @@ class LibraryActions {
         above.addAll(pages.ancestorsOf(pageId));
       }
     }
-    _ref.read(collapsedRowsProvider.notifier).expand(above);
+    _ref.read(collapsedRowsProvider.notifier).remove(above);
   }
 
   // ---------------------------------------------------------------- opening

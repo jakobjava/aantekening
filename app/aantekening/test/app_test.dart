@@ -833,6 +833,39 @@ void main() {
       expect(inPanes(find.text('Waves')), findsOneWidget);
       expect(preferences['library.collapsed'], isNull);
     });
+
+    testWidgets('notebooks stay expanded as others are opened, until '
+        'collapsed', (tester) async {
+      final preferences = Preferences.inMemory();
+      for (final (notebook, section) in <(String, String)>[
+        ('Physics', 'Mechanics'),
+        ('Chemistry', 'Acids'),
+      ]) {
+        final made = await store.library.createNotebook(title: notebook);
+        await store.library.createSection(notebookId: made.id, title: section);
+      }
+      useSurface(tester, wideWindow);
+      await tester.pumpWidget(shellWith(store, preferences: preferences));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Physics'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Chemistry'));
+      await tester.pumpAndSettle();
+      expect(inPanes(find.text('Mechanics')), findsOneWidget);
+      expect(inPanes(find.text('Acids')), findsOneWidget);
+
+      // Physics collapsed by its chevron, Chemistry stays open.
+      final physics = tester.getRect(
+        find.ancestor(of: find.text('Physics'), matching: find.byType(TreeRow)),
+      );
+      await tester.tapAt(
+        Offset(physics.left + TreeRow.indent / 2, physics.center.dy),
+      );
+      await tester.pumpAndSettle();
+      expect(inPanes(find.text('Mechanics')), findsNothing);
+      expect(inPanes(find.text('Acids')), findsOneWidget);
+      expect(preferences['library.expandedNotebooks'], hasLength(1));
+    });
   });
 
   group('tabs', () {

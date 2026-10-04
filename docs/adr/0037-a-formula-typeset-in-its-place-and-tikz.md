@@ -25,12 +25,13 @@ as wide as the box, over the lines below rather than pushing them down
 (`FormulaLayer`, drawn over the page as before). While the source does not
 typeset — a bracket still open, a command half typed — the formula stays as
 it last typeset (`MathView.problemIn`), and the strip says what is wrong
-beneath the source. A source longer than 80 characters is typed in a
+beneath the source. A source longer than 80 characters — or as many as
+set in Settings → Formulas (`formulaWindowProvider`) — is typed in a
 window of its own instead (`showFormulaWindow`), a dialog as Insert LaTeX
 is, the formula still typeset in its place behind it and outlined: across
 a narrow box, a long source would wind down it as a long, thin strip, hard
-to read and to edit. It goes back beneath the line only once it is shorter
-than 60 (`FormulaWindow`), so it does not go back and forth while it is
+to read and to edit. It goes back beneath the line only once it is 20
+shorter (`FormulaWindow.margin`), so it does not go back and forth while it is
 about as long as the limit. A source on more than one line is typed in the
 window however short: beneath the line Enter finishes the formula, so its
 lines could not be kept, and LaTeX brought in keeps how its pictures and

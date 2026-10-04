@@ -19,7 +19,8 @@ with it, and a text box hovered over shows no band to drag it by unless the
 type-and-select tool is in hand.
 
 Notebooks, sections and pages are in the sidebar's first panel; right-click
-one for what can be done to it. A new page opens with the caret in its title.
+one for what can be done to it. A notebook opened shows its sections, and
+stays expanded as others are opened, until its chevron collapses it. A new page opens with the caret in its title.
 **Sort**, above the notebooks and above the pages, lists them by when they
 were made, when they last changed or by name, either way round — or as you
 arranged them, by dragging one above or below another with the mouse or a
@@ -172,7 +173,10 @@ source is not yet a formula — a bracket still open — the formula stays as it
 last was and the strip says what is missing. Once the source is longer
 than 80 characters, or on more than one line, it moves to a window of its
 own, typeset in its place behind it all the same; it comes back beneath the
-line once it is shorter than 60 and on one line. Enter or Esc finishes it,
+line once it is 20 shorter and on one line. **Settings → Formulas → Source
+window** sets how long it grows first. In Simple syntax a comma between two
+digits is a decimal comma, as in German — `2,5` — and one with a space after
+it parts a list: `f(1, 2)`. Enter or Esc finishes it,
 in the window too; Shift+Enter there starts a new line. Arrowing into or
 clicking a formula shows its source again. Tab moves to the next place a
 structure left to fill in. A formula alone on its line is typeset large;

@@ -1,12 +1,14 @@
-/// How formulas are typeset: the commands and TikZ styles every one is
-/// given.
+/// How formulas are typed and typeset: when a source is typed in a window,
+/// and the commands and TikZ styles every formula is given.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../editor/text/formula_preamble.dart';
+import '../editor/text/formula_window.dart';
 import '../look/appearance.dart';
+import '../look/controls.dart';
 import '../look/tones.dart';
 import 'settings_view.dart';
 
@@ -35,9 +37,46 @@ class _FormulaSettingsState extends ConsumerState<FormulaSettings> {
     final leftOver = ref.watch(
       formulaPreambleProvider.select((preamble) => preamble.leftOver),
     );
+    final window = ref.watch(formulaWindowProvider);
+    const range = FormulaWindow.most - FormulaWindow.least;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        SettingsSection(
+          title: 'Source window',
+          description:
+              'A formula\'s source is typed beneath its line until it grows '
+              'longer than this, and then in a window of its own; it goes '
+              'back beneath its line once it is '
+              '${FormulaWindow.margin} characters shorter. A source on more '
+              'than one line is always typed in the window.',
+          children: <Widget>[
+            SettingRow(
+              label: 'Longer than',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  LevelSlider(
+                    label: 'Source window',
+                    value: (window.opensPast - FormulaWindow.least) / range,
+                    // In steps of ten characters.
+                    onChanged: (level) => ref
+                        .read(formulaWindowProvider.notifier)
+                        .set(
+                          ((FormulaWindow.least + level * range) / 10).round() *
+                              10,
+                        ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '${window.opensPast} characters',
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         SettingsSection(
           title: 'Preamble',
           description:

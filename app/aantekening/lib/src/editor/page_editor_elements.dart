@@ -67,8 +67,14 @@ extension _Elements on _PageEditorState {
       proofreader: element is TextElement ? _proofreader : null,
       placesMatch: id == firstMatch,
     );
+    // A picture moved or resized is shown by the widget it had: drawing a
+    // TikZ picture again as it is dragged would keep it behind the pointer.
     final cached = _elementWidgets[id];
-    if (cached != null && cached.$1 == built) return cached.$2;
+    if (cached != null &&
+        (cached.$1 == built ||
+            CanvasElementView.showsAlike(cached.$1.element, element))) {
+      return cached.$2;
+    }
     if (_elementWidgets.length > _controller.document.elements.length + 64) {
       _elementWidgets.removeWhere(
         (key, _) => _controller.elementById(key) == null,
@@ -79,14 +85,30 @@ extension _Elements on _PageEditorState {
     return widget;
   }
 
-  /// Keeps the frame of the TikZ picture [id] as tall as its drawing,
-  /// [drawn] large unscaled, makes it at its width: a picture its source
-  /// changed, or brought in without knowing its size.
-  void _keepProportions(String id, Size drawn) {
+  /// Fits the frame of the TikZ picture [id], drawn [drawn] large unscaled,
+  /// to its drawing once its source has changed, keeping its width and
+  /// keeping it as far out of its drawing's proportions as it was:
+  /// stretched, or not. Otherwise the frame stays as it was made or
+  /// resized, and the picture fills it, as a stretched picture does.
+  void _fitTikz(String id, Size drawn) {
+    final before = _tikzDrawn[id];
+    _tikzDrawn[id] = drawn;
+    final changed = _tikzChanged.remove(id);
     final picture = _controller.elementById(id);
-    if (picture is! TikzElement || drawn.isEmpty) return;
+    if (picture is! TikzElement ||
+        drawn.isEmpty ||
+        changed == null ||
+        before == null ||
+        before.isEmpty) {
+      return;
+    }
     final frame = picture.frame;
-    final height = frame.width * drawn.height / drawn.width;
+    // Unless something else has resized it since: undone, say.
+    if (changed != Size(frame.width, frame.height)) return;
+    final height =
+        frame.height *
+        (drawn.height / drawn.width) /
+        (before.height / before.width);
     if ((height - frame.height).abs() < 0.5) return;
     // What the drawing makes it, not an edit of its own.
     _controller.replaceElement(
@@ -96,13 +118,20 @@ extension _Elements on _PageEditorState {
     );
   }
 
+  /// Notes that the source of [picture] is about to change, for its frame
+  /// to be fitted to what it then draws.
+  void _changingTikz(TikzElement picture) => _tikzChanged[picture.id] = Size(
+    picture.frame.width,
+    picture.frame.height,
+  );
+
   Widget _elementWidget(_ElementBuild built) {
     final element = built.element;
     if (element is! TextElement) {
       return CanvasElementView(
         element: element,
         onDrawn: element is TikzElement
-            ? (drawn) => _keepProportions(element.id, drawn)
+            ? (drawn) => _fitTikz(element.id, drawn)
             : null,
       );
     }

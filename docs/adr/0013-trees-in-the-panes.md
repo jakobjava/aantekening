@@ -28,6 +28,10 @@ once a tree is three or four levels deep.
   comes down from; the line under the pointer lights up along its whole
   length. What is collapsed is kept in the preferences. Opening something
   from elsewhere — search, the graph, a paste — expands the rows above it.
+  Notebooks are the other way round: each shows only its name until it is
+  opened or expanded, so a long list of them stays short, and stays open,
+  however many others are opened after it, until it is collapsed
+  (`expandedNotebooksProvider`).
 * **Sections are folders.** Every section shows a folder, open while its
   pages are listed beside it; pages show a page.
 

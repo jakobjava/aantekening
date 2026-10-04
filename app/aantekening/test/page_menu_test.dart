@@ -342,6 +342,80 @@ void main() {
       expect(elementsOf(tester).whereType<TikzElement>().single.source, source);
     });
 
+    testWidgets('a TikZ picture is stretched by a side, and stays '
+        'stretched as its source changes', (tester) async {
+      mockClipboard(tester);
+      await savePage(
+        tester,
+        (_) => const <NoteElement>[
+          TikzElement(
+            id: 'tikz',
+            frame: Frame(x: 100, y: 100, width: 200, height: 100),
+            createdAt: 0,
+            updatedAt: 0,
+            source: r'\tikz \draw (0,0) -- (2,1);',
+          ),
+        ],
+      );
+      await openEditor(tester, store, pageId);
+      TikzElement tikz() => elementsOf(tester).whereType<TikzElement>().single;
+      double drawnAspect() {
+        final drawn = tester.getSize(find.byType(TikzView));
+        return drawn.height / drawn.width;
+      }
+
+      // Its lower side dragged down, it is stretched, and fills its frame.
+      final canvas = tester.getTopLeft(find.byType(InfiniteCanvas));
+      await tester.tapAt(
+        canvas + const Offset(200, 150),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      final before = tikz().frame;
+      final gesture = await tester.startGesture(
+        canvas +
+            Offset(200, 100 + before.height + SelectionHandles.outlineInset),
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.moveBy(const Offset(0, 30));
+      await gesture.moveBy(const Offset(0, 30));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      final stretched = tikz().frame;
+      expect(stretched.width, closeTo(before.width, 0.01));
+      expect(stretched.height, closeTo(before.height + 60, 0.5));
+      final shown = tester.getRect(find.byType(TikzView));
+      expect(shown.height, closeTo(stretched.height, 0.5));
+      expect(shown.width, closeTo(stretched.width, 0.5));
+      final stretch = stretched.height / stretched.width / drawnAspect();
+
+      // Its source changed, it keeps its width and its stretch.
+      await rightClick(tester, shown.center);
+      await tester.tap(menuItem('Edit TikZ source'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.widgetWithText(AlertDialog, 'TikZ picture'),
+          matching: find.byType(TextField),
+        ),
+        r'\tikz \draw (0,0) -- (2,3);',
+      );
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.enter, control: true);
+      await tester.pumpAndSettle();
+      final edited = tikz().frame;
+      expect(edited.width, closeTo(stretched.width, 0.01));
+      expect(
+        edited.height / edited.width / drawnAspect(),
+        closeTo(stretch, 0.01),
+      );
+
+      // Undone, it is as it was before, and stays so.
+      canvasOf(tester).undo();
+      await tester.pumpAndSettle();
+      expect(tikz().frame.height, closeTo(stretched.height, 0.01));
+    });
+
     testWidgets('is set as the background where it lies, in one step', (
       tester,
     ) async {

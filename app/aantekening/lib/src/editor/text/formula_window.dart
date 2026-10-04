@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../look/appearance.dart';
 import '../../look/motion.dart';
 import '../../look/tones.dart';
+import '../../preferences.dart';
 import 'math_syntax.dart';
 
 /// The source of the formula being edited as its window shows it.
@@ -56,21 +57,68 @@ class FormulaWindowSource {
 /// more than one line, as LaTeX brought in keeps its pictures and
 /// environments, is typed in a window however long it is: beneath the line
 /// Enter finishes the formula, so its lines could not be kept.
-abstract final class FormulaWindow {
+@immutable
+class FormulaWindow {
+  const FormulaWindow({this.opensPast = usual});
+
+  /// The limit unless another is set.
+  static const int usual = 80;
+
+  /// The limits that can be set, from shortest to longest.
+  static const int least = 30;
+  static const int most = 300;
+
+  /// How much shorter than [opensPast] a source goes back beneath its line.
+  static const int margin = 20;
+
   /// The longest source typed beneath its line; a longer one is typed in a
   /// window.
-  static const int opensPast = 80;
+  final int opensPast;
 
   /// The shortest source typed in a window; a shorter one goes back beneath
   /// its line.
-  static const int closesBelow = 60;
+  int get closesBelow => opensPast - margin;
 
   /// Whether [source] is typed in a window, given whether it is [already].
-  static bool holds(String source, {required bool already}) {
+  bool holds(String source, {required bool already}) {
     if (source.contains('\n')) return true;
     return already ? source.length >= closesBelow : source.length > opensPast;
   }
+
+  @override
+  bool operator ==(Object other) =>
+      other is FormulaWindow && other.opensPast == opensPast;
+
+  @override
+  int get hashCode => opensPast.hashCode;
 }
+
+/// How long a formula's source grows before it is typed in a window,
+/// remembered between sessions.
+class FormulaWindowController extends Notifier<FormulaWindow> {
+  static const String _key = 'math.windowPast';
+
+  @override
+  FormulaWindow build() => switch (ref.preference(_key)) {
+    final int past => FormulaWindow(
+      opensPast: past.clamp(FormulaWindow.least, FormulaWindow.most),
+    ),
+    _ => const FormulaWindow(),
+  };
+
+  /// Sends sources longer than [opensPast] to a window.
+  void set(int opensPast) {
+    final past = opensPast.clamp(FormulaWindow.least, FormulaWindow.most);
+    if (past == state.opensPast) return;
+    state = FormulaWindow(opensPast: past);
+    ref.savePreference(_key, past == FormulaWindow.usual ? null : past);
+  }
+}
+
+final formulaWindowProvider =
+    NotifierProvider<FormulaWindowController, FormulaWindow>(
+      FormulaWindowController.new,
+    );
 
 /// Shows the source of the formula being edited in a window of its own,
 /// as long as [source] holds one, telling [onChanged] of every change made

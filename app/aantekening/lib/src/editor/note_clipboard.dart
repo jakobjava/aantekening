@@ -29,12 +29,10 @@ final class TextClip extends NoteClip {
   /// page units.
   static const double _gap = 8;
 
-  static const Size _unknownSize = Size(240, 160);
-
   /// The pictures, PDF pages and TikZ pictures this holds, on the page by
   /// themselves: as large as they were in the text, one beneath the other
   /// from the page's origin. Null where it holds anything else, text or a
-  /// file, which stays text.
+  /// file, or an object whose size is not known, which stays text.
   List<NoteElement>? get asElements {
     final now = DateTime.now().millisecondsSinceEpoch;
     final objects = <NoteElement>[];
@@ -46,19 +44,20 @@ final class TextClip extends NoteClip {
         if (block.length == 0) continue;
         return null;
       }
-      if (embed.kind == EmbedKind.file) return null;
-      // A TikZ picture whose size is not known yet takes a picture's, and
-      // its drawing's proportions once it is drawn.
-      final size = embed.width > 0 && embed.height > 0
-          ? Size(embed.width, embed.height)
-          : _unknownSize;
+      // An object whose size is not known — a TikZ picture not drawn when
+      // it was copied — stays in the text, where it needs none.
+      if (embed.kind == EmbedKind.file ||
+          embed.width <= 0 ||
+          embed.height <= 0) {
+        return null;
+      }
       objects.add(
         embed.toElement(
-          frame: Frame(x: 0, y: y, width: size.width, height: size.height),
+          frame: Frame(x: 0, y: y, width: embed.width, height: embed.height),
           now: now,
         ),
       );
-      y += size.height + _gap;
+      y += embed.height + _gap;
     }
     return objects.isEmpty ? null : objects;
   }

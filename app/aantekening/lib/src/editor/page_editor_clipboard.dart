@@ -137,6 +137,7 @@ extension _Clipboard on _PageEditorState {
       onChanged: (source) {
         final current = _controller.elementById(id);
         if (current is! TikzElement) return;
+        _changingTikz(current);
         _controller.replaceElement(
           current.copyWith(
             source: source,

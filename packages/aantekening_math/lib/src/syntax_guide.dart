@@ -45,6 +45,7 @@ abstract final class SimpleSyntaxGuide {
         SyntaxExample('a/b', 'Fraction'),
         SyntaxExample('(a + b)/(c + d)', 'Brackets group a fraction'),
         SyntaxExample('2 1/2', 'Mixed number'),
+        SyntaxExample('2,5 + 0.5', 'Decimals, after a comma or a point'),
         SyntaxExample('a +- b', 'Plus or minus'),
         SyntaxExample('n!', 'Factorial'),
         SyntaxExample('a mod n', 'Modulo'),

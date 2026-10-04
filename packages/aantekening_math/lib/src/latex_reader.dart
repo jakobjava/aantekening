@@ -204,16 +204,22 @@ class LatexReader {
     while (!_atEnd && _isDigit(_char)) {
       _i++;
     }
-    if (!_atEnd &&
-        _char == '.' &&
-        _i + 1 < source.length &&
-        _isDigit(source[_i + 1])) {
-      _i++;
-      while (!_atEnd && _isDigit(_char)) {
-        _i++;
-      }
+    final whole = source.substring(start, _i);
+    // Its decimals, after a point or a decimal comma, `{,}`.
+    final comma = _startsWith(NumberNode.decimalComma);
+    final from = _i + (comma ? NumberNode.decimalComma.length : 1);
+    if (!(comma || _startsWith('.')) ||
+        from >= source.length ||
+        !_isDigit(source[from])) {
+      return NumberNode(whole);
     }
-    return NumberNode(source.substring(start, _i));
+    _i = from;
+    while (!_atEnd && _isDigit(_char)) {
+      _i++;
+    }
+    return NumberNode(
+      '$whole${comma ? ',' : '.'}${source.substring(from, _i)}',
+    );
   }
 
   /// A fence opened by [open] and closed by [close], or [open] alone if it is

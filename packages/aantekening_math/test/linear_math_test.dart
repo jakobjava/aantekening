@@ -128,6 +128,29 @@ void main() {
     });
   });
 
+  group('numbers', () {
+    test('take a decimal comma between digits, as in German', () {
+      expectLatex('2,5', '2{,}5');
+      expectLatex('x = -0,5x^2', 'x = -0{,}5 x^2');
+      expectLatex('|2,5|', r'\left\lvert 2{,}5 \right\rvert');
+      expectLatex('1/2,5', r'\frac{1}{2{,}5}');
+      expectLatex('3.14', '3.14');
+    });
+
+    test('part a list where the comma has a space after it', () {
+      expectLatex('x = 1, 2', 'x = 1, 2');
+      expectLatex('f(1, 2)', r'f \left( 1, 2 \right)');
+    });
+
+    test('keep their decimal comma written back from LaTeX', () {
+      expect(LinearMath.fromLatex('2{,}5 + 0.5'), '2,5 + 0.5');
+      expect(
+        LinearMath.toLatex(LinearMath.fromLatex('x^{2{,}5}')),
+        'x^{2{,}5}',
+      );
+    });
+  });
+
   group('symbols and grouping', () {
     test('recognises Greek letters by name', () {
       expectLatex('alpha + beta', r'\alpha + \beta');

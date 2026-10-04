@@ -29,10 +29,15 @@ picture is drawn again with each change. Emptied, the picture goes.
 `"type": "tikz"`), as a picture or PDF page is: picked, moved,
 turned and resized as one, set as the background, and edited from its
 right-click menu in the same window, one undo step for the whole edit.
-Its frame keeps the proportions of its drawing, which is scaled to fill it:
-as its source changes the frame's height follows (`onDrawn`), as a text
-box's follows its text, without an undo step of its own. Taken out of
-text, it keeps the size it was drawn at there. It goes into text and out
+Its drawing fills its frame, as a picture stretched does: a corner resizes
+it in proportion, a side stretches it. As its source changes the frame's
+height follows the drawing, keeping its width and however far it was
+stretched (`onDrawn`), as a text box's follows its text, without an undo
+step of its own; otherwise the frame stays as it was made or resized.
+Taken out of text, it keeps the size it was drawn at there; one whose size
+is not known stays in the text. Its widget is kept while only its frame
+changes, and a picture read or drawn lately is not read or drawn again, so
+it is not worked out again at each step of a drag. It goes into text and out
 of it as pictures do (`asEmbed`, `toElement`).
 
 It becomes one where it is made: brought in by Insert → LaTeX or a `.tex`

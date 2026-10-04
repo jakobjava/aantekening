@@ -276,7 +276,8 @@ extension _Formulas on TextBoxEditorState {
       return;
     }
     final source = _blocks[formula.block].runs[formula.run].text;
-    if (!FormulaWindow.holds(source, already: window != null)) {
+    final limit = widget.controller?.formulaWindow ?? const FormulaWindow();
+    if (!limit.holds(source, already: window != null)) {
       if (window != null) _handBack(window);
       return;
     }

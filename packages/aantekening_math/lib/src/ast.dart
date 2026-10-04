@@ -44,14 +44,19 @@ sealed class MathNode {
   }
 }
 
-/// A numeric literal.
+/// A numeric literal, its decimals after a point or a comma.
 final class NumberNode extends MathNode {
   const NumberNode(this.text);
 
   final String text;
 
+  /// A decimal comma in LaTeX: braced, so no space follows it, as one
+  /// would after a comma parting a list.
+  static const String decimalComma = '{,}';
+
   @override
-  void writeLatex(StringBuffer out) => out.write(text);
+  void writeLatex(StringBuffer out) =>
+      out.write(text.replaceAll(',', decimalComma));
 }
 
 /// A single-letter variable.

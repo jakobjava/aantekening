@@ -101,6 +101,7 @@ Future<void> showLibraryMenu(
   final paste = MenuCommand(
     pasteLabel,
     actions.canPaste(node) ? () => actions.paste(node) : null,
+    icon: AppIcon.paste,
   );
 
   final link = switch (node) {
@@ -115,6 +116,7 @@ Future<void> showLibraryMenu(
         MenuCommand(
           'Open in new tab',
           () => unawaited(actions.openInNewTab(node)),
+          icon: AppIcon.newTab,
         ),
       MenuCommand(
         'Ask AI',
@@ -145,7 +147,7 @@ Future<void> showLibraryMenu(
       ),
     ],
     <MenuCommand>[
-      MenuCommand('Rename', rename),
+      MenuCommand('Rename', rename, icon: AppIcon.rename),
       MenuCommand('Delete', delete, icon: AppIcon.bin),
     ],
   ]);

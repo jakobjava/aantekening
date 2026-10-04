@@ -32,7 +32,7 @@ enum SettingsPage {
   keyboard('Keyboard', 'Every shortcut, and changing them', AppIcon.keyboard),
   formulas(
     'Formulas',
-    'Your own commands and TikZ styles for every formula',
+    'When a source gets a window; your own commands and TikZ styles',
     AppIcon.latex,
   ),
   spelling(

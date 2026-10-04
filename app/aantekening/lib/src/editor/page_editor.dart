@@ -49,7 +49,8 @@ import 'ribbon/ribbon.dart';
 import 'sheet_choices.dart';
 import 'text/box_formatting.dart';
 import 'text/cheat_sheet.dart';
-import 'text/formula_window.dart' show editTikzSource;
+import 'text/formula_window.dart'
+    show FormulaWindow, editTikzSource, formulaWindowProvider;
 import 'text/math_syntax.dart';
 import 'text/math_templates.dart';
 import 'text/text_box_controller.dart';
@@ -118,6 +119,13 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// text or re-typeset formulas.
   final Map<String, (_ElementBuild, Widget)> _elementWidgets =
       <String, (_ElementBuild, Widget)>{};
+
+  /// How large each TikZ picture on the page was last drawn, unscaled.
+  final Map<String, Size> _tikzDrawn = <String, Size>{};
+
+  /// The TikZ pictures whose source has just changed, each with the size
+  /// of its frame then: fitted to their new drawings once drawn.
+  final Map<String, Size> _tikzChanged = <String, Size>{};
 
   /// What marks the words spelled wrongly in the text boxes, if anything.
   Proofreader? _proofreader;
@@ -322,9 +330,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _textController.formulaField.addListener(_onFormulaChanged);
     // The syntax formulas are typed in is the person's preference, which a
     // text box can switch too.
-    _textController.formulaSyntax
-      ..value = ref.read(mathSyntaxProvider)
-      ..addListener(_onSyntaxChosen);
+    _textController
+      ..formulaSyntax.value = ref.read(mathSyntaxProvider)
+      ..formulaSyntax.addListener(_onSyntaxChosen)
+      ..formulaWindow = ref.read(formulaWindowProvider);
     if (widget.pageId != null) unawaited(_load());
   }
 
@@ -351,6 +360,8 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _placed.clear();
     _caretBefore = null;
     _elementWidgets.clear();
+    _tikzDrawn.clear();
+    _tikzChanged.clear();
     if (widget.pageId != null) unawaited(_load());
   }
 
@@ -386,6 +397,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     ref.listen<MathMode>(
       mathSyntaxProvider,
       (_, syntax) => _textController.formulaSyntax.value = syntax,
+    );
+    ref.listen<FormulaWindow>(
+      formulaWindowProvider,
+      (_, limit) => _textController.formulaWindow = limit,
     );
     final highlight = ref.watch(searchHighlightProvider);
     _proofreader = ref.watch(proofreaderProvider);

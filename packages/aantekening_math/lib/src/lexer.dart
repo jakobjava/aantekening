@@ -158,8 +158,11 @@ class MathLexer {
     while (_offset < source.length && _isDigit(source[_offset])) {
       _offset++;
     }
+    // A decimal point, or a decimal comma, as in German: one between two
+    // digits, with no space, is part of the number; with a space after it,
+    // it parts the items of a list.
     if (_offset < source.length &&
-        source[_offset] == '.' &&
+        (source[_offset] == '.' || source[_offset] == ',') &&
         _isDigit(_peek(1))) {
       _offset++;
       while (_offset < source.length && _isDigit(source[_offset])) {

@@ -24,7 +24,7 @@ import 'panel_focus.dart';
 import 'sidebar_state.dart';
 import 'tree_rows.dart';
 
-/// Lists notebooks and, beneath the selected one, its tree of sections.
+/// Lists notebooks and, beneath those expanded, their trees of sections.
 ///
 /// Lines join each row to the rows beneath it, and a click on a line, or on
 /// a row's chevron, collapses what lies beneath. Every row has a menu on a
@@ -120,7 +120,7 @@ class _LibraryPaneState extends ConsumerState<LibraryPane> {
   }
 }
 
-/// A notebook's row and, while it is open and expanded, its sections'.
+/// A notebook's row and, while it is expanded, its sections'.
 class _NotebookRows extends ConsumerWidget {
   const _NotebookRows({required this.notebook, this.focusNode});
 
@@ -132,25 +132,37 @@ class _NotebookRows extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final actions = ref.read(libraryActionsProvider);
+    final id = notebook.id;
     final selected = ref.watch(
-      selectedNotebookProvider.select((id) => id == notebook.id),
+      selectedNotebookProvider.select((open) => open == id),
     );
-    final expanded =
-        selected &&
-        !ref.watch(
-          collapsedRowsProvider.select((ids) => ids.contains(notebook.id)),
-        );
+    final opened = ref.watch(
+      expandedNotebooksProvider.select((ids) => ids.contains(id)),
+    );
+    final collapsed = ref.watch(
+      collapsedRowsProvider.select((ids) => ids.contains(id)),
+    );
+    // The notebook open shows its sections unless it was collapsed; others
+    // once they are expanded.
+    final expanded = opened || selected && !collapsed;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         TreeRow(
-          place: TreePlace(id: notebook.id, expanded: expanded),
-          // Only the open notebook shows its sections, so expanding another
-          // opens it.
-          onToggle: (id) => selected
-              ? ref.read(collapsedRowsProvider.notifier).toggle(id)
-              : actions.openNotebook(id),
+          place: TreePlace(id: id, expanded: expanded),
+          onToggle: (_) {
+            final ids = <String>[id];
+            final expanding = ref.read(expandedNotebooksProvider.notifier);
+            final collapsing = ref.read(collapsedRowsProvider.notifier);
+            if (expanded) {
+              expanding.remove(ids);
+              collapsing.add(ids);
+            } else {
+              expanding.add(ids);
+              collapsing.remove(ids);
+            }
+          },
           child: ArrangeableRow<Notebook>(
             item: notebook,
             enabled:

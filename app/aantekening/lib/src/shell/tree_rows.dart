@@ -10,10 +10,11 @@ import '../look/marks.dart';
 import '../look/tones.dart';
 import '../preferences.dart';
 
-/// The ids of the rows collapsed to hide what lies beneath them, remembered
-/// between sessions.
-class CollapsedRows extends Notifier<Set<String>> {
-  static const String _key = 'library.collapsed';
+/// The ids of some rows, remembered between sessions.
+class RememberedRows extends Notifier<Set<String>> {
+  RememberedRows(this._key);
+
+  final String _key;
 
   @override
   Set<String> build() => <String>{
@@ -21,27 +22,43 @@ class CollapsedRows extends Notifier<Set<String>> {
       ...ids.whereType<String>(),
   };
 
-  /// Collapses [id] if it is expanded, and expands it if it is collapsed.
+  /// Takes [id] out if it is in, and puts it in if it is not.
   void toggle(String id) => _set(
     state.contains(id)
         ? state.difference(<String>{id})
         : <String>{...state, id},
   );
 
-  /// Expands [ids], so what lies beneath them shows.
-  void expand(Iterable<String> ids) {
-    final expanded = state.difference(ids.toSet());
-    if (expanded.length != state.length) _set(expanded);
+  /// Puts [ids] in.
+  void add(Iterable<String> ids) {
+    final more = state.union(ids.toSet());
+    if (more.length != state.length) _set(more);
   }
 
-  void _set(Set<String> collapsed) {
-    state = collapsed;
-    ref.savePreference(_key, collapsed.isEmpty ? null : collapsed.toList());
+  /// Takes [ids] out.
+  void remove(Iterable<String> ids) {
+    final fewer = state.difference(ids.toSet());
+    if (fewer.length != state.length) _set(fewer);
+  }
+
+  void _set(Set<String> ids) {
+    state = ids;
+    ref.savePreference(_key, ids.isEmpty ? null : ids.toList());
   }
 }
 
-final collapsedRowsProvider = NotifierProvider<CollapsedRows, Set<String>>(
-  CollapsedRows.new,
+/// The rows collapsed to hide what lies beneath them: the sections and
+/// pages, which show it otherwise, and the notebooks collapsed while open.
+final collapsedRowsProvider = NotifierProvider<RememberedRows, Set<String>>(
+  () => RememberedRows('library.collapsed'),
+);
+
+/// The notebooks expanded to show their sections — those opened, until
+/// collapsed again, as many at once as wanted. The rest show only their
+/// names, so a long list of notebooks stays short, but for the one open,
+/// unless it was collapsed.
+final expandedNotebooksProvider = NotifierProvider<RememberedRows, Set<String>>(
+  () => RememberedRows('library.expandedNotebooks'),
 );
 
 /// A row above another in a tree, and whether its line goes on down past

@@ -116,9 +116,24 @@ class TikzPicture {
   /// `\tikz` command.
   static bool holds(String latex) => LatexSource.isPicture(latex);
 
-  /// The picture [latex] holds. Throws a [FormatException] where it cannot
-  /// be read or drawn.
-  static TikzPicture read(String latex) => _read(latex)..draw();
+  /// The pictures last read, by their source, the latest last.
+  ///
+  /// A picture is read each time what shows it is built — as it is moved,
+  /// say — which is far more often than its source changes.
+  static final Map<String, TikzPicture> _readBefore = <String, TikzPicture>{};
+
+  /// How many pictures [_readBefore] keeps.
+  static const int _kept = 32;
+
+  /// The picture [latex] holds: the very picture it held before, if it was
+  /// read lately. Throws a [FormatException] where it cannot be read or
+  /// drawn.
+  static TikzPicture read(String latex) {
+    final before = _readBefore.remove(latex);
+    final picture = before ?? (_read(latex)..draw());
+    if (_readBefore.length >= _kept) _readBefore.remove(_readBefore.keys.first);
+    return _readBefore[latex] = picture;
+  }
 
   static TikzPicture _read(String latex) {
     final source = latex.trim();
@@ -160,8 +175,40 @@ class TikzPicture {
   /// What the picture draws, black lines and text drawn in [ink]. Each
   /// node's label is as large as [labelSizes] says, in points, if it is
   /// given; without them the labels are placed as if empty.
-  TikzDrawing draw({List<Size>? labelSizes, Color ink = _black}) =>
-      _Painter(ink, labelSizes).run(_options, _body);
+  TikzDrawing draw({List<Size>? labelSizes, Color ink = _black}) {
+    for (final made in _drawn) {
+      if (made.ink == ink && _sameSizes(made.labelSizes, labelSizes)) {
+        return made.drawing;
+      }
+    }
+    final drawing = _Painter(ink, labelSizes).run(_options, _body);
+    if (_drawn.length >= _keptDrawings) _drawn.removeAt(0);
+    _drawn.add((
+      ink: ink,
+      labelSizes: labelSizes == null ? null : List<Size>.of(labelSizes),
+      drawing: drawing,
+    ));
+    return drawing;
+  }
+
+  /// The drawings last made, and what they were made for, the latest last:
+  /// a picture is drawn once more each time it is shown or laid out, and
+  /// with its labels measured, as it was drawn before.
+  final List<({Color ink, List<Size>? labelSizes, TikzDrawing drawing})>
+  _drawn = <({Color ink, List<Size>? labelSizes, TikzDrawing drawing})>[];
+
+  /// How many drawings [_drawn] keeps: with its labels measured and not, in
+  /// a light and a dark look.
+  static const int _keptDrawings = 4;
+
+  static bool _sameSizes(List<Size>? a, List<Size>? b) {
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   static const Color _black = Color(0xFF000000);
 }
@@ -219,7 +266,12 @@ class _Painter {
         ),
       );
     }
-    return TikzDrawing(marks: _marks, labels: _labels, bounds: bounds);
+    // Unchangeable, as a picture hands the same drawing to all who ask.
+    return TikzDrawing(
+      marks: List<TikzMark>.unmodifiable(_marks),
+      labels: List<TikzLabel>.unmodifiable(_labels),
+      bounds: bounds,
+    );
   }
 
   Size _labelSize(int index) {
