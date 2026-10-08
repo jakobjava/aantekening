@@ -38,7 +38,7 @@ class KeyChord {
   /// middle of typing — without taking a letter: Ctrl, Alt or Meta is held,
   /// or it is a function key.
   bool get worksAnywhere =>
-      control || alt || meta || _functionKeys.contains(key);
+      control || alt || meta || _typesNothing.contains(key);
 
   SingleActivator get activator => SingleActivator(
     key,
@@ -90,6 +90,7 @@ class KeyChord {
 
   static final Map<LogicalKeyboardKey, String> _names =
       <LogicalKeyboardKey, String>{
+        LogicalKeyboardKey.contextMenu: 'Menu',
         LogicalKeyboardKey.arrowUp: 'Up',
         LogicalKeyboardKey.arrowDown: 'Down',
         LogicalKeyboardKey.arrowLeft: 'Left',
@@ -124,7 +125,10 @@ class KeyChord {
   static LogicalKeyboardKey _canonical(LogicalKeyboardKey key) =>
       LogicalKeyboardKey.collapseSynonyms(<LogicalKeyboardKey>{key}).single;
 
-  static final Set<LogicalKeyboardKey> _functionKeys = <LogicalKeyboardKey>{
+  /// The keys that type nothing, and so are a command's alone even where
+  /// text is typed: the function keys, and the keyboard's Menu key.
+  static final Set<LogicalKeyboardKey> _typesNothing = <LogicalKeyboardKey>{
+    LogicalKeyboardKey.contextMenu,
     LogicalKeyboardKey.f1,
     LogicalKeyboardKey.f2,
     LogicalKeyboardKey.f3,

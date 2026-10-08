@@ -11,6 +11,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../look/glass.dart';
 import '../look/tones.dart';
 import '../preferences.dart';
 import 'element_views.dart';
@@ -285,11 +286,13 @@ class _ViewPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final view = _MapPlacement.of(controller, size).viewOnMap;
-    final rect = view.intersect(Offset.zero & size);
+    // Kept within the map's rounded corners, rounded as they are, so it is
+    // never cut off where it reaches them.
+    final rect = view.intersect((Offset.zero & size).deflate(1.5));
     if (rect.isEmpty) return;
     // What is in view, ringed in the accent.
     canvas.drawRRect(
-      RRect.fromRectAndRadius(rect.deflate(0.75), const Radius.circular(3)),
+      RRect.fromRectAndRadius(rect, const Radius.circular(Corners.control)),
       Paint()
         ..color = color
         ..strokeWidth = 1.5

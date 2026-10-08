@@ -94,25 +94,12 @@ extension _Commands on _PageEditorState {
         unawaited(_paste(textOnly: true)),
     const SingleActivator(LogicalKeyboardKey.keyA, control: true):
         _selectEverything,
-    for (final (key, direction)
-        in _arrows) ...<ShortcutActivator, VoidCallback>{
-      SingleActivator(key): () => _nudge(direction),
-      SingleActivator(key, shift: true): () => _nudge(direction * 10),
-    },
     for (final MapEntry(key: command, value: action) in _pageCommands.entries)
       for (final chord in bindings.of(command))
         if (!chord.worksAnywhere) chord.activator: action.run,
   };
 
-  static const List<(LogicalKeyboardKey, Offset)> _arrows =
-      <(LogicalKeyboardKey, Offset)>[
-        (LogicalKeyboardKey.arrowLeft, Offset(-1, 0)),
-        (LogicalKeyboardKey.arrowRight, Offset(1, 0)),
-        (LogicalKeyboardKey.arrowUp, Offset(0, -1)),
-        (LogicalKeyboardKey.arrowDown, Offset(0, 1)),
-      ];
-
-  /// Moves the selection by [delta] page units, as the arrow keys do.
+  /// Moves the selection by [delta] page units, as m and the arrows do.
   void _nudge(Offset delta) {
     if (_editingId != null) return;
     _controller.translateSelection(delta);

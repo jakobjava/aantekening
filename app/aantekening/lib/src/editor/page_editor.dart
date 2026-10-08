@@ -27,6 +27,7 @@ import '../files/notes_location.dart';
 import '../input_trace.dart';
 import '../links/note_links.dart';
 import '../look/controls.dart';
+import '../look/floating_pane.dart';
 import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
@@ -170,7 +171,14 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   late final Map<AppCommand, CommandAction> _pageCommands =
       <AppCommand, CommandAction>{
         AppCommand.save: CommandAction(_saveNow, enabled: () => _ready),
-        AppCommand.menu: CommandAction(_openMenu, enabled: () => _pageShowing),
+        AppCommand.menu: CommandAction(
+          _openMenu,
+          enabled: () => widget.aiScope == null,
+        ),
+        AppCommand.pickedMenu: CommandAction(
+          _openPickedMenu,
+          enabled: () => _pageShowing,
+        ),
         for (final (command, tool) in _tools)
           command: CommandAction(
             () => _selectTool(tool),
@@ -236,6 +244,9 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   final CanvasController _controller = CanvasController();
   final TextBoxEditorController _textController = TextBoxEditorController();
   final FocusNode _canvasFocus = FocusNode(debugLabel: 'Canvas');
+
+  /// What has the keys in a tab with no page open.
+  final FocusNode _emptyFocus = FocusNode(debugLabel: 'No page');
   final ValueNotifier<bool> _saving = ValueNotifier<bool>(false);
   late final BoxFormatting _boxFormatting = BoxFormatting(_controller);
 
@@ -426,9 +437,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     }
     if (old.aiScope != null && widget.aiScope == null && widget.active) {
       // Back from the AI, the keys are the page's again.
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (!_disposed) _canvasFocus.requestFocus();
-      });
+      _takeKeysBack();
     }
     if (old.pageId == widget.pageId) return;
     // Leaving a page must never lose what is on it: its last changes are
@@ -449,8 +458,21 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _tikzDrawn.clear();
     _tikzChanged.clear();
     _syncMode();
-    if (widget.pageId != null) unawaited(_load());
+    if (widget.pageId != null) {
+      unawaited(_load());
+    } else if (widget.active && widget.aiScope == null) {
+      // A page closed, the tab without one has the keys, for Space and the
+      // rest.
+      _takeKeysBack();
+    }
   }
+
+  /// Gives the keys back to the page — or, with none open, to the tab
+  /// without one — once it is drawn.
+  void _takeKeysBack() => SchedulerBinding.instance.addPostFrameCallback((_) {
+    if (_disposed) return;
+    (widget.pageId == null ? _emptyFocus : _canvasFocus).requestFocus();
+  });
 
   @override
   void dispose() {
@@ -471,6 +493,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _controller.dispose();
     _textController.dispose();
     _canvasFocus.dispose();
+    _emptyFocus.dispose();
     _saving.dispose();
     _glide.dispose();
     super.dispose();
@@ -502,13 +525,18 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       children: <Widget>[
         Positioned.fill(child: _withAi(_page(highlight))),
         if (widget.active && ref.watch(cheatSheetProvider))
-          Positioned(
-            right: margin,
-            top: widget.obscured.top + margin,
-            bottom: widget.obscured.bottom + margin,
-            width: CheatSheet.width,
-            child: Glass(
-              child: CheatSheet(onInsert: _ready ? _insertMath : null),
+          Positioned.fill(
+            child: Padding(
+              padding: _floatingIn(margin),
+              child: FloatingPane(
+                pane: Pane.cheatSheet,
+                natural: (area) => _downTheRight(area, CheatSheet.width),
+                position: _atTheRight,
+                minSize: const Size(220, 200),
+                child: Glass(
+                  child: CheatSheet(onInsert: _ready ? _insertMath : null),
+                ),
+              ),
             ),
           ),
       ],
@@ -543,7 +571,19 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     final pageId = widget.pageId;
     Widget clear(Widget child) =>
         Padding(padding: widget.obscured, child: child);
-    if (pageId == null) return clear(const _NoPageSelected());
+    if (pageId == null) {
+      return clear(
+        Focus(
+          focusNode: _emptyFocus,
+          autofocus:
+              widget.active &&
+              widget.aiScope == null &&
+              (ModalRoute.of(context)?.isCurrent ?? true),
+          onKeyEvent: _onEmptyKey,
+          child: const _NoPageSelected(),
+        ),
+      );
+    }
     if (_loading) return clear(const Loading());
     return Column(
       children: <Widget>[
@@ -552,6 +592,22 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       ],
     );
   }
+
+  /// What a pane floating over the page keeps clear of: [margin] from its
+  /// edges, and what covers them.
+  EdgeInsets _floatingIn(double margin) => EdgeInsets.fromLTRB(
+    margin,
+    widget.obscured.top + margin,
+    margin,
+    widget.obscured.bottom + margin,
+  );
+
+  /// A pane down the right of the page, [width] wide, as tall as it is.
+  static BoxConstraints _downTheRight(Size area, double width) =>
+      BoxConstraints.tight(Size(math.min(width, area.width), area.height));
+
+  static Offset _atTheRight(Size area, Size pane) =>
+      Offset(area.width - pane.width, 0);
 
   /// [page], the scrollbars floating over its right and its foot — or, for
   /// the right's, the page drawn small on a pane of glass — clear of what
@@ -565,17 +621,24 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       children: <Widget>[
         Positioned.fill(child: page),
         if (minimap)
-          Positioned(
-            right: margin,
-            top: obscured.top + margin,
-            bottom: obscured.bottom + margin + bar,
-            width: PageMinimap.width,
-            child: Glass(
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: ClipRRect(
-                  borderRadius: Corners.controlRadius,
-                  child: PageMinimap(controller: _controller),
+          Positioned.fill(
+            child: Padding(
+              padding: _floatingIn(margin) + const EdgeInsets.only(bottom: bar),
+              child: FloatingPane(
+                pane: Pane.minimap,
+                natural: (area) => _downTheRight(area, PageMinimap.width),
+                position: _atTheRight,
+                minSize: const Size(80, 120),
+                // A drag there moves it, not the page.
+                holdsItsTop: true,
+                child: Glass(
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: ClipRRect(
+                      borderRadius: Corners.controlRadius,
+                      child: PageMinimap(controller: _controller),
+                    ),
+                  ),
                 ),
               ),
             ),

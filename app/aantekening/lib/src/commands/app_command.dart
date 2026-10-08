@@ -48,6 +48,16 @@ enum AppCommand {
         'where nothing is being typed',
     <KeyChord>[KeyChord(LogicalKeyboardKey.space, control: true)],
   ),
+  pickedMenu(
+    'Menu of what is picked',
+    CommandGroup.go,
+    'The menu a right-click opens: for the text picked, or at the caret, '
+        'where something is typed; else for what is picked on the page',
+    <KeyChord>[
+      KeyChord(LogicalKeyboardKey.f10, shift: true),
+      KeyChord(LogicalKeyboardKey.contextMenu),
+    ],
+  ),
   back('Back', CommandGroup.go, 'The page open before, in this tab', <KeyChord>[
     KeyChord(LogicalKeyboardKey.arrowLeft, alt: true),
   ]),

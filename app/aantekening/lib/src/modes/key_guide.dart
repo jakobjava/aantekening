@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../look/appearance.dart';
 import '../look/controls.dart';
+import '../look/floating_pane.dart';
 import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/motion.dart';
@@ -254,19 +255,27 @@ class _GuideViewState extends State<_GuideView>
               pane!,
             ],
           ),
-    child: CustomSingleChildLayout(
-      delegate: const _Middle(),
-      child: FloatingIn(
-        animation: _shown,
-        alignment: Alignment.topCenter,
-        child: Glass(
-          // As large as the largest layer opened in it, so going from one
-          // to another it holds still.
-          child: SteadySize(
-            child: _GuidePane(
-              trail: _guide.trail,
-              layer: _guide.layer,
-              onTake: _guide.take,
+    // Clear of the window's edges, wherever it is moved.
+    child: Padding(
+      padding: const EdgeInsets.all(10),
+      child: FloatingPane(
+        pane: Pane.menu,
+        natural: BoxConstraints.loose,
+        position: _middle,
+        minSize: const Size(180, 120),
+        child: FloatingIn(
+          animation: _shown,
+          glass: true,
+          alignment: Alignment.topCenter,
+          child: Glass(
+            // As large as the largest layer opened in it, so going from one
+            // to another it holds still.
+            child: SteadySize(
+              child: _GuidePane(
+                trail: _guide.trail,
+                layer: _guide.layer,
+                onTake: _guide.take,
+              ),
             ),
           ),
         ),
@@ -275,37 +284,11 @@ class _GuideViewState extends State<_GuideView>
   );
 }
 
-/// Places the guide in the middle of the window, its top always at the
-/// same height, so a layer opened from it grows down from where it was
-/// rather than jumping — within the window, whatever its size.
-class _Middle extends SingleChildLayoutDelegate {
-  const _Middle();
-
-  /// How far down the window the guide's top is, as a share of its height.
-  static const double _top = 0.26;
-  static const double _margin = 10;
-
-  @override
-  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
-      BoxConstraints.loose(
-        Size(
-          math.max(0, constraints.maxWidth - 2 * _margin),
-          math.max(0, constraints.maxHeight - 2 * _margin),
-        ),
-      );
-
-  @override
-  Offset getPositionForChild(Size size, Size child) => Offset(
-    (size.width - child.width) / 2,
-    (size.height * _top).clamp(
-      _margin,
-      math.max(_margin, size.height - child.height - _margin),
-    ),
-  );
-
-  @override
-  bool shouldRelayout(_Middle oldDelegate) => false;
-}
+/// Where the guide goes by itself: in the middle of the window, its top
+/// always at the same height, so a layer opened from it grows down from
+/// where it was rather than jumping.
+Offset _middle(Size area, Size guide) =>
+    Offset((area.width - guide.width) / 2, area.height * 0.26);
 
 /// What the guide shows: the layer's name and the keys pressed so far, and
 /// what each key does next — in even columns of their groups, or tiles of
@@ -342,119 +325,154 @@ class _GuidePane extends StatelessWidget {
       for (final group in layer.groups)
         if (group.actions.isNotEmpty) group,
     ];
+    // Sized by hand, it fills what it was made: its columns as many as fit.
+    final sized = FloatingPane.sizedByHand(context);
     final Widget body;
     if (layer.tiles) {
-      body = ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 6 * _Tile.width + 12),
-        child: Wrap(
-          children: <Widget>[
-            for (final action in layer.actions)
-              _Tile(action: action, onTap: () => onTake(action)),
-          ],
+      final tiles = Wrap(
+        children: <Widget>[
+          for (final action in layer.actions)
+            _Tile(action: action, onTap: () => onTake(action)),
+        ],
+      );
+      body = sized
+          ? tiles
+          : ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 6 * _Tile.width + 12),
+              child: tiles,
+            );
+    } else if (sized) {
+      body = LayoutBuilder(
+        builder: (context, constraints) => _columnsOf(
+          context,
+          groups,
+          most: math.max(
+            1,
+            ((constraints.maxWidth + _gap) / (_fitted + _gap)).floor(),
+          ),
+          fill: true,
         ),
       );
     } else {
-      final columns = _columns(groups);
-      body = IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            for (final (index, column) in columns.indexed) ...<Widget>[
-              if (index > 0) VerticalDivider(width: 11, color: tones.glassRim),
-              ConstrainedBox(
-                constraints: _columnWidth,
-                child: IntrinsicWidth(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      for (final (at, group) in column.indexed) ...<Widget>[
-                        if (group.title case final title?)
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              6,
-                              at == 0 ? 0 : 6,
-                              6,
-                              2,
-                            ),
-                            child: SmallCaps(title),
-                          )
-                        else if (at > 0)
-                          const SizedBox(height: 6),
-                        for (final action in group.actions)
-                          KeyGuideRow(
-                            action: action,
-                            onTap: () => onTake(action),
-                          ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      );
+      body = _columnsOf(context, groups, most: _most, fill: false);
     }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 8, 6, 6),
-      child: IntrinsicWidth(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(6, 0, 2, 6),
-              child: Row(
-                children: <Widget>[
-                  Semantics(
-                    header: true,
-                    child: Text(
-                      layer.title,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: tones.text,
-                      ),
+    final pane = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        PaneDragArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 0, 2, 6),
+            child: Row(
+              children: <Widget>[
+                Semantics(
+                  header: true,
+                  child: Text(
+                    layer.title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: tones.text,
                     ),
                   ),
-                  const Spacer(),
-                  const SizedBox(width: 16),
-                  for (final (index, key) in trail.indexed) ...<Widget>[
-                    if (index > 0)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
-                        child: Mark(
-                          MarkShape.chevronRight,
-                          size: 8,
-                          color: tones.faint,
-                        ),
+                ),
+                const Spacer(),
+                const SizedBox(width: 16),
+                for (final (index, key) in trail.indexed) ...<Widget>[
+                  if (index > 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Mark(
+                        MarkShape.chevronRight,
+                        size: 8,
+                        color: tones.faint,
                       ),
-                    KeyCap(key, accented: true),
-                  ],
-                  const SizedBox(width: 10),
-                  // The keys that go back or away, by the way here.
-                  KeyHint(trail.length > 1 ? 'Bksp  back   Esc' : 'Esc'),
+                    ),
+                  KeyCap(key, accented: true),
                 ],
-              ),
+                const SizedBox(width: 10),
+                // The keys that go back or away, by the way here.
+                KeyHint(trail.length > 1 ? 'Bksp  back   Esc' : 'Esc'),
+              ],
             ),
-            Flexible(child: SingleChildScrollView(child: body)),
-          ],
+          ),
         ),
+        Flexible(child: SingleChildScrollView(child: body)),
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 8, 6, 6),
+      child: sized ? pane : IntrinsicWidth(child: pane),
+    );
+  }
+
+  /// The space between columns, the rule down its middle.
+  static const double _gap = 11;
+
+  /// How wide a column is, at least, in a guide sized by hand.
+  static const double _fitted = 170;
+
+  /// [groups] in columns, at most [most] of them, side by side: each as
+  /// wide as its labels, or with [fill], sharing the width there is.
+  Widget _columnsOf(
+    BuildContext context,
+    List<KeyGroup> groups, {
+    required int most,
+    required bool fill,
+  }) {
+    final tones = context.tones;
+    final columns = _columns(groups, most: most);
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (final (index, column) in columns.indexed) ...<Widget>[
+            if (index > 0) VerticalDivider(width: _gap, color: tones.glassRim),
+            if (fill)
+              Expanded(child: _groupsDown(column))
+            else
+              ConstrainedBox(
+                constraints: _columnWidth,
+                child: IntrinsicWidth(child: _groupsDown(column)),
+              ),
+          ],
+        ],
       ),
     );
   }
 
+  /// One column of [groups]: each under its title, its keys beneath.
+  Widget _groupsDown(List<KeyGroup> groups) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      for (final (at, group) in groups.indexed) ...<Widget>[
+        if (group.title case final title?)
+          Padding(
+            padding: EdgeInsets.fromLTRB(6, at == 0 ? 0 : 6, 6, 2),
+            child: SmallCaps(title),
+          )
+        else if (at > 0)
+          const SizedBox(height: 6),
+        for (final action in group.actions)
+          KeyGuideRow(action: action, onTap: () => onTake(action)),
+      ],
+    ],
+  );
+
   /// [groups] set out in columns: one, for a short layer; else as many as
-  /// fit them, at most [_most], each group put in the shortest so far,
+  /// fit them, at most [most], each group put in the shortest so far,
   /// keeping their order down each.
-  static List<List<KeyGroup>> _columns(List<KeyGroup> groups) {
+  static List<List<KeyGroup>> _columns(
+    List<KeyGroup> groups, {
+    required int most,
+  }) {
     final rows = groups.fold<int>(
       0,
       (sum, group) => sum + group.actions.length,
     );
     if (rows <= _column || groups.length < 2) return <List<KeyGroup>>[groups];
-    final count = math.min(_most, groups.length);
+    final count = math.min(most, groups.length);
     final columns = <List<KeyGroup>>[for (var i = 0; i < count; i++) []];
     final heights = List<int>.filled(count, 0);
     for (final group in groups) {

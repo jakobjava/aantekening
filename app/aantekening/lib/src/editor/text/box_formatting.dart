@@ -141,4 +141,7 @@ class BoxFormatting implements TextEditorCommands {
 
   @override
   void typeText(String text) {}
+
+  @override
+  void showMenu() {}
 }

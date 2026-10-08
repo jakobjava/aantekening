@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../files/bin_view.dart';
 import '../graph/graph_panel.dart';
 import '../look/controls.dart';
+import '../look/floating_pane.dart';
 import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/motion.dart';
@@ -552,7 +553,6 @@ class _PickerState extends ConsumerState<Picker> {
         if (mounted) widget.keys.attach(_press);
       });
     }
-    final size = MediaQuery.sizeOf(context);
     final tones = context.tones;
     // As tall as the longest column, within the window — and never less
     // tall than it has been, so it holds still as notebooks of fewer pages
@@ -565,40 +565,42 @@ class _PickerState extends ConsumerState<Picker> {
       PickerView.library => _ColumnView.chrome + longest * _PickerRow.height,
       PickerView.graph => _graphHeight,
     });
-    // Its top always in the same place.
-    return Align(
-      alignment: Alignment.topCenter,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          math.max(24, size.height * 0.12),
-          24,
-          24,
+    final shown = switch (_view) {
+      PickerView.library => _columns(),
+      PickerView.graph => const GraphPanel(),
+    };
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: FloatingPane(
+        pane: Pane.picker,
+        natural: (area) =>
+            BoxConstraints(maxWidth: math.min(area.width, _width)),
+        // Its top always in the same place.
+        position: (area, size) => Offset(
+          (area.width - size.width) / 2,
+          math.max(0, area.height * 0.12 - 24),
         ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: math.min(size.width - 48, _width),
-            maxHeight: math.max(0, size.height - 48),
-          ),
-          child: Glass(
-            child: Column(
+        minSize: const Size(360, 200),
+        child: Glass(
+          child: Builder(
+            builder: (context) => Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                _Views(
-                  view: _view,
-                  onShow: (view) => setState(() => _view = view),
-                ),
-                Divider(height: 1, color: tones.glassRim),
-                Flexible(
-                  child: SizedBox(
-                    height: _tallest,
-                    child: switch (_view) {
-                      PickerView.library => _columns(),
-                      PickerView.graph => const GraphPanel(),
-                    },
+                PaneDragArea(
+                  child: _Views(
+                    view: _view,
+                    onShow: (view) => setState(() => _view = view),
                   ),
                 ),
+                Divider(height: 1, color: tones.glassRim),
+                // Sized by hand, its rows fill it.
+                if (FloatingPane.sizedByHand(context))
+                  Expanded(child: shown)
+                else
+                  Flexible(
+                    child: SizedBox(height: _tallest, child: shown),
+                  ),
                 if (_view == PickerView.library) _Footer(layer: _keys()),
               ],
             ),

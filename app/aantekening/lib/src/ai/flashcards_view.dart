@@ -159,7 +159,11 @@ class _Session extends ConsumerStatefulWidget {
 }
 
 class _SessionState extends ConsumerState<_Session> {
-  final FocusNode _focus = FocusNode(debugLabel: 'flashcards');
+  /// What takes the cards' keys: not something gone to among the rest.
+  final FocusNode _focus = FocusNode(
+    debugLabel: 'flashcards',
+    skipTraversal: true,
+  );
 
   /// The cards still to show, the one showing first; null until the
   /// reviews are read.

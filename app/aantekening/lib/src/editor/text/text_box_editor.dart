@@ -675,6 +675,9 @@ class TextBoxEditorState extends State<TextBoxEditor>
   ]);
 
   @override
+  void showMenu() => _showMenuFromKeys();
+
+  @override
   void typeText(String text) {
     for (final (index, line) in text.split('\n').indexed) {
       if (index > 0) _paragraphBreak();

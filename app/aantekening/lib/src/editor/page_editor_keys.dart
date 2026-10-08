@@ -64,10 +64,33 @@ extension _Keys on _PageEditorState {
     );
   }
 
+  /// The keys of a tab with no page open: the menu, and the ways to a page.
+  KeyLayer _emptyKeys() {
+    final layers = _layers;
+    return KeyLayer.of('No page open', <KeyAction>[
+      KeyAction(ModeKey.space, 'Menu', layer: _menu),
+      layers.command('p', AppCommand.notebooks, label: 'Pages'),
+      layers.command('P', AppCommand.goTo, label: 'A page by name…'),
+      layers.command('/', AppCommand.search),
+      layers.command(':', AppCommand.commands, label: 'Commands…'),
+      KeyAction('?', 'These keys', layer: _emptyKeys),
+    ]);
+  }
+
+  KeyEventResult _onEmptyKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final pressed = ModeKey.of(event, HardwareKeyboard.instance);
+    final action = pressed == null ? null : _emptyKeys().actionFor(pressed);
+    if (action == null || !action.enabled) return KeyEventResult.ignored;
+    _take(pressed!, action);
+    return KeyEventResult.handled;
+  }
+
   /// Opens the menu, from the keys or, [clicked], a right-click — which has
-  /// set where on the page it was.
+  /// set where on the page it was. With no page open, it offers what needs
+  /// none.
   void _openMenu({bool clicked = false}) {
-    if (!_pageShowing) return;
+    if (widget.aiScope != null) return;
     if (!clicked) _menuPoint = null;
     openKeyGuide(
       context,
@@ -75,6 +98,17 @@ extension _Keys on _PageEditorState {
       layer: _menu,
       atOnce: true,
     );
+  }
+
+  /// The menu a right-click opens, from the keys: the text's, in the box
+  /// typed in, for what is picked in it or at its caret; else the page's,
+  /// for what is picked on it.
+  void _openPickedMenu() {
+    if (_editingId != null && _textController.isActive) {
+      _textController.showMenu();
+    } else {
+      _openMenu();
+    }
   }
 
   /// What every menu opened on the page offers after its own commands —
@@ -105,15 +139,35 @@ extension _Keys on _PageEditorState {
     final background = !some && point != null
         ? _controller.backgroundAt(point)
         : null;
+    final go = KeyGroup(title: 'Go', <KeyAction>[
+      layers.command('p', AppCommand.notebooks, label: 'Pages'),
+      layers.command('P', AppCommand.goTo, label: 'A page by name…'),
+      layers.command('/', AppCommand.search),
+      layers.command('g', AppCommand.graph),
+      layers.command(':', AppCommand.commands, label: 'Commands…'),
+      KeyAction('t', 'Tabs', layer: _tabKeys),
+    ]);
+    KeyGroup window({required bool page}) =>
+        KeyGroup(title: 'Window', <KeyAction>[
+          KeyAction('n', 'New', layer: _newKeys),
+          KeyAction('w', 'Window', layer: _windowKeys),
+          if (page) ...<KeyAction>[
+            KeyAction('z', 'View', layer: layers.view),
+            KeyAction('r', 'Spelling', layer: layers.spelling),
+          ],
+          layers.command('a', AppCommand.ai),
+          layers.command(',', AppCommand.settings),
+          KeyAction(
+            '?',
+            page ? 'Keys of ${_mode.label.toLowerCase()} mode' : 'These keys',
+            layer: page ? _modeKeys : _emptyKeys,
+          ),
+        ]);
+    if (!_ready) {
+      return KeyLayer('Menu', <KeyGroup>[go, window(page: false)]);
+    }
     return KeyLayer('Menu', <KeyGroup>[
-      KeyGroup(title: 'Go', <KeyAction>[
-        layers.command('p', AppCommand.notebooks, label: 'Pages'),
-        layers.command('P', AppCommand.goTo, label: 'A page by name…'),
-        layers.command('/', AppCommand.search),
-        layers.command('g', AppCommand.graph),
-        layers.command(':', AppCommand.commands, label: 'Commands…'),
-        KeyAction('t', 'Tabs', layer: _tabKeys),
-      ]),
+      go,
       KeyGroup(title: 'Page', <KeyAction>[
         KeyAction('i', 'Insert', layer: _insertKeys),
         KeyAction(
@@ -171,19 +225,7 @@ extension _Keys on _PageEditorState {
                 _controller.setBackground(background.id, background: false),
           ),
       ]),
-      KeyGroup(title: 'Window', <KeyAction>[
-        KeyAction('n', 'New', layer: _newKeys),
-        KeyAction('w', 'Window', layer: _windowKeys),
-        KeyAction('z', 'View', layer: layers.view),
-        KeyAction('r', 'Spelling', layer: layers.spelling),
-        layers.command('a', AppCommand.ai),
-        layers.command(',', AppCommand.settings),
-        KeyAction(
-          '?',
-          'Keys of ${_mode.label.toLowerCase()} mode',
-          layer: _modeKeys,
-        ),
-      ]),
+      window(page: true),
     ]);
   }
 
@@ -227,7 +269,7 @@ extension _Keys on _PageEditorState {
         layers.command(
           'w',
           AppCommand.otherPane,
-          also: <String>[for (final (key, _, _) in _directions) key],
+          also: <String>[for (final (key, _, _, _) in _directions) key],
         ),
       ]),
     ]);
@@ -270,10 +312,13 @@ extension _Keys on _PageEditorState {
         KeyAction(ModeKey.space, 'Menu', layer: _menu),
       ]),
       KeyGroup(title: 'Move about', <KeyAction>[
-        KeyAction('h', 'Left', run: () => _moveFocus(AxisDirection.left)),
-        KeyAction('j', 'Down', run: () => _moveFocus(AxisDirection.down)),
-        KeyAction('k', 'Up', run: () => _moveFocus(AxisDirection.up)),
-        KeyAction('l', 'Right', run: () => _moveFocus(AxisDirection.right)),
+        for (final (key, arrow, label, direction) in _directions)
+          KeyAction(
+            key,
+            'To what is $label',
+            run: () => _moveFocus(direction),
+            also: <String>[arrow],
+          ),
         KeyAction('f', 'Jump to…', run: _startJump),
         KeyAction('m', 'Move what is picked', layer: _moveKeys, enabled: some),
       ]),
@@ -406,11 +451,12 @@ extension _Keys on _PageEditorState {
     final some = _controller.selection.isNotEmpty;
     return KeyLayer.of('Select mode', <KeyAction>[
       KeyAction(ModeKey.escape, 'Back to normal', run: _toNormal),
-      for (final (key, label, direction) in _directions)
+      for (final (key, arrow, label, direction) in _directions)
         KeyAction(
           key,
           'And what is $label',
           run: () => _moveFocus(direction, extend: true),
+          also: <String>[arrow],
         ),
       KeyAction('f', 'And jump to…', run: () => _startJump(additive: true)),
       KeyAction('m', 'Move what is picked', layer: _moveKeys, enabled: some),
@@ -448,13 +494,14 @@ extension _Keys on _PageEditorState {
 
   // ------------------------------------------------------- moving about
 
-  /// The keys that move about, what way they go, and that way named.
-  static const List<(String, String, AxisDirection)> _directions =
-      <(String, String, AxisDirection)>[
-        ('h', 'left', AxisDirection.left),
-        ('j', 'below', AxisDirection.down),
-        ('k', 'above', AxisDirection.up),
-        ('l', 'right', AxisDirection.right),
+  /// The keys that move about, the arrow that goes the same way, what
+  /// way they go, and that way named.
+  static const List<(String, String, String, AxisDirection)> _directions =
+      <(String, String, String, AxisDirection)>[
+        ('h', ModeKey.left, 'left', AxisDirection.left),
+        ('j', ModeKey.down, 'below', AxisDirection.down),
+        ('k', ModeKey.up, 'above', AxisDirection.up),
+        ('l', ModeKey.right, 'right', AxisDirection.right),
       ];
 
   static Rect _rectOf(Aabb bounds) =>
@@ -553,16 +600,17 @@ extension _Keys on _PageEditorState {
   /// Moving what is picked, a step at a time or ten.
   KeyLayer _moveKeys() => KeyLayer('Move', <KeyGroup>[
     KeyGroup(title: 'A step', <KeyAction>[
-      for (final (key, label, direction) in _directions)
+      for (final (key, arrow, label, direction) in _directions)
         KeyAction(
           key,
           label,
           run: () => _nudge(_stepOf(direction)),
+          also: <String>[arrow],
           stays: true,
         ),
     ]),
     KeyGroup(title: 'Ten steps', <KeyAction>[
-      for (final (key, label, direction) in _directions)
+      for (final (key, _, label, direction) in _directions)
         KeyAction(
           key.toUpperCase(),
           label,

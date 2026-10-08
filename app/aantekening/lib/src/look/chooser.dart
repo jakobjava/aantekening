@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../modes/key_catch.dart';
 import 'controls.dart';
+import 'floating_pane.dart';
 import 'glass.dart';
 import 'motion.dart';
 import 'tones.dart';
@@ -195,66 +197,75 @@ class _ChooserState extends ConsumerState<Chooser> {
     final choices = widget.choicesFor(ref, typed);
     if (_highlight >= choices.length) _highlight = 0;
 
-    return Align(
-      alignment: const Alignment(0, -0.6),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 460),
-          child: Glass(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Focus(
-                  onKeyEvent: (_, event) => _onKey(event, choices),
-                  child: TextField(
-                    controller: _query,
-                    autofocus: true,
-                    style: const TextStyle(fontSize: 14.5),
-                    decoration: InputDecoration(
-                      hintText: widget.hintFor(typed),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: FloatingPane(
+        pane: Pane.chooser,
+        natural: (area) => BoxConstraints(
+          maxWidth: math.min(area.width, 600),
+          maxHeight: math.min(area.height, 460),
+        ),
+        // Its top always in the same place, however many it offers.
+        position: (area, size) =>
+            Offset((area.width - size.width) / 2, area.height * 0.12),
+        minSize: const Size(300, 140),
+        child: Glass(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Focus(
+                onKeyEvent: (_, event) => _onKey(event, choices),
+                child: TextField(
+                  controller: _query,
+                  autofocus: true,
+                  style: const TextStyle(fontSize: 14.5),
+                  decoration: InputDecoration(
+                    hintText: widget.hintFor(typed),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
                     ),
-                    onChanged: (_) => setState(() => _highlight = 0),
                   ),
+                  onChanged: (_) => setState(() => _highlight = 0),
                 ),
-                Divider(color: context.tones.glassRim),
-                Flexible(
-                  child: choices.isEmpty
-                      ? SizedBox(
-                          height: 64,
-                          child: EmptyMessage(
-                            typed.isEmpty ? 'Nothing here yet' : 'No match',
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: _scroll,
-                          shrinkWrap: true,
-                          padding: const EdgeInsets.all(4),
-                          itemExtent: Chooser._rowHeight,
-                          itemCount: choices.length,
-                          itemBuilder: (context, index) {
-                            final choice = choices[index];
-                            return _ChoiceRow(
-                              choice: choice,
-                              highlighted: index == _highlight,
-                              onTap: choice.enabled
-                                  ? () => _close(choice.run)
-                                  : null,
-                            );
-                          },
+              ),
+              Divider(color: context.tones.glassRim),
+              Flexible(
+                child: choices.isEmpty
+                    ? SizedBox(
+                        height: 64,
+                        child: EmptyMessage(
+                          typed.isEmpty ? 'Nothing here yet' : 'No match',
                         ),
+                      )
+                    : ListView.builder(
+                        controller: _scroll,
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.all(4),
+                        itemExtent: Chooser._rowHeight,
+                        itemCount: choices.length,
+                        itemBuilder: (context, index) {
+                          final choice = choices[index];
+                          return _ChoiceRow(
+                            choice: choice,
+                            highlighted: index == _highlight,
+                            onTap: choice.enabled
+                                ? () => _close(choice.run)
+                                : null,
+                          );
+                        },
+                      ),
+              ),
+              PaneDragArea(
+                child: _Footer(
+                  keys: widget.keysFor?.call(typed) ?? Chooser.keys,
                 ),
-                _Footer(keys: widget.keysFor?.call(typed) ?? Chooser.keys),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

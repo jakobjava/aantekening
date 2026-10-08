@@ -78,11 +78,6 @@ enum EditorKey {
   deleteSelection('Delete what is selected', <KeyChord>[
     KeyChord(LogicalKeyboardKey.delete),
   ]),
-  nudge(
-    'Move what is selected',
-    <KeyChord>[],
-    written: 'Arrow keys, with Shift ten times as far',
-  ),
   deselect('Stop typing, or pick nothing', <KeyChord>[
     KeyChord(LogicalKeyboardKey.escape),
   ]),

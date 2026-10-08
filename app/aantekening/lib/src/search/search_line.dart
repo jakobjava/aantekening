@@ -63,10 +63,25 @@ class SearchLine extends ConsumerStatefulWidget {
   /// How long typing pauses before the search runs.
   static const Duration typingPause = Duration(milliseconds: 250);
 
-  /// How many pages found show before the list scrolls.
+  /// How many pages found show before the list scrolls, unless it is sized
+  /// by hand.
   static const int _listed = 6;
 
   static const double _width = 520;
+
+  /// What it is laid out in, in an [area] so large, unless it is sized by
+  /// hand.
+  static BoxConstraints natural(Size area) {
+    final width = area.width < _width ? area.width : _width;
+    return BoxConstraints(
+      minWidth: width,
+      maxWidth: width,
+      maxHeight: height + 1 + _listed * _HitRow.height + 10,
+    );
+  }
+
+  /// How tall the line typed in is: the least the search line is.
+  static const double height = 40;
 
   @override
   ConsumerState<SearchLine> createState() => _SearchLineState();
@@ -171,94 +186,85 @@ class _SearchLineState extends ConsumerState<SearchLine>
           };
     return FloatingIn(
       animation: _shown,
+      glass: true,
       alignment: Alignment.topCenter,
       child: Glass(
-        child: SizedBox(
-          width: SearchLine._width,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              SizedBox(
-                height: 40,
-                child: Row(
-                  children: <Widget>[
-                    const SizedBox(width: 16),
-                    Text(
-                      '/',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: tones.emphasis,
-                      ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            SizedBox(
+              height: SearchLine.height,
+              child: Row(
+                children: <Widget>[
+                  const SizedBox(width: 16),
+                  Text(
+                    '/',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: tones.emphasis,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: CallbackShortcuts(
-                        bindings: <ShortcutActivator, VoidCallback>{
-                          const SingleActivator(LogicalKeyboardKey.enter): () =>
-                              _close(keep: true),
-                          const SingleActivator(
-                            LogicalKeyboardKey.escape,
-                          ): () =>
-                              _close(keep: false),
-                          const SingleActivator(
-                            LogicalKeyboardKey.arrowDown,
-                          ): () =>
-                              _session.step(1),
-                          const SingleActivator(LogicalKeyboardKey.tab): () =>
-                              _session.step(1),
-                          const SingleActivator(
-                            LogicalKeyboardKey.arrowUp,
-                          ): () =>
-                              _session.step(-1),
-                          const SingleActivator(
-                            LogicalKeyboardKey.tab,
-                            shift: true,
-                          ): () =>
-                              _session.step(-1),
-                        },
-                        child: TextField(
-                          controller: _query,
-                          focusNode: _field,
-                          style: const TextStyle(fontSize: 14.5),
-                          decoration: const InputDecoration(
-                            hintText: 'Search all notes',
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          onChanged: _changed,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: CallbackShortcuts(
+                      bindings: <ShortcutActivator, VoidCallback>{
+                        const SingleActivator(LogicalKeyboardKey.enter): () =>
+                            _close(keep: true),
+                        const SingleActivator(LogicalKeyboardKey.escape): () =>
+                            _close(keep: false),
+                        const SingleActivator(
+                          LogicalKeyboardKey.arrowDown,
+                        ): () =>
+                            _session.step(1),
+                        const SingleActivator(LogicalKeyboardKey.tab): () =>
+                            _session.step(1),
+                        const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+                            _session.step(-1),
+                        const SingleActivator(
+                          LogicalKeyboardKey.tab,
+                          shift: true,
+                        ): () =>
+                            _session.step(-1),
+                      },
+                      child: TextField(
+                        controller: _query,
+                        focusNode: _field,
+                        style: const TextStyle(fontSize: 14.5),
+                        decoration: const InputDecoration(
+                          hintText: 'Search all notes',
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(vertical: 12),
                         ),
+                        onChanged: _changed,
                       ),
                     ),
-                    KeyHint(count),
-                    const SizedBox(width: 16),
-                  ],
+                  ),
+                  KeyHint(count),
+                  const SizedBox(width: 16),
+                ],
+              ),
+            ),
+            if (hits.isNotEmpty) ...<Widget>[
+              Divider(height: 1, color: tones.glassRim),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.all(5),
+                  itemCount: hits.length,
+                  itemExtent: _HitRow.height,
+                  itemBuilder: (context, index) => _HitRow(
+                    hit: hits[index],
+                    current: index == showing,
+                    onTap: () => _session.show(index),
+                  ),
                 ),
               ),
-              if (hits.isNotEmpty) ...<Widget>[
-                Divider(height: 1, color: tones.glassRim),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxHeight: SearchLine._listed * _HitRow.height + 12,
-                  ),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.all(5),
-                    itemCount: hits.length,
-                    itemExtent: _HitRow.height,
-                    itemBuilder: (context, index) => _HitRow(
-                      hit: hits[index],
-                      current: index == showing,
-                      onTap: () => _session.show(index),
-                    ),
-                  ),
-                ),
-              ],
             ],
-          ),
+          ],
         ),
       ),
     );

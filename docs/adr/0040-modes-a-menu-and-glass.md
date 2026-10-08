@@ -108,6 +108,16 @@ notes as can be; but it does not shrink back while it is open, and its top
 stays where it was, so going through notebooks of more or fewer pages
 nothing jumps under the eye.
 
+**Moved and sized by hand.** Every pane that floats — the menu, the
+picker, the search line, the AI, the cheat sheet, the page drawn small, the
+chooser, the settings — is a `FloatingPane`: moved by a strip along its top
+edge or by its head (`PaneDragArea`), sized by any edge or corner, never
+out of the area it floats over, and kept where it was left
+(`panePlacementProvider`, a preference for each). Until it is moved or
+sized it goes where, and is as large as, it goes by itself; sized by hand,
+what is in it fills it — the menu then sets its keys out in as many columns
+as fit. The status line alone stays where it is.
+
 **Splits.** The window splits between the tab showing and another, side
 by side or one above the other (`TabsState.beside`, `stacked`). Only one
 pane has the keys: its commands are the page's, its page the status line's
@@ -157,6 +167,10 @@ where the system asks for less motion.
   is let go, unless it was.
 * The blur beneath the status line is drawn again as the page scrolls under
   it — a strip of the window, cheap, and none at all with the glass solid.
+* Glass is never faded as a whole: under a layer that fades it, what lies
+  beneath it is drawn again, blurred, every frame — a pane floating in took
+  up to 200 ms a frame. It fades in by itself instead (`GlassArriving`), its
+  blur and colour growing with it, which costs no more than a pane at rest.
 * Keys taken ahead of the focus are hidden from the window's shortcuts as
   well, which therefore stand aside while a catch is made (`CommandKeys`);
   a dialog opened from the picker takes the keys back from it while it is

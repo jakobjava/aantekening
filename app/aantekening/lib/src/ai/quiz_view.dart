@@ -33,7 +33,8 @@ class QuizView extends StatefulWidget {
 }
 
 class _QuizViewState extends State<QuizView> {
-  final FocusNode _focus = FocusNode(debugLabel: 'quiz');
+  /// What takes the quiz's keys: not something gone to among the rest.
+  final FocusNode _focus = FocusNode(debugLabel: 'quiz', skipTraversal: true);
 
   /// The questions of this round, by index into the quiz.
   late List<int> _round = <int>[
@@ -47,6 +48,18 @@ class _QuizViewState extends State<QuizView> {
 
   QuizQuestion get _question => widget.quiz.questions[_round[_at]];
   bool get _finished => _at >= _round.length;
+
+  @override
+  void initState() {
+    super.initState();
+    // Opened over the AI, which has the keys, it takes them: its letters
+    // and digits are its own.
+    if (widget.scrolls) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focus.requestFocus();
+      });
+    }
+  }
 
   @override
   void dispose() {

@@ -26,11 +26,11 @@ As in vim, what a key does depends on the mode:
 
 | Mode | Entered by | Its keys |
 | --- | --- | --- |
-| **Normal** | Esc | h j k l go from thing to thing on the page, keeping to a line or a column; f puts a label on everything in view, to jump to by typing it; i or Enter types in the box picked, or a new one; o in a new box below; `$` a formula; x deletes, y copies, p pastes, u undoes, U redoes; m moves what is picked (h j k l a step, H J K L ten); gg the top, G the foot; J K the next and previous page; H L back and forward; / search; : commands; Esc lets go of what is picked and what is searched for |
+| **Normal** | Esc | h j k l, or the arrows, go from thing to thing on the page, keeping to a line or a column; f puts a label on everything in view, to jump to by typing it; i or Enter types in the box picked, or a new one; o in a new box below; `$` a formula; x deletes, y copies, p pastes, u undoes, U redoes; m moves what is picked (h j k l or the arrows a step, H J K L ten); gg the top, G the foot; J K the next and previous page; H L back and forward; / search; : commands; Esc lets go of what is picked and what is searched for |
 | **Insert** | i, or a click in text | Typing, as anywhere; Esc goes back to normal |
 | **Draw** | d | p pen, h highlighter, e eraser, s shapes, l lasso; 1–9 the palette's colours; [ and ] thinner and thicker; c any colour |
-| **Select** | v | The lasso; h j k l, and f, pick what is that way, or labelled, as well; d deletes, y copies, c cuts, m moves, a picks everything |
-| **AI** | a, or Ctrl+J | o the overview; 1–9 a set to study; i the question; n a new conversation; c a conversation or an answer kept, by name; q a question ready to ask; h j k l what it lists; Esc back to the notes |
+| **Select** | v | The lasso; h j k l (or the arrows), and f, pick what is that way, or labelled, as well; d deletes, y copies, c cuts, m moves, a picks everything |
+| **AI** | a, or Ctrl+J | o the overview; 1–9 a set to study; i the question; n a new conversation; c a conversation or an answer kept, by name; q a question ready to ask; h j k l (or the arrows) go to anything in it, ringed, Enter or Space pressing it; Esc lets go of it, and then goes back to the notes |
 
 **?** shows the keys of the mode the page is in. A pause in the middle of
 keys — after g, say — shows what can follow; typed on, nothing is shown.
@@ -94,6 +94,16 @@ page without the keys is faded; Alt and h, j, k or l, or a click in it,
 gives it them. **Space w q** shows one page again, the other staying a tab.
 A page is written on in one place at a time: beside itself, it is not opened
 twice.
+
+### Moving and sizing what floats
+
+Everything that floats over the page but the status line — the menu, the
+picker, the search line, the AI, the cheat sheet, the page drawn small, Go to
+and Commands, the settings — is moved by dragging its top edge or its head,
+and sized by dragging any edge or corner. Each opens again where it was left;
+a double-click on its top edge puts it back, and **Settings → Layout → Panes**
+puts back any or all of them. A menu made narrower sets its keys out in fewer
+columns.
 
 ### Glass and motion
 
@@ -208,6 +218,7 @@ which **?** lists.
 | Ctrl+J | The AI of what is showing, and back |
 | Ctrl+, / Ctrl+Shift+D | Settings / light or dark |
 | Space, Ctrl+Space | The menu |
+| Shift+F10, Menu | The menu a right-click opens: for the text picked, or at the caret, where something is typed |
 | Alt+H / J / K / L | The other page of a split window |
 | Ctrl+Shift+L, Ctrl+Shift+Enter | Pages or canvas; add a sheet after the one in view |
 | Ctrl+B / I / U | Bold, italic, underline |

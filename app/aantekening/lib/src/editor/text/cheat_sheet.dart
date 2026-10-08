@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../look/appearance.dart';
 import '../../look/controls.dart';
+import '../../look/floating_pane.dart';
 import '../../look/marks.dart';
 import '../../look/tones.dart';
 import '../../preferences.dart';
@@ -62,12 +63,11 @@ class CheatSheet extends ConsumerWidget {
     return ExcludeFocus(
       child: Material(
         type: MaterialType.transparency,
-        child: SizedBox(
-          width: width,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              PaneHeader(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            PaneDragArea(
+              child: PaneHeader(
                 title: 'Cheat sheet',
                 trailing: MarkButton(
                   MarkShape.close,
@@ -75,44 +75,43 @@ class CheatSheet extends ConsumerWidget {
                   onPressed: ref.read(cheatSheetProvider.notifier).toggle,
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: Row(
-                  children: <Widget>[
-                    const MathSyntaxToggle(),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        onInsert == null
-                            ? 'What to type'
-                            : 'What to type; click one to write it',
-                        style: TextStyle(fontSize: 11.5, color: tones.muted),
-                      ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: <Widget>[
+                  const MathSyntaxToggle(),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      onInsert == null
+                          ? 'What to type'
+                          : 'What to type; click one to write it',
+                      style: TextStyle(fontSize: 11.5, color: tones.muted),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
-                  itemCount: _rows.length + 2,
-                  itemBuilder: (context, index) =>
-                      switch (index - _rows.length) {
-                        0 => const _TopicHeading('Placing'),
-                        1 => const _CentringNote(),
-                        _ => switch (_rows[index]) {
-                          (final topic, null) => _TopicHeading(topic.title),
-                          (_, final example?) => _ExampleRow(
-                            example: example,
-                            syntax: syntax,
-                            onInsert: onInsert,
-                          ),
-                        },
-                      },
-                ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
+                itemCount: _rows.length + 2,
+                itemBuilder: (context, index) => switch (index - _rows.length) {
+                  0 => const _TopicHeading('Placing'),
+                  1 => const _CentringNote(),
+                  _ => switch (_rows[index]) {
+                    (final topic, null) => _TopicHeading(topic.title),
+                    (_, final example?) => _ExampleRow(
+                      example: example,
+                      syntax: syntax,
+                      onInsert: onInsert,
+                    ),
+                  },
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -190,6 +190,25 @@ void main() {
       expect(find.text('No notebooks yet — n makes one'), findsOneWidget);
     });
 
+    testWidgets('with no page open, Space opens the menu of what needs none', (
+      tester,
+    ) async {
+      useSurface(tester, wideWindow);
+      await tester.pumpWidget(shellWith(store));
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(inMenu('Pages'), findsOneWidget);
+      expect(inMenu('Settings'), findsOneWidget);
+      expect(inMenu('Paste'), findsNothing, reason: 'nothing to paste on');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyP, character: 'p');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.keyP);
+      await tester.pumpAndSettle();
+      expect(find.byType(Picker), findsOneWidget);
+    });
+
     testWidgets('is the page, the status line floating over its top', (
       tester,
     ) async {
@@ -290,6 +309,45 @@ void main() {
   });
 
   group('the picker', () {
+    testWidgets('is sized by its corner, and opens again as it was left', (
+      tester,
+    ) async {
+      final preferences = Preferences.inMemory();
+      final notebook = await store.library.createNotebook(title: 'Physics');
+      await store.library.createSection(
+        notebookId: notebook.id,
+        title: 'Mechanics',
+      );
+      useSurface(tester, wideWindow);
+      await tester.pumpWidget(shellWith(store, preferences: preferences));
+      await tester.pumpAndSettle();
+      await showPanes(tester);
+      Rect picker() => tester.getRect(
+        find.descendant(of: find.byType(Picker), matching: find.byType(Glass)),
+      );
+
+      final before = picker();
+      await tester.dragFrom(
+        before.bottomRight - const Offset(3, 3),
+        const Offset(-200, 120),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      final sized = picker();
+      expect(sized.topLeft, before.topLeft);
+      expect(sized.width, closeTo(before.width - 200, 0.01));
+      expect(sized.height, closeTo(before.height + 120, 0.01));
+      expect(
+        preferences['pane.picker'],
+        containsPair('width', closeTo(before.width - 200, 0.01)),
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await showPanes(tester);
+      expect(picker(), sized);
+    });
+
     testWidgets('holds still as notebooks of more or fewer sections are '
         'gone through', (tester) async {
       for (final (title, sections) in <(String, int)>[
@@ -968,6 +1026,11 @@ void main() {
       await pressWithControl(tester, LogicalKeyboardKey.keyW);
       expect(tabsOf(tester).tabs.single.pageId, isNull);
       expect(tabNamed('New tab'), findsOneWidget);
+
+      // The tab without a page has the keys: Space opens the menu.
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(inMenu('Pages'), findsOneWidget);
     });
 
     testWidgets('tabs are remembered, and forget what is deleted', (

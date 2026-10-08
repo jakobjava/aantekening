@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'glass.dart';
 import 'tones.dart';
 
 /// The speed the interface moves at, and the durations and curves it moves
@@ -79,6 +80,7 @@ Future<T?> showAppDialog<T>({
     transitionBuilder: (context, animation, _, child) => FloatingIn(
       animation: animation,
       frostsBehind: tones.frosted && !overGlass,
+      glass: overGlass,
       child: child,
     ),
   );
@@ -86,12 +88,15 @@ Future<T?> showAppDialog<T>({
 
 /// [child] floating in as [animation] runs: fading in and growing the last
 /// little way to its size, with a little give — and, with [frostsBehind],
-/// frosting what lies behind it as it comes.
+/// frosting what lies behind it as it comes. A [glass] child fades in by
+/// itself, its frost coming as it does ([GlassArriving]): faded as a whole,
+/// what lies beneath it would be drawn again, blurred, every frame.
 class FloatingIn extends StatelessWidget {
   const FloatingIn({
     required this.animation,
     required this.child,
     this.frostsBehind = false,
+    this.glass = false,
     this.alignment = Alignment.center,
     super.key,
   });
@@ -99,6 +104,9 @@ class FloatingIn extends StatelessWidget {
   final Animation<double> animation;
   final Widget child;
   final bool frostsBehind;
+
+  /// Whether [child] is a pane of [Glass], which fades in by itself.
+  final bool glass;
 
   /// Where it grows from.
   final Alignment alignment;
@@ -118,14 +126,14 @@ class FloatingIn extends StatelessWidget {
       curve: Motion.lively,
       reverseCurve: Curves.easeIn,
     );
-    final floating = FadeTransition(
-      opacity: fade,
-      child: ScaleTransition(
-        scale: Tween<double>(begin: 0.96, end: 1).animate(grow),
-        alignment: alignment,
-        child: child,
-      ),
+    final grown = ScaleTransition(
+      scale: Tween<double>(begin: 0.96, end: 1).animate(grow),
+      alignment: alignment,
+      child: child,
     );
+    final floating = glass
+        ? GlassArriving(arriving: fade, child: grown)
+        : FadeTransition(opacity: fade, child: grown);
     if (!frostsBehind) return floating;
     return AnimatedBuilder(
       animation: fade,

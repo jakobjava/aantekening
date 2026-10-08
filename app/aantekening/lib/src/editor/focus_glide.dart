@@ -13,10 +13,20 @@ import '../look/motion.dart';
 /// coordinates — each time it changes: from where the last one was, gliding
 /// there, then fading away.
 class FocusGlide extends StatefulWidget {
-  const FocusGlide({required this.target, required this.colour, super.key});
+  const FocusGlide({
+    required this.target,
+    required this.colour,
+    this.stays = false,
+    super.key,
+  });
 
   final ValueListenable<Rect?> target;
   final Color colour;
+
+  /// Whether the ring stays round what has the keys until they go
+  /// elsewhere — as in a list gone through, where nothing else marks it —
+  /// rather than fading once it is there.
+  final bool stays;
 
   @override
   State<FocusGlide> createState() => _FocusGlideState();
@@ -72,8 +82,14 @@ class _FocusGlideState extends State<FocusGlide> with TickerProviderStateMixin {
 
   void _moved() {
     final target = widget.target.value;
-    if (target == null) return;
     final motion = context.motion;
+    if (target == null) {
+      if (widget.stays) {
+        _fade.duration = motion.of(Motion.quick);
+        unawaited(_fade.reverse());
+      }
+      return;
+    }
     // From where it was, if it is still showing; else it appears there.
     _from = _fade.value > 0 ? _shown : null;
     _to = target;
@@ -84,7 +100,7 @@ class _FocusGlideState extends State<FocusGlide> with TickerProviderStateMixin {
       ..value = 0;
     unawaited(
       _glide.forward().whenComplete(() {
-        if (!mounted) return;
+        if (!mounted || widget.stays) return;
         _staying = Timer(_stay, () {
           if (!mounted) return;
           _fade.duration = motion.of(Motion.settle);

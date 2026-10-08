@@ -61,6 +61,28 @@ void main() {
   bool enabled(WidgetTester tester, String label) =>
       row(tester, label).action.enabled;
 
+  testWidgets('Shift+F10, or the Menu key, opens for the text picked the '
+      'menu a right-click opens, leaving it picked', (tester) async {
+    mockClipboard(tester);
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await type(tester, 'keep cut');
+    await press(tester, LogicalKeyboardKey.arrowLeft, shift: true);
+    await press(tester, LogicalKeyboardKey.arrowLeft, shift: true);
+    await press(tester, LogicalKeyboardKey.arrowLeft, shift: true);
+
+    await press(tester, LogicalKeyboardKey.f10, shift: true);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(KeyGuideRow, 'Cut'), findsOneWidget);
+    await tester.tap(find.widgetWithText(KeyGuideRow, 'Cut'));
+    await tester.pumpAndSettle();
+    expect(textOf(tester), 'keep ');
+
+    await press(tester, LogicalKeyboardKey.contextMenu);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(KeyGuideRow, 'Paste'), findsOneWidget);
+  });
+
   testWidgets('a right-click on the paper opens the menu there, with '
       'nothing picked to cut, copy or delete', (tester) async {
     mockClipboard(tester);

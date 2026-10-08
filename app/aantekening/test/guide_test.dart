@@ -177,6 +177,58 @@ void main() {
     expect(guide(), menu);
   });
 
+  testWidgets('the menu is moved by its title and sized by its edge, opens '
+      'again where it was left, and a double-click puts it back', (
+    tester,
+  ) async {
+    await openEditor(tester, store, pageId);
+    Rect menu() => tester.getRect(
+      find
+          .ancestor(
+            of: find.byType(KeyGuideRow).first,
+            matching: find.byType(Glass),
+          )
+          .first,
+    );
+    Future<void> open() async {
+      await press(tester, LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+    }
+
+    await open();
+    final before = menu();
+    await tester.dragFrom(
+      tester.getCenter(_guideTitled('Menu')),
+      const Offset(-120, 80),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(menu().topLeft, before.topLeft + const Offset(-120, 80));
+
+    final moved = menu();
+    await tester.dragFrom(
+      Offset(moved.right - 2, moved.center.dy),
+      const Offset(-150, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(menu().width, closeTo(moved.width - 150, 0.5));
+    expect(find.byType(KeyGuideRow), findsWidgets, reason: 'still all there');
+    final sized = menu();
+
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await open();
+    expect(menu(), sized);
+
+    final strip = Offset(menu().center.dx, menu().top + 9);
+    await tester.tapAt(strip, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.tapAt(strip, kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    expect(menu(), before);
+  });
+
   testWidgets('Space opens the menu, whose keys open layers and run what '
       'they name; Backspace goes back a layer', (tester) async {
     await openEditor(tester, store, pageId);

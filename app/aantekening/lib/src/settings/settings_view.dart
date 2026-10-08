@@ -3,10 +3,13 @@
 /// where the notes are kept, each on a page of its own.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../look/controls.dart';
+import '../look/floating_pane.dart';
 import '../look/glass.dart';
 import '../look/icons.dart';
 import '../look/marks.dart';
@@ -106,57 +109,61 @@ class _SettingsViewState extends State<SettingsView> {
         autofocus: true,
         child: Padding(
           padding: const EdgeInsets.all(28),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 980, maxHeight: 780),
-              child: RaisedPanel(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final narrow = constraints.maxWidth < 640;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        _TitleBar(page: _page),
-                        const Divider(),
-                        Expanded(
-                          child: narrow
-                              ? Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: <Widget>[
-                                    _PageTabs(
-                                      page: _page,
-                                      onPicked: (page) =>
-                                          setState(() => _page = page),
-                                    ),
-                                    const Divider(),
-                                    Expanded(child: _PageBody(page: _page)),
-                                  ],
-                                )
-                              : Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: <Widget>[
-                                    SizedBox(
-                                      width: 216,
-                                      child: ColoredBox(
-                                        color: tones.pane,
-                                        child: _PageList(
-                                          page: _page,
-                                          onPicked: (page) =>
-                                              setState(() => _page = page),
-                                        ),
+          child: FloatingPane(
+            pane: Pane.settings,
+            natural: (area) => BoxConstraints.tight(
+              Size(math.min(area.width, 980), math.min(area.height, 780)),
+            ),
+            position: (area, size) => Offset(
+              (area.width - size.width) / 2,
+              (area.height - size.height) / 2,
+            ),
+            minSize: const Size(420, 320),
+            child: RaisedPanel(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final narrow = constraints.maxWidth < 640;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      PaneDragArea(child: _TitleBar(page: _page)),
+                      const Divider(),
+                      Expanded(
+                        child: narrow
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: <Widget>[
+                                  _PageTabs(
+                                    page: _page,
+                                    onPicked: (page) =>
+                                        setState(() => _page = page),
+                                  ),
+                                  const Divider(),
+                                  Expanded(child: _PageBody(page: _page)),
+                                ],
+                              )
+                            : Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: <Widget>[
+                                  SizedBox(
+                                    width: 216,
+                                    child: ColoredBox(
+                                      color: tones.pane,
+                                      child: _PageList(
+                                        page: _page,
+                                        onPicked: (page) =>
+                                            setState(() => _page = page),
                                       ),
                                     ),
-                                    const VerticalDivider(width: 1),
-                                    Expanded(child: _PageBody(page: _page)),
-                                  ],
-                                ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
+                                  ),
+                                  const VerticalDivider(width: 1),
+                                  Expanded(child: _PageBody(page: _page)),
+                                ],
+                              ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),

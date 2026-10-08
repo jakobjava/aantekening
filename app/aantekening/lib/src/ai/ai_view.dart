@@ -11,9 +11,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../editor/focus_glide.dart';
 import '../links/note_links.dart';
 import '../look/chooser.dart';
 import '../look/controls.dart';
+import '../look/floating_pane.dart';
 import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/motion.dart';
@@ -21,7 +23,6 @@ import '../look/tones.dart';
 import '../modes/editor_mode.dart';
 import '../modes/key_guide.dart';
 import '../modes/mode_keys.dart';
-import '../modes/vim_arrows.dart';
 import '../settings/settings_view.dart';
 import '../shell/tabs.dart';
 import 'ai_session.dart';
@@ -79,36 +80,37 @@ class _AiPaneState extends State<AiPane> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     const margin = AiPane.margin;
     final obscured = widget.obscured;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth >= AiPane.besideFrom
-            ? (constraints.maxWidth * 0.42).clamp(420.0, 580.0)
-            : constraints.maxWidth - 2 * margin;
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            margin,
-            obscured.top + margin,
-            margin,
-            obscured.bottom + margin,
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        margin,
+        obscured.top + margin,
+        margin,
+        obscured.bottom + margin,
+      ),
+      child: FloatingPane(
+        pane: Pane.ai,
+        // Down the right of the notes, as tall as they are.
+        natural: (area) => BoxConstraints.tight(
+          Size(
+            area.width >= AiPane.besideFrom - 2 * margin
+                ? (area.width * 0.42).clamp(420.0, 580.0)
+                : area.width,
+            area.height,
           ),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: SizedBox(
-              width: width,
-              height: double.infinity,
-              child: FloatingIn(
-                animation: _shown,
-                alignment: Alignment.centerRight,
-                // A click on it is its own, not the notes' beneath.
-                child: Listener(
-                  behavior: HitTestBehavior.opaque,
-                  child: Glass(child: AiView(scope: widget.scope)),
-                ),
-              ),
-            ),
+        ),
+        position: (area, size) => Offset(area.width - size.width, 0),
+        minSize: const Size(320, 240),
+        child: FloatingIn(
+          animation: _shown,
+          glass: true,
+          alignment: Alignment.centerRight,
+          // A click on it is its own, not the notes' beneath.
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            child: Glass(child: AiView(scope: widget.scope)),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -141,9 +143,15 @@ class _AiViewState extends ConsumerState<AiView> {
   /// The question asked.
   final FocusNode _ask = FocusNode(debugLabel: 'Ask');
 
+  /// Where what the keys have moved to in the pane is, for the ring round
+  /// it, in the pane's own coordinates.
+  final ValueNotifier<Rect?> _ring = ValueNotifier<Rect?>(null);
+  final GlobalKey _area = GlobalKey();
+
   @override
   void initState() {
     super.initState();
+    FocusManager.instance.addListener(_focusMoved);
     // Called up over the page, which had them, it takes the keys.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _keys.requestFocus();
@@ -152,10 +160,78 @@ class _AiViewState extends ConsumerState<AiView> {
 
   @override
   void dispose() {
+    FocusManager.instance.removeListener(_focusMoved);
     _keys.dispose();
     _ask.dispose();
+    _ring.dispose();
     super.dispose();
   }
+
+  /// Whether what has the keyboard is typed in.
+  static bool _typing(FocusNode? focus) =>
+      focus?.context?.findAncestorWidgetOfExactType<EditableText>() != null;
+
+  /// What in the pane the keys have moved to, if anything: not the pane
+  /// itself, nor a field typed in, nor a set studied, which takes keys of
+  /// its own and is not gone through.
+  FocusNode? get _picked {
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus == null ||
+        focus == _keys ||
+        !_keys.hasFocus ||
+        focus.skipTraversal ||
+        _typing(focus)) {
+      return null;
+    }
+    return focus;
+  }
+
+  /// Rings what the keys moved to, once it is laid out where it is going.
+  void _focusMoved() => WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted) return;
+    final box = _picked?.context?.findRenderObject() as RenderBox?;
+    final area = _area.currentContext?.findRenderObject() as RenderBox?;
+    _ring.value = box == null || area == null || !box.attached
+        ? null
+        : box.localToGlobal(Offset.zero, ancestor: area) & box.size;
+  });
+
+  /// Moves the keys [direction] among what the pane offers: from the pane
+  /// itself to the first, or for up and left the last, else to the nearest
+  /// that way.
+  void _step(TraversalDirection direction) {
+    final picked = _picked;
+    if (picked != null) {
+      picked.focusInDirection(direction);
+      return;
+    }
+    // As read: top to bottom, then left to right.
+    final offered =
+        <FocusNode>[
+          for (final node in _keys.traversalDescendants)
+            if (!_typing(node)) node,
+        ]..sort((a, b) {
+          final across = a.rect.top.compareTo(b.rect.top);
+          return across != 0 ? across : a.rect.left.compareTo(b.rect.left);
+        });
+    if (offered.isEmpty) return;
+    final back =
+        direction == TraversalDirection.up ||
+        direction == TraversalDirection.left;
+    (back ? offered.last : offered.first).requestFocus();
+  }
+
+  static const Map<String, TraversalDirection> _directions =
+      <String, TraversalDirection>{
+        'h': TraversalDirection.left,
+        'j': TraversalDirection.down,
+        'k': TraversalDirection.up,
+        'l': TraversalDirection.right,
+        ModeKey.left: TraversalDirection.left,
+        ModeKey.down: TraversalDirection.down,
+        ModeKey.up: TraversalDirection.up,
+        ModeKey.right: TraversalDirection.right,
+      };
 
   AiSession get _session => ref.read(aiSessionProvider(widget.scope).notifier);
 
@@ -222,7 +298,11 @@ class _AiViewState extends ConsumerState<AiView> {
     final keys = galleryKeys(AiAction.values.length);
     return KeyLayer.of('Ask', <KeyAction>[
       for (final (index, action) in AiAction.values.indexed)
-        KeyAction(keys[index], action.label, run: () => askReady(ref, widget.scope, action)),
+        KeyAction(
+          keys[index],
+          action.label,
+          run: () => askReady(ref, widget.scope, action),
+        ),
     ]);
   }
 
@@ -259,9 +339,8 @@ class _AiViewState extends ConsumerState<AiView> {
   );
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    final focus = FocusManager.instance.primaryFocus;
     // What is typed is typed: Esc leaves the question for these keys.
-    if (focus?.context?.findAncestorWidgetOfExactType<EditableText>() != null) {
+    if (_typing(FocusManager.instance.primaryFocus)) {
       if (event is KeyDownEvent &&
           event.logicalKey == LogicalKeyboardKey.escape) {
         _keys.requestFocus();
@@ -270,13 +349,29 @@ class _AiViewState extends ConsumerState<AiView> {
       return KeyEventResult.ignored;
     }
     final pressed = ModeKey.of(event, HardwareKeyboard.instance);
-    final action = pressed == null ? null : _layer().actionFor(pressed);
+    if (pressed == null) return KeyEventResult.ignored;
+    if (_directions[pressed] case final direction?) {
+      _step(direction);
+      return KeyEventResult.handled;
+    }
+    // With something in the pane taken by the keys, Enter and Space press
+    // it, and Esc lets go of it before it leaves the AI.
+    if (_picked != null) {
+      if (pressed == ModeKey.enter || pressed == ModeKey.space) {
+        return KeyEventResult.ignored;
+      }
+      if (pressed == ModeKey.escape) {
+        _keys.requestFocus();
+        return KeyEventResult.handled;
+      }
+    }
+    final action = _layer().actionFor(pressed);
     if (action == null || !action.enabled) return KeyEventResult.ignored;
     final layer = action.layer;
     if (layer == null) {
       action.run!();
     } else {
-      openKeyGuide(context, pressed: pressed!, layer: layer, atOnce: true);
+      openKeyGuide(context, pressed: pressed, layer: layer, atOnce: true);
     }
     return KeyEventResult.handled;
   }
@@ -287,17 +382,34 @@ class _AiViewState extends ConsumerState<AiView> {
     return Focus(
       focusNode: _keys,
       onKeyEvent: _onKey,
-      child: VimArrows(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _Head(scope: widget.scope),
-            Divider(height: 1, color: tones.glassRim),
-            Expanded(
-              child: _Main(scope: widget.scope, ask: _ask),
+      child: Stack(
+        key: _area,
+        children: <Widget>[
+          // Scrolled, what the ring is round moves: it follows.
+          NotificationListener<ScrollNotification>(
+            onNotification: (_) {
+              _focusMoved();
+              return false;
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                PaneDragArea(child: _Head(scope: widget.scope)),
+                Divider(height: 1, color: tones.glassRim),
+                Expanded(
+                  child: _Main(scope: widget.scope, ask: _ask),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          Positioned.fill(
+            child: FocusGlide(
+              target: _ring,
+              colour: EditorMode.ai.colourOn(tones),
+              stays: true,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -655,9 +767,8 @@ class _Exchange extends StatelessWidget {
                 SmallButton(
                   'Copy',
                   tooltip: 'Copy the answer',
-                  onPressed: () => Clipboard.setData(
-                    ClipboardData(text: answer.plainText),
-                  ),
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: answer.plainText)),
                 ),
                 SmallButton(
                   kept ? 'Kept' : 'Keep',

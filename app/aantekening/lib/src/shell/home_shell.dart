@@ -16,6 +16,7 @@ import '../commands/shortcuts.dart';
 import '../editor/page_editor.dart';
 import '../files/notes_keeper.dart';
 import '../look/controls.dart';
+import '../look/floating_pane.dart';
 import '../look/tones.dart';
 import '../preferences.dart';
 import '../providers.dart';
@@ -105,8 +106,30 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   right: StatusLine.margin,
                   top: top ? StatusLine.margin : null,
                   bottom: top ? null : StatusLine.margin,
-                  child: _Chrome(top: top),
+                  child: const StatusLine(),
                 ),
+                if (ref.watch(searchLineProvider))
+                  Positioned.fill(
+                    child: Padding(
+                      padding: const EdgeInsets.all(StatusLine.margin),
+                      child: FloatingPane(
+                        pane: Pane.search,
+                        natural: SearchLine.natural,
+                        // On the page's side of the status line.
+                        position: (area, size) => Offset(
+                          (area.width - size.width) / 2,
+                          top
+                              ? StatusLine.height + _searchGap
+                              : area.height -
+                                    StatusLine.height -
+                                    _searchGap -
+                                    size.height,
+                        ),
+                        minSize: const Size(280, SearchLine.height),
+                        child: const SearchLine(),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -125,27 +148,8 @@ NoteLink? _aiScope(NoteTab tab) => tab.ai
       )
     : null;
 
-/// What floats over the page along its top or its foot: the status line,
-/// with the search line beside it, on the page's side, while it is open.
-class _Chrome extends ConsumerWidget {
-  const _Chrome({required this.top});
-
-  final bool top;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final searching = ref.watch(searchLineProvider);
-    const search = Padding(padding: EdgeInsets.all(10), child: SearchLine());
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        if (searching && !top) search,
-        const StatusLine(),
-        if (searching && top) search,
-      ],
-    );
-  }
-}
+/// How far the search line opens from the status line.
+const double _searchGap = 8;
 
 /// The page of the tab showing — or, the window split, it and the page of
 /// the tab beside it, side by side or one above the other, in the order of

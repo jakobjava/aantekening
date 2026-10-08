@@ -100,15 +100,48 @@ class Glass extends StatelessWidget {
     ];
   }
 
-  static final Map<Brightness, List<double>> _filters =
-      <Brightness, List<double>>{
+  /// The colour matrix that changes nothing.
+  static const List<double> _unchanged = <double>[
+    1, 0, 0, 0, 0, //
+    0, 1, 0, 0, 0, //
+    0, 0, 1, 0, 0, //
+    0, 0, 0, 1, 0, //
+  ];
+
+  /// What the glass does to what lies beneath at full strength, in each
+  /// brightness, made once.
+  static final Map<Brightness, ui.ImageFilter> _frosts =
+      <Brightness, ui.ImageFilter>{
         for (final brightness in Brightness.values)
-          brightness: _filterFor(brightness),
+          brightness: _frostAt(brightness, 1),
       };
+
+  /// What the glass does to what lies beneath at [strength], from nothing
+  /// at 0 to all of it at 1: as it fades in, the blur and the colour come
+  /// as it does.
+  static ui.ImageFilter _frostAt(Brightness brightness, double strength) {
+    final full = _filterFor(brightness);
+    return ui.ImageFilter.compose(
+      outer: ui.ColorFilter.matrix(<double>[
+        for (var i = 0; i < full.length; i++)
+          _unchanged[i] + (full[i] - _unchanged[i]) * strength,
+      ]),
+      inner: ui.ImageFilter.blur(
+        sigmaX: blur * strength,
+        sigmaY: blur * strength,
+      ),
+    );
+  }
+
+  static ui.ImageFilter _frost(Brightness brightness, double strength) =>
+      strength >= 1 ? _frosts[brightness]! : _frostAt(brightness, strength);
 
   @override
   Widget build(BuildContext context) {
     final tones = context.tones;
+    // Floating in, it fades in by itself: never under a layer that fades
+    // it, which would draw what lies beneath again, blurred, every frame.
+    final arriving = GlassArriving._of(context);
     Widget pane = DecoratedBox(
       decoration: BoxDecoration(
         color: tones.glass,
@@ -121,29 +154,66 @@ class Glass extends StatelessWidget {
           light: tones.glassLight,
           sheen: tones.glassSheen,
         ),
-        // What is on it is pressed and set as on any surface.
-        child: Material(type: MaterialType.transparency, child: child),
+        // What is on it is pressed and set as on any surface, and any
+        // glass on it arrives by itself.
+        child: Material(
+          type: MaterialType.transparency,
+          child: GlassArriving(arriving: null, child: child),
+        ),
       ),
     );
+    if (arriving != null) pane = FadeTransition(opacity: arriving, child: pane);
     if (tones.frosted) {
-      pane = BackdropFilter(
-        filter: ui.ImageFilter.compose(
-          outer: ui.ColorFilter.matrix(_filters[tones.brightness]!),
-          inner: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        ),
-        child: pane,
-      );
+      final brightness = tones.brightness;
+      pane = arriving == null
+          ? BackdropFilter(filter: _frost(brightness, 1), child: pane)
+          : AnimatedBuilder(
+              animation: arriving,
+              child: pane,
+              builder: (context, pane) => BackdropFilter(
+                filter: _frost(brightness, arriving.value.clamp(0, 1)),
+                child: pane,
+              ),
+            );
     }
     pane = ClipRRect(borderRadius: borderRadius, child: pane);
     if (!shadow) return pane;
-    return CustomPaint(
+    final cast = CustomPaint(
       painter: _ShadowOutside(
         borderRadius: borderRadius,
         shadows: tones.floatingShadows,
       ),
-      child: pane,
+    );
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: arriving == null
+              ? cast
+              : FadeTransition(opacity: arriving, child: cast),
+        ),
+        pane,
+      ],
     );
   }
+}
+
+/// How far the [Glass] beneath it has come in, as it floats in: from 0,
+/// not there, to 1, all there — for it to fade in by itself.
+class GlassArriving extends InheritedWidget {
+  const GlassArriving({
+    required this.arriving,
+    required super.child,
+    super.key,
+  });
+
+  final Animation<double>? arriving;
+
+  static Animation<double>? _of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<GlassArriving>()?.arriving;
+
+  @override
+  bool updateShouldNotify(GlassArriving oldWidget) =>
+      oldWidget.arriving != arriving;
 }
 
 /// The light liquid glass catches: along its edge, brightest at the top

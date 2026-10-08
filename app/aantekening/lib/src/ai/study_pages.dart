@@ -525,15 +525,10 @@ class _StudyRow extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Row(
               children: <Widget>[
-                SizedBox(
-                  width: 30,
-                  child: digit == null
-                      ? null
-                      : Align(
-                          alignment: Alignment.centerLeft,
-                          child: KeyCap(digit),
-                        ),
-                ),
+                if (digit != null) ...<Widget>[
+                  KeyCap(digit),
+                  const SizedBox(width: 10),
+                ],
                 Expanded(
                   child: Row(
                     children: <Widget>[

@@ -8,8 +8,10 @@ import 'package:aantekening/src/ai/flashcards_view.dart';
 import 'package:aantekening/src/ai/sources_view.dart';
 import 'package:aantekening/src/ai/study_pages.dart';
 import 'package:aantekening/src/ai/summary_sheet.dart';
+import 'package:aantekening/src/editor/focus_glide.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/look/chooser.dart';
+import 'package:aantekening/src/look/controls.dart';
 import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening/src/modes/editor_mode.dart';
 import 'package:aantekening/src/modes/key_guide.dart';
@@ -278,6 +280,83 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AiView), findsNothing);
     expect(container.read(editorModeProvider), EditorMode.normal);
+  });
+
+  testWidgets('everything in the AI is reached by the keys: j and k go '
+      'through it, ringed, Enter presses, Esc lets go and then leaves', (
+    tester,
+  ) async {
+    final container = await openShell(tester);
+    await pressControl(tester, LogicalKeyboardKey.keyJ);
+    BuildContext? picked() => FocusManager.instance.primaryFocus?.context;
+    Rect? ring() => tester
+        .widget<FocusGlide>(
+          find.descendant(
+            of: find.byType(AiView),
+            matching: find.byType(FocusGlide),
+          ),
+        )
+        .target
+        .value;
+
+    await typeKeys(tester, 'j');
+    expect(
+      picked()?.findAncestorWidgetOfExactType<StudyOverview>(),
+      isNotNull,
+      reason: 'the first of the overview',
+    );
+    expect(ring(), isNotNull);
+    expect(
+      picked()?.findAncestorWidgetOfExactType<SmallButton>()?.label,
+      'New study profile…',
+      reason: 'the first, read from the top',
+    );
+    await press(tester, LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('Save'), findsOneWidget, reason: 'pressed');
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    await typeKeys(tester, 'j');
+    expect(ring(), isNotNull);
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(ring(), isNull, reason: 'let go');
+    expect(container.read(tabsProvider).current.ai, isTrue);
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(container.read(tabsProvider).current.ai, isFalse);
+  });
+
+  testWidgets('the AI is moved by its head and sized by its edge, the notes '
+      'beside it still going back to them', (tester) async {
+    final container = await openShell(tester);
+    await pressControl(tester, LogicalKeyboardKey.keyJ);
+    Rect pane() => tester.getRect(find.byType(AiView));
+
+    final before = pane();
+    await tester.dragFrom(
+      Offset(before.center.dx, before.top + 20),
+      const Offset(-300, 40),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    // As tall as the notes, it goes no lower than they do.
+    expect(pane().topLeft, before.topLeft + const Offset(-300, 0));
+
+    final moved = pane();
+    await tester.dragFrom(
+      Offset(moved.left + 2, moved.center.dy),
+      const Offset(-100, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(pane().width, closeTo(moved.width + 100, 0.01));
+    expect(pane().right, closeTo(moved.right, 0.01));
+
+    await tester.tapAt(Offset(pane().right + 40, pane().center.dy));
+    await tester.pumpAndSettle();
+    expect(container.read(tabsProvider).current.ai, isFalse);
   });
 
   testWidgets('q asks a question ready to ask, and c finds a conversation '

@@ -33,7 +33,25 @@ extension _Menu on TextBoxEditorState {
             : RichSelection.collapsed(hit.position),
       );
     }
+    await _menuFor(hit);
+  }
 
+  /// The menu a key opens: as a right-click on what is picked, or at the
+  /// caret, opens it — what is picked kept picked.
+  void _showMenuFromKeys() {
+    if (_formula != null) finishFormula();
+    final picture =
+        !_selection.isCollapsed && _blocks[_selection.start.block].isEmbed;
+    unawaited(
+      _menuFor(
+        _Hit(picture ? _selection.start : _selection.extent, embed: picture),
+      ),
+    );
+  }
+
+  /// The menu for [hit] — what a right-click landed on, or the caret — and
+  /// for what is picked.
+  Future<void> _menuFor(_Hit? hit) async {
     final misspelled = hit == null ? null : _misspelledAt(hit.position);
     final suggestions = misspelled == null
         ? const <String>[]

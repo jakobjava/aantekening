@@ -149,6 +149,10 @@ abstract interface class TextEditorCommands {
   /// a paragraph, and what typing turns into lists or formulas turning so.
   void typeText(String text);
 
+  /// Opens the menu a right-click on the text picked, or at the caret,
+  /// opens.
+  void showMenu();
+
   /// Sets the font size, in points.
   void setFontSize(double points);
 
@@ -332,6 +336,9 @@ class TextBoxEditorController extends ChangeNotifier
 
   @override
   void typeText(String text) => _editor?.typeText(text);
+
+  @override
+  void showMenu() => _editor?.showMenu();
 
   @override
   void setFontSize(double points) => _target?.setFontSize(points);
