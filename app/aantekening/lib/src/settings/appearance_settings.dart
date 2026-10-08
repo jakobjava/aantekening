@@ -1,5 +1,5 @@
 /// How the interface looks: light or dark, its colours, the accent, the
-/// typeface, the size and the grain.
+/// typeface, the size, the glass, how fast it moves, and the grain.
 library;
 
 import 'dart:async';
@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../look/appearance.dart';
 import '../look/colour_picker.dart';
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/tones.dart';
 import 'settings_view.dart';
 
@@ -119,6 +120,39 @@ class AppearanceSettings extends ConsumerWidget {
                 labelOf: (scale) => '${(scale * 100).round()}%',
                 onSelected: (scale) =>
                     update((appearance) => appearance.copyWith(scale: scale)),
+              ),
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: 'Glass and motion',
+          children: <Widget>[
+            CheckRow(
+              title: 'Frosted glass',
+              description:
+                  'What floats over the page — the status line, the menu, '
+                  'the picker — lets the notes show through it, blurred. '
+                  'Off, it is solid.',
+              value: appearance.frosted,
+              onChanged: (frosted) =>
+                  update((appearance) => appearance.copyWith(frosted: frosted)),
+            ),
+            SettingRow(
+              label: 'Animation speed',
+              description: 'Off as well where the system asks for less motion',
+              child: ChoiceRow<double>(
+                choices: Appearance.motions,
+                selected: appearance.motion,
+                labelOf: (speed) => switch (speed) {
+                  0 => 'Off',
+                  0.5 => '½×',
+                  0.75 => '¾×',
+                  1 => '1×',
+                  1.5 => '1½×',
+                  _ => '2×',
+                },
+                onSelected: (motion) =>
+                    update((appearance) => appearance.copyWith(motion: motion)),
               ),
             ),
           ],
@@ -281,6 +315,7 @@ class _PairTile extends StatelessWidget {
           decoration: BoxDecoration(
             color: pair.base,
             border: Border.all(color: tones.line),
+            borderRadius: Corners.controlRadius,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -332,6 +367,7 @@ class _ColourField extends StatelessWidget {
       message: 'Choose the ${label.toLowerCase()} colour',
       child: InkWell(
         onTap: onTap,
+        borderRadius: Corners.controlRadius,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
           child: Row(
@@ -343,6 +379,7 @@ class _ColourField extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: color,
                   border: Border.all(color: tones.strongLine),
+                  shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 8),

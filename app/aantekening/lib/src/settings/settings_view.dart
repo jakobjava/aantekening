@@ -7,8 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/icons.dart';
 import '../look/marks.dart';
+import '../look/motion.dart';
 import '../look/tones.dart';
 import 'about_settings.dart';
 import 'ai_settings.dart';
@@ -27,7 +29,7 @@ enum SettingsPage {
     'Light and dark, colours, typeface and size',
     AppIcon.appearance,
   ),
-  layout('Layout', 'The ribbon, the sidebar and the page', AppIcon.layout),
+  layout('Layout', 'The status line and the page', AppIcon.layout),
   pen('Pen', 'Smoothing, its buttons, and shapes', AppIcon.pen),
   keyboard('Keyboard', 'Every shortcut, and changing them', AppIcon.keyboard),
   formulas(
@@ -63,13 +65,9 @@ enum SettingsPage {
 Future<void> showSettings(
   BuildContext context, {
   SettingsPage page = SettingsPage.appearance,
-}) => showGeneralDialog<void>(
+}) => showAppDialog<void>(
   context: context,
-  barrierDismissible: true,
-  barrierLabel: 'Close the settings',
-  barrierColor: context.tones.text.withValues(alpha: 0.12),
-  transitionDuration: Duration.zero,
-  pageBuilder: (context, _, _) => SettingsView(initial: page),
+  builder: (context) => SettingsView(initial: page),
 );
 
 /// The settings: their pages down the left, the page open beside them.
@@ -111,12 +109,7 @@ class _SettingsViewState extends State<SettingsView> {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 980, maxHeight: 780),
-              child: Material(
-                color: tones.base,
-                shape: RoundedRectangleBorder(
-                  side: BorderSide(color: tones.strongLine),
-                ),
-                clipBehavior: Clip.hardEdge,
+              child: RaisedPanel(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final narrow = constraints.maxWidth < 640;

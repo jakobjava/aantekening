@@ -24,7 +24,7 @@ String displayTitle(TreeNode node) =>
 String pageTitleOrPlaceholder(String title) =>
     title.trim().isEmpty ? 'Untitled page' : title;
 
-/// Shows what can be done to a notebook, section or page at [position].
+/// Shows what can be done to a notebook, section or page.
 ///
 /// The commands come in the same order whatever [node] is: opening it —
 /// a page in a tab of its own, or its AI — and copying a link to it first,
@@ -34,7 +34,6 @@ Future<void> showLibraryMenu(
   BuildContext context,
   WidgetRef ref,
   TreeNode node,
-  Offset position,
 ) {
   final actions = ref.read(libraryActionsProvider);
   final clip = ref.read(libraryClipboardProvider);
@@ -110,7 +109,7 @@ Future<void> showLibraryMenu(
     _ => NoteLink.page(node.id),
   };
 
-  return showCommandMenu(context, position, <List<MenuCommand>>[
+  return showCommandMenu(context, <List<MenuCommand>>[
     <MenuCommand>[
       if (node is PageRef)
         MenuCommand(
@@ -193,7 +192,7 @@ Future<String?> promptForName(
   String initial = '',
   String action = 'Create',
 }) async {
-  final name = await showPlainDialog<String>(
+  final name = await showAppDialog<String>(
     context: context,
     builder: (context) =>
         _NameDialog(title: title, hint: hint, initial: initial, action: action),

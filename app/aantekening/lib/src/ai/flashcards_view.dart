@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
@@ -59,7 +60,7 @@ class _FlashcardsViewState extends ConsumerState<FlashcardsView> {
     return Column(
       children: <Widget>[
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
           child: Row(
             children: <Widget>[
               ChoiceRow<_Mode>(
@@ -299,7 +300,7 @@ class _SessionState extends ConsumerState<_Session> {
       onKeyEvent: _key,
       child: LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: constraints.maxHeight - 32),
             child: Column(
@@ -431,8 +432,9 @@ class CardFace extends StatelessWidget {
       decoration: BoxDecoration(
         color: tones.base,
         border: Border.all(color: tones.strongLine),
+        borderRadius: Corners.panelRadius,
       ),
-      padding: const EdgeInsets.fromLTRB(28, 18, 28, 20),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -764,6 +766,7 @@ class _SmallCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: tones.base,
         border: Border.all(color: tones.line),
+        borderRadius: Corners.controlRadius,
       ),
       padding: const EdgeInsets.fromLTRB(16, 10, 6, 12),
       child: Column(
@@ -843,7 +846,7 @@ class _SmallCard extends StatelessWidget {
 Future<StudyCard?> _editCard(BuildContext context, StudyCard card) {
   final front = TextEditingController(text: card.front);
   final back = TextEditingController(text: card.back);
-  return showPlainDialog<StudyCard>(
+  return showAppDialog<StudyCard>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Correct the card'),

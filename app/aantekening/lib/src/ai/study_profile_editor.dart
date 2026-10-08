@@ -14,7 +14,7 @@ import 'ai_state.dart';
 /// Opens the editor of [profile], or of a new profile of the person's own,
 /// over [context]; what is saved goes into the AI settings.
 Future<void> editStudyProfile(BuildContext context, {StudyProfile? profile}) =>
-    showPlainDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (context) => StudyProfileEditor(profile: profile),
     );

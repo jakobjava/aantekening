@@ -34,7 +34,6 @@ import 'package:aantekening/src/files/notes_location.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
 import 'package:aantekening/src/shell/library_actions.dart';
-import 'package:aantekening/src/shell/sidebar_state.dart';
 import 'package:aantekening/src/spelling/dictionaries.dart';
 import 'package:aantekening/src/spelling/spelling.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
@@ -87,8 +86,7 @@ Future<void> main() async {
   );
   await _wait(const Duration(seconds: 1));
   await container.read(libraryActionsProvider).openPageId(pageId);
-  // The page across the window, as it is read, with the sidebar closed.
-  container.read(sidebarProvider.notifier).close();
+  // The page across the window, as it is read.
   // Shown as pages, if asked: the same page, cut into sheets.
   if (Platform.environment['AANTEKENING_BENCH_LAYOUT'] == 'pages') {
     await _wait(const Duration(milliseconds: 300));

@@ -391,7 +391,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
   RichSelection? _coveredFor;
   Map<int, Covered> _covered = const <int, Covered>{};
 
-  bool _hovering = false;
   Size? _reportedSize;
 
   /// Rebuilds the box after [change], for the parts of it kept in other
@@ -488,7 +487,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
       if (_focusNode.hasFocus) _input.open();
       if (widget.startInFormula && _formula == null) {
         toggleFormula();
-        // A structure chosen on the ribbon before there was a box for it.
+        // A structure chosen in the guide before there was a box for it.
         final queued = widget.controller?.takeQueuedMath();
         if (queued != null) insertMath(queued);
       }
@@ -676,6 +675,14 @@ class TextBoxEditorState extends State<TextBoxEditor>
   ]);
 
   @override
+  void typeText(String text) {
+    for (final (index, line) in text.split('\n').indexed) {
+      if (index > 0) _paragraphBreak();
+      _insertText(line);
+    }
+  }
+
+  @override
   void insertBlocks(List<TextBlock> blocks) {
     if (blocks.isEmpty) return;
     _closeFormula(emit: true);
@@ -765,7 +772,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
     final base = RichTextStyles.base(context);
     final focused = _focusNode.hasFocus;
     final autoWidth = widget.element.autoWidth;
-    final empty = TextBoxEditor.isEmpty(_blocks);
 
     // The paper is white in light and dark mode alike, so what is drawn on
     // it takes the interface's mark as made to show on paper.
@@ -806,17 +812,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
       WidgetsBinding.instance.addPostFrameCallback((_) => _placeFirstMatch());
     }
 
-    // Until something is typed, a new box is only a caret on the paper
-    // ([TextBoxEditor.caretOnly]): no band to drag it by, no outline. Once it
-    // holds something, its band shows while it is picked — which a box being
-    // typed in is — and goes with the rest of the selection's marks when the
-    // paper is pressed, though typing ends only as the press does. Emptied,
-    // it keeps its band while it is typed in.
-    // Hovered over with a pen in hand, it is only paper being written on.
-    final hovering = _hovering && widget.interactive;
-    final showChrome =
-        !widget.caretOnly &&
-        (empty ? widget.isEditing : widget.selected || hovering);
     final content = Stack(
       children: <Widget>[
         Padding(
@@ -868,8 +863,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
           height: TextBoxEditor.grabBand,
           child: GrabBand(
             height: TextBoxEditor.grabBand,
-            visible: showChrome,
-            active: widget.isEditing || widget.selected,
             movable: widget.interactive,
           ),
         ),
@@ -882,11 +875,6 @@ class TextBoxEditorState extends State<TextBoxEditor>
         cursor:
             _handleCursor ??
             (widget.interactive ? SystemMouseCursors.text : MouseCursor.defer),
-        // Only a pointer hovering with no button held counts: one dragging
-        // another box across this one is not pointing at it.
-        onEnter: (event) {
-          if (event.buttons == 0) setState(() => _hovering = true);
-        },
         onHover: (event) {
           final grabbed = widget.interactive ? _handleAt(event.position) : null;
           final cursor = grabbed == null
@@ -895,20 +883,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
                   grabbed.handle,
                   widget.element.frame.rotation,
                 );
-          if (!_hovering || cursor != _handleCursor) {
-            setState(() {
-              _hovering = true;
-              _handleCursor = cursor;
-            });
+          if (cursor != _handleCursor) {
+            setState(() => _handleCursor = cursor);
           }
         },
         onExit: (_) {
-          if (_hovering) {
-            setState(() {
-              _hovering = false;
-              _handleCursor = null;
-            });
-          }
+          if (_handleCursor != null) setState(() => _handleCursor = null);
         },
         child: Focus(
           focusNode: _focusNode,
@@ -921,15 +901,17 @@ class TextBoxEditorState extends State<TextBoxEditor>
             behavior: HitTestBehavior.opaque,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                // A caret a formula is begun at is not yet picked on the
-                // page, which draws no frame round it: it draws its own.
+                // Nothing of the box shows until it is clicked, when the page
+                // frames it as anything picked. A caret a formula is begun at
+                // is not yet picked on the page, which draws no frame round
+                // it: it draws the same frame itself.
                 border:
-                    (hovering && !widget.isEditing && !empty) ||
-                        (widget.isEditing &&
-                            !widget.selected &&
-                            !widget.caretOnly)
-                    ? Border.all(color: RichTextStyles.boxOutline)
+                    widget.isEditing && !widget.selected && !widget.caretOnly
+                    ? Border.all(color: tones.paperEmphasis, width: 1.5)
                     : null,
+                borderRadius: const BorderRadius.all(
+                  Radius.circular(RichTextStyles.boxCorner),
+                ),
               ),
               // The content is laid out at its natural size and reported, so
               // the box can grow to fit it; until the frame catches up, the

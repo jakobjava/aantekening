@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:aantekening/src/editor/pen_preferences.dart';
-import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/settings/pen_settings.dart';
@@ -51,7 +50,10 @@ void main() {
     );
     expect(canvas.shapesOnHold, isFalse);
     expect(
-      tester.widget<Ribbon>(find.byType(Ribbon)).commands.canvas.inkSmoothing,
+      tester
+          .widget<InfiniteCanvas>(find.byType(InfiniteCanvas))
+          .controller
+          .inkSmoothing,
       PenSmoothing.strong.pixels,
     );
   });

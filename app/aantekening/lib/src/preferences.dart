@@ -1,5 +1,5 @@
 /// Settings that belong to this person on this machine rather than to their
-/// notes, such as how the ribbon is arranged.
+/// notes, such as where the status line lies.
 library;
 
 import 'dart:async';

@@ -134,19 +134,10 @@ extension _Commands on _PageEditorState {
       ..selectEverything();
   }
 
-  /// Takes up [tool], from the ribbon.
+  /// Takes up [tool]: anything but the select tool ends typing.
   void _selectTool(CanvasTool tool) {
     if (tool != CanvasTool.select) _stopEditing();
     _controller.setTool(tool);
-  }
-
-  /// Takes up [tool] from its shortcut, and shows its tab: Draw for the pens
-  /// and the eraser, Home — with the text formatting — for typing.
-  void _useTool(CanvasTool tool) {
-    _selectTool(tool);
-    ref
-        .read(ribbonProvider.notifier)
-        .show(tool == CanvasTool.select ? RibbonTab.home : RibbonTab.draw);
   }
 
   void _formulaShortcut() => _insertFormula();

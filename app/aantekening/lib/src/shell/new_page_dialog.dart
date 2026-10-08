@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../editor/sheet_choices.dart';
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 import 'library_actions.dart';
@@ -24,7 +25,7 @@ Future<void> createChosenPage(
   required String sectionId,
   String? parentId,
 }) async {
-  final choice = await showPlainDialog<NewPageChoice>(
+  final choice = await showAppDialog<NewPageChoice>(
     context: context,
     builder: (context) =>
         NewPageDialog(initial: ref.read(newPageChoiceProvider)),
@@ -167,6 +168,7 @@ class _LayoutCard extends StatelessWidget {
       selected: selected,
       child: InkWell(
         onTap: onTap,
+        borderRadius: Corners.panelRadius,
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -175,6 +177,7 @@ class _LayoutCard extends StatelessWidget {
               color: selected ? tones.emphasis : tones.strongLine,
               width: selected ? 1.5 : 1,
             ),
+            borderRadius: Corners.panelRadius,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

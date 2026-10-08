@@ -1,6 +1,6 @@
 # 9. A ribbon of tabs, arranged by the person using it
 
-**Status:** accepted
+**Status:** superseded by [ADR 40](0040-modes-a-menu-and-glass.md)
 
 ## Context
 

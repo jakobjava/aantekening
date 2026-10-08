@@ -6,7 +6,7 @@
 packages. Dependencies point in one direction only.
 
 ```
-                 app/aantekening             Flutter app: shell, panes, editor
+                 app/aantekening             Flutter app: shell, modes, editor
                          │
      ┌───────────┬───────┼────────┬──────────┬──────────┐
      ▼           │       ▼        ▼          ▼          ▼
@@ -45,10 +45,14 @@ packages. Dependencies point in one direction only.
   ported, and a checker that runs it in an isolate of its own (ADR 12). It
   depends on nothing else here.
 * **`app/aantekening`** — the window, navigation, and the wiring between them:
-  `look/` the visual language (two colours and an accent, the theme, the
-  drawn marks and the controls every part shares, ADR 18), `commands/` every
-  command with a shortcut, the palette that finds them and the keys that run
-  them, and `settings/` the settings window.
+  `look/` the visual language (two colours and an accent, glass, soft
+  corners and motion, the theme, the drawn marks and the controls every part
+  shares, ADRs 18 and 40), `commands/` every command with a shortcut, the
+  palette that finds them and the keys that run them, `modes/` the modes,
+  their layers of keys, the guide that shows them and the catching of keys
+ahead of the focus, so none typed fast is lost (ADR 40), `shell/` the
+  status line, the picker and the split window, and `settings/` the settings
+  window.
 
 The reason for the split is not tidiness. `_core` having no Flutter dependency
 is what lets the model be tested exhaustively and moved onto an isolate. The

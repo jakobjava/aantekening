@@ -41,7 +41,7 @@ Future<void> exportNotes(
   );
   if (!context.mounted) return;
   ScaffoldMessenger.maybeOf(context)
-      ?.showPlainSnackBar(SnackBar(content: Text('Saved to $path')));
+      ?.showAppSnackBar(SnackBar(content: Text('Saved to $path')));
 }
 
 /// [title] with what a file name may not hold replaced.

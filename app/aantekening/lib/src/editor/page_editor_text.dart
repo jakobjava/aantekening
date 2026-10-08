@@ -20,7 +20,7 @@ extension _TextEditing on _PageEditorState {
     }
   }
 
-  /// Lets the ribbon's formatting apply to whole text boxes while they are
+  /// Lets formatting apply to whole text boxes while they are
   /// selected and none is being edited.
   void _syncBoxFormatting() {
     final document = _controller.document;
@@ -91,8 +91,8 @@ extension _TextEditing on _PageEditorState {
   void _onCanvasPress(NoteElement? hit) {
     // Paper pressed with the select tool is not yet known to leave the box: a
     // click there places a caret, and a drag picks what it passes over, each
-    // ending the typing as it happens. Ending it on the press left the ribbon
-    // with nothing to format, greyed, for as long as the button was down.
+    // ending the typing as it happens. Ending it on the press left nothing
+    // to format for as long as the button was down.
     if (hit == null && _controller.tool == CanvasTool.select) return;
     if (hit?.id != _editingId) _stopEditing();
     _canvasFocus.requestFocus();
@@ -163,28 +163,14 @@ extension _TextEditing on _PageEditorState {
     );
   }
 
-  /// A formula opening brings the Math tab forward, as Office does with its
-  /// equation tools; finishing it goes back to where the ribbon was.
+  /// Notes whether a formula is being typed, which shows the box it is
+  /// typed in even while that is only a caret.
   void _onFormulaChanged() {
     final open = _textController.formulaField.value != null;
-    if (open != _formulaOpen) {
-      _update(() => _formulaOpen = open);
-      final ribbon = ref.read(ribbonProvider.notifier);
-      final tab = ref.read(ribbonProvider).tab;
-      if (open) {
-        if (tab != RibbonTab.math) {
-          _tabBeforeMath = tab;
-          ribbon.show(RibbonTab.math);
-        }
-      } else {
-        final before = _tabBeforeMath;
-        _tabBeforeMath = null;
-        if (before != null && tab == RibbonTab.math) ribbon.show(before);
-      }
-    }
+    if (open != _formulaOpen) _update(() => _formulaOpen = open);
   }
 
-  /// Puts a structure or symbol from the ribbon into the formula being
+  /// Puts a structure or symbol into the formula being
   /// edited, or into a new one.
   void _insertMath(MathTemplate template) {
     if (_textController.isActive) {

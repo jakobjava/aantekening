@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../modes/key_catch.dart';
 import 'key_chord.dart';
 import 'shortcuts.dart';
 
@@ -44,7 +45,10 @@ class _CommandKeysState extends ConsumerState<CommandKeys> {
   }
 
   bool _onKey(KeyEvent event) {
-    if (event is KeyUpEvent || !(ModalRoute.of(context)?.isCurrent ?? true)) {
+    // Not while the guide, the picker or labels take the keys themselves.
+    if (event is KeyUpEvent ||
+        KeyCatch.active ||
+        !(ModalRoute.of(context)?.isCurrent ?? true)) {
       return false;
     }
     final chord = KeyChord.fromEvent(event, HardwareKeyboard.instance);

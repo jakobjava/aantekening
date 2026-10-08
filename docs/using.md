@@ -2,8 +2,46 @@
 
 ## Finding your way
 
+The window is the page, and a thin line of glass floating along its top —
+or its foot, as **Settings → Layout** chooses: the **status line**. It shows
+the mode the keys are in, as a dot of its colour, the tabs, the one showing
+underlined in the accent, and the pen in hand,
+a save under way and the zoom. Nothing else is shown until it is asked for.
+
+**Space** — Ctrl+Space while typing, or a right-click — opens the **menu**
+in the middle of the window, always in the same place: everything that can be done, each a key or two
+away, on keys drawn as caps that a click presses as well. It opens further
+layers: **Space f** formats text, **Space d** draws, **Space m** puts in
+formulas, **Space s** works on the sheets, **Space i** inserts, **Space z**
+is the view and **Space w** splits the window. Backspace goes back a layer
+and Esc closes it. Formatting a selected text box, rather than typing in it,
+formats all of it, and the marks stay on offer for the next: **Space f b
+i** is bold and italic. A right-click in a text box offers what is to be
+done there — a word spelled wrongly, a table, a link — and the text's and
+the formulas' layers after it.
+
+### Modes
+
+As in vim, what a key does depends on the mode:
+
+| Mode | Entered by | Its keys |
+| --- | --- | --- |
+| **Normal** | Esc | h j k l go from thing to thing on the page, keeping to a line or a column; f puts a label on everything in view, to jump to by typing it; i or Enter types in the box picked, or a new one; o in a new box below; `$` a formula; x deletes, y copies, p pastes, u undoes, U redoes; m moves what is picked (h j k l a step, H J K L ten); gg the top, G the foot; J K the next and previous page; H L back and forward; / search; : commands; Esc lets go of what is picked and what is searched for |
+| **Insert** | i, or a click in text | Typing, as anywhere; Esc goes back to normal |
+| **Draw** | d | p pen, h highlighter, e eraser, s shapes, l lasso; 1–9 the palette's colours; [ and ] thinner and thicker; c any colour |
+| **Select** | v | The lasso; h j k l, and f, pick what is that way, or labelled, as well; d deletes, y copies, c cuts, m moves, a picks everything |
+| **AI** | a, or Ctrl+J | o the overview; 1–9 a set to study; i the question; n a new conversation; c a conversation or an answer kept, by name; q a question ready to ask; h j k l what it lists; Esc back to the notes |
+
+**?** shows the keys of the mode the page is in. A pause in the middle of
+keys — after g, say — shows what can follow; typed on, nothing is shown.
+
+### On the page
+
 The default tool types and selects: click empty paper and start typing, click
-a text box to place the caret, drag a box by the band along its top. Click a
+a text box to place the caret. A text box shows nothing of itself until it is
+clicked; then it is framed as a picture is, with handles on its sides to make
+it wider or narrower and the knob to turn it, and is moved by dragging its
+top edge, where the pointer shows it can be. Click a
 picture, PDF page or ink to select it; drag across empty paper to select
 several. Drag a corner to resize in proportion, a side to stretch that way,
 and the knob above the box to rotate (hold Shift for 15° steps). A picture,
@@ -11,35 +49,62 @@ PDF page or TikZ picture in a text box is picked by a click too, with the
 same handles; there a side keeps its proportions as well. Cut out of a box
 and pasted on empty paper, it lies on the page by itself again.
 
-**Lasso select** (L), beside it on the Draw tab, picks what a loop is drawn
+**Lasso select** — select mode, v, or l while drawing — picks what a loop is drawn
 round: handwriting stroke by stroke, so one word can be taken out of a line,
 and pictures, boxes and pages whose middle it takes in. A tap picks what it
 lands on; a press anywhere in the selection's box moves it. Nothing is typed
-with it, and a text box hovered over shows no band to drag it by unless the
+with it, and a text box is moved by its top edge only while the
 type-and-select tool is in hand.
 
-Notebooks, sections and pages are in the sidebar's first panel; right-click
-one for what can be done to it. A notebook opened shows its sections, and
-stays expanded as others are opened, until its chevron collapses it. A new page opens with the caret in its title.
-**Sort**, above the notebooks and above the pages, lists them by when they
-were made, when they last changed or by name, either way round — or as you
-arranged them, by dragging one above or below another with the mouse or a
-pen.
+### Notebooks, pages, search
 
-Commands are on the ribbon:
+**Space p** (Ctrl+Shift+E) summons the **picker** over the page: the
+notebooks, the sections of the one the cursor is on and the pages of the
+section, in three columns, as a file manager has them. It opens on the page
+open; j and k (or the arrows) move up and down a column, h and l go between
+columns, g and G to the first and the last, z folds away the subsections or
+subpages beneath a row or unfolds them, and Enter opens a page — or goes into
+a notebook or a section. t opens the page in a new tab. In a column, n makes a
+new notebook, section or page, N a subsection or a subpage, r renames, d
+deletes, x, y and p cut, copy and paste, and Space (or a right-click) shows
+everything else that can be done to the row. **o** orders the notebooks or
+the pages: by when they were made, when they last changed or by name,
+either way round — or as you arranged them, with J and K or by dragging one
+above or below another with the mouse or a pen. b opens the bin, Tab turns
+to the **graph** of everything, ? shows every key and Esc puts it away. It
+goes once a page is picked; a new page opens with the caret in its title.
+**Space P** (Ctrl+P) finds a page by a few letters of its name.
 
-| Tab | Holds |
-| --- | --- |
-| **Home** | Text formatting; sheets, shown as pages |
-| **Insert** | Pictures, PDFs, files and formulas |
-| **Draw** | The lasso, the pens, shapes, their colours and widths |
-| **Math** | Structures, symbols and the cheat sheet, while a formula is open |
-| **Review** | Spelling and its languages |
-| **View** | Zoom, pages or canvas, the page preview, resetting the ribbon |
+**/** (Ctrl+F) opens the **search line**: the best match opens as it is
+typed, the words found marked on the page, and the pages found are listed
+beneath it, each with its words, to step through with the arrows or Tab or
+to click. Enter keeps them marked, n and N go to the next and the previous
+page found, and Esc forgets them.
 
-Formatting a selected text box (rather than typing in it) formats all of it.
-Drag a ribbon button to move it; hold it over another tab's name to open that
-tab.
+Keys count however fast they are typed: those that come while the menu, the
+picker, the search line or a new text box is still on its way are kept for
+it, not lost — **i** and the words straight after it, Space held into **d e**,
+**/** and what to find.
+
+### Splitting the window
+
+**Space w v** shows the page of another tab beside this one, and **Space w
+s** beneath it — a new tab's, chosen in the picker, if there is no other. The
+page without the keys is faded; Alt and h, j, k or l, or a click in it,
+gives it them. **Space w q** shows one page again, the other staying a tab.
+A page is written on in one place at a time: beside itself, it is not opened
+twice.
+
+### Glass and motion
+
+What floats over the page — the status line, the menu, the picker, the AI —
+is clear liquid glass the notes show through, their colours glowing through
+it, its edge catching the light. It holds still: the menu and the picker
+open in the same place each time, and grow to fit more without shrinking
+back as they show less. What is picked or showing is marked with a drop of
+the accent — a bar beneath a tab, beside a row — rather than a tint. **Settings → Appearance** makes it
+solid instead, and sets how fast things move, from off to twice as fast; the
+system's setting for less motion stops it too.
 
 ## Canvas or pages
 
@@ -52,14 +117,14 @@ asks, offering what was chosen last, so Enter makes another of the same:
   after another, as in a paper notebook or GoodNotes, each printed blank,
   lined, squared, dotted, with music staves, or for Cornell notes.
 
-**Pages** on the View tab (Ctrl+Shift+L) switches a page between the two at
+**Space z l** (Ctrl+Shift+L) switches a page between the two at
 any time. Nothing on it moves: switched to pages, it is cut into sheets as
 wide as its widest writing, enough of them to hold it all, a line of
 handwriting across two sheets cut at the edge; switched back, it is the
 canvas it was. A page shown as pages keeps its sheets while it is a canvas,
 for when it is pages again.
 
-Shown as pages, the Home tab's **Pages** section adds a sheet after the
+Shown as pages, **Space s**, the sheets, adds a sheet after the
 one in view (**Add sheet**, Ctrl+Shift+Enter, or the button below the last
 sheet), asking what it is printed with — as the sheet in view is, for
 Enter; sets what the sheet in view is printed with, or every sheet
@@ -92,7 +157,7 @@ follows the pen, a corner of a rectangle or ellipse is pulled while the one
 across from it stays, a corner of a triangle moves by itself. Lines settle
 on level, upright and 45°, and a side nearly level is made so.
 
-**Shapes** on the Draw tab (S) holds shapes to drag out on the page: lines
+**Shapes** (s in draw mode, or Space d s) holds shapes to drag out on the page: lines
 and arrows; outlines; graphs — axes, in one quadrant, four or in 3D, a
 number line and a grid, ticked every square of the page's grid; and solids,
 their hidden edges dashed. A click puts one down at its usual size. Shift
@@ -114,7 +179,7 @@ dot as thick as the line, the highlighter's nib, the eraser's reach.
 **Inverted**, in the text colour's menu and standing first and tall beside
 the pen's colours, is no colour of its own but the opposite of what is
 beneath: black on the paper, white over a dark picture or highlight, so it
-can be read on either. The **Font** menu on the Home tab sets text in the
+can be read on either. **Space f f**, the font, sets text in the
 page's own typeface, one the app brings — which looks the same on every
 computer — or any installed on this one. Text brought from OneNote in
 Calibri or Consolas keeps its lines where they were on a computer without
@@ -128,7 +193,8 @@ none unless chosen.
 ## Keyboard
 
 Every shortcut is listed in the app under **F1**, where the shortcuts of
-commands can be changed; those of typing are fixed.
+commands can be changed; those of typing are fixed, as are the modes' keys,
+which **?** lists.
 
 | Keys | Does |
 | --- | --- |
@@ -138,10 +204,11 @@ commands can be changed; those of typing are fixed.
 | Ctrl+N, F2 | New page, rename the page |
 | Ctrl+T / Ctrl+W / Ctrl+Shift+T | New tab / close the tab / reopen the tab closed last |
 | Ctrl+Tab, Alt+1–9 | Next tab, show a tab |
-| Ctrl+Shift+E / Ctrl+F / Ctrl+Shift+G | Notebooks / search / graph; Ctrl+\ hides or shows the panel |
+| Ctrl+Shift+E / Ctrl+F / Ctrl+Shift+G | The picker / the search line / the graph in the picker |
 | Ctrl+J | The AI of what is showing, and back |
-| Ctrl+, / Ctrl+Shift+D / Ctrl+F1 | Settings / light or dark / collapse the ribbon |
-| V or T, L, P, H, S, E | Type-and-select, lasso, pen, highlighter, shapes, eraser |
+| Ctrl+, / Ctrl+Shift+D | Settings / light or dark |
+| Space, Ctrl+Space | The menu |
+| Alt+H / J / K / L | The other page of a split window |
 | Ctrl+Shift+L, Ctrl+Shift+Enter | Pages or canvas; add a sheet after the one in view |
 | Ctrl+B / I / U | Bold, italic, underline |
 | Ctrl+− / Ctrl+E / Ctrl+Shift+H | Strikethrough, inline code, highlight |
@@ -185,7 +252,7 @@ on to the start of the line beneath, and text typed beside one, or a line
 broken off it, is not centred.
 
 Formulas are stored as LaTeX and can be typed in LaTeX or in the Simple
-syntax, which **Math → Cheat sheet** lists in full:
+syntax, which the cheat sheet (**Space m c**) lists in full:
 
 `x^2`, `x_i`, `a/b`, `sqrt(x)`, `root(3, x)`, `sum_(i=1)^n`, `prod`,
 `int_a^b`, `lim_(x->0)`, `vec(v)` and `vec(1, 2, 3)`, `mat(1, 2; 3, 4)` (also
@@ -258,7 +325,7 @@ shading, and scaling, shifting and rotating. Of TikZ's libraries:
 
 A picture is always typed as LaTeX: it has no Simple syntax.
 
-**Insert → LaTeX** takes LaTeX of any length — a passage, or a whole
+**Space i l** takes LaTeX of any length — a passage, or a whole
 document with its preamble — and puts it into the text box being typed in,
 or a box of its own: paragraphs, `\section`s as headings, lists, tables,
 bold, italic and links as text, `$…$` as formulas in the line, and `\[…\]`,
@@ -288,8 +355,17 @@ formulas typed here cannot (they would have no Simple syntax):
 
 ## The AI
 
-Open any page's AI (**Ctrl+J**) and **Choose a model**. Nothing is sent
-anywhere until you ask something.
+Open any page's AI (**Ctrl+J**, or **a**) and **Choose a model**. Nothing is
+sent anywhere until you ask something.
+
+The AI floats on a pane of glass down the right of the page, the notes still
+in view beside it; a click on them, or Esc, goes back to them. Its overview
+lists the sets to study the page by, each on its digit — **Make** one, or
+open it — the questions ready to ask (**q**), and the conversations and
+answers kept (**c** finds one by name; a right-click deletes or renames it).
+The line to ask in is at its foot: **i** or Enter goes to it, Enter asks,
+**Web** lets the answer search the web, and the model's name opens the
+settings to choose another.
 
 To keep everything on your computer, install [Ollama](https://ollama.com),
 pull a model that can use tools and see pictures, and add **Ollama** under

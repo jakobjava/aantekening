@@ -83,8 +83,9 @@ extension _Storage on _PageEditorState {
 
   /// Called on every change to the page and the view — every frame of
   /// scrolling among them — so it rebuilds nothing itself: the canvas and
-  /// the ribbon's buttons each listen for what they show.
+  /// the status line each listen for what they show.
   void _onCanvasChanged() {
+    _syncMode();
     if (_revealed case final revealed?
         when !_controller.selection.contains(revealed.elementId)) {
       _update(() => _revealed = null);
@@ -148,7 +149,7 @@ extension _Storage on _PageEditorState {
     final store = _store;
     if (store == null) return;
     if (!await openAttachedFile(store, file) && mounted) {
-      ScaffoldMessenger.maybeOf(context)?.showPlainSnackBar(
+      ScaffoldMessenger.maybeOf(context)?.showAppSnackBar(
         const SnackBar(content: Text('The file could not be opened.')),
       );
     }
@@ -189,7 +190,7 @@ extension _Storage on _PageEditorState {
     );
     _libraryRevision.bump();
     if (!mounted || kept == null) return;
-    ScaffoldMessenger.maybeOf(context)?.showPlainSnackBar(
+    ScaffoldMessenger.maybeOf(context)?.showAppSnackBar(
       SnackBar(
         content: Text(
           'This page was changed on another computer while you were '

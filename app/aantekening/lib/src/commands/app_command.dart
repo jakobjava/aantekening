@@ -10,7 +10,7 @@ import 'key_chord.dart';
 enum CommandGroup {
   go('Go'),
   tabs('Tabs'),
-  panels('Panels'),
+  find('Find'),
   library('Notebooks and pages'),
   page('Page'),
   tools('Tools'),
@@ -26,7 +26,8 @@ enum CommandGroup {
 ///
 /// A shortcut with Ctrl, Alt or Meta works wherever the keyboard is; one
 /// without, a plain letter, works only while the page has the keyboard and
-/// nothing on it is being typed in — so typing never sets one off.
+/// nothing on it is being typed in — so typing never sets one off — and
+/// only where the mode the page is in leaves the letter free.
 enum AppCommand {
   goTo(
     'Go to…',
@@ -39,6 +40,13 @@ enum AppCommand {
     CommandGroup.go,
     'Find any command by name and run it',
     <KeyChord>[KeyChord(LogicalKeyboardKey.keyP, control: true, shift: true)],
+  ),
+  menu(
+    'Menu',
+    CommandGroup.go,
+    'What can be done here, each a key or two away; Space does the same '
+        'where nothing is being typed',
+    <KeyChord>[KeyChord(LogicalKeyboardKey.space, control: true)],
   ),
   back('Back', CommandGroup.go, 'The page open before, in this tab', <KeyChord>[
     KeyChord(LogicalKeyboardKey.arrowLeft, alt: true),
@@ -96,16 +104,46 @@ enum AppCommand {
     KeyChord(LogicalKeyboardKey.tab, control: true, shift: true),
     KeyChord(LogicalKeyboardKey.pageUp, control: true),
   ]),
+  splitSideBySide(
+    'Split side by side',
+    CommandGroup.tabs,
+    'The page of another tab beside this one, or a new tab’s',
+    <KeyChord>[],
+  ),
+  splitStacked(
+    'Split one above the other',
+    CommandGroup.tabs,
+    'The page of another tab beneath this one, or a new tab’s',
+    <KeyChord>[],
+  ),
+  unsplit(
+    'One page in the window',
+    CommandGroup.tabs,
+    'The page with the keys alone; the one beside it stays a tab',
+    <KeyChord>[],
+  ),
+  otherPane(
+    'The other page',
+    CommandGroup.tabs,
+    'The keys to the page beside this one',
+    <KeyChord>[
+      KeyChord(LogicalKeyboardKey.keyH, alt: true),
+      KeyChord(LogicalKeyboardKey.keyJ, alt: true),
+      KeyChord(LogicalKeyboardKey.keyK, alt: true),
+      KeyChord(LogicalKeyboardKey.keyL, alt: true),
+    ],
+  ),
   notebooks(
     'Notebooks',
-    CommandGroup.panels,
-    'The notebooks and pages beside the page, with the keyboard on them',
+    CommandGroup.find,
+    'The notebooks and their pages, summoned over the page',
     <KeyChord>[KeyChord(LogicalKeyboardKey.keyE, control: true, shift: true)],
   ),
   search(
     'Search',
-    CommandGroup.panels,
-    'Search every page, with the keyboard in the search field',
+    CommandGroup.find,
+    'Search every page, the words found marked on it; n and N step '
+        'through them',
     <KeyChord>[
       KeyChord(LogicalKeyboardKey.keyF, control: true),
       KeyChord(LogicalKeyboardKey.keyF, control: true, shift: true),
@@ -113,19 +151,13 @@ enum AppCommand {
   ),
   graph(
     'Graph',
-    CommandGroup.panels,
+    CommandGroup.find,
     'Every notebook, section and page, and how they nest',
     <KeyChord>[KeyChord(LogicalKeyboardKey.keyG, control: true, shift: true)],
   ),
-  togglePanel(
-    'Show or hide the panel',
-    CommandGroup.panels,
-    'The panel beside the page, put away or brought back',
-    <KeyChord>[KeyChord(LogicalKeyboardKey.backslash, control: true)],
-  ),
   ai(
     'AI',
-    CommandGroup.panels,
+    CommandGroup.find,
     'Ask about what is open, and study it — or back to the notes',
     <KeyChord>[KeyChord(LogicalKeyboardKey.keyJ, control: true)],
   ),
@@ -210,33 +242,24 @@ enum AppCommand {
     'Type and select',
     CommandGroup.tools,
     'Click to write, drag to select',
-    <KeyChord>[
-      KeyChord(LogicalKeyboardKey.keyV),
-      KeyChord(LogicalKeyboardKey.keyT),
-    ],
+    <KeyChord>[],
   ),
   lassoTool(
     'Lasso select',
     CommandGroup.tools,
     'Draw round what to pick out: handwriting stroke by stroke',
-    <KeyChord>[KeyChord(LogicalKeyboardKey.keyL)],
+    <KeyChord>[],
   ),
-  pen('Pen', CommandGroup.tools, null, <KeyChord>[
-    KeyChord(LogicalKeyboardKey.keyP),
-  ]),
-  highlighter('Highlighter', CommandGroup.tools, null, <KeyChord>[
-    KeyChord(LogicalKeyboardKey.keyH),
-  ]),
+  pen('Pen', CommandGroup.tools, null, <KeyChord>[]),
+  highlighter('Highlighter', CommandGroup.tools, null, <KeyChord>[]),
   shapes(
     'Shapes',
     CommandGroup.tools,
-    'Drag out the shape chosen on the Draw tab; or hold the pen still at '
+    'Drag out the shape chosen in Draw; or hold the pen still at '
         'the end of a stroke to make it the shape it was drawn as',
-    <KeyChord>[KeyChord(LogicalKeyboardKey.keyS)],
+    <KeyChord>[],
   ),
-  eraser('Eraser', CommandGroup.tools, 'Removes whole strokes', <KeyChord>[
-    KeyChord(LogicalKeyboardKey.keyE),
-  ]),
+  eraser('Eraser', CommandGroup.tools, 'Removes whole strokes', <KeyChord>[]),
   zoomIn('Zoom in', CommandGroup.view, 'Or Ctrl and scroll', <KeyChord>[
     KeyChord(LogicalKeyboardKey.equal, control: true),
     KeyChord(LogicalKeyboardKey.add, control: true),
@@ -267,12 +290,6 @@ enum AppCommand {
     CommandGroup.view,
     'The whole page drawn small beside it, in place of its scrollbar',
     <KeyChord>[],
-  ),
-  toggleRibbon(
-    'Collapse or expand the ribbon',
-    CommandGroup.view,
-    null,
-    <KeyChord>[KeyChord(LogicalKeyboardKey.f1, control: true)],
   ),
   toggleDark(
     'Light or dark',

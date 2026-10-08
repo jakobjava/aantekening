@@ -35,7 +35,11 @@ thousands of pages instant.
 - **PDFs and pictures.** Insert them to annotate. PDFs stay sharp at any
   zoom and their text is searchable.
 - **Organised like a notebook.** Notebooks, nested sections, pages and
-  subpages, with tabs, a ribbon, a bin with undo, and a graph of it all.
+  subpages, with tabs and split views, a bin with undo, and a graph of it
+  all.
+- **Worked from the keyboard.** Modes as in vim — normal, insert, draw,
+  select and AI — and a menu a key away that shows what every key does.
+  Nothing but the page and a line of glass until something is asked for.
 - **Fast to navigate.** Ranked full-text search with the matches marked on
   the page. Ctrl+P jumps anywhere; Ctrl+Shift+P runs any command.
 - **An AI of your own.** Summaries, flashcards with spaced repetition,

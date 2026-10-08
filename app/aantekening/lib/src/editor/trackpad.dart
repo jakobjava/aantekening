@@ -57,8 +57,8 @@ void listenToTouchpadFingers() {
 ///
 /// GTK reports a wheel turn, a two-finger scroll or a pinch at the place last
 /// clicked rather than at the pointer, so scrolling or zooming over the page
-/// after a click on the ribbon was delivered to the ribbon, which neither
-/// scrolls nor zooms: the page did nothing until it was clicked. Moving each
+/// after a click on the status line was delivered to the status line, which
+/// neither scrolls nor zooms: the page did nothing until it was clicked. Moving each
 /// of those to the pointer before it is routed hands it to whatever the
 /// pointer is over, as every desktop does.
 ///

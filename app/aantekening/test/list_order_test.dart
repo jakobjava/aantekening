@@ -1,12 +1,12 @@
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/shell/list_order.dart';
-import 'package:aantekening/src/shell/page_list_pane.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'app_test.dart' show shellWith, useSurface, wideWindow;
+import 'app_test.dart' show shellWith, showPanes, useSurface, wideWindow;
 
 PageRef _page(String title, {int created = 0, int changed = 0}) => PageRef(
   id: title,
@@ -103,6 +103,7 @@ void main() {
       useSurface(tester, wideWindow);
       await tester.pumpWidget(shellWith(store, preferences: preferences));
       await tester.pumpAndSettle();
+      await showPanes(tester);
       await tester.tap(find.text('Physik'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Wellen'));
@@ -118,13 +119,11 @@ void main() {
       await openSection(tester, preferences);
       expect(_shown(tester, titles), titles);
 
+      // Over to the pages, to order them with o.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
+      await tester.pumpAndSettle();
       Future<void> choose(String order) async {
-        await tester.tap(
-          find.descendant(
-            of: find.byType(PageListPane),
-            matching: find.text('Sort'),
-          ),
-        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyO);
         await tester.pumpAndSettle();
         await tester.tap(find.text(order).last);
         await tester.pumpAndSettle();

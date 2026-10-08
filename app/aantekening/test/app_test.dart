@@ -1,25 +1,24 @@
 import 'dart:io';
 
 import 'package:aantekening/src/editor/page_title.dart';
-import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/text/block_paragraph.dart';
 import 'package:aantekening/src/files/bin_view.dart';
 import 'package:aantekening/src/graph/graph_panel.dart';
 import 'package:aantekening/src/graph/note_graph.dart';
 import 'package:aantekening/src/look/appearance.dart';
+import 'package:aantekening/src/look/glass.dart';
+import 'package:aantekening/src/look/marks.dart';
 import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening/src/look/tones.dart';
+import 'package:aantekening/src/modes/key_guide.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
-import 'package:aantekening/src/search/search_panel.dart';
+import 'package:aantekening/src/search/search_line.dart';
 import 'package:aantekening/src/shell/home_shell.dart';
 import 'package:aantekening/src/shell/library_actions.dart';
-import 'package:aantekening/src/shell/library_pane.dart';
 import 'package:aantekening/src/shell/new_page_dialog.dart';
-import 'package:aantekening/src/shell/page_list_pane.dart';
-import 'package:aantekening/src/shell/sidebar.dart';
-import 'package:aantekening/src/shell/sidebar_state.dart';
-import 'package:aantekening/src/shell/tab_strip.dart';
+import 'package:aantekening/src/shell/picker.dart';
+import 'package:aantekening/src/shell/status_line.dart';
 import 'package:aantekening/src/shell/tabs.dart';
 import 'package:aantekening/src/shell/tree_rows.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
@@ -80,10 +79,46 @@ Finder get titleField => find.descendant(
   matching: find.byType(EditableText),
 );
 
-/// What [finder] finds in the sidebar, leaving out the tabs, which show
+/// What [finder] finds in the picker, leaving out the tabs, which show
 /// the names of what they have open too.
 Finder inPanes(Finder finder) =>
-    find.descendant(of: find.byType(Sidebar), matching: finder);
+    find.descendant(of: find.byType(Picker), matching: finder);
+
+/// The row of the menu showing named [label].
+Finder inMenu(String label) => find.widgetWithText(KeyGuideRow, label);
+
+/// The tab on the status line named [title].
+Finder tabNamed(String title) =>
+    find.descendant(of: find.byType(StatusLine), matching: find.text(title));
+
+/// Opens the picker on the notebooks and pages, unless it is open.
+Future<void> showPanes(WidgetTester tester) async {
+  if (find.byType(Picker).evaluate().isNotEmpty) return;
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+  await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  await tester.pumpAndSettle();
+}
+
+/// Opens the search line with Ctrl+F — / with a page open — and types
+/// [query] into it.
+Future<void> searchFor(WidgetTester tester, String query) async {
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  await tester.pumpAndSettle();
+  await tester.enterText(
+    find.descendant(
+      of: find.byType(SearchLine),
+      matching: find.byType(TextField),
+    ),
+    query,
+  );
+  await tester.pump(SearchLine.typingPause);
+  await tester.pumpAndSettle();
+}
 
 /// Right-clicks [target].
 Future<void> rightClick(WidgetTester tester, Finder target) async {
@@ -131,15 +166,13 @@ void main() {
     useSurface(tester, wideWindow);
     await tester.pumpWidget(shellWith(store, preferences: preferences));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Physics'));
+    await showPanes(tester);
+    await tester.tap(inPanes(find.text('Physics')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Mechanics'));
+    await tester.tap(inPanes(find.text('Mechanics')));
     await tester.pumpAndSettle();
     await tester.tap(
-      find.descendant(
-        of: find.byType(PageListPane),
-        matching: find.text(title),
-      ),
+      find.descendant(of: find.byType(Picker), matching: find.text(title)),
     );
     await tester.pumpAndSettle();
     return created;
@@ -150,33 +183,48 @@ void main() {
       useSurface(tester, wideWindow);
       await tester.pumpWidget(shellWith(store));
       await tester.pumpAndSettle();
+      expect(find.text('Notebooks and pages'), findsOneWidget);
 
+      await showPanes(tester);
       expect(find.text('NOTEBOOKS'), findsOneWidget);
-      expect(find.text('No notebooks yet'), findsOneWidget);
-      expect(find.text('Go to a page'), findsOneWidget);
+      expect(find.text('No notebooks yet — n makes one'), findsOneWidget);
     });
 
-    testWidgets('has the ribbon across it, over the tabs, the sidebar and '
-        'the page', (tester) async {
+    testWidgets('is the page, the status line floating over its top', (
+      tester,
+    ) async {
       await openPage(tester);
 
-      final ribbon = tester.getRect(find.byType(Ribbon));
-      expect(ribbon.left, 0);
-      expect(ribbon.width, wideWindow.width);
-      final tabs = tester.getRect(find.byType(TabStrip));
-      expect(tabs.top, ribbon.bottom);
-      expect(tabs.width, wideWindow.width);
-      expect(tester.getTopLeft(find.byType(Sidebar)).dy, tabs.bottom);
-      expect(tester.getTopLeft(find.byType(LibraryPane)).dy, tabs.bottom);
-      expect(find.text('Search all notes'), findsNothing, reason: 'no bar');
+      final line = tester.getRect(find.byType(StatusLine));
+      expect(line.top, StatusLine.margin, reason: 'floating clear of it');
+      expect(line.width, wideWindow.width - 2 * StatusLine.margin);
+      final page = tester.getRect(find.byType(InfiniteCanvas));
+      expect(page.top, 0, reason: 'beneath the status line');
+      expect(page.left, 0);
+      expect(find.byType(Picker), findsNothing, reason: 'put away');
+      // The title is out from under it.
+      expect(tester.getTopLeft(titleField).dy, greaterThan(line.bottom));
+    });
+
+    testWidgets('has the status line at its foot, if chosen', (tester) async {
+      await openPage(
+        tester,
+        preferences: Preferences.inMemory(<String, Object?>{
+          'statusLine.place': 'bottom',
+        }),
+      );
+      expect(
+        tester.getRect(find.byType(StatusLine)).bottom,
+        wideWindow.height - StatusLine.margin,
+      );
     });
 
     testWidgets('opens the editor when a page is selected', (tester) async {
       await openPage(tester);
 
-      // The ribbon's commands are there, and the text is on the canvas
-      // itself, not merely echoed in the page list's preview line.
-      expect(find.byTooltip('Undo  (Ctrl+Z)'), findsOneWidget);
+      // The page takes the keys, and the text is on the canvas itself,
+      // not merely echoed in the page list's preview line.
+      expect(find.text('NORMAL'), findsOneWidget);
       expect(
         find.descendant(
           of: find.byType(InfiniteCanvas),
@@ -200,6 +248,7 @@ void main() {
       useSurface(tester, wideWindow);
       await tester.pumpWidget(shellWith(store));
       await tester.pumpAndSettle();
+      await showPanes(tester);
 
       await tester.tap(find.text('Analysis'));
       await tester.pumpAndSettle();
@@ -208,13 +257,18 @@ void main() {
       expect(find.text('Convergence tests'), findsOneWidget);
     });
 
-    testWidgets('creates a notebook from the header button', (tester) async {
+    testWidgets('creates a notebook with n', (tester) async {
       useSurface(tester, wideWindow);
       await tester.pumpWidget(shellWith(store));
       await tester.pumpAndSettle();
+      await showPanes(tester);
 
-      await tester.tap(find.byTooltip('New notebook'));
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
       await tester.pumpAndSettle();
+      // Typed in the dialog, n is the name's, not the picker's again.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
       await tester.enterText(
         find.descendant(
           of: find.byType(AlertDialog),
@@ -228,93 +282,45 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(AlertDialog), findsNothing);
-      expect(find.text('Algebra'), findsOneWidget);
-      expect(find.text('Notes'), findsOneWidget);
+      expect(find.byType(Picker), findsNothing, reason: 'its page is open');
+      await showPanes(tester);
+      expect(inPanes(find.text('Algebra')), findsOneWidget);
+      expect(inPanes(find.text('Notes')), findsOneWidget);
     });
   });
 
-  group('the sidebar', () {
-    testWidgets('closes a panel when its button is pressed again', (
-      tester,
-    ) async {
-      final preferences = Preferences.inMemory();
-      await openPage(tester, preferences: preferences);
-      final pageLeft = tester.getTopLeft(find.byType(InfiniteCanvas)).dx;
-
-      await tester.tap(find.byTooltip(RegExp('^Notebooks')));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(LibraryPane), findsNothing);
-      expect(
-        tester.getTopLeft(find.byType(InfiniteCanvas)).dx,
-        lessThan(pageLeft - 400),
-      );
-      expect(preferences['tabs'], <Object?>[containsPair('panel', 'none')]);
-    });
-
-    testWidgets('columns are made wider by their edges, and remembered', (
-      tester,
-    ) async {
-      final preferences = Preferences.inMemory();
+  group('the picker', () {
+    testWidgets('holds still as notebooks of more or fewer sections are '
+        'gone through', (tester) async {
+      for (final (title, sections) in <(String, int)>[
+        ('Long', 12),
+        ('Short', 1),
+      ]) {
+        final notebook = await store.library.createNotebook(title: title);
+        for (var i = 0; i < sections; i++) {
+          await store.library.createSection(
+            notebookId: notebook.id,
+            title: '$title $i',
+          );
+        }
+      }
       useSurface(tester, wideWindow);
-      await tester.pumpWidget(shellWith(store, preferences: preferences));
+      await tester.pumpWidget(shellWith(store));
       await tester.pumpAndSettle();
-      final before = tester.getRect(find.byType(LibraryPane));
-      expect(before.width, SidebarColumn.notebooks.initialWidth);
-
-      await tester.dragFrom(
-        before.centerRight - const Offset(2, 0),
-        const Offset(60, 0),
-        kind: PointerDeviceKind.mouse,
+      await showPanes(tester);
+      Rect picker() => tester.getRect(
+        find.descendant(of: find.byType(Picker), matching: find.byType(Glass)),
       );
+
+      await tester.tap(inPanes(find.text('Long')));
       await tester.pumpAndSettle();
-
-      expect(
-        tester.getSize(find.byType(LibraryPane)).width,
-        closeTo(before.width + 60, 1),
-      );
-      expect(
-        tester.getSize(find.byType(PageListPane)).width,
-        SidebarColumn.pages.initialWidth,
-      );
-      expect(
-        (preferences['sidebar.widths']! as Map)['notebooks'],
-        closeTo(before.width + 60, 1),
-      );
+      final long = picker();
+      await tester.tap(inPanes(find.text('Short')));
+      await tester.pumpAndSettle();
+      expect(picker(), long, reason: 'not shrunk, nor moved');
     });
 
-    testWidgets('its buttons can be moved, as the ribbon\'s can', (
-      tester,
-    ) async {
-      final preferences = Preferences.inMemory();
-      useSurface(tester, wideWindow);
-      await tester.pumpWidget(shellWith(store, preferences: preferences));
-      await tester.pumpAndSettle();
-
-      final gesture = await tester.startGesture(
-        tester.getCenter(find.byTooltip(RegExp('^Graph'))),
-        kind: PointerDeviceKind.mouse,
-      );
-      await gesture.moveBy(const Offset(0, -10));
-      await tester.pump();
-      await gesture.moveTo(
-        tester.getRect(find.byTooltip(RegExp('^Notebooks'))).topCenter +
-            const Offset(0, 3),
-      );
-      await tester.pump();
-      await gesture.up();
-      await tester.pumpAndSettle();
-
-      final buttons = <String>['Graph', 'Notebooks', 'Search'];
-      final heights = <double>[
-        for (final label in buttons)
-          tester.getCenter(find.byTooltip(RegExp('^$label'))).dy,
-      ];
-      expect(heights, orderedEquals(List<double>.of(heights)..sort()));
-      expect(preferences['sidebar.layout'], isNotNull, reason: 'saved');
-    });
-
-    testWidgets('in a narrow window a panel lies over the page', (
+    testWidgets('fits a narrow window, and goes once a page is picked', (
       tester,
     ) async {
       final notebook = await store.library.createNotebook(title: 'Pocket');
@@ -327,6 +333,7 @@ void main() {
       useSurface(tester, phoneWindow);
       await tester.pumpWidget(shellWith(store));
       await tester.pumpAndSettle();
+      await showPanes(tester);
 
       expect(find.text('NOTEBOOKS'), findsOneWidget);
       await tester.tap(find.text('Pocket'));
@@ -336,8 +343,7 @@ void main() {
       await tester.tap(find.text('Shopping'));
       await tester.pumpAndSettle();
 
-      // Picking a page puts it away, showing the page.
-      expect(find.byType(LibraryPane), findsNothing);
+      expect(find.byType(Picker), findsNothing);
       expect(find.byType(InfiniteCanvas), findsOneWidget);
     });
 
@@ -346,7 +352,11 @@ void main() {
     ) async {
       await openPage(tester);
 
-      await tester.tap(find.byTooltip(RegExp('^Graph')));
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pumpAndSettle();
 
       expect(find.byType(GraphPanel), findsOneWidget);
@@ -370,14 +380,9 @@ void main() {
         'Lecture 1',
       );
 
-      await rightClick(
-        tester,
-        find.descendant(
-          of: find.byType(PageListPane),
-          matching: find.text('Lecture 1'),
-        ),
-      );
-      await tester.tap(find.text('Rename'));
+      await showPanes(tester);
+      await rightClick(tester, inPanes(find.text('Lecture 1')));
+      await tester.tap(inMenu('Rename'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.descendant(
@@ -397,30 +402,26 @@ void main() {
       await tester.enterText(titleField, 'Dynamics');
       await tester.pump(PageTitle.typingPause);
       await tester.pumpAndSettle();
-      expect(
-        find.descendant(
-          of: find.byType(PageListPane),
-          matching: find.text('Dynamics'),
-        ),
-        findsOneWidget,
-      );
+      expect(inPanes(find.text('Dynamics')), findsOneWidget);
     });
 
     testWidgets('keys typed in the title are not the page\'s shortcuts', (
       tester,
     ) async {
       await openPage(tester);
-      final commands = tester.widget<Ribbon>(find.byType(Ribbon)).commands;
-      commands.canvas.selectEverything();
+      final canvas = tester
+          .widget<InfiniteCanvas>(find.byType(InfiniteCanvas))
+          .controller;
+      canvas.selectEverything();
       await tester.pump();
 
       await tester.showKeyboard(titleField);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
       await tester.sendKeyEvent(LogicalKeyboardKey.delete);
       await tester.pump();
 
-      expect(commands.canvas.tool, CanvasTool.select, reason: 'P is a pen');
-      expect(commands.canvas.document.elements, hasLength(1));
+      expect(canvas.tool, CanvasTool.select, reason: 'd draws');
+      expect(canvas.document.elements, hasLength(1));
     });
 
     testWidgets('shows the date and time the page was made', (tester) async {
@@ -439,25 +440,28 @@ void main() {
       tester,
     ) async {
       await openPage(tester);
-      final commands = tester.widget<Ribbon>(find.byType(Ribbon)).commands;
+      final canvas = tester
+          .widget<InfiniteCanvas>(find.byType(InfiniteCanvas))
+          .controller;
 
       await tester.showKeyboard(titleField);
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
       await tester.pump();
 
       expect(
         tester.widget<EditableText>(titleField).focusNode.hasFocus,
         isFalse,
       );
-      expect(commands.canvas.tool, CanvasTool.pen, reason: 'the page has it');
+      expect(canvas.tool, CanvasTool.pen, reason: 'the page has it');
     });
 
     testWidgets('a new page is named first', (tester) async {
       await openPage(tester);
+      await showPanes(tester);
 
-      await tester.tap(find.byTooltip(RegExp('^New page')));
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
       await tester.pumpAndSettle();
       // As the last page was made: one canvas, unless chosen otherwise.
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -466,7 +470,8 @@ void main() {
       final title = tester.widget<EditableText>(titleField);
       expect(title.controller.text, isEmpty);
       expect(title.focusNode.hasFocus, isTrue);
-      expect(inPanes(find.text('Untitled page')), findsOneWidget);
+      expect(find.byType(Picker), findsNothing, reason: 'its page is open');
+      expect(tabNamed('Untitled page'), findsOneWidget);
     });
   });
 
@@ -477,8 +482,9 @@ void main() {
     testWidgets('starts as pages on the paper chosen, and the next is '
         'offered the same', (tester) async {
       await openPage(tester);
+      await showPanes(tester);
 
-      await tester.tap(find.byTooltip(RegExp('^New page')));
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
       await tester.pumpAndSettle();
       expect(find.text('Squared'), findsNothing, reason: 'a canvas has none');
       await tester.tap(
@@ -496,28 +502,28 @@ void main() {
       final sheets = canvasShown(tester).document.canvas.sheetsShown!;
       expect(sheets.templates, <SheetTemplate>[SheetTemplate.grid]);
       expect(sheets.size, SheetSize.letter);
-      expect(inPanes(find.text('Untitled page')), findsOneWidget);
+      expect(tabNamed('Untitled page'), findsOneWidget);
 
-      await tester.tap(find.byTooltip(RegExp('^New page')));
+      await showPanes(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
       await tester.pumpAndSettle();
       expect(find.text('Squared'), findsOneWidget, reason: 'pages, as before');
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(inPanes(find.text('Untitled page')), findsOneWidget);
+      expect(
+        inPanes(find.text('Untitled page')),
+        findsOneWidget,
+        reason: 'one',
+      );
     });
   });
 
   group('menus', () {
     testWidgets('a page\'s commands come in order', (tester) async {
       await openPage(tester);
+      await showPanes(tester);
 
-      await rightClick(
-        tester,
-        find.descendant(
-          of: find.byType(PageListPane),
-          matching: find.text('Lecture 1'),
-        ),
-      );
+      await rightClick(tester, inPanes(find.text('Lecture 1')));
 
       final labels = <String>[
         'New page',
@@ -528,31 +534,28 @@ void main() {
         'Rename',
         'Delete',
       ];
-      final tops = <double>[
-        for (final label in labels)
-          tester
-              .getTopLeft(
-                find.widgetWithText(PopupMenuItem<VoidCallback>, label),
-              )
-              .dy,
+      // As read: down each column, the columns left to right.
+      final places = <Offset>[
+        for (final label in labels) tester.getTopLeft(inMenu(label)),
       ];
-      expect(tops, orderedEquals(List<double>.of(tops)..sort()));
+      int reading(Offset a, Offset b) =>
+          a.dx == b.dx ? a.dy.compareTo(b.dy) : a.dx.compareTo(b.dx);
+      expect(places, orderedEquals(List<Offset>.of(places)..sort(reading)));
     });
 
     testWidgets('a page is copied and pasted after itself', (tester) async {
       await openPage(tester);
-      Finder listed(String title) => find.descendant(
-        of: find.byType(PageListPane),
-        matching: find.text(title),
-      );
+      Finder listed(String title) => inPanes(find.text(title));
 
+      await showPanes(tester);
       await rightClick(tester, listed('Lecture 1'));
-      await tester.tap(find.text('Copy'));
+      await tester.tap(inMenu('Copy'));
       await tester.pumpAndSettle();
       await rightClick(tester, listed('Lecture 1'));
-      await tester.tap(find.text('Paste page'));
+      await tester.tap(inMenu('Paste page'));
       await tester.pumpAndSettle();
 
+      await showPanes(tester);
       expect(listed('Lecture 1'), findsNWidgets(2));
       expect(await store.search.search('newtons'), hasLength(2));
     });
@@ -560,21 +563,26 @@ void main() {
     testWidgets('deleting a section moves it to the bin, and Undo brings '
         'it back', (tester) async {
       await openPage(tester);
+      await showPanes(tester);
 
       await rightClick(tester, find.text('Mechanics'));
-      await tester.tap(find.text('Delete'));
+      await tester.tap(inMenu('Delete'));
       await tester.pumpAndSettle();
 
       expect(find.text('Mechanics'), findsNothing);
-      expect(find.text('Select a section'), findsOneWidget);
+      expect(find.text('No sections yet — n makes one'), findsOneWidget);
       expect(find.text('“Mechanics” is in the bin.'), findsOneWidget);
       expect((await store.bin.list()).single.title, 'Mechanics');
 
+      // Its message lies beneath the picker, put away to reach it.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
       await tester.tap(
         find.descendant(of: find.byType(SnackBar), matching: find.text('Undo')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Mechanics'), findsOneWidget);
+      await showPanes(tester);
+      expect(inPanes(find.text('Mechanics')), findsOneWidget);
       expect(await store.bin.list(), isEmpty);
     });
 
@@ -582,9 +590,10 @@ void main() {
       tester,
     ) async {
       await openPage(tester);
+      await showPanes(tester);
 
       await rightClick(tester, find.text('Mechanics'));
-      await tester.tap(find.text('Delete'));
+      await tester.tap(inMenu('Delete'));
       await tester.pumpAndSettle();
       expect(find.text('“Mechanics” is in the bin.'), findsOneWidget);
 
@@ -596,14 +605,15 @@ void main() {
     testWidgets('the bin restores what was deleted, and deletes it for good '
         'once asked', (tester) async {
       Future<void> deleteMechanics() async {
+        await showPanes(tester);
         await rightClick(tester, find.text('Mechanics'));
-        await tester.tap(find.text('Delete'));
+        await tester.tap(inMenu('Delete'));
         await tester.pumpAndSettle();
       }
 
       await openPage(tester);
       await deleteMechanics();
-      await tester.tap(find.text('Bin'));
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
       await tester.pumpAndSettle();
       expect(find.byType(BinView), findsOneWidget);
       await tester.tap(find.text('Restore'));
@@ -611,10 +621,10 @@ void main() {
       expect(find.text('The bin is empty.'), findsOneWidget);
       await tester.tap(find.byTooltip('Close  (Esc)'));
       await tester.pumpAndSettle();
-      expect(find.text('Mechanics'), findsOneWidget);
+      expect(inPanes(find.text('Mechanics')), findsOneWidget);
 
       await deleteMechanics();
-      await tester.tap(find.text('Bin'));
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Empty the bin'));
       await tester.pumpAndSettle();
@@ -627,19 +637,8 @@ void main() {
   });
 
   group('search', () {
-    Future<void> search(WidgetTester tester, String query) async {
-      await tester.tap(find.byTooltip(RegExp('^Search')));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.descendant(
-          of: find.byType(SearchPanel),
-          matching: find.byType(TextField),
-        ),
-        query,
-      );
-      await tester.pump(SearchPanel.typingPause);
-      await tester.pumpAndSettle();
-    }
+    Future<void> search(WidgetTester tester, String query) =>
+        searchFor(tester, query);
 
     bool marked(WidgetTester tester) => tester
         .renderObjectList<RenderBlockParagraph>(find.byType(BlockParagraph))
@@ -658,12 +657,13 @@ void main() {
           .read(libraryRevisionProvider.notifier)
           .bump();
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Elsewhere'));
+      await showPanes(tester);
+      await tester.tap(inPanes(find.text('Elsewhere')));
       await tester.pumpAndSettle();
 
       await search(tester, 'resid');
 
-      expect(find.text('1 PAGE'), findsOneWidget);
+      expect(find.text('1 page'), findsOneWidget);
       expect(
         find.descendant(
           of: find.byType(InfiniteCanvas),
@@ -673,8 +673,12 @@ void main() {
       );
       expect(marked(tester), isTrue);
 
-      // Closing the panel takes the marks away.
-      await tester.tap(find.byTooltip(RegExp('^Search')));
+      // Kept with Enter, they stay marked, until Esc on the page.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byType(SearchLine), findsNothing);
+      expect(marked(tester), isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(marked(tester), isFalse);
     });
@@ -694,19 +698,29 @@ void main() {
       );
 
       await search(tester, 'contour');
-      expect(find.text('1 OF 2 PAGES'), findsOneWidget);
+      expect(find.text('1 of 2'), findsOneWidget);
       final opened = container.read(selectedPageProvider);
 
-      await tester.tap(find.byTooltip('Next page  (Enter)'));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pumpAndSettle();
-      expect(find.text('2 OF 2 PAGES'), findsOneWidget);
+      expect(find.text('2 of 2'), findsOneWidget);
       expect(container.read(selectedPageProvider), isNot(opened));
       expect(marked(tester), isTrue);
 
-      // Enter in the search field steps on too, wrapping round to the first.
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      // Tab steps on too, wrapping round to the first.
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pumpAndSettle();
       expect(container.read(selectedPageProvider), opened, reason: 'wraps');
+
+      // And a page listed opens with a click.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(SearchLine),
+          matching: find.text('Lecture 2'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(container.read(selectedPageProvider), second.id);
     });
   });
 
@@ -782,6 +796,7 @@ void main() {
       useSurface(tester, wideWindow);
       await tester.pumpWidget(shellWith(store));
       await tester.pumpAndSettle();
+      await showPanes(tester);
       await tester.tap(find.text('Physics'));
       await tester.pumpAndSettle();
       Rect optics() => tester.getRect(inPanes(find.text('Optics')));
@@ -809,17 +824,22 @@ void main() {
       useSurface(tester, wideWindow);
       await tester.pumpWidget(shellWith(store, preferences: preferences));
       await tester.pumpAndSettle();
+      await showPanes(tester);
       await tester.tap(find.text('Physics'));
       await tester.pumpAndSettle();
       expect(find.text('Waves'), findsOneWidget);
 
-      // Waves is the second level down: the second line beside it comes
-      // down from Mechanics.
-      final row = tester.getRect(
-        find.ancestor(of: find.text('Waves'), matching: find.byType(TreeRow)),
-      );
-      await tester.tapAt(
-        Offset(row.left + TreeRow.indent * 1.5, row.center.dy),
+      // Folded by the chevron before Mechanics.
+      await tester.tap(
+        find
+            .descendant(
+              of: find.ancestor(
+                of: find.text('Mechanics'),
+                matching: find.byType(InkWell),
+              ),
+              matching: find.byType(Mark),
+            )
+            .first,
       );
       await tester.pumpAndSettle();
       expect(find.text('Waves'), findsNothing);
@@ -832,39 +852,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(inPanes(find.text('Waves')), findsOneWidget);
       expect(preferences['library.collapsed'], isNull);
-    });
-
-    testWidgets('notebooks stay expanded as others are opened, until '
-        'collapsed', (tester) async {
-      final preferences = Preferences.inMemory();
-      for (final (notebook, section) in <(String, String)>[
-        ('Physics', 'Mechanics'),
-        ('Chemistry', 'Acids'),
-      ]) {
-        final made = await store.library.createNotebook(title: notebook);
-        await store.library.createSection(notebookId: made.id, title: section);
-      }
-      useSurface(tester, wideWindow);
-      await tester.pumpWidget(shellWith(store, preferences: preferences));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Physics'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Chemistry'));
-      await tester.pumpAndSettle();
-      expect(inPanes(find.text('Mechanics')), findsOneWidget);
-      expect(inPanes(find.text('Acids')), findsOneWidget);
-
-      // Physics collapsed by its chevron, Chemistry stays open.
-      final physics = tester.getRect(
-        find.ancestor(of: find.text('Physics'), matching: find.byType(TreeRow)),
-      );
-      await tester.tapAt(
-        Offset(physics.left + TreeRow.indent / 2, physics.center.dy),
-      );
-      await tester.pumpAndSettle();
-      expect(inPanes(find.text('Mechanics')), findsNothing);
-      expect(inPanes(find.text('Acids')), findsOneWidget);
-      expect(preferences['library.expandedNotebooks'], hasLength(1));
     });
   });
 
@@ -880,9 +867,6 @@ void main() {
       of: find.byType(InfiniteCanvas),
       matching: find.text(text, findRichText: true),
     );
-
-    Finder tabNamed(String title) =>
-        find.descendant(of: find.byType(TabStrip), matching: find.text(title));
 
     Future<void> pressWithControl(
       WidgetTester tester,
@@ -913,14 +897,9 @@ void main() {
       );
       containerOf(tester).read(libraryRevisionProvider.notifier).bump();
       await tester.pumpAndSettle();
-      await rightClick(
-        tester,
-        find.descendant(
-          of: find.byType(PageListPane),
-          matching: find.text('Lecture 2'),
-        ),
-      );
-      await tester.tap(find.text('Open in new tab'));
+      await showPanes(tester);
+      await rightClick(tester, inPanes(find.text('Lecture 2')));
+      await tester.tap(inMenu('Open in new tab'));
       await tester.pumpAndSettle();
       return second;
     }
@@ -941,13 +920,9 @@ void main() {
       expect(onPage('Newtons second law'), findsOneWidget);
       expect(containerOf(tester).read(selectedPageProvider), first.id);
 
-      // The sidebar picks for the tab showing, and for no other.
-      await tester.tap(
-        find.descendant(
-          of: find.byType(PageListPane),
-          matching: find.text('Lecture 2'),
-        ),
-      );
+      // The picker picks for the tab showing, and for no other.
+      await showPanes(tester);
+      await tester.tap(inPanes(find.text('Lecture 2')));
       await tester.pumpAndSettle();
       expect(tabsOf(tester).tabs.map((tab) => tab.pageId), <String>[
         second.id,
@@ -955,34 +930,30 @@ void main() {
       ]);
     });
 
-    testWidgets('each tab has a panel and a search of its own', (tester) async {
+    testWidgets('each tab has a search of its own', (tester) async {
       await openPage(tester);
 
       await pressWithControl(tester, LogicalKeyboardKey.keyT);
       expect(tabsOf(tester).tabs, hasLength(2));
       expect(tabNamed('New tab'), findsNothing, reason: 'named by its section');
-      expect(find.text('Go to a page'), findsOneWidget);
+      expect(find.text('Notebooks and pages'), findsOneWidget);
 
-      await tester.tap(find.byTooltip(RegExp('^Search')));
+      await searchFor(tester, 'Newtons');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.descendant(
-          of: find.byType(SearchPanel),
-          matching: find.byType(TextField),
-        ),
-        'Newtons',
-      );
-      await tester.pump(SearchPanel.typingPause);
-      await tester.pumpAndSettle();
+      expect(find.byType(SearchLine), findsNothing);
 
       await pressWithControl(tester, LogicalKeyboardKey.tab);
       expect(tabsOf(tester).active, 0);
-      expect(find.byType(SearchPanel), findsNothing);
-      expect(find.byType(LibraryPane), findsOneWidget);
+      expect(containerOf(tester).read(searchQueryProvider), isEmpty);
 
       await pressWithControl(tester, LogicalKeyboardKey.tab, shift: true);
       expect(tabsOf(tester).active, 1);
-      expect(find.text('Newtons'), findsOneWidget, reason: 'its search kept');
+      expect(
+        containerOf(tester).read(searchQueryProvider),
+        'Newtons',
+        reason: 'its search kept',
+      );
     });
 
     testWidgets('Ctrl+W closes the tab showing; the last makes way for a new '
@@ -1039,7 +1010,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await openSecondInNewTab(tester, first);
-      expect(view().viewport.origin, Offset.zero);
+      // From its top, out from under the status line.
+      expect(view().viewport.origin, const Offset(0, -StatusLine.reach / 1.5));
       canvas.read(tabsProvider.notifier).activate(0);
       await tester.pumpAndSettle();
       expect(
@@ -1073,14 +1045,6 @@ void main() {
         ..open()
         ..closeOthers(0);
       expect(container.read(tabsProvider).tabs, hasLength(1));
-    });
-  });
-
-  group('fitting columns', () {
-    test('keeps widths that fit and shrinks together those that do not', () {
-      expect(fitWidths(<double>[200, 300], 600), <double>[200, 300]);
-      expect(fitWidths(<double>[200, 300], 250), <double>[100, 150]);
-      expect(fitWidths(<double>[200, 300], -10), <double>[0, 0]);
     });
   });
 

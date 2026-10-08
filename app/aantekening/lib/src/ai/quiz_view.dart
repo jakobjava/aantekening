@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/tones.dart';
 import 'math_text.dart';
@@ -116,7 +117,7 @@ class _QuizViewState extends State<QuizView> {
       onKeyEvent: _key,
       child: widget.scrolls
           ? SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 16),
               child: quiz,
             )
           : Padding(padding: const EdgeInsets.only(bottom: 12), child: quiz),
@@ -160,10 +161,11 @@ class _QuizViewState extends State<QuizView> {
         ),
         const SizedBox(height: 14),
         Container(
-          padding: const EdgeInsets.fromLTRB(26, 22, 26, 22),
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
           decoration: BoxDecoration(
             color: tones.base,
             border: Border.all(color: tones.strongLine),
+            borderRadius: Corners.panelRadius,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -269,6 +271,7 @@ class _QuizViewState extends State<QuizView> {
               decoration: BoxDecoration(
                 color: tones.base,
                 border: Border.all(color: tones.line),
+                borderRadius: Corners.controlRadius,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -347,10 +350,12 @@ class _Option extends StatelessWidget {
         color: state == _OptionState.right ? tones.selection : tones.base,
         child: InkWell(
           onTap: state == _OptionState.open ? onTap : null,
+          borderRadius: Corners.controlRadius,
           child: Container(
             padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
             decoration: BoxDecoration(
               border: Border.all(color: edge, width: marked ? 1.5 : 1),
+              borderRadius: Corners.controlRadius,
             ),
             child: Row(
               children: <Widget>[
@@ -360,6 +365,7 @@ class _Option extends StatelessWidget {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     border: Border.all(color: marked ? edge : tones.strongLine),
+                    shape: BoxShape.circle,
                   ),
                   child: switch (state) {
                     _OptionState.right => Mark(
@@ -414,17 +420,10 @@ class _Explanation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tones = context.tones;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-      decoration: BoxDecoration(
-        color: tones.pane,
-        border: Border(
-          left: BorderSide(
-            color: right ? tones.emphasis : tones.text,
-            width: 2,
-          ),
-        ),
-      ),
+    return Callout(
+      colour: right ? tones.emphasis : tones.text,
+      fill: tones.lift,
+      padding: const EdgeInsets.fromLTRB(12, 10, 14, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

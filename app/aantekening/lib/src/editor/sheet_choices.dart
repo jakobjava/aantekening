@@ -91,7 +91,7 @@ Future<SheetTemplate?> chooseSheetTemplate(
   required SheetTemplate selected,
   required SheetSize size,
   String action = 'Choose',
-}) => showPlainDialog<SheetTemplate>(
+}) => showAppDialog<SheetTemplate>(
   context: context,
   builder: (context) {
     void take(SheetTemplate template) => Navigator.of(context).pop(template);

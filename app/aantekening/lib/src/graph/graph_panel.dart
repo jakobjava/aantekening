@@ -16,7 +16,7 @@ import '../shell/library_actions.dart';
 import 'force_layout.dart';
 import 'note_graph.dart';
 
-/// The graph view in the sidebar, as Obsidian draws a vault: notebooks,
+/// The graph view in the picker, as Obsidian draws a vault: notebooks,
 /// sections and pages as dots, each joined to what it is in, laid out as a
 /// system of forces that moves as it settles and as things are dragged.
 ///
@@ -331,17 +331,20 @@ class _GraphPanelState extends ConsumerState<GraphPanel>
     }
 
     return Material(
-      color: tones.pane,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      type: MaterialType.transparency,
+      child: Stack(
         children: <Widget>[
-          PaneHeader(
-            title: 'Graph',
-            action: 'Fit',
-            actionTooltip: 'Fit the graph in view',
-            onAction: graph == null ? null : _fit,
+          Positioned.fill(child: body),
+          Positioned(
+            top: 8,
+            right: 10,
+            child: PillButton(
+              'Fit',
+              lit: true,
+              tooltip: 'Fit the graph in view',
+              onPressed: graph == null ? null : _fit,
+            ),
           ),
-          Expanded(child: body),
         ],
       ),
     );
@@ -389,19 +392,22 @@ class _GraphPainter extends CustomPainter {
     };
     final dimmed = hovered != null;
 
+    // Links in the accent, clear in light and dark alike.
     final link = Paint()
-      ..strokeWidth = math.max(0.6, zoom * 0.9)
-      ..color = dimmed ? tones.line : tones.strongLine;
+      ..strokeWidth = math.max(1.2, zoom * 1.5)
+      ..strokeCap = StrokeCap.round
+      ..color = dimmed ? tones.line : tones.emphasis;
     final litLink = Paint()
-      ..strokeWidth = math.max(1, zoom * 1.4)
+      ..strokeWidth = math.max(1.8, zoom * 2.2)
+      ..strokeCap = StrokeCap.round
       ..color = tones.emphasis;
     for (final (parent, child) in graph.links) {
       final isLit = hovered != null && (parent == hovered || child == hovered);
       canvas.drawLine(toView(parent), toView(child), isLit ? litLink : link);
     }
 
-    // Notebooks solid, sections hollow, pages small and quieter: told apart
-    // by their shape, not by colour.
+    // Notebooks solid in the accent, sections rings of it, pages small and
+    // quieter: told apart by their shape as well as their colour.
     final names = <({int rank, int node, Offset center, double radius})>[];
     for (var i = 0; i < graph.nodes.length; i++) {
       final node = graph.nodes[i];
@@ -410,28 +416,29 @@ class _GraphPainter extends CustomPainter {
       final faded = dimmed && !lit.contains(i);
       final color = switch (node.kind) {
         GraphNodeKind.page => tones.muted,
-        _ => tones.text,
+        _ => tones.emphasis,
       }.withValues(alpha: faded ? 0.3 : 1);
-      final square = Rect.fromCircle(center: center, radius: radius);
       if (node.kind == GraphNodeKind.section) {
         canvas
-          ..drawRect(square, Paint()..color = tones.pane)
-          ..drawRect(
-            square.deflate(0.75),
+          ..drawCircle(center, radius, Paint()..color = tones.base)
+          ..drawCircle(
+            center,
+            radius - 1,
             Paint()
               ..style = PaintingStyle.stroke
-              ..strokeWidth = 1.5
+              ..strokeWidth = 2
               ..color = color,
           );
       } else {
-        canvas.drawRect(square, Paint()..color = color);
+        canvas.drawCircle(center, radius, Paint()..color = color);
       }
       if (node.id == current) {
-        canvas.drawRect(
-          square.inflate(3),
+        canvas.drawCircle(
+          center,
+          radius + 4,
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5
+            ..strokeWidth = 2
             ..color = tones.emphasis,
         );
       }
@@ -465,7 +472,7 @@ class _GraphPainter extends CustomPainter {
     );
     final view = Offset.zero & size;
     final taken = <Rect>[];
-    final ground = Paint()..color = tones.pane.withValues(alpha: 0.85);
+    final ground = Paint()..color = tones.base.withValues(alpha: 0.85);
     for (final name in names) {
       final label = state._label(
         graph.nodes[name.node],
@@ -477,7 +484,13 @@ class _GraphPainter extends CustomPainter {
       final box = (at & label.size).inflate(2);
       if (!view.overlaps(box) || taken.any(box.overlaps)) continue;
       taken.add(box);
-      canvas.drawRect(box, ground);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(box.left - 4, box.top, box.right + 4, box.bottom),
+          Radius.circular(box.height / 2),
+        ),
+        ground,
+      );
       label.paint(canvas, at);
     }
   }

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'appearance.dart';
+import 'glass.dart';
 import 'motion.dart';
 import 'tones.dart';
 
@@ -16,7 +17,7 @@ Future<int?> showColorPicker(
   BuildContext context, {
   required int initial,
   String title = 'Colour',
-}) => showPlainDialog<int>(
+}) => showAppDialog<int>(
   context: context,
   builder: (context) =>
       ColorPickerDialog(initial: initial | 0xFF000000, title: title),
@@ -80,6 +81,7 @@ class _ColorPickerDialogState extends State<ColorPickerDialog> {
         decoration: BoxDecoration(
           color: color,
           border: Border.all(color: tones.line),
+          borderRadius: Corners.controlRadius,
         ),
       ),
     );

@@ -287,14 +287,14 @@ class _ViewPainter extends CustomPainter {
     final view = _MapPlacement.of(controller, size).viewOnMap;
     final rect = view.intersect(Offset.zero & size);
     if (rect.isEmpty) return;
-    canvas
-      ..drawRect(rect, Paint()..color = color.withValues(alpha: 0.10))
-      ..drawRect(
-        rect.deflate(0.5),
-        Paint()
-          ..color = color.withValues(alpha: 0.55)
-          ..style = PaintingStyle.stroke,
-      );
+    // What is in view, ringed in the accent.
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect.deflate(0.75), const Radius.circular(3)),
+      Paint()
+        ..color = color
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke,
+    );
   }
 
   @override

@@ -1,5 +1,5 @@
-/// What the window's own commands do: the tabs, the panels, going from
-/// page to page, making and naming things, and the settings.
+/// What the window's own commands do: the tabs, the picker and the search,
+/// going from page to page, making and naming things, and the settings.
 library;
 
 import 'dart:async';
@@ -15,12 +15,13 @@ import '../files/backup_settings.dart';
 import '../files/bin_view.dart';
 import '../look/appearance.dart';
 import '../providers.dart';
+import '../search/search_line.dart';
 import '../settings/settings_view.dart';
 import '../spelling/spelling.dart';
 import 'library_actions.dart';
 import 'library_menu.dart';
 import 'new_page_dialog.dart';
-import 'sidebar_state.dart';
+import 'picker.dart';
 import 'tabs.dart';
 
 /// The commands the window carries out, for [CommandHandlers], acting in
@@ -33,7 +34,6 @@ Map<AppCommand, CommandAction> windowCommands(
   WidgetRef ref,
 ) {
   TabsController tabs() => ref.read(tabsProvider.notifier);
-  SidebarController sidebar() => ref.read(sidebarProvider.notifier);
   LibraryActions library() => ref.read(libraryActionsProvider);
   NoteTab tab() => ref.read(tabsProvider).current;
 
@@ -45,6 +45,15 @@ Map<AppCommand, CommandAction> windowCommands(
     final pageId = take();
     if (pageId == null) return;
     if (!await library().openPageId(pageId)) tabs().cancelTravel();
+  }
+
+  /// Splits the window; a new tab beside the page, with nothing chosen
+  /// yet, has the picker open on it to choose a page.
+  Future<void> split({required bool stacked}) async {
+    tabs().split(stacked: stacked);
+    if (tab().pageId == null && context.mounted) {
+      await showPicker(context, ref, PickerView.library);
+    }
   }
 
   Future<void> deletePage() async {
@@ -93,13 +102,30 @@ Map<AppCommand, CommandAction> windowCommands(
       enabled: () => tabs().canReopen,
     ),
     AppCommand.nextTab: CommandAction(() => tabs().step(1)),
+    AppCommand.splitSideBySide: CommandAction(
+      () => unawaited(split(stacked: false)),
+    ),
+    AppCommand.splitStacked: CommandAction(
+      () => unawaited(split(stacked: true)),
+    ),
+    AppCommand.unsplit: CommandAction(
+      () => tabs().unsplit(),
+      enabled: () => ref.read(tabsProvider).beside != null,
+    ),
+    AppCommand.otherPane: CommandAction(
+      () => tabs().toBeside(),
+      enabled: () => ref.read(tabsProvider).beside != null,
+    ),
     AppCommand.previousTab: CommandAction(() => tabs().step(-1)),
     AppCommand.notebooks: CommandAction(
-      () => sidebar().focus(SidebarTab.notebooks),
+      () => unawaited(showPicker(context, ref, PickerView.library)),
     ),
-    AppCommand.search: CommandAction(() => sidebar().focus(SidebarTab.search)),
-    AppCommand.graph: CommandAction(() => sidebar().focus(SidebarTab.graph)),
-    AppCommand.togglePanel: CommandAction(() => sidebar().togglePanel()),
+    AppCommand.search: CommandAction(
+      ref.read(searchLineProvider.notifier).open,
+    ),
+    AppCommand.graph: CommandAction(
+      () => unawaited(showPicker(context, ref, PickerView.graph)),
+    ),
     AppCommand.ai: CommandAction(
       () => tabs().toggleAi(),
       enabled: () => tab().hasChoice,

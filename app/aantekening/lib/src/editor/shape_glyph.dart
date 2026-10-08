@@ -6,7 +6,7 @@ import 'dart:math' as math;
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 
-import '../../look/tones.dart';
+import '../look/tones.dart';
 
 /// [kind] drawn [size] across in thin lines of the text's colour, from the
 /// very lines it is drawn with on the page.

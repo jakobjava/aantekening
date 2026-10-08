@@ -11,6 +11,7 @@ import 'editor/text/formula_preamble.dart';
 import 'editor/text/text_styles.dart';
 import 'look/appearance.dart';
 import 'look/grain.dart';
+import 'look/motion.dart';
 import 'look/theme.dart';
 import 'preferences.dart';
 import 'shell/home_shell.dart';
@@ -35,8 +36,11 @@ class AantekeningApp extends ConsumerWidget {
       themeMode: appearance.mode,
       theme: AppTheme.build(appearance, Brightness.light),
       darkTheme: AppTheme.build(appearance, Brightness.dark),
-      // A new accent or light and dark take over at once, too.
-      themeAnimationStyle: AnimationStyle.noAnimation,
+      // Light and dark, or a new accent, blend into each other as fast as
+      // the interface moves.
+      themeAnimationStyle: AnimationStyle(
+        duration: Motion(appearance.motion).of(Motion.settle),
+      ),
       // Scroll behaviour is widened so that the canvas and the navigation panes
       // respond to a trackpad and a stylus, not only to a mouse wheel.
       scrollBehavior: const _AppScrollBehavior(),

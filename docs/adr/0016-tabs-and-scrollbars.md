@@ -1,6 +1,7 @@
 # 16. Tabs, scrollbars and a map of the page
 
-**Status:** accepted
+**Status:** accepted — the tabs moved to the status line by
+[ADR 40](0040-modes-a-menu-and-glass.md)
 
 ## Context
 

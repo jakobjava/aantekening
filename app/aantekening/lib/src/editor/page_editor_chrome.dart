@@ -36,10 +36,11 @@ class _NoPageSelected extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            line(AppCommand.goTo, 'Go to a page'),
+            line(AppCommand.notebooks, 'Notebooks and pages'),
+            line(AppCommand.goTo, 'A page by name'),
             line(AppCommand.newPage, 'New page'),
             line(AppCommand.search, 'Search every page'),
-            line(AppCommand.commands, 'Every command'),
+            line(AppCommand.menu, 'Everything else'),
             line(AppCommand.settings, 'Settings'),
           ],
         ),
@@ -56,14 +57,15 @@ class _ErrorBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tones = context.tones;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: tones.base,
-        border: Border(bottom: BorderSide(color: tones.strongLine)),
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Glass(
+        borderRadius: Corners.controlRadius,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Text(error, style: TextStyle(fontSize: 12, color: tones.text)),
+        ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Text(error, style: TextStyle(fontSize: 12, color: tones.text)),
     );
   }
 }

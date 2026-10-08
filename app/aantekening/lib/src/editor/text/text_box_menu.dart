@@ -49,7 +49,7 @@ extension _Menu on TextBoxEditorState {
         : TextTables.tableAt(_blocks, hit.position.block);
     final link = hit == null ? null : _linkAt(hit.position);
     final paragraphLink = hit == null ? null : _linkTo(hit.position.block);
-    await showCommandMenu(context, global, <List<MenuCommand>>[
+    await showCommandMenu(context, <List<MenuCommand>>[
       if (misspelled case (:final index, :final word, :final spelled)) ...[
         if (suggestions.isEmpty)
           const <MenuCommand>[MenuCommand('No suggestions', null)]

@@ -4,6 +4,7 @@ import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'editor_harness.dart';
@@ -55,10 +56,8 @@ void main() {
     final preferences = Preferences.inMemory();
     await openEditor(tester, store, pageId, preferences: preferences);
 
-    await tester.tap(find.text('View'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip(RegExp('^Page preview')));
-    await tester.pumpAndSettle();
+    await press(tester, LogicalKeyboardKey.space);
+    await typeKeys(tester, 'zp');
 
     expect(find.byType(PageMinimap), findsOneWidget);
     expect(find.byType(PageScrollbar), findsOneWidget, reason: 'across only');

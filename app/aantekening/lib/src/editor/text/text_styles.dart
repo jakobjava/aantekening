@@ -33,18 +33,12 @@ abstract final class RichTextStyles {
   /// so text is black rather than following the interface's theme.
   static const Color ink = Color(0xFF000000);
 
-  /// The outline round a text box under the pointer: a light grey on the
-  /// paper, as OneNote draws it, and never the theme's outline colour, which
-  /// in dark mode is nearly black.
-  static const Color boxOutline = Color(0xFFCDD2DA);
+  /// How round a text box's corners are, as its frame is drawn.
+  static const double boxCorner = 6;
 
-  /// The band along the top of a text box that moves it, while the pointer
-  /// is over the box, and while it is being typed in.
-  static const Color boxBand = Color(0x0D000000);
-  static const Color boxBandActive = Color(0x17000000);
-
-  /// The grip drawn in the middle of that band.
-  static const Color boxGrip = Color(0x59000000);
+  /// What the pointer is over on the paper, shaded lightly: the same in
+  /// light and dark mode, as the paper is.
+  static const Color paperHover = Color(0x0D000000);
 
   /// Text that says something about the page rather than being on it: the
   /// date and time beneath the title, and the title's hint.
@@ -55,6 +49,9 @@ abstract final class RichTextStyles {
 
   /// Behind a block of code.
   static const Color codeFill = Color(0x0D000000);
+
+  /// How round the corners behind a block of code are.
+  static const BorderRadius codeCorners = BorderRadius.all(Radius.circular(4));
 
   /// The lines round a table's cells.
   static const Color tableRule = Color(0xFFB4BAC4);

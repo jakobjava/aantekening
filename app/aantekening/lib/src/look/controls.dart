@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'glass.dart';
 import 'marks.dart';
 import 'tones.dart';
 
@@ -155,15 +156,20 @@ class SmallCaps extends StatelessWidget {
 /// A shortcut, as it is typed — "Ctrl+Shift+P" — quietly, beside what it
 /// does.
 class KeyHint extends StatelessWidget {
-  const KeyHint(this.keys, {this.color, super.key});
+  const KeyHint(this.keys, {this.color, this.overflow, super.key});
 
   final String keys;
   final Color? color;
+
+  /// How it ends where there is no room for all of it.
+  final TextOverflow? overflow;
 
   @override
   Widget build(BuildContext context) => Text(
     keys,
     maxLines: 1,
+    softWrap: false,
+    overflow: overflow,
     style: TextStyle(
       fontSize: 11.5,
       fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
@@ -219,64 +225,70 @@ class _RowTileState extends State<RowTile> {
     final tones = context.tones;
     final selected = widget.selected;
     return Material(
-      color: selected ? tones.selection : Colors.transparent,
+      color: selected ? tones.lift : Colors.transparent,
+      borderRadius: Corners.controlRadius,
       child: InkWell(
         onTap: widget.onTap,
         focusNode: widget.focusNode,
         autofocus: widget.autofocus,
+        borderRadius: Corners.controlRadius,
+        hoverColor: tones.veil,
         onFocusChange: (focused) => setState(() => _focused = focused),
         child: DecoratedBox(
           position: DecorationPosition.foreground,
           decoration: BoxDecoration(
-            border: _focused
-                ? Border.all(color: tones.emphasis)
-                : selected
-                ? Border(left: BorderSide(color: tones.emphasis, width: 2))
-                : null,
+            border: _focused ? Border.all(color: tones.emphasis) : null,
+            borderRadius: Corners.controlRadius,
           ),
-          child: Padding(
-            padding: widget.padding,
-            child: Row(
-              children: <Widget>[
-                if (widget.leading case final leading?) ...<Widget>[
-                  leading,
-                  const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      DefaultTextStyle.merge(
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: tones.text,
-                          fontWeight: selected ? FontWeight.w600 : null,
-                        ).merge(widget.titleStyle),
-                        child: widget.title,
-                      ),
-                      if (widget.subtitle case final subtitle?)
-                        DefaultTextStyle.merge(
-                          maxLines: widget.subtitleLines,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            height: 1.35,
-                            color: tones.muted,
-                          ),
-                          child: subtitle,
-                        ),
+          child: Stack(
+            alignment: Alignment.centerLeft,
+            children: <Widget>[
+              if (selected) const Positioned(left: 2, child: Drop()),
+              Padding(
+                padding: widget.padding,
+                child: Row(
+                  children: <Widget>[
+                    if (widget.leading case final leading?) ...<Widget>[
+                      leading,
+                      const SizedBox(width: 8),
                     ],
-                  ),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          DefaultTextStyle.merge(
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: tones.text,
+                              fontWeight: selected ? FontWeight.w600 : null,
+                            ).merge(widget.titleStyle),
+                            child: widget.title,
+                          ),
+                          if (widget.subtitle case final subtitle?)
+                            DefaultTextStyle.merge(
+                              maxLines: widget.subtitleLines,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                height: 1.35,
+                                color: tones.muted,
+                              ),
+                              child: subtitle,
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (widget.trailing case final trailing?) ...<Widget>[
+                      const SizedBox(width: 6),
+                      trailing,
+                    ],
+                  ],
                 ),
-                if (widget.trailing case final trailing?) ...<Widget>[
-                  const SizedBox(width: 6),
-                  trailing,
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -306,21 +318,24 @@ class ChoiceRow<T> extends StatelessWidget {
   /// What [choice] means, shown while the pointer is on it.
   final String Function(T choice)? tooltipOf;
 
-  /// Smaller, to fit a row of the ribbon.
+  /// Smaller, to fit a row.
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final tones = context.tones;
-    return DecoratedBox(
-      decoration: BoxDecoration(border: Border.all(color: tones.strongLine)),
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: tones.text.withValues(alpha: 0.06),
+        borderRadius: Corners.controlRadius,
+      ),
       child: IntrinsicHeight(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            for (final (index, choice) in choices.indexed) ...<Widget>[
-              if (index > 0) VerticalDivider(width: 1, color: tones.strongLine),
+            for (final choice in choices)
               _Choice(
                 label: labelOf?.call(choice) ?? '$choice',
                 tooltip: tooltipOf?.call(choice),
@@ -328,7 +343,6 @@ class ChoiceRow<T> extends StatelessWidget {
                 compact: compact,
                 onTap: () => onSelected(choice),
               ),
-            ],
           ],
         ),
       ),
@@ -337,6 +351,11 @@ class ChoiceRow<T> extends StatelessWidget {
 }
 
 class _Choice extends StatelessWidget {
+  /// The corners of a choice, inside the row's.
+  static const BorderRadius _inner = BorderRadius.all(
+    Radius.circular(Corners.control - 2),
+  );
+
   const _Choice({
     required this.label,
     required this.tooltip,
@@ -359,8 +378,10 @@ class _Choice extends StatelessWidget {
       button: true,
       child: Material(
         color: chosen ? tones.emphasis : Colors.transparent,
+        borderRadius: _inner,
         child: InkWell(
           onTap: chosen ? null : onTap,
+          borderRadius: _inner,
           child: Padding(
             padding: compact
                 ? const EdgeInsets.symmetric(horizontal: 9, vertical: 3)
@@ -508,30 +529,27 @@ class _LevelPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final middle = size.height / 2;
     final x = level.clamp(0.0, 1.0) * size.width;
+    const round = Radius.circular(2);
     canvas
-      ..drawRect(
-        Rect.fromLTRB(0, middle - 1, size.width, middle + 1),
+      ..drawRRect(
+        RRect.fromLTRBR(0, middle - 2, size.width, middle + 2, round),
         Paint()..color = line,
       )
-      ..drawRect(
-        Rect.fromLTRB(0, middle - 1, x, middle + 1),
+      ..drawRRect(
+        RRect.fromLTRBR(0, middle - 2, x, middle + 2, round),
         Paint()..color = filled,
       );
-    // A square knob, as the colour picker's, kept within the line's ends.
-    final knobAt = x.clamp(5.0, size.width - 5);
-    final square = Rect.fromCenter(
-      center: Offset(knobAt, middle),
-      width: 10,
-      height: 14,
-    );
+    // A round knob, kept within the line's ends.
+    final knobAt = Offset(x.clamp(7.0, size.width - 7), middle);
     canvas
-      ..drawRect(square, Paint()..color = knob)
-      ..drawRect(
-        square,
+      ..drawCircle(knobAt, 7, Paint()..color = knob)
+      ..drawCircle(
+        knobAt,
+        7,
         Paint()
           ..color = filled
           ..style = PaintingStyle.stroke
-          ..strokeWidth = focused ? 2.5 : 1.5,
+          ..strokeWidth = focused ? 3 : 2,
       );
   }
 
@@ -566,8 +584,9 @@ class CheckRow extends StatelessWidget {
     final onChanged = this.onChanged;
     return InkWell(
       onTap: onChanged == null ? null : () => onChanged(!value),
+      borderRadius: Corners.controlRadius,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -612,7 +631,7 @@ class CheckRow extends StatelessWidget {
   }
 }
 
-/// A colour to pick: a square, ringed when it is the one chosen.
+/// A colour to pick: a dot of it, ringed when it is the one chosen.
 class Swatch extends StatelessWidget {
   const Swatch({
     required Color this.color,
@@ -647,10 +666,14 @@ class Swatch extends StatelessWidget {
       child: PickRing(
         selected: selected,
         onTap: onTap,
+        round: true,
         child: Container(
           width: size,
           height: size,
+          clipBehavior: Clip.antiAlias,
+          decoration: const BoxDecoration(shape: BoxShape.circle),
           foregroundDecoration: BoxDecoration(
+            shape: BoxShape.circle,
             border: Border.all(color: context.tones.line),
           ),
           child: switch (color) {
@@ -673,6 +696,7 @@ class PickRing extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(2),
     this.filled = false,
+    this.round = false,
     super.key,
   });
 
@@ -682,18 +706,27 @@ class PickRing extends StatelessWidget {
   final EdgeInsets padding;
   final bool filled;
 
+  /// Whether the ring is round, for a round [child]: a swatch.
+  final bool round;
+
   @override
   Widget build(BuildContext context) {
     final tones = context.tones;
+    final radius = round ? null : Corners.controlRadius;
     return InkWell(
       onTap: onTap,
+      customBorder: round
+          ? const CircleBorder()
+          : const RoundedRectangleBorder(borderRadius: Corners.controlRadius),
       child: Container(
         padding: padding,
         decoration: BoxDecoration(
-          color: filled && selected ? tones.selection : null,
+          color: filled && selected ? tones.lift : null,
+          shape: round ? BoxShape.circle : BoxShape.rectangle,
+          borderRadius: radius,
           border: Border.all(
             color: selected ? tones.emphasis : Colors.transparent,
-            width: 1.5,
+            width: 2,
           ),
         ),
         child: child,
@@ -873,4 +906,192 @@ class Loading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Center(child: Busy(width: 48));
+}
+
+/// A note set apart: [child] on a rounded ground, a bar of [colour] down
+/// its side — a quotation, what a summary comes to, where a line of an
+/// answer comes from.
+class Callout extends StatelessWidget {
+  const Callout({
+    required this.colour,
+    required this.child,
+    this.fill,
+    this.padding = const EdgeInsets.fromLTRB(14, 10, 14, 10),
+    this.margin = EdgeInsets.zero,
+    super.key,
+  });
+
+  final Color colour;
+  final Widget child;
+
+  /// The ground, or none.
+  final Color? fill;
+  final EdgeInsetsGeometry padding;
+  final EdgeInsetsGeometry margin;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: margin,
+    decoration: BoxDecoration(color: fill, borderRadius: Corners.controlRadius),
+    child: IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Container(
+            width: 3,
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            decoration: BoxDecoration(
+              color: colour,
+              borderRadius: const BorderRadius.all(Radius.circular(2)),
+            ),
+          ),
+          Expanded(
+            child: Padding(padding: padding, child: child),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// A small rounded button: a way back, something quick to do — [lit], a
+/// drop of the accent, where what it does stands out or is on.
+class PillButton extends StatelessWidget {
+  const PillButton(
+    this.label, {
+    required this.onPressed,
+    this.lit = false,
+    this.leading,
+    this.tooltip,
+    super.key,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool lit;
+
+  /// A mark before the label: an arrow back, say.
+  final Widget? leading;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final tones = context.tones;
+    final button = TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        shape: const StadiumBorder(),
+        minimumSize: const Size(0, 28),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        backgroundColor: lit ? tones.emphasis : tones.lift,
+        foregroundColor: lit ? tones.onEmphasis : tones.text,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (leading case final leading?) ...<Widget>[
+            leading,
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+    final tooltip = this.tooltip;
+    return tooltip == null ? button : Tooltip(message: tooltip, child: button);
+  }
+}
+
+/// A drop of the accent, glowing a little in the glass: a rounded bar
+/// marking what is picked or showing — beside a row, or [Drop.under] a tab
+/// — or, as [Drop.dot], a round one marking what is open, or the mode.
+class Drop extends StatelessWidget {
+  const Drop({this.width = 3, this.height = 14, this.colour, super.key});
+
+  /// A bar along the foot of what it marks, as wide as [width].
+  const Drop.under({double width = 18, Color? colour, Key? key})
+    : this(width: width, height: 3, colour: colour, key: key);
+
+  /// A round drop, [size] across.
+  const Drop.dot({double size = 6, Color? colour, Key? key})
+    : this(width: size, height: size, colour: colour, key: key);
+
+  final double width;
+  final double height;
+
+  /// Its colour: the accent, unless it marks something of its own colour —
+  /// a mode.
+  final Color? colour;
+
+  @override
+  Widget build(BuildContext context) {
+    final colour = this.colour ?? context.tones.emphasis;
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: colour,
+        borderRadius: BorderRadius.all(
+          Radius.circular((width < height ? width : height) / 2),
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(color: colour.withValues(alpha: 0.5), blurRadius: 6),
+        ],
+      ),
+    );
+  }
+}
+
+/// A tab to show a view by: its label, the one showing marked with a drop
+/// of the accent beneath it, as the status line marks the tab showing.
+class DropTab extends StatelessWidget {
+  const DropTab(
+    this.label, {
+    required this.showing,
+    required this.onPressed,
+    super.key,
+  });
+
+  final String label;
+  final bool showing;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final tones = context.tones;
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: Corners.controlRadius,
+      hoverColor: tones.veil,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 3),
+        child: IntrinsicWidth(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: showing ? tones.text : tones.muted,
+                ),
+              ),
+              const SizedBox(height: 4),
+              if (showing)
+                const Drop.under(width: double.infinity)
+              else
+                const SizedBox(height: 3),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -145,6 +145,10 @@ abstract interface class TextEditorCommands {
   /// tables read from elsewhere.
   void insertBlocks(List<TextBlock> blocks);
 
+  /// Types [text] at the caret as the keyboard would — a new line starting
+  /// a paragraph, and what typing turns into lists or formulas turning so.
+  void typeText(String text);
+
   /// Sets the font size, in points.
   void setFontSize(double points);
 
@@ -325,6 +329,9 @@ class TextBoxEditorController extends ChangeNotifier
 
   @override
   void insertBlocks(List<TextBlock> blocks) => _editor?.insertBlocks(blocks);
+
+  @override
+  void typeText(String text) => _editor?.typeText(text);
 
   @override
   void setFontSize(double points) => _target?.setFontSize(points);

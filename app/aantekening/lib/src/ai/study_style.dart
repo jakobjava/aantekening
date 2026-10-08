@@ -27,7 +27,7 @@ class StudyHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final tones = context.tones;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 18, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 10, 10, 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: <Widget>[
@@ -36,12 +36,12 @@ class StudyHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SmallCaps(kind.label, color: tones.emphasis),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
                 if (subtitle case final subtitle?)
                   Padding(
@@ -50,7 +50,7 @@ class StudyHeader extends StatelessWidget {
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12.5, color: tones.muted),
+                      style: TextStyle(fontSize: 11.5, color: tones.muted),
                     ),
                   ),
               ],

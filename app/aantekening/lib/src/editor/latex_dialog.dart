@@ -11,7 +11,7 @@ import '../look/tones.dart';
 /// Asks for LaTeX — as many lines of it as there are, a whole document
 /// with its preamble if need be — returning what was given, or null if
 /// nothing was.
-Future<String?> askForLatex(BuildContext context) => showPlainDialog<String>(
+Future<String?> askForLatex(BuildContext context) => showAppDialog<String>(
   context: context,
   builder: (context) => const _LatexDialog(),
 );

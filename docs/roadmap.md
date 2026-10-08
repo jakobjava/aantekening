@@ -67,13 +67,14 @@ what the AI is given with a question, which today is chosen by full-text search.
 * Settings choose the notes folder on the desktop; on Android the notes stay
   in the app's own folder.
 * Pages and sections move and copy by cut, copy and paste; they cannot yet be
-  dragged about the panes.
+  dragged from one column of the picker to another.
 * The graph shows how notes nest, not how they refer to one another: pages
   have no links between them yet. Its layout compares every dot with every
   other, comfortable for a thousand or so pages; a Barnes–Hut quadtree would
   take it further.
-* The ribbon has no keyboard route of its own (Office's Alt key tips); its
-  commands have shortcuts, and it deliberately never takes the focus.
+* The modes' keys are fixed; only commands' shortcuts can be changed in the
+  settings.
+* Touch has no way of its own to the menu yet, beyond a long press.
 * Trackpad scrolling on Linux is scaled back to finger distance from what GTK
   reports (see `trackpadPanScale`); there is no setting to make it faster or
   slower yet.

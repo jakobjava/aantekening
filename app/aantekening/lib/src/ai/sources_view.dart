@@ -8,6 +8,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/tones.dart';
 import 'math_text.dart';
@@ -113,8 +114,11 @@ class FootnoteMark extends StatelessWidget {
             margin: const EdgeInsets.only(left: 1.5),
             padding: const EdgeInsets.symmetric(horizontal: 3),
             decoration: BoxDecoration(
-              color: web ? null : tones.selection,
+              // From the notes, a drop of their colour; from the web,
+              // ringed in it.
+              color: web ? null : color,
               border: web ? Border.all(color: tones.line) : null,
+              borderRadius: Corners.smallRadius,
             ),
             child: Text(
               '$number',
@@ -123,7 +127,7 @@ class FootnoteMark extends StatelessWidget {
                 fontSize: 10.5,
                 height: 1.35,
                 fontWeight: FontWeight.w700,
-                color: color,
+                color: web ? color : tones.onEmphasis,
                 fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
               ),
             ),

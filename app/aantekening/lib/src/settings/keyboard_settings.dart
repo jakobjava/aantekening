@@ -12,6 +12,7 @@ import '../commands/fuzzy.dart';
 import '../commands/key_chord.dart';
 import '../commands/shortcuts.dart';
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 import 'settings_view.dart';
@@ -33,7 +34,7 @@ class _KeyboardSettingsState extends ConsumerState<KeyboardSettings> {
       keys.toLowerCase().contains(_filter.toLowerCase());
 
   Future<void> _change(AppCommand command) async {
-    final chord = await showPlainDialog<_Captured>(
+    final chord = await showAppDialog<_Captured>(
       context: context,
       builder: (context) => _CaptureDialog(command: command),
     );
@@ -54,8 +55,9 @@ class _KeyboardSettingsState extends ConsumerState<KeyboardSettings> {
       children: <Widget>[
         Text(
           'A shortcut with Ctrl, Alt or Meta works wherever the keyboard is. '
-          'A plain key works while the page has the keyboard and nothing on '
-          'it is being typed in. Ctrl+Shift+P finds any command by name.',
+          'On the page, the letters are the keys of the mode it is in — ? '
+          'shows them — and Space opens the menu of everything else. '
+          'Ctrl+Shift+P finds any command by name.',
           style: TextStyle(fontSize: 12.5, height: 1.45, color: tones.muted),
         ),
         const SizedBox(height: 14),
@@ -284,7 +286,9 @@ class _CaptureDialogState extends ConsumerState<_CaptureDialog> {
                 height: 56,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  border: Border.all(color: tones.strongLine),
+                  color: tones.lift,
+                  border: Border.all(color: tones.emphasis, width: 1.5),
+                  borderRadius: Corners.panelRadius,
                 ),
                 child: Text(
                   chord?.label ?? '…',

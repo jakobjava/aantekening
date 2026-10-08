@@ -1,6 +1,7 @@
 /// How the interface looks, as chosen in the settings: light or dark, the
-/// colours of each, the one accent if there is one, the typeface and the
-/// size — remembered between sessions.
+/// colours of each, the one accent if there is one, the typeface, the size,
+/// whether what floats is frosted glass, and how fast things move —
+/// remembered between sessions.
 library;
 
 import 'dart:math' as math;
@@ -60,10 +61,12 @@ class Appearance {
     this.light = defaultLight,
     this.dark = defaultDark,
     this.accent = defaultAccent,
-    this.accentOn = false,
+    this.accentOn = true,
     this.font = InterfaceFont.sans,
     this.scale = 1,
     this.grain = 0,
+    this.frosted = true,
+    this.motion = 1,
   });
 
   /// Light, dark, or as the system is set.
@@ -92,6 +95,14 @@ class Appearance {
   /// the most at 1.
   final double grain;
 
+  /// Whether what floats over the page — the status line, the menus, the
+  /// picker — is frosted glass the notes show through, or solid.
+  final bool frosted;
+
+  /// How fast the interface moves, as a multiple of its usual speed: one of
+  /// [motions], 0 being not at all.
+  final double motion;
+
   static const ColourPair defaultLight = ColourPair(
     'White',
     Color(0xFFFFFFFF),
@@ -102,7 +113,7 @@ class Appearance {
     Color(0xFF141414),
     Color(0xFFE8E8E8),
   );
-  static const Color defaultAccent = Color(0xFF2F6FEB);
+  static const Color defaultAccent = Color(0xFF3A6BFF);
 
   /// Pairs offered for light mode, the first being where it starts.
   static const List<ColourPair> lightPresets = <ColourPair>[
@@ -124,15 +135,19 @@ class Appearance {
   static const List<({String name, Color color})> accentPresets =
       <({String name, Color color})>[
         (name: 'Blue', color: defaultAccent),
-        (name: 'Red', color: Color(0xFFD1362F)),
-        (name: 'Orange', color: Color(0xFFD9731A)),
-        (name: 'Green', color: Color(0xFF2E8B57)),
-        (name: 'Teal', color: Color(0xFF138A8A)),
-        (name: 'Violet', color: Color(0xFF7B5CE0)),
+        (name: 'Red', color: Color(0xFFE5383B)),
+        (name: 'Orange', color: Color(0xFFF76B15)),
+        (name: 'Green', color: Color(0xFF12A150)),
+        (name: 'Teal', color: Color(0xFF0BA5A5)),
+        (name: 'Violet', color: Color(0xFF7C3AED)),
+        (name: 'Pink', color: Color(0xFFE5368F)),
       ];
 
   /// The sizes offered.
   static const List<double> scales = <double>[0.9, 1, 1.1, 1.25, 1.5];
+
+  /// The speeds of motion offered, 0 being none.
+  static const List<double> motions = <double>[0, 0.5, 0.75, 1, 1.5, 2];
 
   /// The colours of [brightness]'s mode.
   ColourPair pairFor(Brightness brightness) =>
@@ -150,6 +165,8 @@ class Appearance {
     InterfaceFont? font,
     double? scale,
     double? grain,
+    bool? frosted,
+    double? motion,
   }) => Appearance(
     mode: mode ?? this.mode,
     light: light ?? this.light,
@@ -159,6 +176,8 @@ class Appearance {
     font: font ?? this.font,
     scale: scale ?? this.scale,
     grain: grain ?? this.grain,
+    frosted: frosted ?? this.frosted,
+    motion: motion ?? this.motion,
   );
 
   /// This appearance with [brightness]'s colours changed to [pair].
@@ -176,6 +195,8 @@ class Appearance {
     'font': font.name,
     'scale': scale,
     'grain': grain,
+    'frosted': frosted,
+    'motion': motion,
   };
 
   /// Reads what [toJson] wrote, leniently: what is missing or not understood
@@ -191,7 +212,10 @@ class Appearance {
         final int argb => Color(argb | 0xFF000000),
         _ => start.accent,
       },
-      accentOn: json['accentOn'] == true,
+      accentOn: switch (json['accentOn']) {
+        final bool on => on,
+        _ => start.accentOn,
+      },
       font: InterfaceFont.values.asNameMap()[json['font']] ?? start.font,
       scale: switch (json['scale']) {
         final num scale when scales.contains(scale.toDouble()) =>
@@ -201,6 +225,12 @@ class Appearance {
       grain: switch (json['grain']) {
         final num grain => grain.toDouble().clamp(0, 1),
         _ => start.grain,
+      },
+      frosted: json['frosted'] != false,
+      motion: switch (json['motion']) {
+        final num motion when motions.contains(motion.toDouble()) =>
+          motion.toDouble(),
+        _ => start.motion,
       },
     );
   }
@@ -233,11 +263,23 @@ class Appearance {
       other.accentOn == accentOn &&
       other.font == font &&
       other.scale == scale &&
-      other.grain == grain;
+      other.grain == grain &&
+      other.frosted == frosted &&
+      other.motion == motion;
 
   @override
-  int get hashCode =>
-      Object.hash(mode, light, dark, accent, accentOn, font, scale, grain);
+  int get hashCode => Object.hash(
+    mode,
+    light,
+    dark,
+    accent,
+    accentOn,
+    font,
+    scale,
+    grain,
+    frosted,
+    motion,
+  );
 }
 
 /// The appearance chosen, saved as it changes.

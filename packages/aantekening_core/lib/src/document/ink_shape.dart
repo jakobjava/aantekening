@@ -1,5 +1,5 @@
 /// Shapes drawn in ink: a stroke held still until it turns into the shape
-/// it was drawn as, or a shape chosen on the Draw tab and dragged out.
+/// it was drawn as, or a shape chosen to draw and dragged out.
 ///
 /// A shape is a shape only while it is being drawn, and reshaped by the
 /// pointer still down. Once the pen lifts it is ink, strokes like any other,
@@ -12,7 +12,7 @@ import 'dart:math' as math;
 import '../util/geometry.dart';
 import 'ink.dart';
 
-/// Where a shape is offered on the Draw tab.
+/// Where a shape is offered among the shapes to draw.
 enum ShapeFamily {
   lines('Lines'),
   outlines('Shapes'),

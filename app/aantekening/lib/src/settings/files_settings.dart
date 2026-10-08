@@ -62,7 +62,7 @@ Future<void> _attempt(
   try {
     await work();
   } on Object catch (error) {
-    messenger?.showPlainSnackBar(SnackBar(content: Text('$error')));
+    messenger?.showAppSnackBar(SnackBar(content: Text('$error')));
   }
 }
 
@@ -114,7 +114,7 @@ class _NotesFolderSectionState extends ConsumerState<_NotesFolderSection> {
     final location = ref.read(notesLocationProvider);
     final holdsNotes = contentsOf(chosen) == FolderContents.notes;
     final target = holdsNotes ? chosen : notesFolderIn(chosen);
-    final agreed = await showPlainDialog<bool>(
+    final agreed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(
@@ -234,7 +234,7 @@ class _BackupsSection extends ConsumerWidget {
       final path = await backups.backUpNow();
       if (path == null || !context.mounted) return;
       ScaffoldMessenger.maybeOf(context)
-          ?.showPlainSnackBar(SnackBar(content: Text('Backed up to $path')));
+          ?.showAppSnackBar(SnackBar(content: Text('Backed up to $path')));
     }
 
     return SettingsSection(

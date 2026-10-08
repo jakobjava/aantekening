@@ -23,7 +23,7 @@ final binProvider = FutureProvider<List<BinEntry>>((ref) async {
 
 /// Opens the bin, over the window.
 Future<void> showBin(BuildContext context) =>
-    showPlainDialog<void>(context: context, builder: (_) => const BinView());
+    showAppDialog<void>(context: context, builder: (_) => const BinView());
 
 /// When [time] was, as a person says it: today at a time, yesterday, a
 /// few days ago, or the date.
@@ -47,7 +47,7 @@ String timeSaid(int time, {DateTime? now}) {
 /// Asks before deleting for good: the one thing done here that cannot be
 /// undone.
 Future<bool> confirmPurge(BuildContext context, String what) async =>
-    await showPlainDialog<bool>(
+    await showAppDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Delete $what for good?'),
@@ -79,7 +79,7 @@ Future<void> emptyBin(BuildContext context, WidgetRef ref) async {
   await store.assets.collectGarbage();
   ref.read(libraryRevisionProvider.notifier).bump();
   if (!context.mounted) return;
-  ScaffoldMessenger.maybeOf(context)?.showPlainSnackBar(
+  ScaffoldMessenger.maybeOf(context)?.showAppSnackBar(
     SnackBar(
       content: Text(
         pages == 1

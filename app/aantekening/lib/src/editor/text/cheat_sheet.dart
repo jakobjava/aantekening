@@ -61,7 +61,7 @@ class CheatSheet extends ConsumerWidget {
 
     return ExcludeFocus(
       child: Material(
-        color: tones.pane,
+        type: MaterialType.transparency,
         child: SizedBox(
           width: width,
           child: Column(

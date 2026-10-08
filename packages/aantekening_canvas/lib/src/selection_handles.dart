@@ -384,46 +384,93 @@ abstract final class SelectionHandles {
   /// pixels.
   static void paintOutline(Canvas canvas, List<Offset> outline, Color accent) =>
       canvas.drawPath(
-        Path()..addPolygon(outline, true),
+        roundedOutline(outline),
         Paint()
           ..color = accent
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5,
       );
 
+  /// How round the corners of an outline are, in screen pixels.
+  static const double outlineCorner = 6;
+
+  /// [outline], a box's corners in order, as a path with its corners
+  /// rounded — however the box is turned, and less where it is small.
+  static Path roundedOutline(List<Offset> outline) {
+    final path = Path();
+    final count = outline.length;
+    for (var i = 0; i < count; i++) {
+      final before = outline[(i - 1 + count) % count];
+      final corner = outline[i];
+      final after = outline[(i + 1) % count];
+      Offset towards(Offset other) {
+        final along = other - corner;
+        final length = along.distance;
+        if (length == 0) return corner;
+        return corner +
+            along / length * math.min(outlineCorner, length / 2);
+      }
+
+      final start = towards(before);
+      final end = towards(after);
+      if (i == 0) {
+        path.moveTo(start.dx, start.dy);
+      } else {
+        path.lineTo(start.dx, start.dy);
+      }
+      path.quadraticBezierTo(corner.dx, corner.dy, end.dx, end.dy);
+    }
+    return path..close();
+  }
+
   /// Draws the resize handles at [positions] in [accent], in screen pixels,
-  /// turned with the box by [rotation]: a square at a corner, a bar along a
-  /// side. The rotation knob is the canvas's own.
+  /// turned with the box by [rotation]: a dot at a corner, a pill along a
+  /// side, each a drop of [accent] in a white ring. The rotation knob is the
+  /// canvas's own.
   static void paintHandles(
     Canvas canvas,
     Map<SelectionHandle, Offset> positions,
     Color accent, {
     double rotation = 0,
   }) {
-    final fill = Paint()..color = accent;
-    final ring = Paint()
-      ..color = const Color(0xFFFFFFFF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
     for (final MapEntry(key: handle, value: at) in positions.entries) {
       if (handle == SelectionHandle.rotate) continue;
       final upright =
           handle == SelectionHandle.left || handle == SelectionHandle.right;
-      // Handles turn with the box, so a side's bar always lies along it.
+      // Handles turn with the box, so a side's pill always lies along it.
       canvas
         ..save()
         ..translate(at.dx, at.dy)
         ..rotate(rotation);
-      final rect = Rect.fromCenter(
-        center: Offset.zero,
-        width: handle.isSide && !upright ? size * 2.5 : size,
-        height: upright ? size * 2.5 : size,
+      paintHandle(
+        canvas,
+        Rect.fromCenter(
+          center: Offset.zero,
+          width: handle.isSide && !upright ? size * 2.5 : size,
+          height: upright ? size * 2.5 : size,
+        ),
+        accent,
       );
-      canvas
-        ..drawRect(rect, fill)
-        ..drawRect(rect, ring)
-        ..restore();
+      canvas.restore();
     }
+  }
+
+  /// Draws one handle filling [bounds]: a drop of [accent], as round as it
+  /// can be, glowing a little, in a white ring that sets it off anything.
+  static void paintHandle(Canvas canvas, Rect bounds, Color accent) {
+    final shape = RRect.fromRectAndRadius(
+      bounds,
+      Radius.circular(bounds.shortestSide / 2),
+    );
+    canvas
+      ..drawRRect(
+        shape.inflate(1),
+        Paint()
+          ..color = accent.withValues(alpha: 0.45)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
+      )
+      ..drawRRect(shape.inflate(1.5), Paint()..color = const Color(0xFFFFFFFF))
+      ..drawRRect(shape, Paint()..color = accent);
   }
 
   static double _distanceToSegment(Offset point, Offset from, Offset to) {

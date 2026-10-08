@@ -1,7 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:aantekening/src/editor/media_views.dart';
-import 'package:aantekening/src/editor/ribbon/mini_toolbar.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
-import 'package:aantekening/src/look/marks.dart';
+import 'package:aantekening/src/modes/key_guide.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart' show TikzView;
@@ -50,32 +51,37 @@ void main() {
   List<NoteElement> elementsOf(WidgetTester tester) =>
       canvasOf(tester).document.elements;
 
-  Finder menuItem(String label) => find.descendant(
-    of: find.byType(PopupMenuItem<VoidCallback>),
-    matching: find.text(label),
+  KeyGuideRow row(WidgetTester tester, String label) => tester.widget(
+    find.ancestor(of: find.text(label), matching: find.byType(KeyGuideRow)),
   );
 
-  bool enabled(WidgetTester tester, String label) => tester
-      .widget<PopupMenuItem<VoidCallback>>(
-        find.ancestor(
-          of: find.text(label),
-          matching: find.byType(PopupMenuItem<VoidCallback>),
-        ),
-      )
-      .enabled;
+  Finder menuItem(String label) =>
+      find.descendant(of: find.byType(KeyGuideRow), matching: find.text(label));
 
-  testWidgets('a right-click on the paper offers pasting, under the toolbar', (
-    tester,
-  ) async {
+  bool enabled(WidgetTester tester, String label) =>
+      row(tester, label).action.enabled;
+
+  testWidgets('a right-click on the paper opens the menu there, with '
+      'nothing picked to cut, copy or delete', (tester) async {
     mockClipboard(tester);
     await openEditor(tester, store, pageId);
     await rightClick(tester, const Offset(600, 500));
 
-    expect(find.byType(MiniToolbar), findsOneWidget);
+    expect(menuItem('Text'), findsOneWidget);
     expect(enabled(tester, 'Cut'), isFalse);
     expect(enabled(tester, 'Copy'), isFalse);
-    expect(enabled(tester, 'Paste'), isFalse, reason: 'nothing copied yet');
-    expect(menuItem('Delete'), findsNothing);
+    expect(enabled(tester, 'Paste'), isTrue);
+    expect(enabled(tester, 'Delete'), isFalse);
+    final rows = find
+        .byType(KeyGuideRow)
+        .evaluate()
+        .map((row) => tester.getRect(find.byWidget(row.widget)));
+    expect(
+      rows.map((row) => row.left).reduce(math.min),
+      lessThanOrEqualTo(600),
+      reason: 'over where it was clicked',
+    );
+    expect(rows.map((row) => row.right).reduce(math.max), greaterThan(600));
   });
 
   testWidgets('a picture is copied and pasted, a step on each time', (
@@ -160,7 +166,7 @@ void main() {
 
     await rightClick(tester, at);
     expect(canvasOf(tester).selection, <String>{'picture'});
-    await tester.tap(menuItem('Set picture as background'));
+    await tester.tap(menuItem('Set as background'));
     await tester.pumpAndSettle();
 
     final background = canvasOf(tester).document.elementById('picture')!;
@@ -175,22 +181,8 @@ void main() {
     await tester.pumpAndSettle();
 
     await rightClick(tester, at);
-    expect(
-      tester
-          .widget<Mark>(
-            find.descendant(
-              of: find.ancestor(
-                of: find.text('Set picture as background'),
-                matching: find.byType(Row),
-              ),
-              matching: find.byType(Mark),
-            ),
-          )
-          .shape,
-      MarkShape.check,
-      reason: 'ticked, as it is set',
-    );
-    await tester.tap(menuItem('Set picture as background'));
+    expect(menuItem('Set as background'), findsNothing, reason: 'it is');
+    await tester.tap(menuItem('Take out of the background'));
     await tester.pumpAndSettle();
     expect(canvasOf(tester).document.elementById('picture')!.locked, isFalse);
   });
@@ -489,9 +481,7 @@ void main() {
     });
   });
 
-  testWidgets("the toolbar formats the box a right-click picked", (
-    tester,
-  ) async {
+  testWidgets('the menu formats the box a right-click picked', (tester) async {
     mockClipboard(tester);
     await openEditor(tester, store, pageId);
     await startTextBox(tester);
@@ -504,21 +494,16 @@ void main() {
       tester,
       Offset(box.center.dx, box.top + TextBoxEditor.grabBand / 2),
     );
-    await tester.tap(
-      find
-          .descendant(
-            of: find.byType(MiniToolbar),
-            matching: find.byTooltip('Bold  (Ctrl+B)'),
-          )
-          .first,
-    );
+    await tester.tap(menuItem('Text'));
+    await tester.pumpAndSettle();
+    await tester.tap(menuItem('Bold'));
     await tester.pumpAndSettle();
 
     expect(blocksOf(tester).single.runs.single.marks.bold, isTrue);
   });
 
   testWidgets('everything picked stays picked under a right-click, and the '
-      'toolbar formats every box in it', (tester) async {
+      'menu formats every box in it', (tester) async {
     mockClipboard(tester);
     TextElement box(String id, double y) => TextElement(
       id: id,
@@ -545,14 +530,9 @@ void main() {
       tester.getCenter(find.byType(TextBoxEditor).first) + const Offset(0, 8),
     );
     expect(canvasOf(tester).selection, <String>{'one', 'two'});
-    await tester.tap(
-      find
-          .descendant(
-            of: find.byType(MiniToolbar),
-            matching: find.byTooltip('Bold  (Ctrl+B)'),
-          )
-          .first,
-    );
+    // From the keys, as from the pointer.
+    await press(tester, LogicalKeyboardKey.keyF);
+    await press(tester, LogicalKeyboardKey.keyB);
     await tester.pumpAndSettle();
 
     for (final element in elementsOf(tester)) {

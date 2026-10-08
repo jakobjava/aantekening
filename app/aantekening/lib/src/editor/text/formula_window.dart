@@ -135,7 +135,7 @@ Future<bool> showFormulaWindow(
   required ValueChanged<TextEditingValue> onChanged,
   bool picture = false,
 }) async =>
-    await showPlainDialog<bool>(
+    await showAppDialog<bool>(
       context: context,
       builder: (context) => _FormulaWindow(
         source: source,

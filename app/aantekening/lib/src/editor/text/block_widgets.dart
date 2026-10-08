@@ -188,53 +188,23 @@ class _BulletPainter extends CustomPainter {
       old.shape != shape || old.color != color || old.size != size;
 }
 
-/// The strip along the top of a text box that moves it when dragged.
+/// The strip along the top of a text box that moves it when dragged: drawn
+/// as nothing — a box shows nothing of itself until it is clicked, when it
+/// is framed as anything picked is — but the pointer over it says it moves.
 class GrabBand extends StatelessWidget {
-  const GrabBand({
-    required this.height,
-    required this.visible,
-    required this.active,
-    this.movable = true,
-    super.key,
-  });
+  const GrabBand({required this.height, this.movable = true, super.key});
 
   final double height;
-  final bool visible;
 
   /// Whether a drag on it would move the box, which only the selecting tool
   /// does: a pen over it shows its own nib.
   final bool movable;
 
-  /// Whether the box is the one being typed in or picked, drawn a shade
-  /// stronger.
-  final bool active;
-
   @override
-  Widget build(BuildContext context) {
-    // Drawn on the paper, so in the paper's colours rather than the theme's.
-    return MouseRegion(
-      cursor: movable ? SystemMouseCursors.move : MouseCursor.defer,
-      child: SizedBox(
-        height: height,
-        child: visible
-            ? DecoratedBox(
-                decoration: BoxDecoration(
-                  color: active
-                      ? RichTextStyles.boxBandActive
-                      : RichTextStyles.boxBand,
-                ),
-                child: Center(
-                  child: Container(
-                    width: 28,
-                    height: 3,
-                    color: RichTextStyles.boxGrip,
-                  ),
-                ),
-              )
-            : null,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => MouseRegion(
+    cursor: movable ? SystemMouseCursors.move : MouseCursor.defer,
+    child: SizedBox(height: height),
+  );
 }
 
 /// Where the handles of an object in a text box are, shared by the object

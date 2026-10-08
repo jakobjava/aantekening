@@ -279,7 +279,10 @@ void main() {
 
   group('Tones', () {
     test('without an accent, mark in the text colour', () {
-      final tones = Tones.of(const Appearance(), Brightness.light);
+      final tones = Tones.of(
+        const Appearance(accentOn: false),
+        Brightness.light,
+      );
       expect(tones.emphasis, Appearance.defaultLight.text);
       expect(tones.accent, isNull);
     });
@@ -311,8 +314,8 @@ void main() {
 
     test('put readable text on the emphasis', () {
       for (final appearance in <Appearance>[
+        const Appearance(accentOn: false),
         const Appearance(),
-        const Appearance(accentOn: true),
       ]) {
         for (final brightness in Brightness.values) {
           final tones = Tones.of(appearance, brightness);

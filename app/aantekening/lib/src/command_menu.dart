@@ -1,12 +1,12 @@
-/// A menu of commands, as a right-click or a long press opens one.
+/// A menu of commands, as a right-click or a long press opens one: the
+/// guide, at the point pressed, each command a key away.
 library;
 
 import 'package:flutter/material.dart';
 
-import 'look/controls.dart';
 import 'look/icons.dart';
-import 'look/marks.dart';
-import 'look/tones.dart';
+import 'modes/key_guide.dart';
+import 'modes/mode_keys.dart';
 
 /// One command in a menu; greyed out without [onSelected].
 @immutable
@@ -25,128 +25,90 @@ class MenuCommand {
   /// Drawn before its label, where it has one.
   final AppIcon? icon;
 
-  /// Its keys, shown at the end of its line: "Ctrl+C".
+  /// Its keys elsewhere, as a tooltip names them: "Ctrl+C".
   final String? shortcut;
 
   /// Whether what it turns on and off is on, drawn with a tick.
   final bool checked;
 }
 
-/// Controls shown across the top of every command menu opened beneath it:
-/// the page's text formatting, say, as OneNote shows it over its menus.
-class CommandMenuHeader extends InheritedWidget {
-  const CommandMenuHeader({
-    required this.header,
-    required super.child,
-    super.key,
-  });
+/// More to offer in every menu opened beneath it, after its own commands:
+/// the page's layers — formatting the text, formulas — in a text box's
+/// menu, say.
+class MenuExtras extends InheritedWidget {
+  const MenuExtras({required this.extras, required super.child, super.key});
 
-  final Widget header;
+  /// What is offered, made as a menu opens.
+  final List<KeyAction> Function() extras;
 
-  static Widget? of(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<CommandMenuHeader>()?.header;
+  static List<KeyAction> Function()? of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<MenuExtras>()?.extras;
 
   @override
-  bool updateShouldNotify(CommandMenuHeader oldWidget) =>
-      !identical(header, oldWidget.header);
+  bool updateShouldNotify(MenuExtras oldWidget) =>
+      !identical(extras, oldWidget.extras);
 }
 
-/// Shows [groups] of commands as a menu at [position], in global
-/// coordinates, with a line between groups and [header] above them — by
-/// default any [CommandMenuHeader] — and runs the one picked once the menu
-/// has closed.
+/// Shows [groups] of commands in the guide, after them any [MenuExtras] —
+/// each command on a key of a letter of its name — and runs the one taken.
 Future<void> showCommandMenu(
   BuildContext context,
-  Offset position,
+  List<List<MenuCommand>> groups,
+) async {
+  final extras = MenuExtras.of(context);
+  openKeyGuide(
+    context,
+    pressed: 'Menu',
+    atOnce: true,
+    layer: () => commandLayer(groups, extras: extras?.call() ?? const []),
+  );
+}
+
+/// [groups] as a layer of keys, then [extras] in a group of their own: each
+/// command on the first letter of its name not already taken, so a menu's
+/// keys are as easily guessed as they are read.
+KeyLayer commandLayer(
   List<List<MenuCommand>> groups, {
-  Widget? header,
-}) async {
-  final tones = context.tones;
-  header ??= CommandMenuHeader.of(context);
-  final entries = <PopupMenuEntry<VoidCallback>>[
-    if (header != null) _HeaderEntry(header),
-  ];
-  for (final group in groups.where((group) => group.isNotEmpty)) {
-    if (entries.isNotEmpty) entries.add(const PopupMenuDivider(height: 9));
-    for (final command in group) {
-      final enabled = command.onSelected != null;
-      entries.add(
-        PopupMenuItem<VoidCallback>(
-          value: command.onSelected,
-          enabled: enabled,
-          height: 30,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: <Widget>[
-              // A tick where it is on, else its icon; the labels line up
-              // either way.
-              SizedBox(
-                width: 24,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: command.checked
-                      ? Mark(MarkShape.check, color: tones.emphasis)
-                      : switch (command.icon) {
-                          final icon? => AppIconView(
-                            icon,
-                            size: 14,
-                            color: enabled ? tones.muted : tones.faint,
-                          ),
-                          null => null,
-                        },
-                ),
-              ),
-              Expanded(
-                child: Text(command.label, overflow: TextOverflow.ellipsis),
-              ),
-              if (command.shortcut case final shortcut?) ...<Widget>[
-                const SizedBox(width: 28),
-                KeyHint(shortcut, color: enabled ? tones.muted : tones.faint),
-              ],
-            ],
-          ),
-        ),
-      );
+  List<KeyAction> extras = const <KeyAction>[],
+}) {
+  final taken = <String>{for (final extra in extras) extra.key};
+  String keyFor(String label) {
+    for (final letter in label.toLowerCase().split('')) {
+      if (RegExp('[a-z0-9]').hasMatch(letter) && taken.add(letter)) {
+        return letter;
+      }
     }
+    final spare = galleryKeys(1, taken: taken).single;
+    taken.add(spare);
+    return spare;
   }
-  // The menu is placed in the overlay, which the interface's size may have
-  // scaled, so the point on screen is taken into it first.
-  final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
-  final at = overlay.globalToLocal(position);
-  final picked = await showMenu<VoidCallback>(
-    context: context,
-    position: RelativeRect.fromRect(at & Size.zero, Offset.zero & overlay.size),
-    items: entries,
-    popUpAnimationStyle: AnimationStyle.noAnimation,
-    constraints: header == null
-        ? const BoxConstraints(minWidth: 180, maxWidth: 360)
-        // Wide enough for a header of formatting controls.
-        : const BoxConstraints(minWidth: 180, maxWidth: 440),
-  );
-  picked?.call();
-}
 
-/// A [CommandMenuHeader]'s controls at the top of a menu. They act where
-/// they are, so pressing one leaves the menu open.
-class _HeaderEntry extends PopupMenuEntry<VoidCallback> {
-  const _HeaderEntry(this.child);
-
-  final Widget child;
-
-  @override
-  double get height => 72;
-
-  @override
-  bool represents(VoidCallback? value) => false;
-
-  @override
-  State<_HeaderEntry> createState() => _HeaderEntryState();
-}
-
-class _HeaderEntryState extends State<_HeaderEntry> {
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-    child: widget.child,
-  );
+  return KeyLayer('Menu', <KeyGroup>[
+    for (final group in groups)
+      if (group.isNotEmpty)
+        KeyGroup(<KeyAction>[
+          for (final command in group)
+            if (command.onSelected case final run?)
+              KeyAction(
+                keyFor(command.label),
+                command.label,
+                run: run,
+                checked: command.checked ? true : null,
+                preview: command.icon == null
+                    ? null
+                    : AppIconView(command.icon!, size: 14),
+              )
+            else
+              KeyAction(
+                '·',
+                command.label,
+                run: () {},
+                enabled: false,
+                preview: command.icon == null
+                    ? null
+                    : AppIconView(command.icon!, size: 14),
+              ),
+        ]),
+    if (extras.isNotEmpty) KeyGroup(extras),
+  ]);
 }

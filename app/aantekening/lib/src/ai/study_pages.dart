@@ -11,9 +11,12 @@ import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../command_menu.dart';
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
+import '../modes/key_guide.dart' show KeyCap;
 import 'ai_session.dart';
 import 'ai_state.dart';
 import 'answer_progress.dart';
@@ -163,7 +166,7 @@ class StudySetPage extends ConsumerWidget {
 }
 
 Future<bool> _confirm(BuildContext context, String title, String body) async =>
-    await showPlainDialog<bool>(
+    await showAppDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
@@ -201,16 +204,16 @@ class StudyProfilePage extends ConsumerWidget {
     final model = ref.watch(aiModelProvider).value;
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(20),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
+          constraints: const BoxConstraints(maxWidth: 420),
           child: Column(
             children: <Widget>[
               Text(
                 profile.name,
-                style: Theme.of(context).textTheme.headlineSmall,
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 profile.purpose,
                 textAlign: TextAlign.center,
@@ -224,7 +227,7 @@ class StudyProfilePage extends ConsumerWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12.5, color: tones.faint),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 14),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -310,7 +313,7 @@ class StudyDraftPage extends ConsumerWidget {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 740),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                       child: AnswerProgress(pending: pending),
                     ),
                   ),
@@ -361,155 +364,137 @@ class StudyDraftPage extends ConsumerWidget {
   }
 }
 
-/// The front of the scope's AI: what can be made to learn from it, and how
-/// far along each is; the cards due; questions to ask; and the
+/// The front of the scope's AI, all of it in view at once: the sets to
+/// study it by, each on its digit; the questions ready to ask; and the
 /// conversations and answers kept.
 class StudyOverview extends ConsumerWidget {
   const StudyOverview({required this.scope, super.key});
+
+  /// How many conversations are listed before the rest are left to the
+  /// chooser.
+  static const int _listed = 6;
 
   final NoteLink scope;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final tones = context.tones;
     final state = ref.watch(aiSessionProvider(scope));
     final session = ref.read(aiSessionProvider(scope).notifier);
-    final info = ref.watch(aiScopeInfoProvider(scope)).value;
-    final web = ref.watch(aiSettingsProvider.select((s) => s.searchWeb));
-    final kindName = info?.kindName ?? 'page';
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth > 720 ? 2 : 1;
-        final width =
-            (constraints.maxWidth.clamp(0, 860) - 48 - 16 * (columns - 1)) /
-            columns;
-        return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 812),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  SmallCaps('Study this $kindName'),
-                  const SizedBox(height: 4),
-                  Text(
-                    info?.title ?? '',
-                    style: theme.textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Made from your notes, kept apart from them, and linked '
-                    'back to the very sentences they come from.',
-                    style: TextStyle(color: tones.muted),
-                  ),
-                  const SizedBox(height: 22),
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 16,
-                    children: <Widget>[
-                      for (final profile in studyProfilesOf(ref, state))
-                        SizedBox(
-                          width: width,
-                          child: _StudyTile(
-                            key: ValueKey<String>(profile.id),
-                            profile: profile,
-                            item: state.setOf(profile.id),
-                            making: state.making.containsKey(profile.id),
-                            onShow: () => session.openProfile(profile.id),
-                            onMake: () => unawaited(session.make(profile)),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: <Widget>[
-                      OutlinedButton(
-                        onPressed: () => editStudyProfile(context),
-                        child: const Text('New study profile…'),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Describe anything else to make from your notes: '
-                          'exam tasks, a cheat sheet, a timeline.',
-                          style: TextStyle(fontSize: 12.5, color: tones.muted),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 30),
-                  const SmallCaps('Ask about it'),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: <Widget>[
-                      for (final action in AiAction.values)
-                        OutlinedButton(
-                          onPressed: state.pending != null
-                              ? null
-                              : () => unawaited(
-                                  session.ask(
-                                    action.promptFor(kindName),
-                                    searchWeb: web,
-                                    action: action,
-                                  ),
-                                ),
-                          child: Text(action.label),
-                        ),
-                    ],
-                  ),
-                  if (state.threads.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 26),
-                    const SmallCaps('Conversations'),
-                    const SizedBox(height: 6),
-                    for (final thread in state.threads.take(5))
-                      _Line(
-                        title: thread.title.isEmpty
-                            ? 'Conversation'
-                            : thread.title,
-                        trailing: whenOf(thread.updatedAt),
-                        onTap: () => unawaited(session.openThread(thread.id)),
-                      ),
-                  ],
-                  if (state.savedAnswers.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 22),
-                    const SmallCaps('Kept answers'),
-                    const SizedBox(height: 6),
-                    for (final item in state.savedAnswers)
-                      _Line(
-                        title: item.title,
-                        trailing: whenOf(item.createdAt),
-                        onTap: () => session.openItem(item.id),
-                      ),
-                  ],
-                ],
-              ),
+    Widget heading(String label, {Widget? action}) => Padding(
+      padding: const EdgeInsets.fromLTRB(6, 12, 0, 4),
+      child: Row(
+        children: <Widget>[
+          Expanded(child: SmallCaps(label)),
+          ?action,
+        ],
+      ),
+    );
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+      children: <Widget>[
+        heading(
+          'Study',
+          action: SmallButton(
+            'New study profile…',
+            tooltip: 'Describe anything else to make from your notes: exam '
+                'tasks, a cheat sheet, a timeline',
+            onPressed: () => editStudyProfile(context),
+          ),
+        ),
+        for (final (index, profile) in studyProfilesOf(ref, state).indexed)
+          _StudyRow(
+            key: ValueKey<String>(profile.id),
+            digit: index < 9 ? '${index + 1}' : null,
+            profile: profile,
+            item: state.setOf(profile.id),
+            making: state.making.containsKey(profile.id),
+            onShow: () => session.openProfile(profile.id),
+            onMake: () => unawaited(session.make(profile)),
+          ),
+        heading('Ask'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: <Widget>[
+              for (final action in AiAction.values)
+                PillButton(
+                  action.label,
+                  onPressed: state.pending != null
+                      ? null
+                      : () => askReady(ref, scope, action),
+                ),
+            ],
+          ),
+        ),
+        if (state.threads.isNotEmpty) ...<Widget>[
+          heading(
+            'Conversations',
+            action: state.threads.length > _listed
+                ? KeyHint('c  all ${state.threads.length}')
+                : null,
+          ),
+          for (final thread in state.threads.take(_listed))
+            _Line(
+              title: threadTitle(thread),
+              trailing: whenOf(thread.updatedAt),
+              onTap: () => unawaited(session.openThread(thread.id)),
+              menu: <MenuCommand>[
+                MenuCommand('Delete', () => session.deleteThread(thread.id)),
+              ],
+            ),
+        ],
+        if (state.savedAnswers.isNotEmpty) ...<Widget>[
+          heading('Kept answers'),
+          for (final item in state.savedAnswers)
+            _Line(
+              title: item.title,
+              trailing: whenOf(item.createdAt),
+              onTap: () => session.openItem(item.id),
+              menu: <MenuCommand>[
+                MenuCommand('Rename', () async {
+                  final title = await askName(context, item.title);
+                  if (title != null) await session.renameItem(item.id, title);
+                }),
+                MenuCommand('Delete', () => session.deleteItem(item.id)),
+              ],
+            ),
+        ],
+        if (state.threads.isEmpty && state.savedAnswers.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 14, 6, 0),
+            child: Text(
+              'Ask below — each question starts a conversation. What is made '
+              'here is kept apart from the notes, and linked back to the '
+              'very sentences it comes from.',
+              style: TextStyle(fontSize: 12, height: 1.4, color: tones.muted),
             ),
           ),
-        );
-      },
+      ],
     );
   }
 }
 
-/// One profile on the overview: what it is for, whether its set is made
-/// and how far along it is, and buttons to change it, and to open or make
-/// its set.
-class _StudyTile extends ConsumerWidget {
-  const _StudyTile({
+/// One set to study the scope by, on a line: its digit, its name, how far
+/// along it is, and a button to change it, and to make it while it is not
+/// made.
+class _StudyRow extends ConsumerWidget {
+  const _StudyRow({
+    required this.digit,
     required this.profile,
-    super.key,
     required this.item,
     required this.making,
     required this.onShow,
     required this.onMake,
+    super.key,
   });
 
+  /// The key it is opened by, if it has one.
+  final String? digit;
   final StudyProfile profile;
   final AiItem? item;
 
@@ -526,79 +511,77 @@ class _StudyTile extends ConsumerWidget {
     final item = this.item;
     final set = item == null ? null : StudySet.fromJson(item.body);
     final due = cardsToStudy(ref, item);
-    final open = switch (set) {
-      StudySummary() || StudyText() => 'Read',
-      FlashcardSet() => due > 0 ? 'Study $due' : 'Open',
-      QuizSet() => 'Take the quiz',
-      Glossary() || null => 'Open',
-    };
-
-    return Material(
-      color: tones.base,
-      shape: RoundedRectangleBorder(side: BorderSide(color: tones.line)),
+    final digit = this.digit;
+    return Tooltip(
+      message: profile.purpose,
+      waitDuration: const Duration(milliseconds: 600),
       child: InkWell(
         onTap: onShow,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      profile.name,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                  if (due > 0)
-                    Text(
-                      '$due to study',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: tones.emphasis,
+        borderRadius: Corners.controlRadius,
+        hoverColor: tones.veil,
+        child: SizedBox(
+          height: 34,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Row(
+              children: <Widget>[
+                SizedBox(
+                  width: 30,
+                  child: digit == null
+                      ? null
+                      : Align(
+                          alignment: Alignment.centerLeft,
+                          child: KeyCap(digit),
+                        ),
+                ),
+                Expanded(
+                  child: Row(
+                    children: <Widget>[
+                      Flexible(
+                        child: Text(
+                          profile.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                profile.purpose,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, height: 1.4, color: tones.muted),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      making
-                          ? 'Being made…'
-                          : set == null
-                          ? 'Not made yet'
-                          : '${sizeOf(set)}  ·  ${whenOf(item!.updatedAt)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: tones.faint),
-                    ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          making
+                              ? 'Being made…'
+                              : due > 0
+                              ? '$due to study'
+                              : set == null
+                              ? 'Not made yet'
+                              : '${sizeOf(set)}  ·  '
+                                    '${whenOf(item!.updatedAt)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: due > 0 ? FontWeight.w700 : null,
+                            color: due > 0 ? tones.emphasis : tones.muted,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  SmallButton(
-                    'Edit',
-                    tooltip: 'Change what is asked for',
-                    onPressed: () =>
-                        editStudyProfile(context, profile: profile),
-                  ),
-                  if (making)
-                    const Busy(width: 32)
-                  else if (item != null)
-                    OutlinedButton(onPressed: onShow, child: Text(open))
-                  else
-                    FilledButton(onPressed: onMake, child: const Text('Make')),
-                ],
-              ),
-            ],
+                ),
+                SmallButton(
+                  'Edit',
+                  tooltip: 'Change what is asked for',
+                  onPressed: () => editStudyProfile(context, profile: profile),
+                ),
+                if (making)
+                  const Busy(width: 32)
+                else if (item == null)
+                  PillButton('Make', lit: true, onPressed: onMake),
+              ],
+            ),
           ),
         ),
       ),
@@ -606,23 +589,78 @@ class _StudyTile extends ConsumerWidget {
   }
 }
 
-/// A line of the overview's lists: a conversation, a kept answer.
+/// A line of the overview's lists — a conversation, an answer kept — with
+/// [menu] on a right-click or a long press.
 class _Line extends StatelessWidget {
   const _Line({
     required this.title,
     required this.trailing,
     required this.onTap,
+    this.menu = const <MenuCommand>[],
   });
 
   final String title;
   final String trailing;
   final VoidCallback onTap;
+  final List<MenuCommand> menu;
+
+  void _showMenu(BuildContext context) =>
+      unawaited(showCommandMenu(context, <List<MenuCommand>>[menu]));
 
   @override
-  Widget build(BuildContext context) => RowTile(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-    title: Text(title),
-    trailing: KeyHint(trailing),
-    onTap: onTap,
+  Widget build(BuildContext context) => GestureDetector(
+    onSecondaryTap: menu.isEmpty ? null : () => _showMenu(context),
+    onLongPress: menu.isEmpty ? null : () => _showMenu(context),
+    child: RowTile(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+      title: Text(title),
+      trailing: KeyHint(trailing),
+      onTap: onTap,
+    ),
   );
+}
+
+/// What a conversation is called in the lists: its title, or what it is.
+String threadTitle(AiThread thread) =>
+    thread.title.isEmpty ? 'Conversation' : thread.title;
+
+/// Asks [action]'s question about [scope], as the web is set to be
+/// searched.
+void askReady(WidgetRef ref, NoteLink scope, AiAction action) {
+  final kindName = ref.read(aiScopeInfoProvider(scope)).value?.kindName;
+  unawaited(
+    ref
+        .read(aiSessionProvider(scope).notifier)
+        .ask(
+          action.promptFor(kindName ?? 'page'),
+          searchWeb: ref.read(aiSettingsProvider).searchWeb,
+          action: action,
+        ),
+  );
+}
+
+/// Asks for a new name for something kept, [current] to start from.
+Future<String?> askName(BuildContext context, String current) {
+  final controller = TextEditingController(text: current);
+  return showAppDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Rename'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+          child: const Text('Rename'),
+        ),
+      ],
+    ),
+  ).whenComplete(controller.dispose);
 }

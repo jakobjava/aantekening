@@ -136,7 +136,7 @@ class _PageTitleState extends ConsumerState<PageTitle> {
   }
 
   Future<void> _pickDate(DateTime date) async {
-    final picked = await showPlainDialog<DateTime>(
+    final picked = await showAppDialog<DateTime>(
       context: context,
       builder: (_) => DatePickerDialog(
         initialDate: date,
@@ -152,7 +152,7 @@ class _PageTitleState extends ConsumerState<PageTitle> {
   }
 
   Future<void> _pickTime(DateTime date) async {
-    final picked = await showPlainDialog<TimeOfDay>(
+    final picked = await showAppDialog<TimeOfDay>(
       context: context,
       builder: (_) =>
           TimePickerDialog(initialTime: TimeOfDay.fromDateTime(date)),
@@ -283,8 +283,9 @@ class _DateButton extends StatelessWidget {
     // Lit as things on the paper are, which is white in dark mode too.
     child: InkWell(
       onTap: onPressed,
-      hoverColor: RichTextStyles.boxBand,
-      highlightColor: RichTextStyles.boxBandActive,
+      borderRadius: const BorderRadius.all(Radius.circular(4)),
+      hoverColor: RichTextStyles.paperHover,
+      highlightColor: context.tones.paperEmphasis.withValues(alpha: 0.12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
         child: Text(label, style: style),

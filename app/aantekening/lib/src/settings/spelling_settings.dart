@@ -47,7 +47,7 @@ class SpellingSettingsPage extends ConsumerWidget {
       try {
         await action();
       } on Object catch (error) {
-        messenger?.showPlainSnackBar(SnackBar(content: Text('$error')));
+        messenger?.showAppSnackBar(SnackBar(content: Text('$error')));
       }
     }
 

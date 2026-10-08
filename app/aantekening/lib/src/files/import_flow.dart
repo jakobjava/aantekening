@@ -50,7 +50,7 @@ Future<void> importNotes(BuildContext context, NotesImporter importer) async {
   final work = await Directory.systemTemp.createTemp('aantekening-import-');
   try {
     if (!window.mounted) return;
-    final draft = await showPlainDialog<NotesDraft>(
+    final draft = await showAppDialog<NotesDraft>(
       context: window,
       barrierDismissible: false,
       builder: (_) =>
@@ -119,7 +119,7 @@ Future<List<String>> _choose(NotesImporter importer) async {
 
 void _say(BuildContext context, String message) =>
     ScaffoldMessenger.maybeOf(context)
-        ?.showPlainSnackBar(SnackBar(content: Text(message)));
+        ?.showAppSnackBar(SnackBar(content: Text(message)));
 
 /// Says how an import went, listing what could not be brought over.
 Future<void> _report(
@@ -131,7 +131,7 @@ Future<void> _report(
     _say(context, outcome);
     return Future<void>.value();
   }
-  return showPlainDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(outcome),

@@ -8,7 +8,7 @@ import 'dart:math' as math;
 
 import 'package:aantekening/src/commands/command_keys.dart';
 import 'package:aantekening/src/editor/page_editor.dart';
-import 'package:aantekening/src/editor/ribbon/ribbon.dart';
+import 'package:aantekening/src/editor/text/text_box_controller.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening/src/preferences.dart';
@@ -167,9 +167,13 @@ final Uint8List pngBytes = Uint8List.fromList(<int>[
   130,
 ]);
 
-/// Whether the caret is in a formula, as the ribbon shows it.
-bool inFormula(WidgetTester tester) =>
-    tester.widget<Ribbon>(find.byType(Ribbon)).commands.text.state.inFormula;
+/// What formats the text on the page, as the menu and the keys do: shared
+/// by every text box on it.
+TextBoxEditorController pageText(WidgetTester tester) =>
+    tester.widget<TextBoxEditor>(find.byType(TextBoxEditor).first).controller!;
+
+/// Whether the caret is in a formula.
+bool inFormula(WidgetTester tester) => pageText(tester).state.inFormula;
 
 /// The one text box on the page.
 TextBoxEditor textBox(WidgetTester tester) =>
@@ -344,5 +348,71 @@ Future<void> rightClick(WidgetTester tester, Offset position) async {
     kind: PointerDeviceKind.mouse,
     buttons: kSecondaryMouseButton,
   );
+  await tester.pumpAndSettle();
+}
+
+/// The keys that type each symbol the modes use, and whether with Shift.
+final Map<String, (LogicalKeyboardKey, bool)> _symbolKeys =
+    <String, (LogicalKeyboardKey, bool)>{
+      ' ': (LogicalKeyboardKey.space, false),
+      '[': (LogicalKeyboardKey.bracketLeft, false),
+      ']': (LogicalKeyboardKey.bracketRight, false),
+      '/': (LogicalKeyboardKey.slash, false),
+      '?': (LogicalKeyboardKey.slash, true),
+      ':': (LogicalKeyboardKey.semicolon, true),
+      r'$': (LogicalKeyboardKey.digit4, true),
+      '+': (LogicalKeyboardKey.equal, true),
+      '=': (LogicalKeyboardKey.equal, false),
+      '-': (LogicalKeyboardKey.minus, false),
+      '<': (LogicalKeyboardKey.comma, true),
+      '>': (LogicalKeyboardKey.period, true),
+      ',': (LogicalKeyboardKey.comma, false),
+      '.': (LogicalKeyboardKey.period, false),
+    };
+
+/// Presses the key that types [character], as a keyboard delivers it: a
+/// capital, or a symbol on a shifted key, with Shift held.
+Future<void> typeKey(WidgetTester tester, String character) async {
+  await _sendKey(tester, character);
+  await tester.pump();
+}
+
+/// Types [keys] faster than a frame: one after another, nothing drawn
+/// between them, as fingers that know the keys do.
+Future<void> typeKeysAtOnce(WidgetTester tester, String keys) async {
+  for (final character in keys.split('')) {
+    await _sendKey(tester, character);
+  }
+}
+
+/// Sends the key that types [character], as [typeKey] does, drawing
+/// nothing after it.
+Future<void> _sendKey(WidgetTester tester, String character) async {
+  final LogicalKeyboardKey key;
+  final bool shift;
+  if (_symbolKeys[character] case (final symbol, final shifted)) {
+    (key, shift) = (symbol, shifted);
+  } else {
+    final lower = character.toLowerCase();
+    final code = lower.codeUnitAt(0);
+    final letter = code >= 0x61 && code <= 0x7a;
+    key = letter
+        ? LogicalKeyboardKey(LogicalKeyboardKey.keyA.keyId + code - 0x61)
+        : LogicalKeyboardKey(
+            LogicalKeyboardKey.digit0.keyId + int.parse(character),
+          );
+    shift = character != lower;
+  }
+  if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+  await tester.sendKeyDownEvent(key, character: character);
+  await tester.sendKeyUpEvent(key);
+  if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+}
+
+/// Types [keys] one after another, as [typeKey] does each.
+Future<void> typeKeys(WidgetTester tester, String keys) async {
+  for (final character in keys.split('')) {
+    await typeKey(tester, character);
+  }
   await tester.pumpAndSettle();
 }

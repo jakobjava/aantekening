@@ -1,4 +1,4 @@
-/// Structures and symbols to put into a formula from the ribbon.
+/// Structures and symbols to put into a formula from the guide.
 library;
 
 import 'package:aantekening_core/aantekening_core.dart';
@@ -40,27 +40,27 @@ class MathTemplate {
   /// In LaTeX, likewise.
   final String latex;
 
-  /// LaTeX drawn on its button.
+  /// LaTeX drawn to show what it puts in.
   final String preview;
 
   String inSyntax(MathMode syntax) => syntax == MathMode.latex ? latex : simple;
 }
 
-/// Templates behind one ribbon button.
+/// Templates of one kind, offered together.
 @immutable
 class MathGallery {
   const MathGallery(this.name, this.icon, this.templates, {this.columns = 4});
 
   final String name;
 
-  /// LaTeX drawn as the button's icon.
+  /// LaTeX drawn to stand for the kind.
   final String icon;
 
   final List<MathTemplate> templates;
   final int columns;
 }
 
-/// Everything the ribbon's Math tab offers.
+/// Everything offered to put into a formula.
 abstract final class MathGalleries {
   static const MathGallery fraction = MathGallery(
     'Fraction',
@@ -583,4 +583,26 @@ abstract final class MathGalleries {
     MathTemplate.spaced('Therefore', simple: 'therefore', latex: r'\therefore'),
     MathTemplate.spaced('Because', simple: 'because', latex: r'\because'),
   ], columns: 8);
+
+  /// The structures, in the order they are offered.
+  static const List<MathGallery> structures = <MathGallery>[
+    fraction,
+    script,
+    radical,
+    integral,
+    largeOperator,
+    bracket,
+    accent,
+    function,
+    matrix,
+  ];
+
+  /// The symbols, in the order they are offered.
+  static final List<MathGallery> symbols = <MathGallery>[
+    greek,
+    operators,
+    relations,
+    arrows,
+    other,
+  ];
 }

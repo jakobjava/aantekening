@@ -1,17 +1,20 @@
 import 'dart:io';
 
 import 'package:aantekening/src/commands/app_command.dart';
-import 'package:aantekening/src/commands/command_palette.dart';
 import 'package:aantekening/src/commands/key_chord.dart';
 import 'package:aantekening/src/commands/shortcuts.dart';
+import 'package:aantekening/src/editor/page_editor.dart';
 import 'package:aantekening/src/look/appearance.dart';
+import 'package:aantekening/src/look/chooser.dart';
 import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
+import 'package:aantekening/src/search/search_line.dart';
+import 'package:aantekening/src/search/search_session.dart';
 import 'package:aantekening/src/settings/settings_view.dart';
 import 'package:aantekening/src/shell/home_shell.dart';
 import 'package:aantekening/src/shell/library_actions.dart';
-import 'package:aantekening/src/shell/sidebar_state.dart';
+import 'package:aantekening/src/shell/picker.dart';
 import 'package:aantekening/src/shell/tabs.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
@@ -20,7 +23,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'editor_harness.dart' show press;
+import 'editor_harness.dart' show press, typeKeys, typeKeysAtOnce;
 
 /// Moving about the window from the keyboard: every shortcut runs its
 /// command wherever the keyboard is, and can be changed.
@@ -89,14 +92,14 @@ void main() {
     final container = await open(tester);
     await press(tester, LogicalKeyboardKey.keyP, control: true);
     await tester.pumpAndSettle();
-    expect(find.byType(CommandPalette), findsOneWidget);
+    expect(find.byType(Chooser), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).last, 'lns');
     await tester.pumpAndSettle();
     await press(tester, LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
-    expect(find.byType(CommandPalette), findsNothing);
+    expect(find.byType(Chooser), findsNothing);
     expect(container.read(selectedSectionProvider), optics.id);
     expect(find.text('Lenses'), findsWidgets);
   });
@@ -157,15 +160,134 @@ void main() {
     expect(container.read(tabsProvider).current.pageId, pages.first.id);
   });
 
-  testWidgets('the search panel takes the keyboard from its shortcut', (
+  testWidgets('/ opens the search line, the best match opening as it is '
+      'typed; Enter keeps what is found, for n to step through', (
     tester,
   ) async {
     final container = await open(tester);
-    await press(tester, LogicalKeyboardKey.keyF, control: true);
-    await tester.pumpAndSettle();
-    expect(container.read(sidebarProvider).open, SidebarTab.search);
-    final field = tester.widget<TextField>(find.byType(TextField).first);
+    for (final page in pages) {
+      await tester.runAsync(
+        () => store.pages.saveDocument(
+          page.id,
+          PageDocument.empty(id: page.id).withElementAdded(
+            TextElement(
+              id: 'text',
+              frame: const Frame(x: 40, y: 200, width: 300, height: 40),
+              createdAt: 0,
+              updatedAt: 0,
+              blocks: <TextBlock>[
+                TextBlock.plain(page == pages.first ? 'nothing' : 'work done'),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // What is typed straight after /, before the line is drawn, is in it.
+    await typeKeysAtOnce(tester, '/work');
+    await tester.pump();
+    expect(container.read(searchLineProvider), isTrue);
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(SearchLine),
+        matching: find.byType(TextField),
+      ),
+    );
     expect(field.focusNode!.hasFocus, isTrue);
+    expect(field.controller!.text, 'work');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.runAsync(() => container.read(searchResultsProvider.future));
+    await tester.pumpAndSettle();
+    final first = container.read(selectedPageProvider);
+    expect(first, isNot(pages.first.id), reason: 'the best match opened');
+
+    await press(tester, LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(container.read(searchLineProvider), isFalse);
+    expect(container.read(searchHighlightProvider), isNotNull, reason: 'kept');
+
+    await typeKeys(tester, 'n');
+    expect(container.read(selectedPageProvider), isNot(first));
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(container.read(searchHighlightProvider), isNull);
+  });
+
+  testWidgets('the picker opens on the page open, j and k move through its '
+      'rows, and a page picked closes it — however fast the keys come', (
+    tester,
+  ) async {
+    final container = await open(tester);
+    Future<void> key(LogicalKeyboardKey key, [String? character]) async {
+      await tester.sendKeyDownEvent(key, character: character);
+      await tester.sendKeyUpEvent(key);
+    }
+
+    // Not a frame between them: the picker is not yet drawn as they come.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await key(LogicalKeyboardKey.keyE);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await key(LogicalKeyboardKey.keyJ, 'j');
+    await key(LogicalKeyboardKey.keyJ, 'j');
+    await key(LogicalKeyboardKey.keyK, 'k');
+    await key(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Picker), findsNothing);
+    expect(
+      container.read(selectedPageProvider),
+      pages[1].id,
+      reason: 'from the page open, down two and up one',
+    );
+
+    // The page has the keys again, put away by Esc as by a pick.
+    await typeKeys(tester, '/');
+    expect(container.read(searchLineProvider), isTrue);
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await press(tester, LogicalKeyboardKey.keyE, control: true, shift: true);
+    await tester.pumpAndSettle();
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(Picker), findsNothing);
+    await typeKeys(tester, '/');
+    expect(container.read(searchLineProvider), isTrue);
+  });
+
+  testWidgets('the window splits between two tabs, Alt+l going between '
+      'them and a click in the other giving it the keys', (tester) async {
+    final container = await open(tester);
+    await container.read(libraryActionsProvider).openIdInNewTab(pages[1].id);
+    await tester.pumpAndSettle();
+    TabsState tabs() => container.read(tabsProvider);
+    expect(tabs().active, 1);
+
+    await press(tester, LogicalKeyboardKey.space);
+    await typeKeys(tester, 'wv');
+    expect(find.byType(PageEditor), findsNWidgets(2));
+    expect(tabs().beside, 1, reason: 'the other tab, beside');
+    expect(tabs().active, 0);
+    final first = tester.getRect(find.byType(PageEditor).first);
+    final second = tester.getRect(find.byType(PageEditor).last);
+    expect(first.right, lessThanOrEqualTo(second.left), reason: 'side by side');
+
+    await press(tester, LogicalKeyboardKey.keyL, alt: true);
+    await tester.pumpAndSettle();
+    expect(tabs().active, 1);
+    expect(tabs().beside, 0);
+
+    await tester.tapAt(first.center);
+    await tester.pumpAndSettle();
+    expect(tabs().active, 0, reason: 'clicked into');
+
+    await press(tester, LogicalKeyboardKey.space);
+    await typeKeys(tester, 'wq');
+    expect(find.byType(PageEditor), findsOneWidget);
+    expect(tabs().beside, isNull);
+    expect(tabs().tabs, hasLength(2), reason: 'the other still a tab');
   });
 
   testWidgets('the settings open, and close with Escape', (tester) async {

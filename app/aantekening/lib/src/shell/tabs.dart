@@ -1,5 +1,5 @@
-/// The tabs along the top of the window, each with a page of its own and a
-/// sidebar that acts on it alone.
+/// The tabs on the status line, each with a page of its own, and the
+/// notebook and section it is in.
 library;
 
 import 'dart:convert';
@@ -10,9 +10,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../preferences.dart';
-import 'sidebar_panels.dart';
 
-/// One tab: what its sidebar has chosen and is showing.
+/// One tab: the notebook, section and page it has chosen, and its search.
 @immutable
 class NoteTab {
   const NoteTab({
@@ -21,7 +20,6 @@ class NoteTab {
     this.sectionId,
     this.pageId,
     this.search = '',
-    this.panel = SidebarTab.notebooks,
     this.ai = false,
   });
 
@@ -35,11 +33,8 @@ class NoteTab {
   /// The page the tab shows, or null for none.
   final String? pageId;
 
-  /// What the tab's search panel is looking for.
+  /// What the tab is searching for.
   final String search;
-
-  /// The sidebar panel open beside the tab's page, or null for none.
-  final SidebarTab? panel;
 
   /// Whether the tab shows the AI of what it has chosen — its page, or else
   /// its section, or else its notebook — in place of the page.
@@ -65,8 +60,6 @@ class NoteTab {
 
   NoteTab searching(String search) => _copy(search: search);
 
-  NoteTab showing(SidebarTab? panel) => _copy(panel: panel);
-
   NoteTab inAi(bool ai) => ai == this.ai ? this : _copy(ai: ai);
 
   /// This tab as another, [id], opened again once this one was closed.
@@ -76,7 +69,6 @@ class NoteTab {
     sectionId: sectionId,
     pageId: pageId,
     search: search,
-    panel: panel,
     ai: ai,
   );
 
@@ -100,7 +92,6 @@ class NoteTab {
     Object? sectionId = _same,
     Object? pageId = _same,
     String? search,
-    Object? panel = _same,
     bool? ai,
   }) => NoteTab(
     id: id,
@@ -108,7 +99,6 @@ class NoteTab {
     sectionId: _or(sectionId, this.sectionId),
     pageId: _or(pageId, this.pageId),
     search: search ?? this.search,
-    panel: _or(panel, this.panel),
     ai: ai ?? this.ai,
   );
 
@@ -122,7 +112,6 @@ class NoteTab {
     if (notebookId != null) 'notebook': notebookId,
     if (sectionId != null) 'section': sectionId,
     if (pageId != null) 'page': pageId,
-    'panel': panel?.name ?? _noPanel,
     if (ai) 'ai': true,
   };
 
@@ -131,21 +120,8 @@ class NoteTab {
     notebookId: readStringOrNull(json, 'notebook'),
     sectionId: readStringOrNull(json, 'section'),
     pageId: readStringOrNull(json, 'page'),
-    panel: panelNamed(readStringOrNull(json, 'panel')),
     ai: readBool(json, 'ai'),
   );
-
-  /// Saved for a panel closed on purpose, rather than nothing, which opens
-  /// the notebooks as a new tab does.
-  static const String _noPanel = 'none';
-
-  /// The panel saved as [name].
-  static SidebarTab? panelNamed(String? name) => name == _noPanel
-      ? null
-      : switch (SidebarTab.values.asNameMap()[name]) {
-          final tab? when tab.opensPanel => tab,
-          _ => SidebarTab.notebooks,
-        };
 }
 
 /// The notebook, section and page a tab has chosen.
@@ -153,24 +129,36 @@ enum TabChoice { notebook, section, page }
 
 @immutable
 class TabsState {
-  const TabsState(this.tabs, this.active);
+  const TabsState(this.tabs, this.active, {this.beside, this.stacked = false});
 
   /// Left to right; never empty.
   final List<NoteTab> tabs;
 
-  /// The index of the tab showing.
+  /// The index of the tab showing, which has the keys.
   final int active;
 
+  /// The index of the tab shown beside it, the window split between the
+  /// two, or null while it is not split.
+  final int? beside;
+
+  /// Whether the split puts one above the other, rather than side by side.
+  final bool stacked;
+
   NoteTab get current => tabs[active];
+
+  /// The tab shown beside the one showing, if the window is split.
+  NoteTab? get besideTab => switch (beside) {
+    final index? => tabs[index],
+    null => null,
+  };
 }
 
 /// The open tabs, and which one is showing, remembered between sessions.
 class TabsController extends Notifier<TabsState> {
   static const String _tabsKey = 'tabs';
   static const String _activeKey = 'tabs.active';
-
-  /// Where the panel open was kept before there were tabs.
-  static const String _legacyPanelKey = 'sidebar.open';
+  static const String _besideKey = 'tabs.beside';
+  static const String _stackedKey = 'tabs.stacked';
 
   int _nextId = 0;
 
@@ -202,19 +190,17 @@ class TabsController extends Notifier<TabsState> {
         for (final tab in saved.whereType<Map<Object?, Object?>>())
           NoteTab.fromJson(_nextId++, tab.cast<String, Object?>()),
     ];
-    if (tabs.isEmpty) {
-      final legacy = ref.preference(_legacyPanelKey);
-      tabs.add(
-        NoteTab(
-          id: _nextId++,
-          panel: NoteTab.panelNamed(legacy is String ? legacy : null),
-        ),
-      );
-    }
-    final active = ref.preference(_activeKey);
+    if (tabs.isEmpty) tabs.add(NoteTab(id: _nextId++));
+    final shown = ref.preference(_activeKey);
+    final active = shown is int ? shown.clamp(0, tabs.length - 1) : 0;
+    final beside = ref.preference(_besideKey);
     return TabsState(
       tabs,
-      active is int ? active.clamp(0, tabs.length - 1) : 0,
+      active,
+      beside: beside is int && beside != active && beside < tabs.length
+          ? beside
+          : null,
+      stacked: ref.preference(_stackedKey) == true,
     );
   }
 
@@ -234,10 +220,9 @@ class TabsController extends Notifier<TabsState> {
             notebookId: notebookId,
             sectionId: sectionId,
             pageId: pageId,
-            panel: from.panel,
           );
     final at = state.active + 1;
-    _set(TabsState(<NoteTab>[...state.tabs]..insert(at, tab), at));
+    _set(<NoteTab>[...state.tabs]..insert(at, tab), at);
   }
 
   /// Closes the tab at [index]. Closing the last one opens a new, empty tab
@@ -245,12 +230,18 @@ class TabsController extends Notifier<TabsState> {
   void close(int index) {
     _closed.add(state.tabs[index]);
     if (_closed.length > _remembered) _closed.removeAt(0);
+    final beside = state.besideTab;
     final tabs = <NoteTab>[...state.tabs]..removeAt(index);
     if (tabs.isEmpty) tabs.add(NoteTab(id: _nextId++));
+    // The tab beside one closed takes the window, whole.
+    if (index == state.active && beside != null) {
+      _set(tabs, tabs.indexOf(beside), besideId: null);
+      return;
+    }
     final active = index < state.active || state.active >= tabs.length
         ? state.active - 1
         : state.active;
-    _set(TabsState(tabs, active.clamp(0, tabs.length - 1)));
+    _set(tabs, active.clamp(0, tabs.length - 1));
   }
 
   /// Closes the tab showing.
@@ -263,7 +254,7 @@ class TabsController extends Notifier<TabsState> {
     if (_closed.isEmpty) return;
     final tab = _closed.removeLast().reopenedAs(_nextId++);
     final at = state.active + 1;
-    _set(TabsState(<NoteTab>[...state.tabs]..insert(at, tab), at));
+    _set(<NoteTab>[...state.tabs]..insert(at, tab), at);
   }
 
   /// Shows the [number]th tab from the left, counting from 1; 9 is the last,
@@ -328,12 +319,56 @@ class TabsController extends Notifier<TabsState> {
 
   /// Closes every tab but the one at [index], and shows that one.
   void closeOthers(int index) =>
-      _set(TabsState(<NoteTab>[state.tabs[index]], 0));
+      _set(<NoteTab>[state.tabs[index]], 0, besideId: null);
 
-  /// Shows the tab at [index].
+  /// Shows the tab at [index]. The tab beside the one showing, it takes
+  /// the keys, and the one showing goes beside it.
   void activate(int index) {
     if (index == state.active) return;
-    _set(TabsState(state.tabs, index));
+    _set(
+      state.tabs,
+      index,
+      besideId: index == state.beside ? state.current.id : _keep,
+    );
+  }
+
+  /// Splits the window, the tab showing beside another — [stacked], one
+  /// above the other: the next tab, or a new one on the same notebook and
+  /// section, which takes the keys. Split already, it only turns.
+  void split({required bool stacked}) {
+    if (state.beside != null) {
+      _set(state.tabs, state.active, stacked: stacked);
+      return;
+    }
+    final showing = state.current;
+    if (state.tabs.length > 1) {
+      _set(
+        state.tabs,
+        (state.active + 1) % state.tabs.length,
+        besideId: showing.id,
+        stacked: stacked,
+      );
+      return;
+    }
+    final tab = NoteTab(
+      id: _nextId++,
+      notebookId: showing.notebookId,
+      sectionId: showing.sectionId,
+    );
+    _set(
+      <NoteTab>[...state.tabs, tab],
+      state.tabs.length,
+      besideId: showing.id,
+      stacked: stacked,
+    );
+  }
+
+  /// Shows the tab showing alone, the one beside it a tab again.
+  void unsplit() => _set(state.tabs, state.active, besideId: null);
+
+  /// Gives the keys to the tab beside the one showing.
+  void toBeside() {
+    if (state.beside case final beside?) activate(beside);
   }
 
   /// Shows the tab [by] places to the right of the one showing, or to the
@@ -347,7 +382,7 @@ class TabsController extends Notifier<TabsState> {
     final tabs = <NoteTab>[...state.tabs];
     final tab = tabs.removeAt(from);
     tabs.insert(to.clamp(0, tabs.length), tab);
-    _set(TabsState(tabs, tabs.indexOf(showing)));
+    _set(tabs, tabs.indexOf(showing));
   }
 
   /// Changes the tab showing.
@@ -355,12 +390,7 @@ class TabsController extends Notifier<TabsState> {
     final changed = change(state.current);
     if (identical(changed, state.current)) return;
     _step(changed, state.current.pageId, changed.pageId);
-    _set(
-      TabsState(
-        <NoteTab>[...state.tabs]..[state.active] = changed,
-        state.active,
-      ),
-    );
+    _set(<NoteTab>[...state.tabs]..[state.active] = changed, state.active);
   }
 
   /// Unchooses [ids] — notebooks, sections or pages deleted — and what lies
@@ -368,7 +398,7 @@ class TabsController extends Notifier<TabsState> {
   void forget(Iterable<String> ids) {
     final gone = ids.toSet();
     final tabs = <NoteTab>[for (final tab in state.tabs) tab.forgetting(gone)];
-    if (!listEquals(tabs, state.tabs)) _set(TabsState(tabs, state.active));
+    if (!listEquals(tabs, state.tabs)) _set(tabs, state.active);
   }
 
   /// Unchooses what tabs kept from an earlier session that is no longer in
@@ -392,15 +422,41 @@ class TabsController extends Notifier<TabsState> {
     if (gone.isNotEmpty) forget(gone);
   }
 
-  void _set(TabsState next) {
+  /// Stands for the tab beside the one showing kept as it is.
+  static const Object _keep = Object();
+
+  /// Shows [tabs], the one at [active] showing and [besideId]'s beside it —
+  /// by default the tab beside it now, wherever it has gone among [tabs] —
+  /// and saves them.
+  void _set(
+    List<NoteTab> tabs,
+    int active, {
+    Object? besideId = _keep,
+    bool? stacked,
+  }) {
+    final id = identical(besideId, _keep) ? state.besideTab?.id : besideId;
+    final beside = id == null ? -1 : tabs.indexWhere((tab) => tab.id == id);
+    final next = TabsState(
+      tabs,
+      active,
+      beside: beside < 0 || beside == active ? null : beside,
+      stacked: stacked ?? state.stacked,
+    );
     state = next;
-    final tabs = <Object?>[for (final tab in next.tabs) tab.toJson()];
-    final saved = jsonEncode(<Object?>[tabs, next.active]);
+    final saving = <Object?>[for (final tab in next.tabs) tab.toJson()];
+    final saved = jsonEncode(<Object?>[
+      saving,
+      next.active,
+      next.beside,
+      next.stacked,
+    ]);
     if (saved == _saved) return;
     _saved = saved;
     ref
-      ..savePreference(_tabsKey, tabs)
-      ..savePreference(_activeKey, next.active);
+      ..savePreference(_tabsKey, saving)
+      ..savePreference(_activeKey, next.active)
+      ..savePreference(_besideKey, next.beside)
+      ..savePreference(_stackedKey, next.stacked ? true : null);
   }
 }
 

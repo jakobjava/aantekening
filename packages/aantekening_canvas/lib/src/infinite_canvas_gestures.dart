@@ -229,8 +229,8 @@ extension _Gestures on _InfiniteCanvasState {
     // The running pan is followed in window coordinates. Flutter's localPan
     // converts it as though it were a point, subtracting where the canvas
     // sits in the window: measured from the zero a gesture starts at, the
-    // page jumped by the width of the sidebars and the height of the ribbon
-    // at the start of every scroll.
+    // page jumped by the width of the sidebars and the height of the status
+    // line at the start of every scroll.
     // The page follows the fingers exactly, and coasts on as they lift.
     final pan = PointerEvent.transformDeltaViaPositions(
       transform: event.transform,

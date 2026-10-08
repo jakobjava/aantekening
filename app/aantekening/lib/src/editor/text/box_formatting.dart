@@ -138,4 +138,7 @@ class BoxFormatting implements TextEditorCommands {
 
   @override
   void insertBlocks(List<TextBlock> blocks) {}
+
+  @override
+  void typeText(String text) {}
 }

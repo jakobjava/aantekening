@@ -357,7 +357,10 @@ extension _View on TextBoxEditorState {
     } else if (block.kind == TextBlockKind.code) {
       row = Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: const BoxDecoration(color: RichTextStyles.codeFill),
+        decoration: const BoxDecoration(
+          color: RichTextStyles.codeFill,
+          borderRadius: RichTextStyles.codeCorners,
+        ),
         child: row,
       );
     }

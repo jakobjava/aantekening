@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../look/appearance.dart';
+import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/tones.dart';
 import 'flashcards_view.dart';
 import 'quiz_view.dart';
@@ -78,11 +80,20 @@ class _OwnKnowledgeKey extends StatelessWidget {
     final tones = context.tones;
     return Row(
       children: <Widget>[
-        Container(width: 2, height: 12, color: Origins.colourOf(null, tones)),
+        Container(
+          width: 3,
+          height: 12,
+          decoration: BoxDecoration(
+            color: Origins.colourOf(null, tones),
+            borderRadius: const BorderRadius.all(Radius.circular(2)),
+          ),
+        ),
         const SizedBox(width: 7),
-        Text(
-          'From the model’s own knowledge, not from your notes',
-          style: TextStyle(fontSize: 11.5, color: tones.muted),
+        Flexible(
+          child: Text(
+            'From the model’s own knowledge, not from your notes',
+            style: TextStyle(fontSize: 11.5, color: tones.muted),
+          ),
         ),
       ],
     );
@@ -208,12 +219,10 @@ class _Blocks {
           ),
         );
       case 'blockquote':
-        return Container(
+        return Callout(
+          colour: tones.strongLine,
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.only(left: 12),
-          decoration: BoxDecoration(
-            border: Border(left: BorderSide(color: tones.strongLine, width: 2)),
-          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: blocks(children),
@@ -286,14 +295,10 @@ class _Blocks {
     return Tooltip(
       message: 'From the model’s own knowledge, not from your notes',
       waitDuration: const Duration(milliseconds: 600),
-      child: Container(
+      child: Callout(
+        colour: Origins.colourOf(null, tones),
         margin: const EdgeInsets.only(bottom: 2),
         padding: const EdgeInsets.only(left: 10),
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(color: Origins.colourOf(null, tones), width: 2),
-          ),
-        ),
         child: child,
       ),
     );
@@ -362,7 +367,7 @@ class _Blocks {
             style: style.copyWith(
               fontFamily: InterfaceFont.mono.family,
               fontSize: (style.fontSize ?? 14) * 0.92,
-              backgroundColor: tones.hover,
+              backgroundColor: tones.lift,
             ),
           ),
         ];
@@ -465,7 +470,10 @@ class _Blocks {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(10),
-      color: tones.hover,
+      decoration: BoxDecoration(
+        color: tones.lift,
+        borderRadius: Corners.controlRadius,
+      ),
       child: Text(
         body.replaceAll(AiAnswer.marker, ''),
         style: TextStyle(fontFamily: InterfaceFont.mono.family, fontSize: 13),
@@ -488,7 +496,7 @@ class _Blocks {
           children: <TableRow>[
             for (final (i, row) in rows.indexed)
               TableRow(
-                decoration: i == 0 ? BoxDecoration(color: tones.hover) : null,
+                decoration: i == 0 ? BoxDecoration(color: tones.lift) : null,
                 children: <Widget>[
                   for (final cell in row.children!.whereType<md.Element>())
                     Padding(

@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
@@ -15,21 +16,21 @@ import '../commands/shortcuts.dart';
 import '../editor/page_editor.dart';
 import '../files/notes_keeper.dart';
 import '../look/controls.dart';
+import '../look/tones.dart';
 import '../preferences.dart';
 import '../providers.dart';
+import '../search/search_line.dart';
 import 'recent_pages.dart';
-import 'sidebar.dart';
-import 'tab_strip.dart';
+import 'status_line.dart';
 import 'tabs.dart';
 import 'window_commands.dart';
 
-/// The ribbon across the top, and beneath it the tabs, and beneath those
-/// the sidebar and the page of the tab showing.
+/// The page of the tab showing, filling the window, with the status line
+/// floating over its top or its foot — and nothing else, until it is
+/// summoned: the menu, the picker, the search line.
 ///
-/// The ribbon belongs to the page editor, which spans the window so the
-/// ribbon can; the tabs, the sidebar and the page are laid out beneath it.
-/// There is one editor and one sidebar, which show whichever tab is showing:
-/// what each tab has open is kept by [tabsProvider].
+/// There is one editor, which shows whichever tab is showing: what each tab
+/// has open is kept by [tabsProvider].
 ///
 /// Every shortcut with Ctrl, Alt or Meta is caught here, wherever the
 /// keyboard is, and run as the command it is bound to; Alt and a digit
@@ -83,6 +84,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       if (pageId != null) ref.read(recentPagesProvider.notifier).visit(pageId);
     });
     final store = ref.watch(storeProvider);
+    final top = ref.watch(statusLinePlaceProvider) == StatusLinePlace.top;
 
     return NotesKeeper(
       child: CommandKeys(
@@ -94,17 +96,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               'The workspace could not be opened.',
               detail: '$error',
             ),
-            data: (_) => PageEditor(
-              pageId: ref.watch(selectedPageProvider),
-              aiScope: _aiScope(
-                ref.watch(tabsProvider.select((t) => t.current)),
-              ),
-              around: (context, page) => Column(
-                children: <Widget>[
-                  const TabStrip(),
-                  Expanded(child: Sidebar(page: page)),
-                ],
-              ),
+            data: (_) => Stack(
+              children: <Widget>[
+                Positioned.fill(child: _Panes(top: top)),
+                // Floating clear of the window's edges.
+                Positioned(
+                  left: StatusLine.margin,
+                  right: StatusLine.margin,
+                  top: top ? StatusLine.margin : null,
+                  bottom: top ? null : StatusLine.margin,
+                  child: _Chrome(top: top),
+                ),
+              ],
             ),
           ),
         ),
@@ -121,3 +124,141 @@ NoteLink? _aiScope(NoteTab tab) => tab.ai
         pageId: tab.pageId,
       )
     : null;
+
+/// What floats over the page along its top or its foot: the status line,
+/// with the search line beside it, on the page's side, while it is open.
+class _Chrome extends ConsumerWidget {
+  const _Chrome({required this.top});
+
+  final bool top;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final searching = ref.watch(searchLineProvider);
+    const search = Padding(padding: EdgeInsets.all(10), child: SearchLine());
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (searching && !top) search,
+        const StatusLine(),
+        if (searching && top) search,
+      ],
+    );
+  }
+}
+
+/// The page of the tab showing — or, the window split, it and the page of
+/// the tab beside it, side by side or one above the other, in the order of
+/// their tabs. The one without the keys is dimmed, and a click in it gives
+/// it them.
+class _Panes extends ConsumerWidget {
+  const _Panes({required this.top});
+
+  /// Whether the status line lies along the top, rather than the foot.
+  final bool top;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tabs = ref.watch(tabsProvider);
+    final under = top
+        ? const EdgeInsets.only(top: StatusLine.reach)
+        : const EdgeInsets.only(bottom: StatusLine.reach);
+    final beside = tabs.beside;
+    if (beside == null) {
+      return _Pane(slot: _Slot.first, index: tabs.active, obscured: under);
+    }
+    final first = math.min(tabs.active, beside);
+    final second = math.max(tabs.active, beside);
+    // Side by side, both lie under the status line; one above the other,
+    // only the one at its edge does.
+    final stacked = tabs.stacked;
+    EdgeInsets obscured(_Slot slot) => !stacked
+        ? under
+        : (slot == _Slot.first) == top
+        ? under
+        : EdgeInsets.zero;
+    return Flex(
+      direction: stacked ? Axis.vertical : Axis.horizontal,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Expanded(
+          child: _Pane(
+            slot: _Slot.first,
+            index: first,
+            obscured: obscured(_Slot.first),
+          ),
+        ),
+        if (stacked) const Divider() else const VerticalDivider(width: 1),
+        Expanded(
+          child: _Pane(
+            slot: _Slot.second,
+            index: second,
+            obscured: obscured(_Slot.second),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Where a pane is: the first, or the only one, and the second. Its editor
+/// stays with its place, so giving the keys to the other pane opens no
+/// page again.
+enum _Slot { first, second }
+
+class _Pane extends ConsumerWidget {
+  const _Pane({
+    required this.slot,
+    required this.index,
+    required this.obscured,
+  });
+
+  final _Slot slot;
+
+  /// The tab it shows.
+  final int index;
+  final EdgeInsets obscured;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tabs = ref.watch(tabsProvider);
+    final tab = tabs.tabs[index];
+    final active = index == tabs.active;
+    // A page is edited in one place at a time: beside itself, it is not
+    // opened a second time.
+    final twice =
+        !active && tab.pageId != null && tab.pageId == tabs.current.pageId;
+    final editor = twice
+        ? Padding(
+            padding: obscured,
+            child: const EmptyMessage(
+              'The same page is open beside this one',
+              detail: 'A page is written on in one place at a time.',
+            ),
+          )
+        : PageEditor(
+            key: ValueKey<_Slot>(slot),
+            pageId: tab.pageId,
+            aiScope: _aiScope(tab),
+            active: active,
+            obscured: obscured,
+          );
+    if (active) return editor;
+    return Listener(
+      // A click in it gives it the keys, and goes on to what was clicked.
+      onPointerDown: (_) => ref.read(tabsProvider.notifier).activate(index),
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: <Widget>[
+          editor,
+          Positioned.fill(
+            child: IgnorePointer(
+              // Faded towards the paper, which is white in either mode.
+              child: ColoredBox(color: Tones.paper.withValues(alpha: 0.4)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

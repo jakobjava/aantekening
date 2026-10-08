@@ -1,10 +1,11 @@
-/// The application's visual language: one colour and its text, straight
-/// edges, and at most one accent.
+/// The application's visual language: one colour and its text, at most one
+/// accent, soft corners, and glass over the page.
 library;
 
 import 'package:flutter/material.dart';
 
 import 'appearance.dart';
+import 'glass.dart';
 import 'motion.dart';
 import 'tones.dart';
 
@@ -12,10 +13,11 @@ import 'tones.dart';
 ///
 /// The interface is drawn in two colours, the base and the text, and the
 /// shades mixed between them ([Tones]); an accent, if there is one, marks
-/// what is picked, and nothing else has a colour of its own. Nothing is
-/// rounded and nothing casts a shadow: lines separate things, and what
-/// floats — a menu, a dialog — has an edge instead. Pressing something
-/// shows at once rather than rippling out.
+/// what is picked, and nothing else has a colour of its own. Corners are
+/// soft ([Corners]); what floats — a menu, a dialog — has a fine edge and
+/// casts a soft shadow. Pressing something shows rather than rippling
+/// out, and what changes colour does so as fast as the interface moves
+/// ([Motion]).
 abstract final class AppTheme {
   /// The light theme of the appearance the app starts with.
   static ThemeData light() => build(const Appearance(), Brightness.light);
@@ -23,23 +25,34 @@ abstract final class AppTheme {
   /// The dark theme of the appearance the app starts with.
   static ThemeData dark() => build(const Appearance(), Brightness.dark);
 
-  /// Nothing is rounded.
-  static const OutlinedBorder square = RoundedRectangleBorder();
+  /// What is pressed or typed in.
+  static const OutlinedBorder rounded = RoundedRectangleBorder(
+    borderRadius: Corners.controlRadius,
+  );
+
+  /// How deep what floats lies over the page, for its shadow.
+  static const double _floatingElevation = 10;
 
   static ThemeData build(Appearance appearance, Brightness brightness) {
     final tones = Tones.of(appearance, brightness);
+    final motion = Motion(appearance.motion);
+    final changing = motion.of(Motion.quick);
     final scheme = _scheme(tones, brightness);
     final text = _textTheme(appearance.font, tones);
     final edge = BorderSide(color: tones.strongLine);
-    final floating = RoundedRectangleBorder(side: edge);
+    final floating = RoundedRectangleBorder(
+      borderRadius: Corners.panelRadius,
+      side: BorderSide(color: tones.glassRim),
+    );
     WidgetStateProperty<Color?> overlay({Color? pressed}) =>
         WidgetStateProperty.resolveWith((states) {
+          // Clear, as what they lie on may be glass.
           if (states.contains(WidgetState.pressed)) {
-            return pressed ?? tones.pressed;
+            return pressed ?? tones.lift;
           }
           if (states.contains(WidgetState.hovered) ||
               states.contains(WidgetState.focused)) {
-            return tones.hover;
+            return tones.veil;
           }
           return null;
         });
@@ -48,8 +61,8 @@ abstract final class AppTheme {
     const buttonSize = Size(0, 30);
     // What every kind of button with words in it shares.
     final button = ButtonStyle(
-      animationDuration: Duration.zero,
-      shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
+      animationDuration: changing,
+      shape: const WidgetStatePropertyAll<OutlinedBorder>(rounded),
       padding: const WidgetStatePropertyAll<EdgeInsets>(buttonPadding),
       minimumSize: const WidgetStatePropertyAll<Size>(buttonSize),
       textStyle: WidgetStatePropertyAll<TextStyle?>(buttonText),
@@ -60,7 +73,7 @@ abstract final class AppTheme {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: scheme,
-      extensions: <ThemeExtension<Object?>>[tones],
+      extensions: <ThemeExtension<Object?>>[tones, motion],
       fontFamily: appearance.font.family,
       textTheme: text,
       visualDensity: VisualDensity.compact,
@@ -70,12 +83,12 @@ abstract final class AppTheme {
       canvasColor: tones.base,
       cardColor: tones.base,
       dividerColor: tones.line,
-      hoverColor: tones.hover,
-      focusColor: tones.hover,
-      highlightColor: tones.pressed,
+      hoverColor: tones.veil,
+      focusColor: tones.veil,
+      highlightColor: tones.lift,
       splashColor: Colors.transparent,
       disabledColor: tones.faint,
-      shadowColor: Colors.transparent,
+      shadowColor: tones.shadow,
       iconTheme: IconThemeData(color: tones.text, size: 16),
       textSelectionTheme: TextSelectionThemeData(
         cursorColor: tones.emphasis,
@@ -85,7 +98,7 @@ abstract final class AppTheme {
       dividerTheme: DividerThemeData(space: 1, thickness: 1, color: tones.line),
       listTileTheme: ListTileThemeData(
         dense: true,
-        shape: square,
+        shape: rounded,
         horizontalTitleGap: 8,
         minLeadingWidth: 0,
         selectedColor: tones.text,
@@ -105,7 +118,7 @@ abstract final class AppTheme {
         // Only the shape: the edge takes its colour from the field's state —
         // strong at rest, the emphasis with the keyboard in it — and a field
         // that asks for no edge has none.
-        border: const OutlineInputBorder(borderRadius: BorderRadius.zero),
+        border: const OutlineInputBorder(borderRadius: Corners.controlRadius),
       ),
       textButtonTheme: TextButtonThemeData(
         style: button.copyWith(
@@ -142,8 +155,8 @@ abstract final class AppTheme {
       ),
       iconButtonTheme: IconButtonThemeData(
         style: ButtonStyle(
-          animationDuration: Duration.zero,
-          shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
+          animationDuration: changing,
+          shape: const WidgetStatePropertyAll<OutlinedBorder>(rounded),
           padding: const WidgetStatePropertyAll<EdgeInsets>(EdgeInsets.zero),
           minimumSize: const WidgetStatePropertyAll<Size>(Size.square(26)),
           foregroundColor: _enabled(tones.text, tones.faint),
@@ -153,8 +166,8 @@ abstract final class AppTheme {
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
-          animationDuration: Duration.zero,
-          shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
+          animationDuration: changing,
+          shape: const WidgetStatePropertyAll<OutlinedBorder>(rounded),
           side: WidgetStatePropertyAll<BorderSide>(edge),
           textStyle: WidgetStatePropertyAll<TextStyle?>(buttonText),
           backgroundColor: WidgetStateProperty.resolveWith(
@@ -166,7 +179,7 @@ abstract final class AppTheme {
         ),
       ),
       checkboxTheme: CheckboxThemeData(
-        shape: square,
+        shape: const RoundedRectangleBorder(borderRadius: Corners.smallRadius),
         side: WidgetStateBorderSide.resolveWith(
           (states) => BorderSide(
             color: states.contains(WidgetState.disabled)
@@ -186,16 +199,10 @@ abstract final class AppTheme {
         visualDensity: VisualDensity.compact,
       ),
       scrollbarTheme: ScrollbarThemeData(
-        radius: Radius.zero,
+        radius: const Radius.circular(3),
         thickness: const WidgetStatePropertyAll<double>(6),
         // In the accent, where there is one, or the text's colour.
-        thumbColor: WidgetStateProperty.resolveWith(
-          (states) =>
-              states.contains(WidgetState.dragged) ||
-                  states.contains(WidgetState.hovered)
-              ? tones.emphasis
-              : tones.emphasis.withValues(alpha: 0.7),
-        ),
+        thumbColor: WidgetStatePropertyAll<Color>(tones.emphasis),
         crossAxisMargin: 0,
         mainAxisMargin: 0,
       ),
@@ -206,25 +213,38 @@ abstract final class AppTheme {
         linearMinHeight: 2,
         // ignore: deprecated_member_use
         year2023: true,
-        borderRadius: BorderRadius.zero,
+        borderRadius: const BorderRadius.all(Radius.circular(1)),
       ),
       tooltipTheme: TooltipThemeData(
         waitDuration: const Duration(milliseconds: 450),
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-        decoration: BoxDecoration(color: tones.text),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        // A little panel of its own, as the menus and dialogs are.
+        decoration: BoxDecoration(
+          color: tones.raised,
+          border: Border.all(color: tones.glassRim),
+          borderRadius: Corners.controlRadius,
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: tones.shadow,
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
         textStyle: TextStyle(
           fontFamily: appearance.font.family,
           fontSize: 12,
           height: 1.35,
-          color: tones.base,
+          color: tones.text,
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(
-        color: tones.base,
+        color: tones.raised,
         surfaceTintColor: Colors.transparent,
-        elevation: 0,
+        elevation: _floatingElevation,
+        shadowColor: tones.shadow,
         shape: floating,
-        menuPadding: const EdgeInsets.symmetric(vertical: 4),
+        menuPadding: const EdgeInsets.all(4),
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => text.bodyMedium?.copyWith(
             color: states.contains(WidgetState.disabled)
@@ -237,8 +257,8 @@ abstract final class AppTheme {
       menuBarTheme: MenuBarThemeData(style: _menuStyle(tones, floating)),
       menuButtonTheme: MenuButtonThemeData(
         style: ButtonStyle(
-          animationDuration: Duration.zero,
-          shape: const WidgetStatePropertyAll<OutlinedBorder>(square),
+          animationDuration: changing,
+          shape: const WidgetStatePropertyAll<OutlinedBorder>(rounded),
           minimumSize: const WidgetStatePropertyAll<Size>(Size(0, 30)),
           padding: const WidgetStatePropertyAll<EdgeInsets>(
             EdgeInsets.symmetric(horizontal: 12),
@@ -255,24 +275,23 @@ abstract final class AppTheme {
         textStyle: text.bodyMedium,
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: tones.base,
+        backgroundColor: tones.raised,
         surfaceTintColor: Colors.transparent,
-        elevation: 0,
+        elevation: _floatingElevation,
+        shadowColor: tones.shadow,
         shape: floating,
         insetPadding: const EdgeInsets.all(24),
         titleTextStyle: text.titleMedium,
         contentTextStyle: text.bodyMedium,
         actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        barrierColor: tones.text.withValues(
-          alpha: brightness == Brightness.dark ? 0.12 : 0.18,
-        ),
+        barrierColor: tones.scrim,
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: tones.text,
-        contentTextStyle: text.bodyMedium?.copyWith(color: tones.base),
-        actionTextColor: tones.base,
-        shape: square,
-        elevation: 0,
+        backgroundColor: tones.raised,
+        contentTextStyle: text.bodyMedium?.copyWith(color: tones.text),
+        actionTextColor: tones.emphasis,
+        shape: floating,
+        elevation: _floatingElevation,
         behavior: SnackBarBehavior.floating,
         width: 480,
       ),
@@ -281,31 +300,37 @@ abstract final class AppTheme {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(side: BorderSide(color: tones.line)),
+        shape: RoundedRectangleBorder(
+          borderRadius: Corners.panelRadius,
+          side: BorderSide(color: tones.line),
+        ),
       ),
       chipTheme: ChipThemeData(
-        shape: RoundedRectangleBorder(side: BorderSide(color: tones.line)),
+        shape: RoundedRectangleBorder(
+          borderRadius: Corners.controlRadius,
+          side: BorderSide(color: tones.line),
+        ),
         backgroundColor: tones.base,
         selectedColor: tones.selection,
         labelStyle: text.labelMedium,
         side: BorderSide(color: tones.line),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: tones.base,
+        backgroundColor: tones.raised,
         surfaceTintColor: Colors.transparent,
-        elevation: 0,
+        elevation: _floatingElevation,
+        shadowColor: tones.shadow,
         shape: floating,
       ),
       drawerTheme: DrawerThemeData(
-        backgroundColor: tones.base,
-        elevation: 0,
-        shape: square,
+        backgroundColor: tones.raised,
+        elevation: _floatingElevation,
+        shadowColor: tones.shadow,
       ),
-      // Nothing in the interface moves: pages replace each other at once.
       pageTransitionsTheme: PageTransitionsTheme(
         builders: <TargetPlatform, PageTransitionsBuilder>{
           for (final platform in TargetPlatform.values)
-            platform: const PlainPageTransitions(),
+            platform: const FadingPageTransitions(),
         },
       ),
     );
@@ -313,15 +338,14 @@ abstract final class AppTheme {
 
   static MenuStyle _menuStyle(Tones tones, OutlinedBorder floating) =>
       MenuStyle(
-        backgroundColor: WidgetStatePropertyAll<Color>(tones.base),
+        backgroundColor: WidgetStatePropertyAll<Color>(tones.raised),
         surfaceTintColor: const WidgetStatePropertyAll<Color>(
           Colors.transparent,
         ),
-        elevation: const WidgetStatePropertyAll<double>(0),
+        elevation: const WidgetStatePropertyAll<double>(_floatingElevation),
+        shadowColor: WidgetStatePropertyAll<Color>(tones.shadow),
         shape: WidgetStatePropertyAll<OutlinedBorder>(floating),
-        padding: const WidgetStatePropertyAll<EdgeInsets>(
-          EdgeInsets.symmetric(vertical: 4),
-        ),
+        padding: const WidgetStatePropertyAll<EdgeInsets>(EdgeInsets.all(4)),
       );
 
   /// [enabled], or [disabled] while the control cannot be used.
@@ -364,7 +388,7 @@ abstract final class AppTheme {
     surfaceTint: Colors.transparent,
     outline: tones.strongLine,
     outlineVariant: tones.line,
-    shadow: Colors.transparent,
+    shadow: tones.shadow,
     scrim: tones.text.withValues(alpha: 0.2),
     inverseSurface: tones.text,
     onInverseSurface: tones.base,

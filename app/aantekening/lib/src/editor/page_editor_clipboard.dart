@@ -154,21 +154,13 @@ extension _Clipboard on _PageEditorState {
     }
   }
 
-  /// The menu a right-click on the page opens, at [page], [global] on
-  /// screen: the Home tab's text formatting, cutting, copying and pasting,
-  /// editing a TikZ picture's source, setting a picture, PDF page or TikZ
-  /// picture as the background or taking it out, and deleting.
-  ///
-  /// What was right-clicked is picked first, so the menu acts on it: a box
-  /// by its band, too, as a box. Things picked together stay picked, and
-  /// the menu acts on all of them.
-  Future<void> _onContextMenu(Offset page, Offset global) async {
+  /// Picks what is right-clicked — or nothing, on the bare paper — and
+  /// opens the menu for what is picked or, on the paper, the picture set
+  /// as the background there.
+  void _onContextMenu(Offset page, Offset global) {
+    _menuPoint = page;
     final hit = _controller.hitTest(page);
-    final grouped = _controller.pressesGroup(page, hit);
-    final background = hit == null && !grouped
-        ? _controller.backgroundAt(page)
-        : null;
-    if (grouped) {
+    if (_controller.pressesGroup(page, hit)) {
       // Nothing being typed in is picked along with other things.
     } else if (hit == null) {
       _stopEditing();
@@ -178,75 +170,6 @@ extension _Clipboard on _PageEditorState {
       _stopEditing();
       _controller.select(hit.id);
     }
-    final selected = _controller.selectedElements;
-    final picture = selected.length == 1 && selected.single.asEmbed != null
-        ? selected.single
-        : null;
-    final canPaste = await NoteClipboard.read() != null;
-    if (!mounted) return;
-    final some = selected.isNotEmpty;
-    await showCommandMenu(
-      context,
-      global,
-      header: _menuToolbar,
-      <List<MenuCommand>>[
-        <MenuCommand>[
-          MenuCommand(
-            'Cut',
-            some ? () => unawaited(_copySelection(cut: true)) : null,
-            shortcut: EditorKey.cut.keys,
-            icon: AppIcon.cut,
-          ),
-          MenuCommand(
-            'Copy',
-            some ? () => unawaited(_copySelection()) : null,
-            shortcut: EditorKey.copy.keys,
-            icon: AppIcon.copy,
-          ),
-          MenuCommand(
-            'Paste',
-            canPaste ? () => unawaited(_paste(at: page)) : null,
-            shortcut: EditorKey.paste.keys,
-            icon: AppIcon.paste,
-          ),
-          MenuCommand(
-            'Paste text only',
-            canPaste ? () => unawaited(_paste(at: page, textOnly: true)) : null,
-            shortcut: EditorKey.pasteText.keys,
-            icon: AppIcon.paste,
-          ),
-        ],
-        <MenuCommand>[
-          if (picture is TikzElement)
-            MenuCommand(
-              'Edit TikZ source',
-              () => unawaited(_editTikz(picture.id)),
-              icon: AppIcon.latex,
-            ),
-          if (picture != null)
-            MenuCommand(
-              'Set picture as background',
-              () => _controller.setBackground(picture.id, background: true),
-              icon: AppIcon.picture,
-            ),
-          if (background != null)
-            MenuCommand(
-              'Set picture as background',
-              () => _controller.setBackground(background.id, background: false),
-              checked: true,
-              icon: AppIcon.picture,
-            ),
-        ],
-        <MenuCommand>[
-          if (some)
-            MenuCommand(
-              'Delete',
-              _deleteSelection,
-              shortcut: EditorKey.deleteSelection.keys,
-              icon: AppIcon.bin,
-            ),
-        ],
-      ],
-    );
+    _openMenu(clicked: true);
   }
 }

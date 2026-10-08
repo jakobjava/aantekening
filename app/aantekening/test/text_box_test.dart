@@ -1,17 +1,16 @@
 import 'dart:math' as math;
 
 import 'package:aantekening/src/editor/media_views.dart';
-import 'package:aantekening/src/editor/ribbon/ribbon.dart';
 import 'package:aantekening/src/editor/text/block_paragraph.dart';
 import 'package:aantekening/src/editor/text/block_widgets.dart';
 import 'package:aantekening/src/editor/text/cheat_sheet.dart';
 import 'package:aantekening/src/editor/text/formula_overlay.dart';
 import 'package:aantekening/src/editor/text/formula_window.dart';
-import 'package:aantekening/src/editor/text/math_syntax.dart';
 import 'package:aantekening/src/editor/text/shrink_to_width.dart';
 import 'package:aantekening/src/editor/text/table_view.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/editor/text/text_styles.dart';
+import 'package:aantekening/src/modes/key_guide.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
@@ -67,51 +66,72 @@ void main() {
     expect(textOf(tester), 'Hello world');
   });
 
-  testWidgets('pressing the paper takes the band away with the rest of '
-      'the box\'s marks, before the press ends', (tester) async {
+  testWidgets('pressing the paper takes the box\'s frame away with the '
+      'rest of its marks, before the press ends', (tester) async {
     await openEditor(tester, store, pageId);
     await startTextBox(tester);
     await type(tester, 'Hello');
     await tester.pumpAndSettle();
-    bool bandShows() => tester.widget<GrabBand>(find.byType(GrabBand)).visible;
-    expect(bandShows(), isTrue);
+    expect(selectedOnCanvas(tester), hasLength(1));
 
     final press = await tester.startGesture(
       const Offset(900, 600),
       kind: PointerDeviceKind.mouse,
     );
     await tester.pump();
-    expect(bandShows(), isFalse);
+    expect(selectedOnCanvas(tester), isEmpty);
     await press.up();
     await tester.pumpAndSettle();
   });
 
-  testWidgets('a box shows its band to the pointer only while it can be '
-      'moved by it', (tester) async {
+  testWidgets('a box shows nothing under the pointer; clicked, it is framed '
+      'as a picture is, with handles for its width alone', (tester) async {
     await openEditor(tester, store, pageId);
     await startTextBox(tester);
-    await type(tester, 'Hello');
+    await type(tester, 'hover');
     await press(tester, LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    bool bandShows() => tester.widget<GrabBand>(find.byType(GrabBand)).visible;
-    expect(bandShows(), isFalse);
+    Iterable<Border> outlines() => tester
+        .widgetList<DecoratedBox>(
+          find.descendant(
+            of: find.byType(TextBoxEditor),
+            matching: find.byType(DecoratedBox),
+          ),
+        )
+        .map((box) => box.decoration)
+        .whereType<BoxDecoration>()
+        .map((decoration) => decoration.border)
+        .whereType<Border>();
 
     // The mouse that started the box is still over the window.
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    Future<void> hoverOverBox() async {
-      await mouse.moveTo(const Offset(900, 600));
-      await tester.pump();
-      await mouse.moveTo(tester.getCenter(find.byType(TextBoxEditor)));
-      await tester.pump();
-    }
+    await mouse.moveTo(const Offset(900, 600));
+    await tester.pump();
+    await mouse.moveTo(tester.getCenter(find.byType(TextBoxEditor)));
+    await tester.pumpAndSettle();
+    expect(outlines(), isEmpty);
+    expect(selectedOnCanvas(tester), isEmpty);
 
-    await press(tester, LogicalKeyboardKey.keyP);
-    await hoverOverBox();
-    expect(bandShows(), isFalse, reason: 'a pen writes over it');
-
-    await press(tester, LogicalKeyboardKey.keyV);
-    await hoverOverBox();
-    expect(bandShows(), isTrue);
+    await tester.tapAt(
+      tester.getCenter(find.byType(TextBoxEditor)),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(textBox(tester).isEditing, isTrue);
+    final framed = selectedOnCanvas(tester);
+    expect(framed.single.id, textBox(tester).element.id);
+    final view = tester
+        .widget<InfiniteCanvas>(find.byType(InfiniteCanvas))
+        .controller
+        .viewport;
+    expect(
+      SelectionHandles.positionsFor(framed, view).keys,
+      unorderedEquals(<SelectionHandle>[
+        SelectionHandle.left,
+        SelectionHandle.right,
+        SelectionHandle.rotate,
+      ]),
+    );
   });
 
   testWidgets('letters that are tool shortcuts are typed, not obeyed', (
@@ -120,7 +140,7 @@ void main() {
     await openEditor(tester, store, pageId);
     await startTextBox(tester);
 
-    // P is the pen, E the eraser, H the hand, V and T the select tool.
+    // In normal mode d draws, v selects, p pastes and e is nothing.
     await type(tester, 'the pen');
     expect(textOf(tester), 'the pen');
     expect(textBox(tester).isEditing, isTrue, reason: 'no tool switched');
@@ -301,14 +321,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(typedLine(tester), latex);
 
-      // The ribbon's switch does the same.
-      await tester.tap(
-        find.descendant(
-          of: find.byType(MathSyntaxToggle),
-          matching: find.text('Simple'),
-        ),
-      );
-      await tester.pumpAndSettle();
+      // The menu's switch does the same.
+      await press(tester, LogicalKeyboardKey.space, control: true);
+      await typeKeys(tester, 'ml');
       expect(typedLine(tester), 'sum_(i = 1)^n i^2');
       expect(inFormula(tester), isTrue);
       expect(
@@ -323,10 +338,8 @@ void main() {
     ) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
-      await tester.tap(find.text('Math'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Cheat sheet'));
-      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.space, control: true);
+      await typeKeys(tester, 'mc');
       await press(tester, LogicalKeyboardKey.equal, alt: true);
       await tester.pumpAndSettle();
       await type(tester, 'x = ');
@@ -541,19 +554,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(inFormula(tester), isTrue);
       expect(overlayOf(tester).source.text, picture, reason: 'Simple has none');
-      final toggle = tester.widget<MathSyntaxToggle>(
-        find.byType(MathSyntaxToggle),
-      );
-      expect(toggle.latexOnly, isTrue);
 
-      // Choosing Simple leaves it as it is.
-      await tester.tap(
-        find.descendant(
-          of: find.byType(MathSyntaxToggle),
-          matching: find.text('Simple'),
+      // Simple is not offered, and its key leaves it as it is.
+      await press(tester, LogicalKeyboardKey.space, control: true);
+      await typeKeys(tester, 'm');
+      final simple = tester.widget<KeyGuideRow>(
+        find.ancestor(
+          of: find.textContaining('switch to Simple'),
+          matching: find.byType(KeyGuideRow),
         ),
       );
-      await tester.pumpAndSettle();
+      expect(simple.action.enabled, isFalse);
+      await typeKeys(tester, 'l');
       expect(overlayOf(tester).source.text, picture);
       expect(inFormula(tester), isTrue);
     });
@@ -1179,7 +1191,7 @@ void main() {
 
       testWidgets('takes the colour chosen, and changes it', (tester) async {
         await typeAndSelect(tester);
-        final text = tester.widget<Ribbon>(find.byType(Ribbon)).commands.text;
+        final text = pageText(tester);
         const green = 0xFF34A853;
         text.setHighlight(RichTextStyles.highlightFor(green));
         await tester.pumpAndSettle();
@@ -1315,15 +1327,14 @@ void main() {
       expect(seen, hasLength(1), reason: 'it never moved');
     });
 
-    testWidgets('the ribbon finishes the formula', (tester) async {
+    testWidgets('the page finishes the formula', (tester) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
       await press(tester, LogicalKeyboardKey.equal, alt: true);
       await tester.pumpAndSettle();
       await type(tester, 'e^x');
 
-      final ribbon = tester.widget<Ribbon>(find.byType(Ribbon));
-      ribbon.commands.text.finishFormula();
+      pageText(tester).finishFormula();
       await tester.pumpAndSettle();
       expect(inFormula(tester), isFalse);
       expect(formulaLayerOf(tester).formulaBox, isNull);
@@ -1351,18 +1362,17 @@ void main() {
       );
     });
 
-    testWidgets('the Math tab puts structures in; Tab moves between places', (
+    testWidgets('the menu puts structures in; Tab moves between places', (
       tester,
     ) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
       await press(tester, LogicalKeyboardKey.equal, alt: true);
       await tester.pumpAndSettle();
-      expect(find.text('Structures'), findsOneWidget, reason: 'Math tab');
 
-      await tester.tap(find.byTooltip('Fraction').first);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Fraction').last);
+      await press(tester, LogicalKeyboardKey.space, control: true);
+      await typeKeys(tester, 'mf');
+      await tester.tap(find.byTooltip('Fraction'));
       await tester.pumpAndSettle();
       await type(tester, 'a');
       expect(typedLine(tester), '(a)/()');
@@ -1371,10 +1381,6 @@ void main() {
       await type(tester, 'b');
       expect(typedLine(tester), '(a)/(b)');
       expect(blocksOf(tester).single.runs.single.text, r'\frac{a}{b}');
-
-      await press(tester, LogicalKeyboardKey.enter);
-      await tester.pumpAndSettle();
-      expect(find.text('Font'), findsOneWidget, reason: 'back on Home');
     });
   });
 
@@ -1488,10 +1494,8 @@ void main() {
     await type(tester, 'Notes');
     await press(tester, LogicalKeyboardKey.enter);
 
-    await tester.tap(find.text('Insert'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('LaTeX'));
-    await tester.pumpAndSettle();
+    await press(tester, LogicalKeyboardKey.space, control: true);
+    await typeKeys(tester, 'il');
     await tester.enterText(
       find.descendant(
         of: find.byType(AlertDialog),
@@ -1524,10 +1528,8 @@ void main() {
   ) async {
     await openEditor(tester, store, pageId);
     await startTextBox(tester);
-    await tester.tap(find.text('Insert'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('LaTeX'));
-    await tester.pumpAndSettle();
+    await press(tester, LogicalKeyboardKey.space, control: true);
+    await typeKeys(tester, 'il');
     await tester.enterText(
       find.descendant(
         of: find.byType(AlertDialog),
@@ -1552,10 +1554,7 @@ void main() {
       r'\frac{a}{b}',
       reason: 'not (a)/(b)',
     );
-    expect(
-      tester.widget<MathSyntaxToggle>(find.byType(MathSyntaxToggle)).latexOnly,
-      isTrue,
-    );
+    expect(pageText(tester).state.latexOnly, isTrue);
     await press(tester, LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(
@@ -1685,59 +1684,29 @@ void main() {
       expect(after.left, lessThan(paragraphOf(tester).size.width));
     });
 
-    testWidgets('a box emptied of its text can still be moved', (tester) async {
-      final band = find.byWidgetPredicate(
-        (widget) =>
-            widget is DecoratedBox &&
-            widget.decoration is BoxDecoration &&
-            (widget.decoration as BoxDecoration).color ==
-                RichTextStyles.boxBandActive,
-      );
-      await openEditor(tester, store, pageId);
-      await startTextBox(tester);
-      expect(band, findsNothing, reason: 'a new box is only a caret');
-
-      await type(tester, 'abc');
-      await tester.pumpAndSettle();
-      expect(band, findsOneWidget);
-      for (var i = 0; i < 3; i++) {
-        await press(tester, LogicalKeyboardKey.backspace);
-      }
-      await tester.pumpAndSettle();
-
-      expect(textOf(tester), isEmpty);
-      expect(band, findsOneWidget);
-    });
-
-    testWidgets('a box under the pointer is outlined in light grey', (
+    testWidgets('a box emptied of its text can still be moved by its top', (
       tester,
     ) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
-      await type(tester, 'hover');
-      await press(tester, LogicalKeyboardKey.escape);
+      await type(tester, 'abc');
+      for (var i = 0; i < 3; i++) {
+        await press(tester, LogicalKeyboardKey.backspace);
+      }
       await tester.pumpAndSettle();
+      expect(textOf(tester), isEmpty);
 
-      // The mouse that clicked the page is still over it; it moves onto the
-      // box.
-      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await mouse.moveTo(tester.getCenter(find.byType(TextBoxEditor)));
+      final before = textBox(tester).element.frame;
+      final box = tester.getRect(find.byType(TextBoxEditor));
+      await tester.dragFrom(
+        Offset(box.center.dx, box.top + TextBoxEditor.grabBand / 2),
+        const Offset(60, 40),
+        kind: PointerDeviceKind.mouse,
+      );
       await tester.pumpAndSettle();
-
-      final outlines = tester
-          .widgetList<DecoratedBox>(
-            find.descendant(
-              of: find.byType(TextBoxEditor),
-              matching: find.byType(DecoratedBox),
-            ),
-          )
-          .map((box) => box.decoration)
-          .whereType<BoxDecoration>()
-          .map((decoration) => decoration.border)
-          .whereType<Border>()
-          .toList();
-      expect(outlines, hasLength(1));
-      expect(outlines.single.top.color, RichTextStyles.boxOutline);
+      final after = textBox(tester).element.frame;
+      expect(after.x, closeTo(before.x + 60, 1));
+      expect(after.y, closeTo(before.y + 40, 1));
     });
   });
 
@@ -1754,13 +1723,8 @@ void main() {
       (widget) => widget is TextBoxEditor && widget.element.id == id,
     );
 
-    bool bandShows(WidgetTester tester, String id) => tester
-        .widget<GrabBand>(
-          find.descendant(of: editorOf(id), matching: find.byType(GrabBand)),
-        )
-        .visible;
-
-    testWidgets('keeps its band in view however it is dragged', (tester) async {
+    testWidgets('is moved by its top however fast it is dragged, across '
+        'another, which is left alone', (tester) async {
       await store.pages.saveDocument(
         pageId,
         PageDocument(
@@ -1775,6 +1739,8 @@ void main() {
         ),
       );
       await openEditor(tester, store, pageId);
+      CanvasController canvas() =>
+          tester.widget<InfiniteCanvas>(find.byType(InfiniteCanvas)).controller;
 
       final topLeft = tester.getTopLeft(editorOf('below'));
       final mouse = await tester.startGesture(
@@ -1783,28 +1749,22 @@ void main() {
       );
       await tester.pump();
       // Up, faster than the box can follow within a frame, and across the
-      // other box's band.
+      // other box's top.
       for (var i = 0; i < 12; i++) {
         await mouse.moveBy(const Offset(3, -20));
-        expect(bandShows(tester, 'below'), isTrue, reason: 'step $i');
         await tester.pump();
-        expect(bandShows(tester, 'below'), isTrue, reason: 'step $i');
-        expect(
-          bandShows(tester, 'above'),
-          isFalse,
-          reason: 'a box passed over while dragging is not pointed at',
-        );
       }
       await mouse.up();
       await tester.pumpAndSettle();
-      expect(bandShows(tester, 'below'), isTrue);
+      expect(canvas().elementById('below')!.frame.y, closeTo(420 - 240, 2));
+      expect(canvas().elementById('above')!.frame.y, 220);
+      expect(selectedOnCanvas(tester).map((element) => element.id), <String>[
+        'below',
+      ]);
     });
   });
 
   group('formatting', () {
-    RibbonCommands bar(WidgetTester tester) =>
-        tester.widget<Ribbon>(find.byType(Ribbon)).commands;
-
     testWidgets('size, colour and highlight apply to what is typed next', (
       tester,
     ) async {
@@ -1812,7 +1772,7 @@ void main() {
       await startTextBox(tester);
       await type(tester, 'plain ');
 
-      bar(tester).text
+      pageText(tester)
         ..setFontSize(24)
         ..setTextColor(0xFFD93025)
         ..setHighlight(RichTextStyles.highlightFor(0xFFFFD60A));
@@ -1825,7 +1785,7 @@ void main() {
       expect(runs.last.marks.size, 24);
       expect(runs.last.marks.color, 0xFFD93025);
       expect(runs.last.marks.highlight! >>> 24, RichTextStyles.highlightAlpha);
-      expect(bar(tester).text.state.fontSize, 24);
+      expect(pageText(tester).state.fontSize, 24);
     });
 
     RenderBlockParagraph paragraph(WidgetTester tester) => tester
@@ -1857,7 +1817,7 @@ void main() {
     ) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
-      bar(tester).text.setFontSize(72);
+      pageText(tester).setFontSize(72);
       await tester.pump();
       await type(tester, 'Big');
       await tester.pumpAndSettle();
@@ -1877,7 +1837,7 @@ void main() {
       await tester.pumpAndSettle();
       final (before, letter) = caretAndLetter(tester);
 
-      bar(tester).text.setFontSize(36);
+      pageText(tester).setFontSize(36);
       await tester.pump();
       final (after, _) = caretAndLetter(tester);
 
@@ -1897,7 +1857,7 @@ void main() {
     ) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
-      bar(tester).text.setFontSize(20);
+      pageText(tester).setFontSize(20);
       await tester.pump();
       await type(tester, 'area ');
       await press(tester, LogicalKeyboardKey.equal, alt: true);
@@ -2103,14 +2063,12 @@ void main() {
       expect(find.byType(TextBoxEditor), findsNothing);
     });
 
-    testWidgets('pressing the paper keeps the ribbon until the click is done', (
-      tester,
-    ) async {
+    testWidgets('pressing the paper keeps the text formattable until the '
+        'click is done', (tester) async {
       await openEditor(tester, store, pageId);
       await startTextBox(tester);
       await type(tester, 'first');
-      bool formattable() =>
-          tester.widget<Ribbon>(find.byType(Ribbon)).commands.text.hasTarget;
+      bool formattable() => pageText(tester).hasTarget;
       expect(formattable(), isTrue);
 
       final mouse = await tester.startGesture(
@@ -2232,8 +2190,23 @@ void main() {
     group('a caret placed on the paper', () {
       CanvasController canvasOf(WidgetTester tester) =>
           tester.widget<InfiniteCanvas>(find.byType(InfiniteCanvas)).controller;
-      bool bandShows(WidgetTester tester) =>
-          tester.widget<GrabBand>(find.byType(GrabBand)).visible;
+      /// Whether the box shows as a box, framed — by the page, as anything
+      /// picked is, or by itself while a formula is begun at a caret — not
+      /// yet only a caret.
+      bool framed(WidgetTester tester) =>
+          selectedOnCanvas(tester).isNotEmpty ||
+          tester
+              .widgetList<DecoratedBox>(
+                find.descendant(
+                  of: find.byType(TextBoxEditor),
+                  matching: find.byType(DecoratedBox),
+                ),
+              )
+              .any(
+                (box) =>
+                    box.decoration is BoxDecoration &&
+                    (box.decoration as BoxDecoration).border != null,
+              );
 
       testWidgets('beside a box, lets a click through to the box', (
         tester,
@@ -2278,13 +2251,13 @@ void main() {
         await press(tester, LogicalKeyboardKey.keyM, control: true);
         await tester.pumpAndSettle();
         expect(inFormula(tester), isTrue);
-        expect(bandShows(tester), isTrue, reason: 'a box to type it in');
+        expect(framed(tester), isTrue, reason: 'a box to type it in');
         expect(canvas.selection, isEmpty, reason: 'nothing written yet');
 
         await press(tester, LogicalKeyboardKey.keyM, control: true);
         await tester.pumpAndSettle();
         expect(inFormula(tester), isFalse);
-        expect(bandShows(tester), isFalse, reason: 'still only a caret');
+        expect(framed(tester), isFalse, reason: 'still only a caret');
         expect(canvas.selection, isEmpty);
 
         await press(tester, LogicalKeyboardKey.escape);
@@ -2310,7 +2283,7 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(canvasOf(tester).document.elements, hasLength(1));
         expect(textBox(tester).isEditing, isTrue);
-        expect(bandShows(tester), isFalse);
+        expect(framed(tester), isFalse);
       });
 
       testWidgets('becomes a box with the first thing written, which undo '
@@ -2320,7 +2293,7 @@ void main() {
         await press(tester, LogicalKeyboardKey.keyM, control: true);
         await type(tester, 'x');
         await tester.pumpAndSettle();
-        expect(bandShows(tester), isTrue, reason: 'written in: a box');
+        expect(framed(tester), isTrue, reason: 'written in: a box');
         await press(tester, LogicalKeyboardKey.escape);
         await press(tester, LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();

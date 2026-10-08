@@ -1,6 +1,7 @@
 # 11. The window: a ribbon across it, a sidebar of panels, a page with a corner
 
-**Status:** accepted
+**Status:** accepted — its ribbon and sidebar superseded by
+[ADR 40](0040-modes-a-menu-and-glass.md)
 
 ## Context
 

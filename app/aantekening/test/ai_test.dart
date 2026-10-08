@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:aantekening/src/ai/ai_session.dart';
 import 'package:aantekening/src/ai/ai_state.dart';
 import 'package:aantekening/src/ai/ai_view.dart';
 import 'package:aantekening/src/ai/flashcards_view.dart';
@@ -8,11 +9,14 @@ import 'package:aantekening/src/ai/sources_view.dart';
 import 'package:aantekening/src/ai/study_pages.dart';
 import 'package:aantekening/src/ai/summary_sheet.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
+import 'package:aantekening/src/look/chooser.dart';
 import 'package:aantekening/src/look/theme.dart';
+import 'package:aantekening/src/modes/editor_mode.dart';
+import 'package:aantekening/src/modes/key_guide.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
 import 'package:aantekening/src/shell/home_shell.dart';
-import 'package:aantekening/src/shell/library_pane.dart';
+import 'package:aantekening/src/shell/picker.dart';
 import 'package:aantekening/src/shell/tabs.dart';
 import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
@@ -23,6 +27,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'app_test.dart' show showPanes;
+import 'editor_harness.dart' show press, typeKeys;
 
 /// A model that answers from the first source it is given, citing it — and
 /// with flashcards when asked for them.
@@ -220,21 +227,89 @@ void main() {
 
     await pressControl(tester, LogicalKeyboardKey.keyJ);
     expect(find.byType(AiView), findsOneWidget);
-    expect(find.byType(InfiniteCanvas), findsNothing, reason: 'in its place');
+    expect(
+      find.byType(InfiniteCanvas),
+      findsOneWidget,
+      reason: 'the notes beside it',
+    );
     expect(container.read(tabsProvider).current.ai, isTrue);
     expect(find.byType(StudyOverview), findsOneWidget);
 
-    // The sidebar's button turns it back.
-    await tester.tap(find.byTooltip('Back to the notes  (Ctrl+J)'));
+    // The same keys turn it back.
+    await pressControl(tester, LogicalKeyboardKey.keyJ);
+    expect(find.byType(AiView), findsNothing);
+    expect(container.read(editorModeProvider), EditorMode.normal);
+
+    // A click on the notes beside it goes back to them too.
+    await pressControl(tester, LogicalKeyboardKey.keyJ);
+    expect(find.byType(AiView), findsOneWidget);
+    final pane = tester.getRect(find.byType(AiView));
+    await tester.tapAt(Offset(pane.left - 40, pane.center.dy));
     await tester.pumpAndSettle();
-    expect(find.byType(InfiniteCanvas), findsOneWidget);
+    expect(find.byType(AiView), findsNothing);
+    expect(container.read(tabsProvider).current.ai, isFalse);
+  });
+
+  testWidgets('the AI has keys of its own: i asks, Esc leaves the question '
+      'and then the AI', (tester) async {
+    final container = await openShell(tester);
+    await pressControl(tester, LogicalKeyboardKey.keyJ);
+    expect(container.read(editorModeProvider), EditorMode.ai);
+
+    await typeKeys(tester, 'i');
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(AiView),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(field.focusNode!.hasFocus, isTrue);
+    expect(
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyO),
+      isFalse,
+      reason: 'left to be typed, not obeyed',
+    );
+
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(field.focusNode!.hasFocus, isFalse);
+    expect(find.byType(AiView), findsOneWidget);
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(AiView), findsNothing);
+    expect(container.read(editorModeProvider), EditorMode.normal);
+  });
+
+  testWidgets('q asks a question ready to ask, and c finds a conversation '
+      'by its name', (tester) async {
+    final container = await openShell(tester);
+    await pressControl(tester, LogicalKeyboardKey.keyJ);
+
+    await typeKeys(tester, 'q');
+    final explain = find.widgetWithText(KeyGuideRow, AiAction.explain.label);
+    expect(explain, findsOneWidget);
+    await typeKeys(tester, tester.widget<KeyGuideRow>(explain).action.key);
+    await tester.pumpAndSettle();
+    final scope = NoteLink.page(page.id);
+    expect(
+      container.read(aiSessionProvider(scope)).turns.single.question,
+      AiAction.explain.promptFor('page'),
+    );
+
+    await typeKeys(tester, 'o');
+    expect(find.byType(StudyOverview), findsOneWidget);
+    await typeKeys(tester, 'c');
+    expect(find.byType(Chooser), findsOneWidget);
+    await press(tester, LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byType(StudyOverview), findsNothing);
+    expect(container.read(aiSessionProvider(scope)).turns, hasLength(1));
   });
 
   testWidgets('an answer comes from the notes, cites them, and says what '
       'is not from them', (tester) async {
     await openShell(tester);
-    await tester.tap(find.byTooltip('Ask AI about what is open  (Ctrl+J)'));
-    await tester.pumpAndSettle();
+    await pressControl(tester, LogicalKeyboardKey.keyJ);
 
     await ask(tester, 'What is force?');
 
@@ -448,9 +523,10 @@ void main() {
 
   testWidgets('a section has an AI of its own, from its menu', (tester) async {
     final container = await openShell(tester);
+    await showPanes(tester);
     await tester.tap(
       find.descendant(
-        of: find.byType(LibraryPane),
+        of: find.byType(Picker),
         matching: find.text('Mechanics'),
       ),
       buttons: kSecondaryMouseButton,
@@ -462,10 +538,7 @@ void main() {
 
     expect(container.read(tabsProvider).current.pageId, isNull);
     expect(
-      find.descendant(
-        of: find.byType(StudyOverview),
-        matching: find.text('Mechanics'),
-      ),
+      find.descendant(of: find.byType(AiView), matching: find.text('Mechanics')),
       findsOneWidget,
     );
     expect(

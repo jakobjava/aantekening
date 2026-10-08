@@ -1,5 +1,5 @@
-/// A notebook's, section's or page's AI: asking about it, and what was
-/// kept of the answers.
+/// A notebook's, section's or page's AI: a pane of glass over the notes,
+/// to ask about them in and to study them by.
 library;
 
 import 'dart:async';
@@ -12,11 +12,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../links/note_links.dart';
+import '../look/chooser.dart';
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
+import '../modes/editor_mode.dart';
+import '../modes/key_guide.dart';
+import '../modes/mode_keys.dart';
+import '../modes/vim_arrows.dart';
 import '../settings/settings_view.dart';
+import '../shell/tabs.dart';
 import 'ai_session.dart';
 import 'ai_state.dart';
 import 'answer_progress.dart';
@@ -24,59 +31,284 @@ import 'answer_view.dart';
 import 'money.dart';
 import 'study_pages.dart';
 
-/// The AI of [scope], in place of the page: what was kept about it and its
-/// conversations down the side, the conversation showing, and a line at the
-/// foot to ask in.
+/// The AI of [scope] floating over the notes, below what covers them
+/// along [obscured]: a pane of glass down their right, the notes beside it
+/// — or over all of them, where they are narrow. It settles in as it is
+/// called up.
+class AiPane extends StatefulWidget {
+  const AiPane({
+    required this.scope,
+    this.obscured = EdgeInsets.zero,
+    super.key,
+  });
+
+  final NoteLink scope;
+  final EdgeInsets obscured;
+
+  /// How wide the notes are at least for the AI to float beside them,
+  /// rather than over them all.
+  static const double besideFrom = 720;
+
+  /// How far it floats from the edges of the notes.
+  static const double margin = 8;
+
+  @override
+  State<AiPane> createState() => _AiPaneState();
+}
+
+class _AiPaneState extends State<AiPane> with SingleTickerProviderStateMixin {
+  late final AnimationController _shown = AnimationController(
+    vsync: this,
+    duration: Motion.settle,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _shown.duration = context.motion.of(Motion.settle);
+    if (_shown.value == 0 && !_shown.isAnimating) unawaited(_shown.forward());
+  }
+
+  @override
+  void dispose() {
+    _shown.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const margin = AiPane.margin;
+    final obscured = widget.obscured;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth >= AiPane.besideFrom
+            ? (constraints.maxWidth * 0.42).clamp(420.0, 580.0)
+            : constraints.maxWidth - 2 * margin;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            margin,
+            obscured.top + margin,
+            margin,
+            obscured.bottom + margin,
+          ),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: SizedBox(
+              width: width,
+              height: double.infinity,
+              child: FloatingIn(
+                animation: _shown,
+                alignment: Alignment.centerRight,
+                // A click on it is its own, not the notes' beneath.
+                child: Listener(
+                  behavior: HitTestBehavior.opaque,
+                  child: Glass(child: AiView(scope: widget.scope)),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// What the AI pane holds: whose AI it is and the way back to its
+/// overview along the top, what shows — the overview, a set to study, a
+/// conversation — and the line to ask in at the foot.
 ///
 /// Everything here is the AI's, drawn apart from the notes — never on the
 /// page, never in its text — and each answer shows where each part of it
 /// comes from.
-class AiView extends ConsumerWidget {
+///
+/// It has keys of its own, as a mode: o its overview, the digits each set
+/// to study, i the question to ask, n a new conversation, c the
+/// conversations and answers kept, q a question ready to ask, h j k l
+/// what it lists, Space or ? these keys, and Esc back to the notes.
+class AiView extends ConsumerStatefulWidget {
   const AiView({required this.scope, super.key});
 
   final NoteLink scope;
 
-  /// How wide the window is at least for the list down the side to show.
-  static const double railFrom = 760;
+  @override
+  ConsumerState<AiView> createState() => _AiViewState();
+}
+
+class _AiViewState extends ConsumerState<AiView> {
+  /// What has the keys while nothing is typed in: the AI mode's own.
+  final FocusNode _keys = FocusNode(debugLabel: 'AI');
+
+  /// The question asked.
+  final FocusNode _ask = FocusNode(debugLabel: 'Ask');
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tones = context.tones;
-    return Material(
-      color: tones.base,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final rail = constraints.maxWidth >= railFrom;
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (rail) ...<Widget>[
-                SizedBox(
-                  width: 236,
-                  child: ColoredBox(
-                    color: tones.pane,
-                    child: _Rail(scope: scope),
-                  ),
-                ),
-                const VerticalDivider(width: 1),
-              ],
-              Expanded(
-                child: _Main(scope: scope, backToOverview: !rail),
+  void initState() {
+    super.initState();
+    // Called up over the page, which had them, it takes the keys.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _keys.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _keys.dispose();
+    _ask.dispose();
+    super.dispose();
+  }
+
+  AiSession get _session => ref.read(aiSessionProvider(widget.scope).notifier);
+
+  /// The AI mode's keys.
+  KeyLayer _layer() {
+    final state = ref.read(aiSessionProvider(widget.scope));
+    final profiles = studyProfilesOf(ref, state);
+    return KeyLayer('AI mode', <KeyGroup>[
+      KeyGroup(<KeyAction>[
+        KeyAction('o', 'Overview', run: _session.newThread),
+        KeyAction(
+          'i',
+          'Ask',
+          run: _ask.requestFocus,
+          also: const <String>[ModeKey.enter],
+        ),
+        KeyAction(
+          'n',
+          'A new conversation',
+          run: () {
+            _session.newThread();
+            _ask.requestFocus();
+          },
+        ),
+        KeyAction(
+          'c',
+          'Conversations and kept answers…',
+          run: _chooseKept,
+          enabled: state.threads.isNotEmpty || state.savedAnswers.isNotEmpty,
+        ),
+        KeyAction(
+          'q',
+          'A question ready to ask',
+          layer: _questions,
+          enabled: state.pending == null,
+        ),
+      ]),
+      KeyGroup(title: 'Study', <KeyAction>[
+        for (final (index, profile) in profiles.take(9).indexed)
+          KeyAction(
+            '${index + 1}',
+            profile.name,
+            run: () => _session.openProfile(profile.id),
+          ),
+      ]),
+      KeyGroup(<KeyAction>[
+        KeyAction(
+          ModeKey.escape,
+          'Back to the notes',
+          run: ref.read(tabsProvider.notifier).toggleAi,
+        ),
+        KeyAction(
+          ModeKey.space,
+          'These keys',
+          layer: _layer,
+          also: const <String>['?'],
+        ),
+      ]),
+    ]);
+  }
+
+  /// The questions ready to ask about the scope, each a key away.
+  KeyLayer _questions() {
+    final keys = galleryKeys(AiAction.values.length);
+    return KeyLayer.of('Ask', <KeyAction>[
+      for (final (index, action) in AiAction.values.indexed)
+        KeyAction(keys[index], action.label, run: () => askReady(ref, widget.scope, action)),
+    ]);
+  }
+
+  /// The conversations and the answers kept, to choose one by name.
+  void _chooseKept() => unawaited(
+    showChooser(
+      context,
+      hintFor: (_) => 'A conversation or an answer kept',
+      choicesFor: (ref, typed) {
+        final state = ref.watch(aiSessionProvider(widget.scope));
+        final session = ref.read(aiSessionProvider(widget.scope).notifier);
+        final looked = typed.trim().toLowerCase();
+        bool wanted(String title) => title.toLowerCase().contains(looked);
+        return <Choice>[
+          for (final thread in state.threads)
+            if (wanted(threadTitle(thread)))
+              Choice(
+                title: threadTitle(thread),
+                detail: whenOf(thread.updatedAt),
+                hint: 'Conversation',
+                run: () => unawaited(session.openThread(thread.id)),
               ),
-            ],
-          );
-        },
+          for (final item in state.savedAnswers)
+            if (wanted(item.title))
+              Choice(
+                title: item.title,
+                detail: whenOf(item.createdAt),
+                hint: 'Kept answer',
+                run: () => session.openItem(item.id),
+              ),
+        ];
+      },
+    ),
+  );
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    final focus = FocusManager.instance.primaryFocus;
+    // What is typed is typed: Esc leaves the question for these keys.
+    if (focus?.context?.findAncestorWidgetOfExactType<EditableText>() != null) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        _keys.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    final pressed = ModeKey.of(event, HardwareKeyboard.instance);
+    final action = pressed == null ? null : _layer().actionFor(pressed);
+    if (action == null || !action.enabled) return KeyEventResult.ignored;
+    final layer = action.layer;
+    if (layer == null) {
+      action.run!();
+    } else {
+      openKeyGuide(context, pressed: pressed!, layer: layer, atOnce: true);
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tones = context.tones;
+    return Focus(
+      focusNode: _keys,
+      onKeyEvent: _onKey,
+      child: VimArrows(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _Head(scope: widget.scope),
+            Divider(height: 1, color: tones.glassRim),
+            Expanded(
+              child: _Main(scope: widget.scope, ask: _ask),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// -------------------------------------------------------------------- rail
+// -------------------------------------------------------------------- head
 
-/// The way round the scope's AI: its overview, each profile's set to
-/// study, its conversations, and the answers kept.
-class _Rail extends ConsumerWidget {
-  const _Rail({required this.scope});
+/// Whose AI it is, in the AI's colour, and the way back to its overview
+/// from anywhere else in it.
+class _Head extends ConsumerWidget {
+  const _Head({required this.scope});
 
   final NoteLink scope;
 
@@ -84,191 +316,74 @@ class _Rail extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tones = context.tones;
     final state = ref.watch(aiSessionProvider(scope));
-    final session = ref.read(aiSessionProvider(scope).notifier);
-
-    Widget heading(String label, {Widget? action}) => Padding(
-      padding: const EdgeInsets.fromLTRB(12, 16, 4, 2),
-      child: SizedBox(
-        height: 24,
-        child: Row(
-          children: <Widget>[
-            Expanded(child: SmallCaps(label)),
-            ?action,
-          ],
-        ),
-      ),
-    );
-
-    Widget entry({
-      required String title,
-      required bool selected,
-      required VoidCallback? onTap,
-      Widget? trailing,
-      List<Widget> menu = const <Widget>[],
-    }) => RowTile(
-      selected: selected,
-      onTap: onTap,
-      padding: EdgeInsets.fromLTRB(12, 6, menu.isEmpty ? 12 : 2, 6),
-      title: Text(title),
-      trailing: trailing == null && menu.isEmpty
-          ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
+    final info = ref.watch(aiScopeInfoProvider(scope)).value;
+    final colour = EditorMode.ai.colourOn(tones);
+    return SizedBox(
+      height: 42,
+      child: Row(
+        children: <Widget>[
+          const SizedBox(width: 14),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: colour,
+              borderRadius: const BorderRadius.all(Radius.circular(4)),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SmallCaps('AI', color: colour),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Row(
               children: <Widget>[
-                ?trailing,
-                if (menu.isNotEmpty)
-                  MenuAnchor(
-                    menuChildren: menu,
-                    builder: (context, controller, _) => MarkButton(
-                      MarkShape.more,
-                      tooltip: 'More',
-                      size: 22,
-                      onPressed: () => controller.isOpen
-                          ? controller.close()
-                          : controller.open(),
+                Flexible(
+                  child: Text(
+                    info?.title ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
+                ),
+                if (!state.atOverview) ...<Widget>[
+                  const SizedBox(width: 10),
+                  PillButton(
+                    'Overview',
+                    leading: Mark(
+                      MarkShape.arrowLeft,
+                      size: 9,
+                      color: tones.text,
+                    ),
+                    tooltip: 'Back to the overview  (o)',
+                    onPressed: ref
+                        .read(aiSessionProvider(scope).notifier)
+                        .newThread,
+                  ),
+                ],
               ],
             ),
-    );
-
-    Widget count(String text, {bool strong = false}) => Text(
-      text,
-      style: TextStyle(
-        fontSize: 12,
-        fontWeight: strong ? FontWeight.w700 : null,
-        color: strong ? tones.emphasis : tones.muted,
-        fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-      ),
-    );
-
-    return ListView(
-      padding: const EdgeInsets.only(top: 6, bottom: 16),
-      children: <Widget>[
-        entry(
-          title: 'Overview',
-          selected: state.atOverview,
-          onTap: session.newThread,
-        ),
-        heading('Study'),
-        for (final profile in studyProfilesOf(ref, state))
-          Builder(
-            builder: (context) {
-              final item = state.setOf(profile.id);
-              final set = item == null ? null : StudySet.fromJson(item.body);
-              final due = cardsToStudy(ref, item);
-              return entry(
-                title: profile.name,
-                selected:
-                    state.shownProfile == profile.id ||
-                    (item != null && state.itemId == item.id),
-                onTap: () => session.openProfile(profile.id),
-                trailing: state.making.containsKey(profile.id)
-                    ? const Busy()
-                    : due > 0
-                    ? count('$due', strong: true)
-                    : switch (set) {
-                        null => count('—'),
-                        StudySummary() || StudyText() => Mark(
-                          MarkShape.check,
-                          color: tones.muted,
-                        ),
-                        _ => count('${set.size}'),
-                      },
-              );
-            },
           ),
-        heading(
-          'Conversations',
-          action: MarkButton(
-            MarkShape.add,
-            tooltip: 'Ask something new',
-            size: 22,
-            onPressed: session.newThread,
-          ),
-        ),
-        if (state.threads.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
-            child: Text(
-              'Ask below — each question starts one.',
-              style: TextStyle(fontSize: 12, color: tones.muted),
-            ),
-          ),
-        for (final thread in state.threads)
-          entry(
-            title: thread.title.isEmpty ? 'Conversation' : thread.title,
-            selected: state.itemId == null && state.threadId == thread.id,
-            onTap: () => unawaited(session.openThread(thread.id)),
-            menu: <Widget>[
-              MenuItemButton(
-                onPressed: () => session.deleteThread(thread.id),
-                child: const Text('Delete'),
-              ),
-            ],
-          ),
-        if (state.savedAnswers.isNotEmpty) ...<Widget>[
-          heading('Kept answers'),
-          for (final item in state.savedAnswers)
-            entry(
-              title: item.title,
-              selected: state.itemId == item.id,
-              onTap: () => session.openItem(item.id),
-              menu: <Widget>[
-                MenuItemButton(
-                  onPressed: () async {
-                    final title = await _askName(context, item.title);
-                    if (title != null) await session.renameItem(item.id, title);
-                  },
-                  child: const Text('Rename'),
-                ),
-                MenuItemButton(
-                  onPressed: () => session.deleteItem(item.id),
-                  child: const Text('Delete'),
-                ),
-              ],
-            ),
+          const SizedBox(width: 10),
+          const KeyHint('?  keys   Esc  notes'),
+          const SizedBox(width: 14),
         ],
-      ],
+      ),
     );
   }
-}
-
-Future<String?> _askName(BuildContext context, String current) {
-  final controller = TextEditingController(text: current);
-  return showPlainDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Rename'),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-          child: const Text('Rename'),
-        ),
-      ],
-    ),
-  ).whenComplete(controller.dispose);
 }
 
 // -------------------------------------------------------------------- main
 
 class _Main extends ConsumerStatefulWidget {
-  const _Main({required this.scope, required this.backToOverview});
+  const _Main({required this.scope, required this.ask});
 
   final NoteLink scope;
 
-  /// Whether to offer a way back to the overview, where the list down the
-  /// side, which has one, is not shown.
-  final bool backToOverview;
+  /// The question asked.
+  final FocusNode ask;
 
   @override
   ConsumerState<_Main> createState() => _MainState();
@@ -349,55 +464,21 @@ class _MainState extends ConsumerState<_Main> {
       );
     }
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (widget.backToOverview && !state.atOverview)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
-              child: TextButton(
-                onPressed: ref
-                    .read(aiSessionProvider(scope).notifier)
-                    .newThread,
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Mark(MarkShape.arrowLeft),
-                    SizedBox(width: 8),
-                    Text('Overview'),
-                  ],
-                ),
-              ),
-            ),
-          ),
         Expanded(child: page),
-        if (state.error != null) _ErrorLine(message: state.error!),
-        _Composer(scope: scope),
+        if (state.error case final error?)
+          Container(
+            margin: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: context.tones.lift,
+              borderRadius: Corners.controlRadius,
+            ),
+            child: Text(error, style: TextStyle(color: context.tones.text)),
+          ),
+        _AskLine(scope: scope, focus: widget.ask),
       ],
-    );
-  }
-}
-
-class _ErrorLine extends StatelessWidget {
-  const _ErrorLine({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final tones = context.tones;
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 800),
-        width: double.infinity,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border(left: BorderSide(color: tones.text, width: 2)),
-          color: tones.hover,
-        ),
-        child: Text(message, style: TextStyle(color: tones.text)),
-      ),
     );
   }
 }
@@ -410,32 +491,29 @@ class _ChooseModel extends StatelessWidget {
   Widget build(BuildContext context) {
     final tones = context.tones;
     return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                'Ask about your notes',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Choose a model to answer: one running on this computer, where '
-                'your notes stay, or a provider you trust. Answers come from '
-                'your notes first and say where each part comes from.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: tones.muted, height: 1.45),
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () => showSettings(context, page: SettingsPage.ai),
-                child: const Text('Choose a model'),
-              ),
-            ],
-          ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              'Ask about your notes',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Choose a model to answer: one running on this computer, where '
+              'your notes stay, or a provider you trust. Answers come from '
+              'your notes first and say where each part comes from.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: tones.muted, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: () => showSettings(context, page: SettingsPage.ai),
+              child: const Text('Choose a model'),
+            ),
+          ],
         ),
       ),
     );
@@ -463,7 +541,7 @@ class _Conversation extends ConsumerWidget {
     final pending = state.pending;
     return ListView(
       controller: scroll,
-      padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
       children: <Widget>[
         for (final turn in state.turns)
           _Exchange(
@@ -492,7 +570,8 @@ class _Conversation extends ConsumerWidget {
   }
 }
 
-/// A question, and its answer beneath it.
+/// A question, set off to the right in the accent's tint, and its answer
+/// beneath it.
 class _Exchange extends StatelessWidget {
   const _Exchange({
     required this.question,
@@ -522,70 +601,74 @@ class _Exchange extends StatelessWidget {
   Widget build(BuildContext context) {
     final tones = context.tones;
     final done = byline != null;
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              // The question, set off to the right in a shade of its own.
-              Align(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Align(
+            alignment: Alignment.centerRight,
+            child: FractionallySizedBox(
+              widthFactor: 0.85,
+              alignment: Alignment.centerRight,
+              child: Align(
                 alignment: Alignment.centerRight,
                 child: Container(
-                  constraints: const BoxConstraints(maxWidth: 560),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
+                    horizontal: 12,
+                    vertical: 8,
                   ),
-                  color: tones.hover,
+                  decoration: BoxDecoration(
+                    color: tones.lift,
+                    // The corner it comes from, as a speech bubble's.
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(Corners.panel),
+                      topRight: Radius.circular(Corners.panel),
+                      bottomLeft: Radius.circular(Corners.panel),
+                      bottomRight: Radius.circular(Corners.small),
+                    ),
+                  ),
                   child: SelectableText(question),
                 ),
               ),
-              const SizedBox(height: 14),
-              SmallCaps('Answer', color: tones.emphasis),
-              const SizedBox(height: 6),
-              if (pending != null) AnswerProgress(pending: pending!),
-              if (!answer.isEmpty)
-                AnswerView(
-                  answer: answer,
-                  onOpen: onOpen,
-                  showSources: done,
-                  onAddCards: onAddCards,
-                ),
-              if (done)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          byline!,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11.5, color: tones.muted),
-                        ),
-                      ),
-                      SmallButton(
-                        'Copy',
-                        tooltip: 'Copy the answer',
-                        onPressed: () => Clipboard.setData(
-                          ClipboardData(text: answer.plainText),
-                        ),
-                      ),
-                      SmallButton(
-                        kept ? 'Kept' : 'Keep',
-                        tooltip: kept
-                            ? 'Kept, under Kept answers'
-                            : 'Keep the answer, under Kept answers',
-                        onPressed: kept ? null : onKeep,
-                      ),
-                    ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (pending != null) AnswerProgress(pending: pending!),
+          if (!answer.isEmpty)
+            AnswerView(
+              answer: answer,
+              onOpen: onOpen,
+              showSources: done,
+              onAddCards: onAddCards,
+            ),
+          if (done)
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    byline!,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: tones.faint),
                   ),
                 ),
-            ],
-          ),
-        ),
+                SmallButton(
+                  'Copy',
+                  tooltip: 'Copy the answer',
+                  onPressed: () => Clipboard.setData(
+                    ClipboardData(text: answer.plainText),
+                  ),
+                ),
+                SmallButton(
+                  kept ? 'Kept' : 'Keep',
+                  tooltip: kept
+                      ? 'Kept, with the answers kept'
+                      : 'Keep the answer, with the answers kept',
+                  onPressed: kept ? null : onKeep,
+                ),
+              ],
+            ),
+        ],
       ),
     );
   }
@@ -608,81 +691,88 @@ class _ItemReader extends ConsumerWidget {
     final tones = context.tones;
     final session = ref.read(aiSessionProvider(scope).notifier);
     final answer = AiAnswer.fromJson(item.body);
-    final made = DateTime.fromMillisecondsSinceEpoch(item.createdAt);
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
             children: <Widget>[
-              const SmallCaps('Kept answer'),
-              const SizedBox(height: 4),
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    SmallCaps('Kept answer', color: tones.emphasis),
+                    const SizedBox(height: 2),
+                    Text(
                       item.title,
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                  ),
-                  SmallButton(
-                    'Rename',
-                    onPressed: () async {
-                      final title = await _askName(context, item.title);
-                      if (title != null) {
-                        await session.renameItem(item.id, title);
-                      }
-                    },
-                  ),
-                  MarkButton(
-                    MarkShape.close,
-                    tooltip: 'Back to the overview',
-                    onPressed: session.newThread,
-                  ),
-                ],
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 2, bottom: 14),
-                child: Text(
-                  'Made by ${item.provider} · ${item.model}, '
-                  '${made.year}-${made.month.toString().padLeft(2, '0')}-${made.day.toString().padLeft(2, '0')}',
-                  style: TextStyle(fontSize: 12, color: tones.muted),
+                  ],
                 ),
               ),
-              AnswerView(answer: answer, onOpen: onOpen),
+              SmallButton(
+                'Rename',
+                onPressed: () async {
+                  final title = await askName(context, item.title);
+                  if (title != null) await session.renameItem(item.id, title);
+                },
+              ),
             ],
           ),
-        ),
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 10),
+            child: Text(
+              'Made by ${item.provider} · ${item.model}, '
+              '${whenOf(item.createdAt)}',
+              style: TextStyle(fontSize: 11.5, color: tones.muted),
+            ),
+          ),
+          AnswerView(answer: answer, onOpen: onOpen),
+        ],
       ),
     );
   }
 }
 
-/// The line to ask in: what is asked is about the scope, and may search the
-/// web where that is set up.
-class _Composer extends ConsumerStatefulWidget {
-  const _Composer({required this.scope});
+// --------------------------------------------------------------------- ask
+
+/// The line to ask in, at the foot of the pane as the search line is at
+/// the window's: what is asked is about the scope, and may search the web
+/// where that is set up.
+class _AskLine extends ConsumerStatefulWidget {
+  const _AskLine({required this.scope, required this.focus});
 
   final NoteLink scope;
 
+  /// The question's, which the AI mode's keys give the keyboard to.
+  final FocusNode focus;
+
   @override
-  ConsumerState<_Composer> createState() => _ComposerState();
+  ConsumerState<_AskLine> createState() => _AskLineState();
 }
 
-class _ComposerState extends ConsumerState<_Composer> {
+class _AskLineState extends ConsumerState<_AskLine> {
   final TextEditingController _text = TextEditingController();
-  // Its edge is marked while it has the keyboard.
-  late final FocusNode _focus = FocusNode()..addListener(() => setState(() {}));
   bool? _web;
+
+  FocusNode get _focus => widget.focus;
+
+  @override
+  void initState() {
+    super.initState();
+    // Its edge is marked while it has the keyboard.
+    _focus.addListener(_focused);
+  }
 
   @override
   void dispose() {
+    _focus.removeListener(_focused);
     _text.dispose();
-    _focus.dispose();
     super.dispose();
   }
+
+  void _focused() => setState(() {});
 
   bool _webAvailable(AiModel? model, AsyncValue<WebSearch?> search) =>
       model != null &&
@@ -717,100 +807,138 @@ class _ComposerState extends ConsumerState<_Composer> {
     final web =
         (_web ?? ref.watch(aiSettingsProvider.select((s) => s.searchWeb))) &&
         available;
+    final colour = EditorMode.ai.colourOn(tones);
+    const compact = ButtonStyle(
+      minimumSize: WidgetStatePropertyAll<Size>(Size(0, 28)),
+      padding: WidgetStatePropertyAll<EdgeInsets>(
+        EdgeInsets.symmetric(horizontal: 14),
+      ),
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 800),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: tones.base,
-              border: Border.all(
-                color: _focus.hasFocus ? tones.emphasis : tones.strongLine,
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 2, 6, 6),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: tones.base.withValues(alpha: 0.55),
+          border: Border.all(
+            color: _focus.hasFocus ? tones.emphasis : tones.glassRim,
+            width: _focus.hasFocus ? 1.5 : 1,
+          ),
+          borderRadius: Corners.panelRadius,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 2, 6, 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  CallbackShortcuts(
-                    bindings: <ShortcutActivator, VoidCallback>{
-                      const SingleActivator(LogicalKeyboardKey.enter): _send,
-                    },
-                    child: TextField(
-                      controller: _text,
-                      focusNode: _focus,
-                      minLines: 1,
-                      maxLines: 8,
-                      enabled: model != null,
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 10,
-                        ),
-                        hintText: model == null
-                            ? 'Choose a model to ask'
-                            : 'Ask about ${info == null ? 'this' : '“${info.title}”'}…',
+                  Padding(
+                    padding: const EdgeInsets.only(top: 9, right: 8),
+                    child: Text(
+                      '›',
+                      style: TextStyle(
+                        fontSize: 16,
+                        height: 1,
+                        fontWeight: FontWeight.w700,
+                        color: colour,
                       ),
                     ),
                   ),
-                  Row(
-                    children: <Widget>[
-                      Tooltip(
-                        message: available
-                            ? 'Let this answer search the web. What it finds '
-                                  'is cited as the web.'
-                            : 'Set up web search in the AI settings',
-                        child: _WebToggle(
-                          on: web,
-                          onChanged: available
-                              ? (on) => setState(() => _web = on)
-                              : null,
+                  Expanded(
+                    child: CallbackShortcuts(
+                      bindings: <ShortcutActivator, VoidCallback>{
+                        const SingleActivator(LogicalKeyboardKey.enter): _send,
+                      },
+                      child: TextField(
+                        controller: _text,
+                        focusNode: _focus,
+                        minLines: 1,
+                        maxLines: 6,
+                        enabled: model != null,
+                        style: const TextStyle(fontSize: 13.5),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 8,
+                          ),
+                          hintText: model == null
+                              ? 'Choose a model to ask'
+                              : 'Ask about ${info == null ? 'this' : '“${info.title}”'}…',
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      const _ModelButton(),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          info == null
-                              ? ''
-                              : 'Starts from this ${info.kindName}, then all '
-                                    'your notes',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: tones.muted),
-                        ),
-                      ),
-                      if (pending != null)
-                        Tooltip(
-                          message: 'Stop',
-                          child: OutlinedButton(
-                            onPressed: () => unawaited(
-                              ref
-                                  .read(
-                                    aiSessionProvider(widget.scope).notifier,
-                                  )
-                                  .stop(),
-                            ),
-                            child: const Text('Stop'),
-                          ),
-                        )
-                      else
-                        Tooltip(
-                          message: 'Ask (Enter)',
-                          child: FilledButton(
-                            onPressed: model == null ? null : _send,
-                            child: const Text('Ask'),
-                          ),
-                        ),
-                    ],
+                    ),
                   ),
                 ],
               ),
-            ),
+              Row(
+                children: <Widget>[
+                  Tooltip(
+                    message: available
+                        ? 'Let this answer search the web. What it finds '
+                              'is cited as the web.'
+                        : 'Set up web search in the AI settings',
+                    child: _WebToggle(
+                      on: web,
+                      onChanged: available
+                          ? (on) => setState(() => _web = on)
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Expanded(
+                    child: Row(
+                      children: <Widget>[
+                        const Flexible(child: _ModelButton()),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            info == null
+                                ? ''
+                                : 'Starts from this ${info.kindName}, then '
+                                      'all your notes',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, color: tones.muted),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  if (pending != null)
+                    Tooltip(
+                      message: 'Stop',
+                      child: OutlinedButton(
+                        style: compact,
+                        onPressed: () => unawaited(
+                          ref
+                              .read(aiSessionProvider(widget.scope).notifier)
+                              .stop(),
+                        ),
+                        child: const Text('Stop'),
+                      ),
+                    )
+                  else
+                    Tooltip(
+                      message: 'Ask (Enter)',
+                      child: FilledButton(
+                        style: compact,
+                        onPressed: model == null ? null : _send,
+                        child: const Text('Ask'),
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -818,7 +946,7 @@ class _ComposerState extends ConsumerState<_Composer> {
   }
 }
 
-/// Whether this question searches the web: a box to tick, and "Web".
+/// Whether this question searches the web: a pill, lit while it does.
 class _WebToggle extends StatelessWidget {
   const _WebToggle({required this.on, required this.onChanged});
 
@@ -827,31 +955,11 @@ class _WebToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tones = context.tones;
     final onChanged = this.onChanged;
-    return InkWell(
-      onTap: onChanged == null ? null : () => onChanged(!on),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Mark(
-              on ? MarkShape.boxTicked : MarkShape.box,
-              color: onChanged == null ? tones.faint : tones.text,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Web',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: onChanged == null ? tones.faint : tones.text,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return PillButton(
+      'Web',
+      lit: on,
+      onPressed: onChanged == null ? null : () => onChanged(!on),
     );
   }
 }
@@ -865,22 +973,19 @@ class _ModelButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final model = ref.watch(aiModelProvider).value;
     final local = model?.config.local ?? true;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 260),
-      child: SmallButton(
-        model == null
-            ? 'Choose a model'
-            : local
-            ? model.config.model
-            : '${model.config.model} · online',
-        tooltip: model == null
-            ? 'Choose which model answers'
-            : local
-            ? '${model.config.name}: answers come from a model on this computer'
-            : 'Questions, and the notes they are about, go to '
-                  '${model.config.name}',
-        onPressed: () => showSettings(context, page: SettingsPage.ai),
-      ),
+    return SmallButton(
+      model == null
+          ? 'Choose a model'
+          : local
+          ? model.config.model
+          : '${model.config.model} · online',
+      tooltip: model == null
+          ? 'Choose which model answers'
+          : local
+          ? '${model.config.name}: answers come from a model on this computer'
+          : 'Questions, and the notes they are about, go to '
+                '${model.config.name}',
+      onPressed: () => showSettings(context, page: SettingsPage.ai),
     );
   }
 }

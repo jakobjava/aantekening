@@ -9,7 +9,8 @@ import 'package:flutter/material.dart';
 import 'canvas_controller.dart';
 import 'canvas_scroll.dart';
 
-/// A scrollbar along one side of the page.
+/// A scrollbar floating along one side of the page, over it: a slim
+/// rounded thumb and no track, which grows fuller under the hand.
 ///
 /// Its thumb shows how much of the page is in view, and where; dragging the
 /// thumb scrolls the page, a press either side of it moves the page on by
@@ -24,7 +25,8 @@ class PageScrollbar extends StatefulWidget {
   final CanvasController controller;
   final Axis axis;
 
-  /// How thick the bar is.
+  /// How thick the bar is: what takes hold of the pointer, not what is
+  /// drawn, which is thinner.
   static const double thickness = 12;
 
   /// How much of a view a press beside the thumb moves the page on by.
@@ -101,6 +103,7 @@ class _PageScrollbarState extends State<PageScrollbar> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final active = _hovering || _drag != null;
+    final thumb = active ? _ScrollbarPainter.full : _ScrollbarPainter.slim;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
@@ -114,17 +117,20 @@ class _PageScrollbarState extends State<PageScrollbar> {
         // The thumb follows the page by repainting, with nothing built
         // or laid out again.
         child: RepaintBoundary(
-          child: CustomPaint(
-            size: _axis == Axis.vertical
-                ? const Size.fromWidth(PageScrollbar.thickness)
-                : const Size.fromHeight(PageScrollbar.thickness),
-            painter: _ScrollbarPainter(
-              controller: widget.controller,
-              axis: _axis,
-              track: scheme.surfaceContainerLow,
-              // In the accent, where there is one, or the text's colour:
-              // plain to see against the track, and fuller under the hand.
-              thumb: scheme.primary.withValues(alpha: active ? 1 : 0.7),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: thumb),
+            duration: const Duration(milliseconds: 120),
+            builder: (context, width, _) => CustomPaint(
+              size: _axis == Axis.vertical
+                  ? const Size.fromWidth(PageScrollbar.thickness)
+                  : const Size.fromHeight(PageScrollbar.thickness),
+              painter: _ScrollbarPainter(
+                controller: widget.controller,
+                axis: _axis,
+                // In the accent, where there is one, or the text's colour.
+                colour: scheme.primary,
+                width: width,
+              ),
             ),
           ),
         ),
@@ -137,8 +143,8 @@ class _ScrollbarPainter extends CustomPainter {
   _ScrollbarPainter({
     required this.controller,
     required this.axis,
-    required this.track,
-    required this.thumb,
+    required this.colour,
+    required this.width,
   }) : super(
          repaint: Listenable.merge(<Listenable>[
            controller.view,
@@ -148,8 +154,14 @@ class _ScrollbarPainter extends CustomPainter {
 
   final CanvasController controller;
   final Axis axis;
-  final Color track;
-  final Color thumb;
+  final Color colour;
+
+  /// How thick the thumb is drawn.
+  final double width;
+
+  /// How thick the thumb is at rest, and under the hand.
+  static const double slim = 4;
+  static const double full = 8;
 
   /// The shortest the thumb is drawn, so it can always be taken hold of.
   static const double minThumb = 24;
@@ -166,23 +178,28 @@ class _ScrollbarPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = track);
     final span = ScrollSpan.of(controller, axis);
     // All of it in view, there is nothing to scroll to, and no thumb.
     if (span.lengthFraction >= 1 && span.start <= 0) return;
     final vertical = axis == Axis.vertical;
     final along = thumbOf(span, vertical ? size.height : size.width);
-    const inset = 3.0;
+    // Along the far edge, rounded at its ends.
+    const edge = 2.0;
+    final across = vertical ? size.width : size.height;
+    final from = across - edge - width;
     final rect = vertical
-        ? Rect.fromLTRB(inset, along.start, size.width - inset, along.end)
-        : Rect.fromLTRB(along.start, inset, along.end, size.height - inset);
-    canvas.drawRect(rect, Paint()..color = thumb);
+        ? Rect.fromLTRB(from, along.start, from + width, along.end)
+        : Rect.fromLTRB(along.start, from, along.end, from + width);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, Radius.circular(width / 2)),
+      Paint()..color = colour,
+    );
   }
 
   @override
   bool shouldRepaint(_ScrollbarPainter old) =>
       old.controller != controller ||
       old.axis != axis ||
-      old.track != track ||
-      old.thumb != thumb;
+      old.colour != colour ||
+      old.width != width;
 }

@@ -1,7 +1,9 @@
 # 18. One colour, words, straight edges — and the keyboard
 
 **Status:** accepted — revises the look of ADRs 9 and 11; icons added
-beside the words by [ADR 24](0024-icons-beside-the-words-and-the-pen.md)
+beside the words by [ADR 24](0024-icons-beside-the-words-and-the-pen.md);
+its straight, flat and still look revised by
+[ADR 40](0040-modes-a-menu-and-glass.md)
 
 ## Context
 

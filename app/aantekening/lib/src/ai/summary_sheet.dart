@@ -9,6 +9,7 @@ import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/material.dart';
 
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/tones.dart';
 import 'math_text.dart';
 import 'sources_view.dart';
@@ -53,15 +54,11 @@ class SummarySheet extends StatelessWidget {
             Text(title, style: theme.textTheme.headlineSmall),
           ],
           if (summary.gist.isNotEmpty)
-            Container(
+            Callout(
+              colour: tones.emphasis,
+              fill: tones.lift,
               margin: const EdgeInsets.only(top: 16),
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              decoration: BoxDecoration(
-                color: tones.pane,
-                border: Border(
-                  left: BorderSide(color: tones.emphasis, width: 2),
-                ),
-              ),
+              padding: const EdgeInsets.fromLTRB(14, 12, 16, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -170,7 +167,10 @@ class _FormulaCard extends StatelessWidget {
     final tones = context.tones;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
-      decoration: BoxDecoration(border: Border.all(color: tones.line)),
+      decoration: BoxDecoration(
+        border: Border.all(color: tones.line),
+        borderRadius: Corners.panelRadius,
+      ),
       child: Column(
         children: <Widget>[
           SingleChildScrollView(
@@ -207,13 +207,9 @@ class _Beyond extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tones = context.tones;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      decoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(color: Origins.colourOf(null, tones), width: 2),
-        ),
-      ),
+    return Callout(
+      colour: Origins.colourOf(null, tones),
+      padding: const EdgeInsets.fromLTRB(14, 12, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -259,11 +255,12 @@ class StudyPaper extends StatelessWidget {
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
         child: Container(
-          margin: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-          padding: const EdgeInsets.fromLTRB(36, 30, 36, 24),
+          margin: const EdgeInsets.fromLTRB(10, 2, 10, 14),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
           decoration: BoxDecoration(
             color: tones.base,
             border: Border.all(color: tones.line),
+            borderRadius: Corners.panelRadius,
           ),
           child: SelectionArea(child: child),
         ),

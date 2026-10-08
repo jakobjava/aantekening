@@ -3,14 +3,9 @@
 /// their names, either way round.
 library;
 
-import 'dart:async';
-
 import 'package:aantekening_core/aantekening_core.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../command_menu.dart';
-import '../look/controls.dart';
 import '../preferences.dart';
 
 /// The lists that can be ordered.
@@ -160,53 +155,3 @@ final listOrderProvider =
     NotifierProvider.family<ListOrderSetting, ListOrder, OrderedList>(
       ListOrderSetting.new,
     );
-
-/// The pane header's button choosing how [list] is ordered, from a menu of
-/// the orders with the one in use ticked.
-class ListOrderButton extends ConsumerWidget {
-  const ListOrderButton(this.list, {super.key});
-
-  final OrderedList list;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final order = ref.watch(listOrderProvider(list));
-    MenuCommand item(ListOrder choice) => MenuCommand(
-      choice.label,
-      () => ref.read(listOrderProvider(list).notifier).choose(choice),
-      checked: choice == order,
-    );
-    return Builder(
-      builder: (context) => SmallButton(
-        'Sort',
-        tooltip: order == ListOrder.arranged
-            ? 'As arranged: drag ${list.name} to arrange them'
-            : order.label,
-        onPressed: () {
-          final box = context.findRenderObject()! as RenderBox;
-          unawaited(
-            showCommandMenu(
-              context,
-              box.localToGlobal(box.size.bottomLeft(Offset.zero)),
-              <List<MenuCommand>>[
-                <MenuCommand>[item(ListOrder.arranged)],
-                <MenuCommand>[
-                  item(ListOrder.createdNewest),
-                  item(ListOrder.createdOldest),
-                ],
-                <MenuCommand>[
-                  item(ListOrder.changedNewest),
-                  item(ListOrder.changedOldest),
-                ],
-                <MenuCommand>[
-                  item(ListOrder.nameAscending),
-                  item(ListOrder.nameDescending),
-                ],
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}

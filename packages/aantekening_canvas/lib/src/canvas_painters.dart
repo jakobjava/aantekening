@@ -824,9 +824,11 @@ class SelectionPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final thin = Paint()
-      ..color = accent.withValues(alpha: 0.55)
+      ..color = accent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
+    // What a marquee or a lasso takes in, shaded the same in any accent.
+    final within = Paint()..color = const Color(0x0F000000);
     final outline = Paint()
       ..color = accent
       ..style = PaintingStyle.stroke
@@ -837,7 +839,9 @@ class SelectionPainter extends CustomPainter {
         final frame = SelectionFrame.around(<NoteElement>[element]);
         if (frame != null) {
           canvas.drawPath(
-            _polygon(SelectionHandles.outlineOf(frame, viewport)),
+            SelectionHandles.roundedOutline(
+              SelectionHandles.outlineOf(frame, viewport),
+            ),
             thin,
           );
         }
@@ -860,9 +864,10 @@ class SelectionPainter extends CustomPainter {
         viewport.toScreen(Offset(band.left, band.top)),
         viewport.toScreen(Offset(band.right, band.bottom)),
       );
+      final rounded = RRect.fromRectAndRadius(rect, const Radius.circular(4));
       canvas
-        ..drawRect(rect, Paint()..color = accent.withValues(alpha: 0.12))
-        ..drawRect(rect, outline);
+        ..drawRRect(rounded, within)
+        ..drawRRect(rounded, outline);
     }
 
     if (lasso case final lasso?) {
@@ -870,38 +875,29 @@ class SelectionPainter extends CustomPainter {
         for (final point in lasso.points) viewport.toScreen(point),
       ]);
       canvas
-        ..drawPath(loop, Paint()..color = accent.withValues(alpha: 0.12))
+        ..drawPath(loop, within)
         ..drawPath(loop, outline);
     }
   }
 
   void _drawHandles(Canvas canvas, SelectionFrame frame) {
-    final fill = Paint()..color = accent;
-    final ring = Paint()
-      ..color = const Color(0xFFFFFFFF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
     final positions = SelectionHandles.positionsFor(selected, viewport);
 
     final knob = positions[SelectionHandle.rotate];
     if (knob != null) {
       final outline = SelectionHandles.outlineOf(frame, viewport);
-      canvas
-        ..drawLine(
-          (outline[0] + outline[1]) / 2,
-          knob,
-          Paint()
-            ..color = accent
-            ..strokeWidth = 1.2,
-        )
-        ..drawRect(
-          Rect.fromCircle(center: knob, radius: SelectionHandles.size * 0.6),
-          fill,
-        )
-        ..drawRect(
-          Rect.fromCircle(center: knob, radius: SelectionHandles.size * 0.6),
-          ring,
-        );
+      canvas.drawLine(
+        (outline[0] + outline[1]) / 2,
+        knob,
+        Paint()
+          ..color = accent
+          ..strokeWidth = 1.2,
+      );
+      SelectionHandles.paintHandle(
+        canvas,
+        Rect.fromCircle(center: knob, radius: SelectionHandles.size * 0.7),
+        accent,
+      );
     }
 
     SelectionHandles.paintHandles(

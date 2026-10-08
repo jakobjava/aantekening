@@ -35,8 +35,8 @@ final mathSyntaxProvider = NotifierProvider<MathSyntaxController, MathMode>(
   MathSyntaxController.new,
 );
 
-/// The switch between Simple and LaTeX syntax, as the Math tab and the
-/// cheat sheet show it. While a formula that can only be typed as LaTeX is
+/// The switch between Simple and LaTeX syntax, as the formula window and
+/// the cheat sheet show it. While a formula that can only be typed as LaTeX is
 /// open, [latexOnly], it shows LaTeX, and switching waits until that
 /// formula is finished.
 class MathSyntaxToggle extends ConsumerWidget {

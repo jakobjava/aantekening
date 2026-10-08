@@ -196,14 +196,10 @@ class CanvasController extends ChangeNotifier {
     _document = document;
     _fold = _foldOf(document);
     // From the top: of one paper, its corner; of sheets, the desk above
-    // the first.
+    // the first — out from under whatever floats over the view.
     final zoom = viewport.zoom;
     _view.value = _within(
-      CanvasViewport(
-        origin: _fold == null ? Offset.zero : originRange(zoom).min,
-        zoom: zoom,
-        fold: _fold,
-      ),
+      CanvasViewport(origin: originRange(zoom).min, zoom: zoom, fold: _fold),
     );
     _undoStack.clear();
     _redoStack.clear();
@@ -258,6 +254,25 @@ class CanvasController extends ChangeNotifier {
   /// The sheets the page is shown as, or null for one paper.
   SheetFold? get fold => _fold;
 
+  /// How much of the view, in screen pixels from each of its edges, lies
+  /// under what floats over it — a status line of glass: the view goes
+  /// that much further, so the page's edges come out from under it.
+  EdgeInsets get obscured => _obscured;
+  EdgeInsets _obscured = EdgeInsets.zero;
+
+  set obscured(EdgeInsets value) {
+    if (value == _obscured) return;
+    final range = originRange(viewport.zoom);
+    final atStart = viewport.origin == range.min;
+    _obscured = value;
+    // A view at the page's start stays at its start: out from under it.
+    if (atStart) {
+      stretchTo(viewport.copyWith(origin: originRange(viewport.zoom).min));
+    } else {
+      settleView();
+    }
+  }
+
   /// How much desk, in screen pixels, the view shows about sheets at their
   /// edges.
   static const double deskMargin = 24;
@@ -273,25 +288,39 @@ class CanvasController extends ChangeNotifier {
   /// Sheets are seen with a little desk about them, and no further: across,
   /// in the middle while they are narrower than the view; down, from above
   /// the first to below the last, and in the middle while they are shorter.
+  /// Either goes as much further as is [obscured].
   ({Offset min, Offset max}) originRange(double zoom) {
     final fold = _fold;
-    if (fold == null) return (min: Offset.zero, max: Offset.infinite);
+    final hidden = _obscured / zoom;
+    if (fold == null) {
+      return (min: Offset(-hidden.left, -hidden.top), max: Offset.infinite);
+    }
     final margin = deskMargin / zoom;
-    (double, double) along(double extent, double shown, {double? end}) {
-      final after = end ?? margin;
-      final free = extent + margin + after - shown;
+    (double, double) along(
+      double extent,
+      double shown, {
+      required double before,
+      required double after,
+    }) {
+      final free = extent + before + after - shown;
       if (free <= 0) {
-        final middle = (extent + after - margin - shown) / 2;
+        final middle = (extent + after - before - shown) / 2;
         return (middle, middle);
       }
-      return (-margin, extent + after - shown);
+      return (-before, extent + after - shown);
     }
 
-    final (left, right) = along(fold.width, viewSize.width / zoom);
+    final (left, right) = along(
+      fold.width,
+      viewSize.width / zoom,
+      before: margin + hidden.left,
+      after: margin + hidden.right,
+    );
     final (top, bottom) = along(
       fold.extent,
       viewSize.height / zoom,
-      end: deskFoot / zoom,
+      before: margin + hidden.top,
+      after: deskFoot / zoom + hidden.bottom,
     );
     return (min: Offset(left, top), max: Offset(right, bottom));
   }
@@ -348,13 +377,15 @@ class CanvasController extends ChangeNotifier {
   /// Scrolls just far enough to show [bounds] with [margin] screen pixels
   /// around it, or, if it does not fit, to show its top-left part.
   void reveal(Aabb bounds, {double margin = 48}) {
-    // In the view's space, where sheets have gaps between them.
+    // In the view's space, where sheets have gaps between them: what of it
+    // is not under what floats over it.
     final view = viewport;
+    final hidden = _obscured / view.zoom;
     final visible = Aabb(
-      view.origin.dx,
-      view.origin.dy,
-      view.origin.dx + viewSize.width / view.zoom,
-      view.origin.dy + viewSize.height / view.zoom,
+      view.origin.dx + hidden.left,
+      view.origin.dy + hidden.top,
+      view.origin.dx + viewSize.width / view.zoom - hidden.right,
+      view.origin.dy + viewSize.height / view.zoom - hidden.bottom,
     );
     bounds = view.inView(bounds);
     final pad = viewport.toPageDistance(margin);
@@ -367,10 +398,13 @@ class CanvasController extends ChangeNotifier {
           : start - pad;
     }
 
+    // Where what is not obscured starts, and so where the view does.
     viewport = view.copyWith(
       origin: Offset(
-        along(bounds.left, bounds.right, visible.left, visible.right),
-        along(bounds.top, bounds.bottom, visible.top, visible.bottom),
+        along(bounds.left, bounds.right, visible.left, visible.right) -
+            hidden.left,
+        along(bounds.top, bounds.bottom, visible.top, visible.bottom) -
+            hidden.top,
       ),
     );
   }

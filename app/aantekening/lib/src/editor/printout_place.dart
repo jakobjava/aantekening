@@ -36,7 +36,7 @@ Future<PrintoutPlace?> choosePrintoutPlace(
   BuildContext context, {
   required int pages,
   required List<PrintoutPlace> places,
-}) => showPlainDialog<PrintoutPlace>(
+}) => showAppDialog<PrintoutPlace>(
   context: context,
   builder: (context) => _PrintoutPlaceDialog(pages: pages, places: places),
 );

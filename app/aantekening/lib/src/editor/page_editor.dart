@@ -1,4 +1,4 @@
-/// The page editor: ribbon, canvas and autosave.
+/// The page editor: the canvas, its keys, and autosave.
 library;
 
 import 'dart:async';
@@ -12,6 +12,7 @@ import 'package:aantekening_math/aantekening_math.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -19,7 +20,6 @@ import 'package:path/path.dart' as p;
 import '../ai/ai_view.dart';
 import '../command_menu.dart';
 import '../commands/app_command.dart';
-import '../commands/editor_keys.dart';
 import '../commands/shortcuts.dart';
 import '../files/attached_files.dart';
 import '../files/notes_keeper.dart';
@@ -27,26 +27,36 @@ import '../files/notes_location.dart';
 import '../input_trace.dart';
 import '../links/note_links.dart';
 import '../look/controls.dart';
-import '../look/icons.dart';
+import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
+import '../modes/editor_mode.dart';
+import '../modes/key_catch.dart';
+import '../modes/key_guide.dart';
+import '../modes/mode_keys.dart';
 import '../providers.dart';
-import '../search/search_panel.dart';
+import '../search/search_session.dart';
 import '../shell/library_actions.dart';
 import '../shell/new_page_choice.dart';
+import '../shell/tabs.dart';
 import '../spelling/proofreader.dart';
 import '../spelling/spelling.dart';
 import 'element_views.dart';
+import 'focus_glide.dart';
+import 'jump_labels.dart';
 import 'latex_dialog.dart';
 import 'media_import.dart';
 import 'note_clipboard.dart';
+import 'page_commands.dart';
+import 'page_layers.dart';
 import 'page_minimap.dart';
+import 'page_status.dart';
 import 'page_title.dart';
+import 'palette.dart';
 import 'pen_preferences.dart';
 import 'printout_place.dart';
-import 'ribbon/mini_toolbar.dart';
-import 'ribbon/ribbon.dart';
 import 'sheet_choices.dart';
+import 'spatial_focus.dart';
 import 'text/box_formatting.dart';
 import 'text/cheat_sheet.dart';
 import 'text/formula_window.dart'
@@ -61,31 +71,40 @@ part 'page_editor_chrome.dart';
 part 'page_editor_clipboard.dart';
 part 'page_editor_commands.dart';
 part 'page_editor_elements.dart';
+part 'page_editor_keys.dart';
 part 'page_editor_media.dart';
+part 'page_editor_modes.dart';
 part 'page_editor_storage.dart';
 part 'page_editor_text.dart';
 
-/// Edits the page that is open: the ribbon across the top of the window, and
-/// beneath it the page, laid out among whatever [around] puts beside it.
+/// Edits the page that is open, laid out among whatever [around] puts beside
+/// it, with the keys of the mode it is in and the menu of all it can do.
 ///
 /// The editor stays as other pages are opened, loading each in turn, so the
-/// ribbon, the tool in hand and the pens stay as they were. It owns the
+/// tool in hand and the pens stay as they were. It owns the
 /// [CanvasController] directly rather than holding it in a provider: its
 /// lifetime is exactly this widget's, which guarantees a final save.
 class PageEditor extends ConsumerStatefulWidget {
   const PageEditor({
     required this.pageId,
-    this.around,
     this.aiScope,
+    this.active = true,
+    this.obscured = EdgeInsets.zero,
     super.key,
   });
 
+  /// Whether it has the keys: its commands are the page's, the status line
+  /// shows its page, and the window's mode is its. With the window split,
+  /// the other is not.
+  final bool active;
+
+  /// How much of the editor, from each of its edges, lies under what floats
+  /// over it — the status line: the page scrolls out from under it at the
+  /// top, and nothing else of the editor lies beneath it.
+  final EdgeInsets obscured;
+
   /// The page open, or null for none.
   final String? pageId;
-
-  /// Lays the page out in the window below the ribbon — beside the sidebar,
-  /// say. The ribbon spans the whole window, over both.
-  final Widget Function(BuildContext context, Widget page)? around;
 
   /// What the AI is being asked about, when it is shown in place of the
   /// page — or null while the page is.
@@ -98,7 +117,13 @@ class PageEditor extends ConsumerStatefulWidget {
 class _PageEditorState extends ConsumerState<PageEditor> {
   /// Rebuilds the page after [change], for the parts of it kept in other
   /// files of this library, which cannot call [setState] themselves.
-  void _update(VoidCallback change) => setState(change);
+  void _update(VoidCallback change) {
+    setState(change);
+    _syncMode();
+  }
+
+  /// The mode last told to the window.
+  EditorMode? _reportedMode;
 
   /// The words a followed link points at, marked in their text box until
   /// something else is picked.
@@ -145,44 +170,42 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   late final Map<AppCommand, CommandAction> _pageCommands =
       <AppCommand, CommandAction>{
         AppCommand.save: CommandAction(_saveNow, enabled: () => _ready),
-        AppCommand.toggleRibbon: CommandAction(
-          ref.read(ribbonProvider.notifier).toggleCollapsed,
-        ),
+        AppCommand.menu: CommandAction(_openMenu, enabled: () => _pageShowing),
         for (final (command, tool) in _tools)
           command: CommandAction(
-            () => _useTool(tool),
+            () => _selectTool(tool),
             enabled: () => _pageShowing,
           ),
         AppCommand.insertTextBox: CommandAction(
-          _ribbonCommands.onInsertTextBox,
+          _commands.onInsertTextBox,
           enabled: () => _pageShowing,
         ),
         AppCommand.insertPicture: CommandAction(
-          _ribbonCommands.onInsertImage,
+          _commands.onInsertImage,
           enabled: () => _pageShowing,
         ),
         AppCommand.insertPdf: CommandAction(
-          _ribbonCommands.onInsertPdf,
+          _commands.onInsertPdf,
           enabled: () => _pageShowing,
         ),
         AppCommand.insertLatex: CommandAction(
-          _ribbonCommands.onInsertLatex,
+          _commands.onInsertLatex,
           enabled: () => _pageShowing,
         ),
         AppCommand.zoomIn: CommandAction(
-          _ribbonCommands.onZoomIn,
+          _commands.onZoomIn,
           enabled: () => _pageShowing,
         ),
         AppCommand.zoomOut: CommandAction(
-          _ribbonCommands.onZoomOut,
+          _commands.onZoomOut,
           enabled: () => _pageShowing,
         ),
         AppCommand.actualSize: CommandAction(
-          _ribbonCommands.onActualSize,
+          _commands.onActualSize,
           enabled: () => _pageShowing,
         ),
         AppCommand.fitPage: CommandAction(
-          _ribbonCommands.onFitPage,
+          _commands.onFitPage,
           enabled: () => _pageShowing,
         ),
         AppCommand.pageLayout: CommandAction(
@@ -216,13 +239,29 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   final ValueNotifier<bool> _saving = ValueNotifier<bool>(false);
   late final BoxFormatting _boxFormatting = BoxFormatting(_controller);
 
-  /// The tab showing before a formula brought the Math tab forward, to go
-  /// back to when it is finished.
-  RibbonTab? _tabBeforeMath;
+  /// Whether a formula is being typed.
   bool _formulaOpen = false;
+
+  /// Where on the page the menu was last opened with a right-click, or
+  /// null where it was opened from the keys.
+  Offset? _menuPoint;
+
+  /// Where on the screen the keys last moved to, for the ring that glides
+  /// there.
+  final ValueNotifier<Rect?> _glide = ValueNotifier<Rect?>(null);
+
+  /// Space while it is held, or null.
+  _SpaceHeld? _space;
+
+  /// The jump labels showing, or null while none are.
+  Jump? _jump;
+
+  /// Ends the keeping of what is typed for a text box on its way, typing
+  /// it in if [type] and the box is there; null while nothing is kept.
+  void Function({required bool type})? _endTypeOn;
   final double _trackpadPanScale = trackpadPanScale();
 
-  /// The pen or highlighter used last, which the ribbon's colours and widths
+  /// The pen or highlighter used last, which colours and widths chosen
   /// apply to while neither is in hand.
   CanvasTool _lastInkTool = CanvasTool.pen;
 
@@ -230,7 +269,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   PageDocument? _formattedDocument;
   Set<String> _formattedSelection = const <String>{};
 
-  late final RibbonCommands _ribbonCommands = RibbonCommands(
+  late final PageCommands _commands = PageCommands(
     canvas: _controller,
     text: _textController,
     lastInkTool: () => _lastInkTool,
@@ -245,12 +284,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     onFitPage: () => _controller.zoomToFit(_controller.viewSize),
     onActualSize: () => _controller.resetZoom(_controller.viewSize),
     onMathInsert: _insertMath,
-    saving: _saving,
   );
-
-  /// The Home tab's text formatting, over every right-click menu on the
-  /// page.
-  late final Widget _menuToolbar = MiniToolbar(commands: _ribbonCommands);
 
   /// What was pasted from last, and how many times, so each paste of the
   /// same things lands a step further on from the last.
@@ -307,17 +341,24 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   AantekeningStore? _store;
   late final Revision _libraryRevision;
   late final Revision _contentsRevision;
-  late final VoidCallback _unregisterCommands;
+  VoidCallback? _unregisterCommands;
   late final VoidCallback _unregisterSave;
+
+  /// What the status line shows of this page, while it has the keys.
+  late final PageHandle _handle = PageHandle(
+    canvas: _controller,
+    saving: _saving,
+    onActualSize: _commands.onActualSize,
+  );
+  late final ActivePage _activePage;
 
   @override
   void initState() {
     super.initState();
     _libraryRevision = ref.read(libraryRevisionProvider.notifier);
     _contentsRevision = ref.read(pageContentsRevisionProvider.notifier);
-    _unregisterCommands = ref
-        .read(commandHandlersProvider)
-        .register(_pageCommands);
+    _activePage = ref.read(activePageProvider.notifier);
+    if (widget.active) _takeKeys();
     _unregisterSave = ref.read(openSavesProvider).register(_saveOpenPage);
     ref.listenManual<AsyncValue<FolderChanges>>(
       folderChangesProvider,
@@ -334,7 +375,37 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       ..formulaSyntax.value = ref.read(mathSyntaxProvider)
       ..formulaSyntax.addListener(_onSyntaxChosen)
       ..formulaWindow = ref.read(formulaWindowProvider);
+    _controller.obscured = _underGlass;
     if (widget.pageId != null) unawaited(_load());
+  }
+
+  /// What of the page lies under what floats over the editor: only its top,
+  /// as the scrollbar across its foot is kept clear of it.
+  EdgeInsets get _underGlass => EdgeInsets.only(top: widget.obscured.top);
+
+  /// Takes the keys: the page's commands are this one's, and the status
+  /// line shows it — once the window is built, which may not change while
+  /// it is.
+  void _takeKeys() {
+    _unregisterCommands ??= ref
+        .read(commandHandlersProvider)
+        .register(_pageCommands);
+    _reportedMode = null;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (_disposed || !widget.active) return;
+      _activePage.show(_handle);
+      _syncMode();
+      _canvasFocus.requestFocus();
+    });
+  }
+
+  /// Lets go of the keys, for the editor beside it.
+  void _leaveKeys() {
+    _unregisterCommands?.call();
+    _unregisterCommands = null;
+    SchedulerBinding.instance.addPostFrameCallback(
+      (_) => _activePage.leave(_handle),
+    );
   }
 
   void _onSyntaxChosen() => ref
@@ -344,6 +415,21 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   @override
   void didUpdateWidget(PageEditor old) {
     super.didUpdateWidget(old);
+    if (old.active != widget.active) {
+      widget.active ? _takeKeys() : _leaveKeys();
+    }
+    if (old.obscured != widget.obscured) {
+      // Not while the window is built: the page tells what shows it.
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (!_disposed) _controller.obscured = _underGlass;
+      });
+    }
+    if (old.aiScope != null && widget.aiScope == null && widget.active) {
+      // Back from the AI, the keys are the page's again.
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (!_disposed) _canvasFocus.requestFocus();
+      });
+    }
     if (old.pageId == widget.pageId) return;
     // Leaving a page must never lose what is on it: its last changes are
     // saved to it before the next page is read.
@@ -362,12 +448,15 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _elementWidgets.clear();
     _tikzDrawn.clear();
     _tikzChanged.clear();
+    _syncMode();
     if (widget.pageId != null) unawaited(_load());
   }
 
   @override
   void dispose() {
-    _unregisterCommands();
+    _jump?.end();
+    _endTypeOn?.call(type: false);
+    _leaveKeys();
     _unregisterSave();
     _autosave?.cancel();
     _controller.removeListener(_onCanvasChanged);
@@ -383,17 +472,17 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _textController.dispose();
     _canvasFocus.dispose();
     _saving.dispose();
+    _glide.dispose();
     super.dispose();
   }
 
   // ----------------------------------------------------------------- build
 
-  /// The page laid out alone, where no [PageEditor.around] is given.
-  static Widget _alone(BuildContext context, Widget page) => page;
-
   @override
   Widget build(BuildContext context) {
-    ref.listen(revealRequestProvider, (_, _) => _meetRevealRequest());
+    ref.listen(revealRequestProvider, (_, _) {
+      if (widget.active) _meetRevealRequest();
+    });
     ref.listen<MathMode>(
       mathSyntaxProvider,
       (_, syntax) => _textController.formulaSyntax.value = syntax,
@@ -405,31 +494,46 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     final highlight = ref.watch(searchHighlightProvider);
     _proofreader = ref.watch(proofreaderProvider);
 
-    return Column(
+    // A stack even while the cheat sheet is closed, so opening it leaves the
+    // page, and the formula being typed on it, as it is. It floats on glass
+    // down the right of the page, as the AI does.
+    const margin = 8.0;
+    return Stack(
       children: <Widget>[
-        // The ribbon works on the page, so it rests while the AI shows.
-        Ribbon(
-          commands: _ribbonCommands,
-          // Greyed out only while no page is chosen: switching from one page
-          // to the next, it stays as it is.
-          enabled: widget.pageId != null && widget.aiScope == null,
-        ),
-        Expanded(
-          child: (widget.around ?? _alone)(
-            context,
-            // A row even while the cheat sheet is closed, so opening it
-            // leaves the page, and the formula being typed on it, as it is.
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Expanded(child: _page(highlight)),
-                if (ref.watch(cheatSheetProvider)) ...<Widget>[
-                  const VerticalDivider(width: 1),
-                  CheatSheet(onInsert: _ready ? _insertMath : null),
-                ],
-              ],
+        Positioned.fill(child: _withAi(_page(highlight))),
+        if (widget.active && ref.watch(cheatSheetProvider))
+          Positioned(
+            right: margin,
+            top: widget.obscured.top + margin,
+            bottom: widget.obscured.bottom + margin,
+            width: CheatSheet.width,
+            child: Glass(
+              child: CheatSheet(onInsert: _ready ? _insertMath : null),
             ),
           ),
+      ],
+    );
+  }
+
+  /// [page], and the tab's AI over it while it shows: a pane of glass
+  /// along its right, the notes beside it. A click on them goes back to
+  /// them.
+  Widget _withAi(Widget page) {
+    final scope = widget.aiScope;
+    if (scope == null) return page;
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(child: page),
+        Positioned.fill(
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) {
+              if (widget.active) ref.read(tabsProvider.notifier).toggleAi();
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: AiPane(scope: scope, obscured: widget.obscured),
         ),
       ],
     );
@@ -437,58 +541,57 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
   Widget _page(SearchTerms? highlight) {
     final pageId = widget.pageId;
-    final aiScope = widget.aiScope;
-    if (aiScope != null) return AiView(scope: aiScope);
-    if (pageId == null) return const _NoPageSelected();
-    if (_loading) return const Loading();
+    Widget clear(Widget child) =>
+        Padding(padding: widget.obscured, child: child);
+    if (pageId == null) return clear(const _NoPageSelected());
+    if (_loading) return clear(const Loading());
     return Column(
       children: <Widget>[
-        if (_error case final error?) _ErrorBanner(error: error),
+        if (_error case final error?) clear(_ErrorBanner(error: error)),
         if (_ready) Expanded(child: _scrolled(_canvas(pageId, highlight))),
       ],
     );
   }
 
-  /// [page] with a scrollbar beneath it and another, or the page drawn
-  /// small, down its right-hand side.
+  /// [page], the scrollbars floating over its right and its foot — or, for
+  /// the right's, the page drawn small on a pane of glass — clear of what
+  /// floats over the editor, which the page itself runs on under.
   Widget _scrolled(Widget page) {
-    final corner = ColoredBox(color: context.tones.mix(0.02));
     final minimap = ref.watch(minimapProvider);
-    return Column(
+    final obscured = widget.obscured;
+    const bar = PageScrollbar.thickness;
+    const margin = 8.0;
+    return Stack(
       children: <Widget>[
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Expanded(child: page),
-              if (minimap) ...<Widget>[
-                const VerticalDivider(width: 1),
-                SizedBox(
-                  width: PageMinimap.width,
+        Positioned.fill(child: page),
+        if (minimap)
+          Positioned(
+            right: margin,
+            top: obscured.top + margin,
+            bottom: obscured.bottom + margin + bar,
+            width: PageMinimap.width,
+            child: Glass(
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: ClipRRect(
+                  borderRadius: Corners.controlRadius,
                   child: PageMinimap(controller: _controller),
                 ),
-              ] else
-                PageScrollbar(controller: _controller, axis: Axis.vertical),
-            ],
-          ),
-        ),
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: PageScrollbar(
-                controller: _controller,
-                axis: Axis.horizontal,
               ),
             ),
-            // The corner where the bars meet.
-            SizedBox.square(dimension: PageScrollbar.thickness, child: corner),
-            if (minimap)
-              SizedBox(
-                width: PageMinimap.width + 1 - PageScrollbar.thickness,
-                height: PageScrollbar.thickness,
-                child: corner,
-              ),
-          ],
+          )
+        else
+          Positioned(
+            right: 0,
+            top: obscured.top + margin,
+            bottom: obscured.bottom + bar,
+            child: PageScrollbar(controller: _controller, axis: Axis.vertical),
+          ),
+        Positioned(
+          left: margin,
+          right: minimap ? PageMinimap.width + 2 * margin : bar,
+          bottom: obscured.bottom,
+          child: PageScrollbar(controller: _controller, axis: Axis.horizontal),
         ),
       ],
     );
@@ -501,51 +604,84 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       bindings: _shortcuts(ref.watch(shortcutsProvider)),
       child: Focus(
         focusNode: _canvasFocus,
-        autofocus: true,
-        child: CommandMenuHeader(
-          header: _menuToolbar,
-          child: InfiniteCanvas(
-            controller: _controller,
-            claimsPointer: _claimsPointer,
-            overlay: ValueListenableBuilder<Widget?>(
-              valueListenable: _textController.formulaField,
-              builder: (context, field, _) => field ?? const SizedBox.shrink(),
-            ),
-            grips: _grips,
-            onEmptyTap: _onEmptyTap,
-            onCanvasPress: _onCanvasPress,
-            onContextMenu: (page, global) =>
-                unawaited(_onContextMenu(page, global)),
-            elementBuilder: (context, element) =>
-                _buildElement(element, highlight, _firstMatchIn(highlight)),
-            header: CanvasHeader(
-              frame: PageTitle.frame,
-              child: Listener(
-                // Going to the title ends typing in a text box.
-                onPointerDown: (_) => _stopEditing(refocusCanvas: false),
-                child: PageTitle(
-                  key: ValueKey<String>(pageId),
-                  pageId: pageId,
-                  highlight: highlight,
-                  onFinished: _canvasFocus.requestFocus,
+        // Not from under what is open over the window — the picker, whose
+        // search opens pages as it is typed — nor beside the one that has
+        // the keys.
+        autofocus:
+            widget.active &&
+            widget.aiScope == null &&
+            (ModalRoute.of(context)?.isCurrent ?? true),
+        onKeyEvent: _onModeKey,
+        child: MenuExtras(
+          extras: _menuExtras,
+          child: Listener(
+            onPointerDown: _pressedWithKeys,
+            child: Stack(
+              children: <Widget>[
+                Positioned.fill(
+                  child: InfiniteCanvas(
+                    controller: _controller,
+                    claimsPointer: _claimsPointer,
+                    overlay: ValueListenableBuilder<Widget?>(
+                      valueListenable: _textController.formulaField,
+                      builder: (context, field, _) =>
+                          field ?? const SizedBox.shrink(),
+                    ),
+                    grips: _grips,
+                    onEmptyTap: _onEmptyTap,
+                    onCanvasPress: _onCanvasPress,
+                    onContextMenu: _onContextMenu,
+                    elementBuilder: (context, element) => _buildElement(
+                      element,
+                      highlight,
+                      _firstMatchIn(highlight),
+                    ),
+                    header: CanvasHeader(
+                      frame: PageTitle.frame,
+                      child: Listener(
+                        // Going to the title ends typing in a text box.
+                        onPointerDown: (_) =>
+                            _stopEditing(refocusCanvas: false),
+                        child: PageTitle(
+                          key: ValueKey<String>(pageId),
+                          pageId: pageId,
+                          highlight: highlight,
+                          onFinished: _canvasFocus.requestFocus,
+                        ),
+                      ),
+                    ),
+                    trackpadPanScale: _trackpadPanScale,
+                    selectionColor: context.tones.paperEmphasis,
+                    deskColor: context.tones.desk,
+                    afterSheets: SmallButton(
+                      '+  Add sheet',
+                      tooltip: ref
+                          .watch(shortcutsProvider)
+                          .tooltip(AppCommand.addSheet, describe: true),
+                      onPressed: () => unawaited(
+                        _addSheet(after: (_controller.fold?.count ?? 1) - 1),
+                      ),
+                    ),
+                    penButtons: pen.buttons,
+                    shapesOnHold: pen.shapesOnHold,
+                    touchpadFingers: touchpadFingers,
+                  ),
                 ),
-              ),
+                Positioned.fill(
+                  child: FocusGlide(
+                    target: _glide,
+                    colour: _mode.colourOn(context.tones),
+                  ),
+                ),
+                if (_jump case final jump?)
+                  Positioned.fill(
+                    child: JumpLabels(
+                      jump: jump,
+                      colour: _mode.colourOn(context.tones),
+                    ),
+                  ),
+              ],
             ),
-            trackpadPanScale: _trackpadPanScale,
-            selectionColor: context.tones.paperEmphasis,
-            deskColor: context.tones.desk,
-            afterSheets: SmallButton(
-              '+  Add sheet',
-              tooltip: ref
-                  .watch(shortcutsProvider)
-                  .tooltip(AppCommand.addSheet, describe: true),
-              onPressed: () => unawaited(
-                _addSheet(after: (_controller.fold?.count ?? 1) - 1),
-              ),
-            ),
-            penButtons: pen.buttons,
-            shapesOnHold: pen.shapesOnHold,
-            touchpadFingers: touchpadFingers,
           ),
         ),
       ),
