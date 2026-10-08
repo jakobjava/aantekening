@@ -118,9 +118,17 @@ void main() {
     addTearDown(store.close);
     final (_, pageId) = await seed(store);
     final page = File(p.join(notes, 'pages', '$pageId.json.gz'));
-    String written() => (EntityFile.decode(page.readAsBytesSync())! as PageFile)
-        .document
-        .extractSearchText();
+    // On Windows a file being moved over cannot be opened for a moment:
+    // nothing to be read yet.
+    String? written() {
+      try {
+        return (EntityFile.decode(page.readAsBytesSync())! as PageFile).document
+            .extractSearchText();
+      } on FileSystemException {
+        return null;
+      }
+    }
+
     Future<void> until(bool Function() done) async {
       for (var waited = 0; !done(); waited++) {
         if (waited > 100) fail('Not written');
