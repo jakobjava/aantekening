@@ -28,6 +28,26 @@ final class FolderEntry {
   bool get isCopy => id == null;
 }
 
+/// A file of the notes folder as [NotesFolder.listing] found it.
+final class ListedFile {
+  const ListedFile(
+    this.kind,
+    this.name, {
+    required this.size,
+    required this.modified,
+  });
+
+  final EntityKind kind;
+  final String name;
+  final int size;
+
+  /// When it was last changed, in milliseconds since the epoch.
+  final int modified;
+
+  /// Where it is in the folder, as the mirror's records keep it.
+  String get key => '${kind.folder}/$name';
+}
+
 /// The notes folder's layout, and writing to it safely.
 ///
 /// ```text
@@ -166,6 +186,60 @@ final class NotesFolder {
   }
 
   static final math.Random _random = math.Random.secure();
+
+  /// Every file of the folder at [path], with its size and when it was
+  /// last changed — and the files left from writes a crash interrupted,
+  /// older than [leftovers], removed. Reads only the disk, so it can run
+  /// away from the window, in an isolate: a folder of thousands of notes
+  /// is looked at without the window waiting on it.
+  static List<ListedFile> listing(
+    String path, {
+    Duration leftovers = const Duration(hours: 1),
+  }) {
+    final listed = <ListedFile>[];
+    final before = DateTime.now().subtract(leftovers);
+    for (final kind in EntityKind.values) {
+      final folder = Directory(p.join(path, kind.folder));
+      if (!folder.existsSync()) continue;
+      for (final entity in folder.listSync()) {
+        if (entity is! File) continue;
+        final name = p.basename(entity.path);
+        final FileStat stat;
+        try {
+          stat = entity.statSync();
+        } on FileSystemException {
+          continue;
+        }
+        if (stat.type != FileSystemEntityType.file) continue;
+        if (name.startsWith('.')) {
+          if (name.endsWith('.tmp') && stat.modified.isBefore(before)) {
+            try {
+              entity.deleteSync();
+            } on FileSystemException {
+              // In use, perhaps; it goes another time.
+            }
+          }
+          continue;
+        }
+        listed.add(
+          ListedFile(
+            kind,
+            name,
+            size: stat.size,
+            modified: stat.modified.millisecondsSinceEpoch,
+          ),
+        );
+      }
+    }
+    return listed;
+  }
+
+  /// The entry [listed] is, in this folder.
+  FolderEntry entryOf(ListedFile listed) => FolderEntry(
+    listed.kind,
+    File(p.join(folderOf(listed.kind).path, listed.name)),
+    id: _idOf(listed.kind, listed.name),
+  );
 
   /// Removes files left from writes a crash interrupted, older than
   /// [age]: the file they were for still holds what it held before.

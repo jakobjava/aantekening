@@ -504,16 +504,28 @@ final class FolderMirror {
     final damaged = <String>[];
     final seen = <String>{};
     final waiting = <_Arrival>[];
+    // Listed away from the window, and checked against the records read in
+    // one go: only what changed is read here.
+    final listing = await away(_listing, folder.path, heavy: true);
+    final records = _allRecords();
 
-    for (final entry in folder.entries()) {
+    for (final listed in listing) {
+      seen.add(listed.key);
+      // As it was last written or read here: nothing to do. Only a thing's
+      // own file has a record; a sync service's copy of one never does.
+      final record = records[listed.key];
+      if (record != null &&
+          record.size == listed.size &&
+          record.modified == listed.modified) {
+        continue;
+      }
+      final entry = folder.entryOf(listed);
       final path = entry.file.path;
-      seen.add(path);
       // One file that cannot be read — or put in — must not keep every
       // other from being read: it is said to be damaged, and left.
       try {
         final stat = entry.file.statSync();
-        final record = _record(path);
-        if (!entry.isCopy && _matches(record, stat)) continue;
+        if (stat.type != FileSystemEntityType.file) continue;
         final bytes = NotesFolder.read(entry.file);
         if (bytes == null) continue;
         final digest = sha256.convert(bytes).toString();
@@ -559,8 +571,7 @@ final class FolderMirror {
       }
     }
 
-    _rewriteMissing(seen);
-    folder.removeLeftovers();
+    _rewriteMissing(records, seen);
     final found = FolderChanges(
       pages: _found.pages,
       library: _found.library,
@@ -570,6 +581,8 @@ final class FolderMirror {
     if (!found.isEmpty && !_changes.isClosed) _changes.add(found);
     return found;
   });
+
+  static List<ListedFile> _listing(String path) => NotesFolder.listing(path);
 
   static int _order(EntityFile file) => switch (file) {
     NotebookFile() => 0,
@@ -729,18 +742,16 @@ final class FolderMirror {
   }
 
   /// Queues for writing again everything whose file was written or read
-  /// here but has gone from the folder.
-  void _rewriteMissing(Set<String> seen) {
-    final present = <String>{for (final path in seen) _key(path)};
-    for (final row in _db.select('SELECT path, kind, id FROM mirror_files')) {
-      final path = str(row, 'path');
+  /// here — [records] — but is not among the files [present] in the folder.
+  void _rewriteMissing(Map<String, _Record> records, Set<String> present) {
+    for (final MapEntry(key: path, value: record) in records.entries) {
       if (present.contains(path)) continue;
       _db.run('DELETE FROM mirror_files WHERE path = ?', <Object?>[path]);
       _db.run(
         'INSERT INTO mirror_outbox (kind, id, seq) VALUES (?, ?, '
         '(SELECT COALESCE(MAX(seq), 0) + 1 FROM mirror_outbox)) '
         'ON CONFLICT (kind, id) DO NOTHING',
-        <Object?>[str(row, 'kind'), str(row, 'id')],
+        <Object?>[record.kind, record.id],
       );
     }
   }
@@ -751,6 +762,20 @@ final class FolderMirror {
   /// slashes, so the folder can move without its files seeming new.
   String _key(String path) =>
       p.relative(path, from: folder.path).replaceAll(r'\', '/');
+
+  /// Every file as it was last written or read here, by its key.
+  Map<String, _Record> _allRecords() => <String, _Record>{
+    for (final row in _db.select(
+      'SELECT path, kind, id, size, modified, digest FROM mirror_files',
+    ))
+      str(row, 'path'): _Record(
+        integer(row, 'size'),
+        integer(row, 'modified'),
+        str(row, 'digest'),
+        kind: str(row, 'kind'),
+        id: str(row, 'id'),
+      ),
+  };
 
   _Record? _record(String path) {
     final rows = _db.select(
@@ -824,9 +849,13 @@ final class _Arrival {
 }
 
 final class _Record {
-  const _Record(this.size, this.modified, this.digest);
+  const _Record(this.size, this.modified, this.digest, {this.kind, this.id});
 
   final int size;
   final int modified;
   final String digest;
+
+  /// What the file is of, when read with every record.
+  final String? kind;
+  final String? id;
 }
