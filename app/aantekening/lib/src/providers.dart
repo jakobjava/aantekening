@@ -10,29 +10,64 @@ import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'files/notes_location.dart';
+import 'preferences.dart';
 import 'shell/list_order.dart';
 import 'shell/tabs.dart';
 
 /// The notes, open: their folder, and this computer's index of it.
-final storeProvider = FutureProvider<AantekeningStore>((ref) async {
-  final notesFolder = await ref.watch(notesFolderProvider.future);
-  final indexFolder = await ref.watch(indexFolderProvider.future);
-  // The notes open before are closed first: they may be these notes, moved
-  // to another folder, and only one store at a time may work on them.
-  await _storeClosing;
-  final store = await AantekeningStore.open(
-    notesFolder: notesFolder,
-    indexFolder: indexFolder,
-  );
-  // Waited on by the next store, whatever went wrong closing this one.
-  ref.onDispose(
-    () => _storeClosing = store.close().then<void>(
-      (_) {},
-      onError: (Object _) {},
-    ),
-  );
-  return store;
-});
+final storeProvider = FutureProvider<AantekeningStore>(
+  (ref) async {
+    final notesFolder = await ref.watch(notesFolderProvider.future);
+    final indexFolder = await ref.watch(indexFolderProvider.future);
+    // The notes opened from this folder last time are expected there again:
+    // a folder found empty — a drive not plugged in — is not new notes.
+    final preferences = await ref.read(preferencesProvider.future);
+    final opened = preferences[openedNotesKey];
+    final expecting =
+        opened is Map<String, Object?> && opened['folder'] == notesFolder
+        ? opened['identity'] as String?
+        : null;
+    // The notes open before are closed first: they may be these notes, moved
+    // to another folder, and only one store at a time may work on them.
+    await _storeClosing;
+    final store = await AantekeningStore.open(
+      notesFolder: notesFolder,
+      indexFolder: indexFolder,
+      expecting: expecting,
+    );
+    if (store.identity != expecting) {
+      unawaited(
+        preferences.set(openedNotesKey, <String, Object?>{
+          'folder': notesFolder,
+          'identity': store.identity,
+        }),
+      );
+    }
+    // Waited on by the next store, whatever went wrong closing this one.
+    ref.onDispose(
+      () => _storeClosing = store.close().then<void>(
+        (_) {},
+        onError: (Object _) {},
+      ),
+    );
+    return store;
+  },
+  // What keeps the notes from opening — another window has them, their
+  // folder is gone — is said at once, for the person to deal with, rather
+  // than tried again unseen for half a minute.
+  retry: (_, _) => null,
+);
+
+/// Which notes were opened last, and from which folder.
+const String openedNotesKey = 'notes.opened';
+
+/// Starts new, empty notes in the folder chosen, which holds none, rather
+/// than waiting for the notes opened there before to come back.
+Future<void> startNewNotes(WidgetRef ref) async {
+  final preferences = await ref.read(preferencesProvider.future);
+  await preferences.set(openedNotesKey, null);
+  ref.invalidate(storeProvider);
+}
 
 /// The store last open closing, or done closing.
 Future<void> _storeClosing = Future<void>.value();

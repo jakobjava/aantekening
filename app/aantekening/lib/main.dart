@@ -10,5 +10,13 @@ void main() {
   installInputTrace();
   listenToTouchpadFingers();
   registerFontLicence();
-  runApp(const ProviderScope(child: AantekeningApp()));
+  runApp(
+    ProviderScope(
+      // What fails is said at once, where it shows, for the person to try
+      // again: never tried again unseen, behind a wheel turning for half a
+      // minute.
+      retry: (_, _) => null,
+      child: const AantekeningApp(),
+    ),
+  );
 }

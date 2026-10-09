@@ -419,6 +419,33 @@ void main() {
     expect(file.document.extractSearchText(), 'fixed');
   });
 
+  test('a folder the notes were in, gone or empty, is not taken for new '
+      'notes', () async {
+    final store = await computer('a');
+    final identity = store.identity!;
+    await store.close();
+    final moved = '$notes-away';
+    Directory(notes).renameSync(moved);
+
+    Future<AantekeningStore> expecting() => AantekeningStore.open(
+      notesFolder: notes,
+      indexFolder: p.join(root.path, 'index-a'),
+      automatic: false,
+      expecting: identity,
+    );
+    await expectLater(expecting(), throwsA(isA<NotesFolderMissing>()));
+    expect(Directory(notes).existsSync(), isFalse, reason: 'nothing made');
+    Directory(notes).createSync();
+    await expectLater(expecting(), throwsA(isA<NotesFolderMissing>()));
+
+    // Back, as a drive plugged in again.
+    Directory(notes).deleteSync();
+    Directory(moved).renameSync(notes);
+    final again = await expecting();
+    expect(again.identity, identity);
+    await again.close();
+  });
+
   test('notes open in another window are not opened again', () async {
     final store = await computer('a');
     final identity = store.folder!.readIdentity()!;

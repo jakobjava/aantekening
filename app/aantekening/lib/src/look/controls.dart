@@ -874,12 +874,20 @@ class _BusyPainter extends CustomPainter {
 /// A message filling a pane or a page: that it is empty, or what went
 /// wrong.
 class EmptyMessage extends StatelessWidget {
-  const EmptyMessage(this.message, {this.detail, super.key});
+  const EmptyMessage(
+    this.message, {
+    this.detail,
+    this.actions = const <Widget>[],
+    super.key,
+  });
 
   final String message;
 
   /// Said beneath, more quietly: what to do about it, or the error itself.
   final String? detail;
+
+  /// What can be done about it, beneath it all.
+  final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
@@ -902,6 +910,16 @@ class EmptyMessage extends StatelessWidget {
                   detail,
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 11.5, color: tones.faint),
+                ),
+              ),
+            if (actions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: actions,
                 ),
               ),
           ],

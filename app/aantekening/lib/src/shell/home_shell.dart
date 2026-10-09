@@ -75,7 +75,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// Once the workspace and the tabs kept from the last session have been
   /// read, lets no tab show what is no longer there.
   Future<void> _forgetMissing() async {
-    final store = await ref.read(storeProvider.future);
+    final AantekeningStore store;
+    try {
+      store = await ref.read(storeProvider.future);
+    } on Object {
+      // The window says why the notes could not be opened.
+      return;
+    }
     await ref.read(preferencesProvider.future);
     if (!mounted) return;
     await ref.read(tabsProvider.notifier).forgetMissing(store);
@@ -97,10 +103,24 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           body: store.when(
             loading: () => const Loading(),
             error: (error, stack) => EmptyMessage(
-              error is NotesInUse
-                  ? 'aantekening is open already.'
-                  : 'The workspace could not be opened.',
+              switch (error) {
+                NotesInUse() => 'aantekening is open already.',
+                NotesFolderMissing() => 'The notes cannot be found.',
+                _ => 'The workspace could not be opened.',
+              },
               detail: '$error',
+              actions: <Widget>[
+                PillButton(
+                  'Try again',
+                  lit: true,
+                  onPressed: () => ref.invalidate(storeProvider),
+                ),
+                if (error is NotesFolderMissing)
+                  PillButton(
+                    'Start new notes there',
+                    onPressed: () => unawaited(startNewNotes(ref)),
+                  ),
+              ],
             ),
             data: (_) => Stack(
               children: <Widget>[

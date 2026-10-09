@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -73,7 +74,13 @@ class _NotesKeeperState extends ConsumerState<NotesKeeper> {
   }
 
   Future<void> _backUpWhenOpen() async {
-    final store = await ref.read(storeProvider.future);
+    final AantekeningStore store;
+    try {
+      store = await ref.read(storeProvider.future);
+    } on Object {
+      // The window says why the notes could not be opened.
+      return;
+    }
     if (!mounted) return;
     _sayRescued(store.rescued);
     await ref.read(backupsProvider.notifier).backUpIfDue();

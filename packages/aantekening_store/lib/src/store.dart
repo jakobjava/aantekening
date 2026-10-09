@@ -32,6 +32,20 @@ final class NotesInUse implements Exception {
       'and go on in that one, or close that one and start aantekening again.';
 }
 
+/// The folder the notes were kept in holds none now: gone, or empty — a
+/// drive not plugged in, a sync not yet done, a folder moved away.
+final class NotesFolderMissing implements Exception {
+  const NotesFolderMissing(this.path);
+
+  final String path;
+
+  @override
+  String toString() =>
+      'The notes folder, $path, holds no notes now. If it is on a drive '
+      'not plugged in, or in a folder still being synced, they will be '
+      'there once it is.';
+}
+
 /// The notes, open: the notes folder that keeps them, and the database
 /// that is its index — for finding, searching and working on them at once.
 ///
@@ -68,12 +82,21 @@ class AantekeningStore {
   ///
   /// With [automatic], changes are written to the folder as they are made,
   /// and changes to it read as they arrive; otherwise only when asked.
+  ///
+  /// With [expecting], the identity of the notes opened here before, a
+  /// folder that holds no notes — missing, or empty, as a drive not
+  /// plugged in or a sync not yet done leaves it — is not taken for new
+  /// notes: [NotesFolderMissing] is thrown, and nothing is made there.
   static Future<AantekeningStore> open({
     required String notesFolder,
     required String indexFolder,
     bool automatic = true,
+    String? expecting,
   }) async {
     final folder = NotesFolder(notesFolder);
+    if (expecting != null && folder.readIdentity() == null) {
+      throw NotesFolderMissing(notesFolder);
+    }
     await folder.directory.create(recursive: true);
     await folder.assets.create(recursive: true);
     await Directory(indexFolder).create(recursive: true);
@@ -93,13 +116,16 @@ class AantekeningStore {
       lock.closeSync();
       rethrow;
     }
-    final store = _assemble(
-      database,
-      notesFolder,
-      AssetStore(database, folder.assets),
-      Rescue(p.join(indexFolder, 'rescued', identity)),
-      folder: folder,
-    ).._lock = lock;
+    final store =
+        _assemble(
+            database,
+            notesFolder,
+            AssetStore(database, folder.assets),
+            Rescue(p.join(indexFolder, 'rescued', identity)),
+            folder: folder,
+          )
+          .._lock = lock
+          ..identity = identity;
     final mirror = store.mirror!;
     // What was not written before the app last stopped is written first,
     // so that what arrived meanwhile does not seem to be the only version.
@@ -224,6 +250,10 @@ class AantekeningStore {
       }
     }
   }
+
+  /// Who the notes are: the same in every copy of their folder, on every
+  /// computer; null for a store in memory.
+  String? identity;
 
   /// The notes folder's path, or `:memory:` for an in-memory store.
   final String directory;

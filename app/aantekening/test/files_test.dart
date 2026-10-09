@@ -214,6 +214,55 @@ void main() {
     },
   );
 
+  test(
+    'notes gone from their folder are waited for, not started afresh',
+    () async {
+      if (Platform.environment['AANTEKENING_HOME'] case final home?
+          when home.isNotEmpty) {
+        markTestSkipped('AANTEKENING_HOME chooses the notes folder');
+        return;
+      }
+      final support = Directory.systemTemp.createTempSync('notes_gone_');
+      addTearDown(() => support.deleteSync(recursive: true));
+      final preferences = Preferences.inMemory();
+      ProviderContainer window() {
+        final container = ProviderContainer(
+          overrides: [
+            preferencesProvider.overrideWith((ref) async => preferences),
+            supportFolderProvider.overrideWith((ref) async => support.path),
+          ],
+        );
+        addTearDown(container.dispose);
+        return container;
+      }
+
+      var container = window();
+      final first = await container.read(storeProvider.future);
+      final notes = first.directory;
+      await first.library.createNotebook(title: 'Physics');
+      container.dispose();
+      await first.close();
+      // The drive they are on taken out.
+      Directory(notes).renameSync('$notes-out');
+
+      container = window();
+      await expectLater(
+        container.read(storeProvider.future),
+        throwsA(isA<NotesFolderMissing>()),
+      );
+      expect(Directory(notes).existsSync(), isFalse, reason: 'nothing made');
+
+      // Plugged in again, and tried again.
+      Directory('$notes-out').renameSync(notes);
+      container.invalidate(storeProvider);
+      final back = await container.read(storeProvider.future);
+      expect(
+        (await back.library.listNotebooks()).map((notebook) => notebook.title),
+        contains('Physics'),
+      );
+    },
+  );
+
   testWidgets('the settings have a page for files, with what they hold', (
     tester,
   ) async {
