@@ -10,6 +10,7 @@ environment:
 dependencies:
   aantekening_core: ^0.1.0
   crypto: ^3.0.7
+  meta: ^1.16.0
   path: ^1.9.1
   sqlite3: ^3.6.0
   archive: ^4.3.0

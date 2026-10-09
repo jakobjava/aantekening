@@ -120,7 +120,7 @@ Future<void> _simulate(int seed) async {
     } else if (roll < 69) {
       // Stopped at once — the power cut — and started again: nothing it
       // had not written to the folder is written, until it starts.
-      store.database.close();
+      store.abandon();
       computers[who] = await open(who == 0 ? 'a' : 'b');
       log.add('$who stops and starts again');
     } else if (roll < 82) {

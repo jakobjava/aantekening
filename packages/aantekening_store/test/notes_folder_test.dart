@@ -292,7 +292,7 @@ void main() {
         documentWithText(pageId, 'unwritten'),
       );
       // Stopped without closing: nothing flushed.
-      store.database.close();
+      store.abandon();
 
       final again = await AantekeningStore.open(
         notesFolder: notes,
@@ -419,6 +419,35 @@ void main() {
     expect(file.document.extractSearchText(), 'fixed');
   });
 
+  test('notes open in another window are not opened again', () async {
+    final store = await computer('a');
+    final identity = store.folder!.readIdentity()!;
+    await store.close();
+    // Another window of the app, holding the notes as it does.
+    final script = File(p.join(root.path, 'other_window.dart'))
+      ..writeAsStringSync("""
+import 'dart:io';
+Future<void> main() async {
+  File(r'${p.join(root.path, 'index-a', '$identity.lock')}')
+      .openSync(mode: FileMode.append)
+      .lockSync();
+  stdout.writeln('open');
+  await stdin.first;
+}
+""");
+    final other = await Process.start(Platform.resolvedExecutable, <String>[
+      script.path,
+    ]);
+    addTearDown(other.kill);
+    await other.stdout.first;
+
+    await expectLater(computer('a'), throwsA(isA<NotesInUse>()));
+    other.stdin.writeln();
+    await other.exitCode;
+    final again = await computer('a');
+    await again.close();
+  });
+
   test('notes from before notes folders are put in the folder', () async {
     Directory(notes).createSync(recursive: true);
     final legacy = AantekeningDatabase.open(
@@ -473,7 +502,7 @@ void main() {
         final (_, pageId) = await seed(store);
         await store.mirror!.flush();
         // Stopped without closing, and the index damaged meanwhile.
-        store.database.close();
+        store.abandon();
         final index = Directory(indexFolder)
             .listSync()
             .whereType<File>()

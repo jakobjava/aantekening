@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -96,7 +97,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           body: store.when(
             loading: () => const Loading(),
             error: (error, stack) => EmptyMessage(
-              'The workspace could not be opened.',
+              error is NotesInUse
+                  ? 'aantekening is open already.'
+                  : 'The workspace could not be opened.',
               detail: '$error',
             ),
             data: (_) => Stack(

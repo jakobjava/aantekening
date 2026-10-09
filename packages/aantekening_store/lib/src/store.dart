@@ -5,6 +5,7 @@ library;
 import 'dart:io';
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
@@ -20,6 +21,16 @@ import 'library_repository.dart';
 import 'page_repository.dart';
 import 'rescue.dart';
 import 'search_repository.dart';
+
+/// The notes are open in another window of the app already.
+final class NotesInUse implements Exception {
+  const NotesInUse();
+
+  @override
+  String toString() =>
+      'These notes are open in another aantekening window. Close this one '
+      'and go on in that one, or close that one and start aantekening again.';
+}
 
 /// The notes, open: the notes folder that keeps them, and the database
 /// that is its index — for finding, searching and working on them at once.
@@ -71,16 +82,24 @@ class AantekeningStore {
     final firstTime = identity == null;
     identity ??= NotesFolder.newIdentity();
     final databasePath = p.join(indexFolder, '$identity.sqlite');
-    if (firstTime) _adoptLegacyDatabase(notesFolder, databasePath);
-
-    final database = _openIndex(databasePath);
+    // Only one window at a time works on the notes: two would each write
+    // what the other just wrote, and read it back as another computer's.
+    final lock = _lockIndex(p.join(indexFolder, '$identity.lock'));
+    final AantekeningDatabase database;
+    try {
+      if (firstTime) _adoptLegacyDatabase(notesFolder, databasePath);
+      database = _openIndex(databasePath);
+    } on Object {
+      lock.closeSync();
+      rethrow;
+    }
     final store = _assemble(
       database,
       notesFolder,
       AssetStore(database, folder.assets),
       Rescue(p.join(indexFolder, 'rescued', identity)),
       folder: folder,
-    );
+    ).._lock = lock;
     final mirror = store.mirror!;
     // What was not written before the app last stopped is written first,
     // so that what arrived meanwhile does not seem to be the only version.
@@ -147,6 +166,20 @@ class AantekeningStore {
           ? null
           : FolderMirror(database, folder, library, pages, bin),
     );
+  }
+
+  /// Holds the file at [path] for as long as the notes are open here,
+  /// throwing [NotesInUse] if another window holds it. The system lets go
+  /// of it however the app stops, a crash too.
+  static RandomAccessFile _lockIndex(String path) {
+    final file = File(path).openSync(mode: FileMode.append);
+    try {
+      file.lockSync();
+    } on FileSystemException {
+      file.closeSync();
+      throw const NotesInUse();
+    }
+    return file;
   }
 
   /// Opens the index at [path]. An index a crash left damaged is set aside,
@@ -252,11 +285,41 @@ class AantekeningStore {
   /// Writes what is waiting to the notes folder, and closes the connection.
   /// The store is unusable afterwards; closing it again does nothing.
   Future<void> close() => _closing ??= () async {
-    await mirror?.close();
-    database
-      ..markClosed()
-      ..close();
+    try {
+      await mirror?.close();
+      database
+        ..markClosed()
+        ..close();
+    } finally {
+      _unlock();
+    }
   }();
 
   Future<void>? _closing;
+
+  /// What keeps another window from opening these notes meanwhile.
+  RandomAccessFile? _lock;
+
+  void _unlock() {
+    final lock = _lock;
+    _lock = null;
+    if (lock == null) return;
+    try {
+      lock
+        ..unlockSync()
+        ..closeSync();
+    } on FileSystemException {
+      // Let go of by the system as the app stops.
+    }
+  }
+
+  /// Stops as the app does when it is killed: nothing written, nothing
+  /// closed but what the system closes — the index, and what keeps the
+  /// notes this window's.
+  @visibleForTesting
+  void abandon() {
+    _closing = Future<void>.value();
+    database.close();
+    _unlock();
+  }
 }

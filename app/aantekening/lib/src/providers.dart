@@ -15,13 +15,27 @@ import 'shell/tabs.dart';
 
 /// The notes, open: their folder, and this computer's index of it.
 final storeProvider = FutureProvider<AantekeningStore>((ref) async {
+  final notesFolder = await ref.watch(notesFolderProvider.future);
+  final indexFolder = await ref.watch(indexFolderProvider.future);
+  // The notes open before are closed first: they may be these notes, moved
+  // to another folder, and only one store at a time may work on them.
+  await _storeClosing;
   final store = await AantekeningStore.open(
-    notesFolder: await ref.watch(notesFolderProvider.future),
-    indexFolder: await ref.watch(indexFolderProvider.future),
+    notesFolder: notesFolder,
+    indexFolder: indexFolder,
   );
-  ref.onDispose(store.close);
+  // Waited on by the next store, whatever went wrong closing this one.
+  ref.onDispose(
+    () => _storeClosing = store.close().then<void>(
+      (_) {},
+      onError: (Object _) {},
+    ),
+  );
   return store;
 });
+
+/// The store last open closing, or done closing.
+Future<void> _storeClosing = Future<void>.value();
 
 /// A count bumped after a kind of change, to refresh what depends on it.
 ///

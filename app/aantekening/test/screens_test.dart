@@ -62,7 +62,7 @@ void main() {
             File(p.join(out.path, '$name.png'))
                 .writeAsBytesSync(png!.buffer.asUint8List());
           });
-        });
+        }, variant: platformFor(window));
       }
     }
   }

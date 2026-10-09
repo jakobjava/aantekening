@@ -156,6 +156,64 @@ void main() {
     expect(saved, <String>['b']);
   });
 
+  test(
+    'notes moved to another folder open there, the old folder left',
+    () async {
+      if (Platform.environment['AANTEKENING_HOME'] case final home?
+          when home.isNotEmpty) {
+        markTestSkipped('AANTEKENING_HOME chooses the notes folder');
+        return;
+      }
+      final support = Directory.systemTemp.createTempSync('notes_moved_');
+      addTearDown(() => support.deleteSync(recursive: true));
+      final container = ProviderContainer(
+        overrides: [
+          preferencesProvider.overrideWith(
+            (ref) async => Preferences.inMemory(),
+          ),
+          supportFolderProvider.overrideWith((ref) async => support.path),
+        ],
+      );
+      addTearDown(container.dispose);
+      final before = await container.read(storeProvider.future);
+      final notebook = await before.library.createNotebook(title: 'Physics');
+      final section = await before.library.createSection(
+        notebookId: notebook.id,
+        title: 'Waves',
+      );
+      final page = await before.pages.createPage(sectionId: section.id);
+      await before.pages.saveDocument(
+        page.id,
+        PageDocument.empty(id: page.id).withElementAdded(
+          TextElement(
+            id: Ulid.generate(),
+            frame: const Frame(x: 0, y: 0, width: 200, height: 40),
+            createdAt: 0,
+            updatedAt: 0,
+            blocks: <TextBlock>[TextBlock.plain('moved whole')],
+          ),
+        ),
+      );
+      final from = before.directory;
+      final target = p.join(support.path, 'Elsewhere');
+
+      await container.read(notesLocationProvider).moveTo(target);
+      // The same notes — the same index — opened only once the old store
+      // has let go of them.
+      final after = await container.read(storeProvider.future);
+      expect(after.directory, target);
+      expect(
+        (await after.pages.loadDocument(page.id))!.extractSearchText(),
+        'moved whole',
+      );
+      expect(
+        File(p.join(from, 'pages', '${page.id}.json.gz')).existsSync(),
+        isTrue,
+        reason: 'the folder they were in is left as it was',
+      );
+    },
+  );
+
   testWidgets('the settings have a page for files, with what they hold', (
     tester,
   ) async {

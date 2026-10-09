@@ -63,6 +63,13 @@ final Map<String, List<LogicalKeyboardKey>> panes =
       ],
     };
 
+/// The system a window of [size] is on, for a test to run as on it: a
+/// phone's is Android, the rest the desktop's — with no handles to drag
+/// text by, say.
+TargetPlatformVariant platformFor(Size size) => TargetPlatformVariant.only(
+  size.width < 600 ? TargetPlatform.android : TargetPlatform.linux,
+);
+
 /// Fills [store] with a library of long names and opens the window on a
 /// page of it, [window] large, its words [scale] times their size.
 Future<void> openLongLibrary(

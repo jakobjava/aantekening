@@ -68,7 +68,7 @@ void main() {
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull, reason: said());
-        });
+        }, variant: platformFor(window));
       }
     }
   }
