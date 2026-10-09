@@ -569,6 +569,9 @@ final class _Streams {
 
   static final _Streams none = _Streams(const {}, const [], const [], const []);
 
+  /// How many references past its stream's end a property may take.
+  static const int _slack = 4096;
+
   final Map<int, Guid> _table;
   final List<int> _objects;
   final List<int> _spaces;
@@ -583,6 +586,14 @@ final class _Streams {
       ReferenceKind.objectSpace => (_spaces, _space),
       ReferenceKind.context => (_contexts, _context),
     };
+    // A count a little past what the stream holds takes nothing for the
+    // rest; one far past it is damage, which must not be taken as so many
+    // references — billions, from four bytes gone wrong.
+    if (count - (list.length - at) > _slack) {
+      throw FormatDamage(
+        '$count references, but ${list.length - at} are left to take',
+      );
+    }
     final ids = <ExGuid?>[
       for (var i = 0; i < count; i++)
         at + i < list.length

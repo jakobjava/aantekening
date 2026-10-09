@@ -502,6 +502,9 @@ class PageRepository {
     _db.transaction(() {
       final renamed = <String, String>{};
       for (final asset in file.assets) {
+        // Named by what the folder says it holds: only a SHA-256 names a
+        // file in it.
+        if (!AssetStore.isDigest(asset.sha256)) continue;
         final same = _db.select(
           'SELECT id FROM assets WHERE sha256 = ?',
           <Object?>[asset.sha256],

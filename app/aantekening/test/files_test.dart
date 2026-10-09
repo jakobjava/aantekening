@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:aantekening/src/editor/text/text_styles.dart';
+import 'package:aantekening/src/files/attached_files.dart';
 import 'package:aantekening/src/files/backup_settings.dart';
 import 'package:aantekening/src/files/bin_view.dart';
 import 'package:aantekening/src/files/notes_keeper.dart';
@@ -21,6 +22,34 @@ import 'package:path/path.dart' as p;
 import 'editor_harness.dart';
 
 void main() {
+  group('attached files', () {
+    test('are named as one file, never a way out of their folder', () {
+      expect(safeFileName('notes.pdf'), 'notes.pdf');
+      expect(safeFileName('../../.bashrc'), 'bashrc');
+      expect(safeFileName(r'..\..\Windows\win.ini'), 'win.ini');
+      expect(safeFileName('/etc/passwd'), 'passwd');
+      expect(safeFileName('a:b*c?.txt'), 'a_b_c_.txt');
+      expect(safeFileName('..'), 'Attached file');
+      expect(safeFileName(''), 'Attached file');
+    });
+
+    test('that would run a program are known', () {
+      for (final name in <String>[
+        'setup.exe',
+        'Run.BAT',
+        'start.desktop',
+        'install.sh',
+        'macro.vbs',
+        'shortcut.lnk',
+      ]) {
+        expect(runsCode(name), isTrue, reason: name);
+      }
+      for (final name in <String>['notes.pdf', 'photo.JPG', 'data.csv']) {
+        expect(runsCode(name), isFalse, reason: name);
+      }
+    });
+  });
+
   group('backups', () {
     test('are due once their interval has passed since the last', () {
       final at = DateTime(2026, 9, 27, 12);

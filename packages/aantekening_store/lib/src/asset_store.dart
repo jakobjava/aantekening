@@ -116,8 +116,14 @@ class AssetStore {
   /// the renderer instead of holding it in memory.
   File fileFor(AssetRef asset) => fileForHash(asset.sha256);
 
-  /// The file holding the bytes whose SHA-256 is [sha256Hex].
-  File fileForHash(String sha256Hex) => File(_pathForHash(sha256Hex));
+  /// The file holding the bytes whose SHA-256 is [sha256Hex] — brought back
+  /// first, if it was set aside as no page here showed it: a page another
+  /// computer added may show it still.
+  File fileForHash(String sha256Hex) {
+    final file = File(_pathForHash(sha256Hex));
+    if (!file.existsSync()) _bringBack(sha256Hex, file);
+    return file;
+  }
 
   /// Reads an asset's bytes, or null when it is unknown or its file is missing.
   Future<Uint8List?> readBytes(String assetId) async {
@@ -128,12 +134,19 @@ class AssetStore {
     return file.readAsBytes();
   }
 
-  /// Deletes assets that no page references any more — none, not even a
-  /// page in the bin, which may yet be restored.
+  /// Sets aside the files of assets that no page references any more —
+  /// none, not even a page in the bin, which may yet be restored — and
+  /// deletes for good those set aside [keepFor] ago that still none does.
+  ///
+  /// A file is set aside rather than deleted because the notes folder is
+  /// shared: another computer may have added a page showing it that has not
+  /// reached this one yet. Reading it brings it back.
   ///
   /// Returns the number of assets removed. Called after emptying the bin,
   /// never on a hot path.
-  Future<int> collectGarbage() async {
+  Future<int> collectGarbage({
+    Duration keepFor = const Duration(days: 30),
+  }) async {
     final rows = _db.select('''
       SELECT a.id AS id, a.sha256 AS sha256
       FROM assets a
@@ -144,14 +157,63 @@ class AssetStore {
 
     var removed = 0;
     for (final row in rows) {
-      final file = File(_pathForHash(str(row, 'sha256')));
-      if (file.existsSync()) {
-        await file.delete();
+      final digest = str(row, 'sha256');
+      if (isDigest(digest)) {
+        final file = File(_pathForHash(digest));
+        if (file.existsSync()) {
+          final aside = File(_asideFor(digest));
+          await aside.parent.create(recursive: true);
+          await file.rename(aside.path);
+          // Kept for [keepFor] from now, not from when it was made.
+          aside.setLastModifiedSync(_clock());
+        }
       }
       _db.run('DELETE FROM assets WHERE id = ?', <Object?>[str(row, 'id')]);
       removed++;
     }
+    _forgetSetAside(keepFor);
     return removed;
+  }
+
+  /// The folder files no page here shows are set aside in.
+  Directory get _setAside => Directory(p.join(rootDirectory.path, '.removed'));
+
+  String _asideFor(String digest) => p.join(_setAside.path, digest);
+
+  /// Brings the file of [digest] back to [file] from where it was set aside,
+  /// if it is there.
+  void _bringBack(String digest, File file) {
+    try {
+      final aside = File(_asideFor(digest));
+      if (!aside.existsSync()) return;
+      file.parent.createSync(recursive: true);
+      aside.renameSync(file.path);
+    } on FileSystemException {
+      // Read where it is next time.
+    }
+  }
+
+  /// Deletes the files set aside longer than [keepFor] ago that no page
+  /// known here shows.
+  void _forgetSetAside(Duration keepFor) {
+    if (!_setAside.existsSync()) return;
+    final before = _clock().subtract(keepFor);
+    for (final entity in _setAside.listSync()) {
+      if (entity is! File) continue;
+      final digest = p.basename(entity.path);
+      try {
+        if (!isDigest(digest) ||
+            entity.statSync().modified.isAfter(before) ||
+            _db.select('SELECT 1 FROM assets WHERE sha256 = ?', <Object?>[
+              digest,
+            ]).isNotEmpty) {
+          continue;
+        }
+        entity.deleteSync();
+      } on FileSystemException {
+        // Gone another time.
+      }
+    }
   }
 
   /// Total bytes held on disk by all assets.
@@ -166,8 +228,21 @@ class AssetStore {
   ///
   /// A single directory holding tens of thousands of entries is slow to list on
   /// every platform this app targets.
-  String _pathForHash(String digest) =>
-      p.join(rootDirectory.path, digest.substring(0, 2), digest);
+  ///
+  /// [digest] comes from the notes folder, which anyone sharing it can
+  /// write to: anything but a SHA-256 is refused, so no name can lead out
+  /// of the folder.
+  String _pathForHash(String digest) {
+    if (!isDigest(digest)) {
+      throw ArgumentError.value(digest, 'digest', 'not a SHA-256');
+    }
+    return p.join(rootDirectory.path, digest.substring(0, 2), digest);
+  }
+
+  /// Whether [text] is a SHA-256, as assets are named by.
+  static bool isDigest(String text) => _digest.hasMatch(text);
+
+  static final RegExp _digest = RegExp(r'^[0-9a-f]{64}$');
 
   /// Guesses a media type from a file extension.
   ///

@@ -53,23 +53,44 @@ abstract final class Backups {
     } finally {
       encoder.closeSync();
     }
-    final input = InputFileStream(temporary);
-    final int count;
-    try {
-      count = ZipDecoder()
-          .decodeStream(input)
-          .files
-          .where((file) => file.isFile)
-          .length;
-    } finally {
-      input.closeSync();
-    }
-    if (count != files.length) {
+    if (!_isWhole(temporary, files)) {
       File(temporary).deleteSync();
       throw FileSystemException('The backup could not be checked', target);
     }
     File(temporary).renameSync(target);
     return target;
+  }
+
+  /// Whether the zip at [path] holds each of [files] whole: every one read
+  /// back, the same length as it was and with the checksum it was written
+  /// with — a backup in the list must be one that restores.
+  static bool _isWhole(String path, List<(File, String)> files) {
+    final input = InputFileStream(path);
+    try {
+      final archive = ZipDecoder().decodeStream(input);
+      final sizes = <String, int>{
+        for (final (file, relative) in files)
+          relative.replaceAll(r'\', '/'): file.lengthSync(),
+      };
+      var count = 0;
+      for (final entry in archive.files) {
+        if (!entry.isFile) continue;
+        count++;
+        final bytes = entry.readBytes();
+        final crc = entry.crc32;
+        if (bytes == null ||
+            bytes.length != sizes[entry.name] ||
+            (crc != null && getCrc32(bytes) != crc)) {
+          return false;
+        }
+        entry.clear();
+      }
+      return count == files.length;
+    } on Object {
+      return false;
+    } finally {
+      input.closeSync();
+    }
   }
 
   /// Whether [file] is part of the notes: not a leftover of a write, nor

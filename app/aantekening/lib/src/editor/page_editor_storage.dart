@@ -153,9 +153,17 @@ extension _Storage on _PageEditorState {
   Future<void> _openFile(BlockEmbed file) async {
     final store = _store;
     if (store == null) return;
-    if (!await openAttachedFile(store, file) && mounted) {
-      ScaffoldMessenger.maybeOf(context)
-          ?.showMessage('The file could not be opened.');
+    final opened = await openAttachedFile(store, file);
+    if (!mounted) return;
+    final message = switch (opened) {
+      OpenedFile.opened => null,
+      OpenedFile.runsCode =>
+        'This file is a program, or would run one, so it is not opened '
+            'from a note. Save a copy to open it yourself if you trust it.',
+      OpenedFile.failed => 'The file could not be opened.',
+    };
+    if (message != null) {
+      ScaffoldMessenger.maybeOf(context)?.showMessage(message);
     }
   }
 
