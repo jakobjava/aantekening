@@ -508,26 +508,32 @@ final class FolderMirror {
     for (final entry in folder.entries()) {
       final path = entry.file.path;
       seen.add(path);
-      final stat = entry.file.statSync();
-      final record = _record(path);
-      if (!entry.isCopy && _matches(record, stat)) continue;
-      final bytes = NotesFolder.read(entry.file);
-      if (bytes == null) continue;
-      final digest = sha256.convert(bytes).toString();
-      if (!entry.isCopy && record?.digest == digest) {
-        _remember(path, entry.kind, entry.id!, stat, digest);
-        continue;
-      }
-      final file = EntityFile.decode(bytes);
-      if (file == null || file.kind != entry.kind) {
-        damaged.add(path);
-        continue;
-      }
-      if (entry.isCopy) {
-        await _readCopy(entry, file);
-      } else if (file.id == entry.id) {
-        waiting.add(_Arrival(entry, file, stat, digest));
-      } else {
+      // One file that cannot be read — or put in — must not keep every
+      // other from being read: it is said to be damaged, and left.
+      try {
+        final stat = entry.file.statSync();
+        final record = _record(path);
+        if (!entry.isCopy && _matches(record, stat)) continue;
+        final bytes = NotesFolder.read(entry.file);
+        if (bytes == null) continue;
+        final digest = sha256.convert(bytes).toString();
+        if (!entry.isCopy && record?.digest == digest) {
+          _remember(path, entry.kind, entry.id!, stat, digest);
+          continue;
+        }
+        final file = EntityFile.decode(bytes);
+        if (file == null || file.kind != entry.kind) {
+          damaged.add(path);
+          continue;
+        }
+        if (entry.isCopy) {
+          await _readCopy(entry, file);
+        } else if (file.id == entry.id) {
+          waiting.add(_Arrival(entry, file, stat, digest));
+        } else {
+          damaged.add(path);
+        }
+      } on Object {
         damaged.add(path);
       }
     }
@@ -539,7 +545,14 @@ final class FolderMirror {
     while (waiting.isNotEmpty && progress) {
       progress = false;
       for (final arrival in List.of(waiting)) {
-        if (_apply(arrival)) {
+        bool applied;
+        try {
+          applied = _apply(arrival);
+        } on Object {
+          damaged.add(arrival.path);
+          applied = true;
+        }
+        if (applied) {
           waiting.remove(arrival);
           progress = true;
         }

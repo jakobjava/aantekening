@@ -112,6 +112,34 @@ void main() {
       expect(index.cellCount, 0);
     });
 
+    test('takes an element of any size at once, even one not a number', () {
+      final watch = Stopwatch()..start();
+      final index = SpatialIndex(cellSize: 100)
+        ..insert('vast', const Aabb(-1e300, -1e300, 1e300, 1e300))
+        ..insert('broken', const Aabb(double.nan, 0, 10, 10))
+        ..insert('endless', const Aabb(0, 0, double.infinity, 10))
+        ..insert('small', const Aabb(0, 0, 10, 10));
+
+      expect(index.query(const Aabb(0, 0, 50, 50)), <String>{
+        'vast',
+        'small',
+        'endless',
+      });
+      expect(index.query(const Aabb(-1e12, -1e12, 1e12, 1e12)), <String>{
+        'vast',
+        'small',
+        'endless',
+      });
+      index
+        ..remove('vast')
+        ..remove('broken');
+      expect(index.query(const Aabb(0, 0, 50, 50)), <String>{
+        'small',
+        'endless',
+      });
+      expect(watch.elapsedMilliseconds, lessThan(1000));
+    });
+
     test('handles negative coordinates', () {
       final index = SpatialIndex(cellSize: 100)
         ..insert('a', const Aabb(-500, -500, -450, -450));

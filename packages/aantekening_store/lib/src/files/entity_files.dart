@@ -99,9 +99,10 @@ sealed class EntityFile {
           readObjectList(json, 'children'),
         ),
       };
-    } on FormatException {
-      return null;
-    } on TypeError {
+    } on Object {
+      // Whatever a damaged file — or one from a build that writes what
+      // this one cannot take — makes reading it throw, it is not one this
+      // build understands.
       return null;
     }
   }
