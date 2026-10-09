@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../look/appearance.dart';
+import '../../look/glass.dart';
 import '../../look/motion.dart';
 import '../../look/tones.dart';
 import '../../preferences.dart';
@@ -328,7 +329,7 @@ class _FormulaWindowState extends ConsumerState<_FormulaWindow> {
         const SingleActivator(LogicalKeyboardKey.keyY, control: true): () =>
             _step(back: false),
       },
-      child: AlertDialog(
+      child: GlassDialog(
         title: Text(picture ? 'TikZ picture' : 'Formula'),
         content: SizedBox(
           width: 560,

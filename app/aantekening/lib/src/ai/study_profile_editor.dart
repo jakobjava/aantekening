@@ -6,7 +6,8 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../look/marks.dart';
+import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 import 'ai_state.dart';
@@ -91,7 +92,7 @@ class _StudyProfileEditorState extends ConsumerState<StudyProfileEditor> {
     final profile = widget.profile;
     final about = ref.watch(aiSettingsProvider.select((s) => s.about)).trim();
     final note = TextStyle(fontSize: 12, height: 1.4, color: tones.muted);
-    return AlertDialog(
+    return GlassDialog(
       title: Text(profile == null ? 'New study profile' : 'Edit the profile'),
       content: SizedBox(
         width: 540,
@@ -109,27 +110,27 @@ class _StudyProfileEditorState extends ConsumerState<StudyProfileEditor> {
                 ),
               ),
               const SizedBox(height: 16),
-              DropdownMenu<StudyKind>(
-                initialSelection: _form,
-                enabled: !_original,
-                label: const Text('Makes'),
-                expandedInsets: EdgeInsets.zero,
-                trailingIcon: const Mark(MarkShape.chevronDown),
-                selectedTrailingIcon: const Mark(MarkShape.chevronUp),
-                helperText: _original
+              SmallCaps('Makes', color: tones.muted),
+              const SizedBox(height: 6),
+              if (_original)
+                Text(_form.label)
+              else
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: ChoiceRow<StudyKind>(
+                    choices: StudyKind.values,
+                    selected: _form,
+                    labelOf: (form) => form.label,
+                    onSelected: (form) => setState(() => _form = form),
+                  ),
+                ),
+              const SizedBox(height: 6),
+              Text(
+                _original
                     ? '${_form.purpose} The app’s own profiles keep their '
                           'form.'
                     : _form.purpose,
-                dropdownMenuEntries: <DropdownMenuEntry<StudyKind>>[
-                  for (final form in StudyKind.values)
-                    DropdownMenuEntry<StudyKind>(
-                      value: form,
-                      label: form.label,
-                    ),
-                ],
-                onSelected: (form) {
-                  if (form != null) setState(() => _form = form);
-                },
+                style: TextStyle(fontSize: 12, color: tones.muted),
               ),
               const SizedBox(height: 16),
               TextField(

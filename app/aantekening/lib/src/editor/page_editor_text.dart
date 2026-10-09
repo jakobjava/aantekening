@@ -164,10 +164,20 @@ extension _TextEditing on _PageEditorState {
   }
 
   /// Notes whether a formula is being typed, which shows the box it is
-  /// typed in even while that is only a caret.
+  /// typed in even while that is only a caret: picked, with its handles, as
+  /// a box being typed in is, and a caret again if the formula is left with
+  /// nothing written.
   void _onFormulaChanged() {
     final open = _textController.formulaField.value != null;
-    if (open != _formulaOpen) _update(() => _formulaOpen = open);
+    if (open == _formulaOpen) return;
+    _update(() => _formulaOpen = open);
+    final id = _editingId;
+    if (id == null || !_placed.contains(id)) return;
+    if (open) {
+      _controller.select(id);
+    } else {
+      _controller.clearSelection();
+    }
   }
 
   /// Puts a structure or symbol into the formula being

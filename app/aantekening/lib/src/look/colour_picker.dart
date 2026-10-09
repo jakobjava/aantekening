@@ -85,7 +85,7 @@ class _ColorPickerDialogState extends State<ColorPickerDialog> {
         ),
       ),
     );
-    return AlertDialog(
+    return GlassDialog(
       title: Text(widget.title),
       content: SizedBox(
         width: 280,

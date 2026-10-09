@@ -4,8 +4,10 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
@@ -136,31 +138,144 @@ class _Mode extends ConsumerWidget {
 class _Tabs extends ConsumerWidget {
   const _Tabs();
 
-  /// The widest a tab's name grows; with more tabs than fit, they share the
-  /// line.
-  static const double maxTabWidth = 200;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(tabsProvider);
-    return Row(
+    return _FairRow(
       children: <Widget>[
         for (var i = 0; i < state.tabs.length; i++)
-          Flexible(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: maxTabWidth),
-              child: _Tab(
-                key: ValueKey<int>(state.tabs[i].id),
-                index: i,
-                tab: state.tabs[i],
-                showing: i == state.active,
-                beside: i == state.beside,
-              ),
-            ),
+          _Tab(
+            key: ValueKey<int>(state.tabs[i].id),
+            index: i,
+            tab: state.tabs[i],
+            showing: i == state.active,
+            beside: i == state.beside,
           ),
       ],
     );
   }
+}
+
+/// Lays the tabs along the line as wide as their names, until there are
+/// more than fit: then the widest are narrowed, alike, just enough that all
+/// of them do, and only their names are cut short.
+class _FairRow extends MultiChildRenderObjectWidget {
+  const _FairRow({required super.children});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderFairRow();
+}
+
+class _FairRowData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderFairRow extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _FairRowData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _FairRowData> {
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _FairRowData) child.parentData = _FairRowData();
+  }
+
+  Iterable<RenderBox> get _children sync* {
+    for (var child = firstChild; child != null; child = childAfter(child)) {
+      yield child;
+    }
+  }
+
+  /// The widest each tab is laid out, for room [room] wide: as wide as each
+  /// would be, or, where they are wider together, the width at which the
+  /// tabs no wider than it and the rest at it fill the room.
+  static double _cap(Iterable<double> widths, double room) {
+    final sorted = widths.toList()..sort();
+    var left = room;
+    for (var i = 0; i < sorted.length; i++) {
+      final share = left / (sorted.length - i);
+      if (sorted[i] > share) return share;
+      left -= sorted[i];
+    }
+    return double.infinity;
+  }
+
+  /// Each tab's width for [constraints].
+  List<double> _widths(BoxConstraints constraints) {
+    final natural = <double>[
+      for (final child in _children)
+        child.getMaxIntrinsicWidth(double.infinity),
+    ];
+    final cap = _cap(natural, constraints.maxWidth);
+    return <double>[for (final width in natural) math.min(width, cap)];
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) => 0;
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => _children.fold(
+    0,
+    (sum, child) => sum + child.getMaxIntrinsicWidth(height),
+  );
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _children.fold(
+    0,
+    (most, child) => math.max(most, child.getMinIntrinsicHeight(width)),
+  );
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => _children.fold(
+    0,
+    (most, child) => math.max(most, child.getMaxIntrinsicHeight(width)),
+  );
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final widths = _widths(constraints);
+    var height = 0.0;
+    var i = 0;
+    for (final child in _children) {
+      height = math.max(
+        height,
+        child.getDryLayout(_along(widths[i++], constraints)).height,
+      );
+    }
+    return constraints.constrain(
+      Size(widths.fold(0, (sum, width) => sum + width), height),
+    );
+  }
+
+  static BoxConstraints _along(double width, BoxConstraints constraints) =>
+      BoxConstraints(maxWidth: width, maxHeight: constraints.maxHeight);
+
+  @override
+  void performLayout() {
+    final widths = _widths(constraints);
+    var height = 0.0;
+    var i = 0;
+    for (final child in _children) {
+      child.layout(_along(widths[i++], constraints), parentUsesSize: true);
+      height = math.max(height, child.size.height);
+    }
+    size = constraints.constrain(
+      Size(_children.fold(0, (sum, child) => sum + child.size.width), height),
+    );
+    var x = 0.0;
+    for (final child in _children) {
+      (child.parentData! as _FairRowData).offset = Offset(
+        x,
+        (size.height - child.size.height) / 2,
+      );
+      x += child.size.width;
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
 }
 
 class _Tab extends ConsumerStatefulWidget {

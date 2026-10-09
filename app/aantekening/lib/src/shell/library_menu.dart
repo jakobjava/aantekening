@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
 import '../files/export_flow.dart';
+import '../look/glass.dart';
 import '../look/icons.dart';
 import '../look/motion.dart';
 import 'library_actions.dart';
@@ -263,7 +264,7 @@ class _NameDialogState extends State<_NameDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => GlassDialog(
     title: Text(widget.title),
     content: TextField(
       controller: _controller,

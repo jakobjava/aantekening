@@ -1,7 +1,8 @@
-/// Measures how smoothly, and at what cost, a heavy page scrolls and zooms:
-/// the time each frame takes to build and to draw, and the processor time
-/// spent, thread by thread, while a wheel, a touchpad and a pinch move it —
-/// and while nothing does.
+/// Measures how smoothly, and at what cost, a heavy page scrolls and zooms,
+/// and the AI floats over it on glass, opened, moved and sized: the time
+/// each frame takes to build and to draw, and the processor time spent,
+/// thread by thread, while a wheel, a touchpad, a pinch and the mouse move
+/// them — and while nothing does.
 ///
 /// Built and run in profile mode, on the desktop it is to measure:
 ///
@@ -28,12 +29,14 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:aantekening/src/ai/ai_state.dart';
+import 'package:aantekening/src/ai/ai_view.dart';
 import 'package:aantekening/src/app.dart';
 import 'package:aantekening/src/editor/trackpad.dart';
 import 'package:aantekening/src/files/notes_location.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
 import 'package:aantekening/src/shell/library_actions.dart';
+import 'package:aantekening/src/shell/tabs.dart';
 import 'package:aantekening/src/spelling/dictionaries.dart';
 import 'package:aantekening/src/spelling/spelling.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
@@ -164,6 +167,30 @@ Future<void> main() async {
   });
   await measure('idle, zoomed in', () => _wait(const Duration(seconds: 3)));
 
+  // The AI, floating over the page on glass: opened, moved by its head and
+  // sized by its edge, and left open.
+  await measure('AI pane opening', () async {
+    container.read(tabsProvider.notifier).toggleAi();
+    await _wait(const Duration(milliseconds: 600));
+  });
+  final pane = _rectOf<AiView>();
+  await measure('AI pane moved', () async {
+    await input.drag(
+      Offset(pane.center.dx, pane.top + 20),
+      const Offset(-400, 60),
+      const Duration(seconds: 2),
+    );
+  });
+  await measure('AI pane sized', () async {
+    final moved = _rectOf<AiView>();
+    await input.drag(
+      Offset(moved.left + 2, moved.center.dy),
+      const Offset(-300, 0),
+      const Duration(seconds: 2),
+    );
+  });
+  await measure('idle, AI pane open', () => _wait(const Duration(seconds: 4)));
+
   // The last timings are handed over once a frame is drawn after a while.
   await _wait(const Duration(milliseconds: 1100));
   SchedulerBinding.instance.scheduleForcedFrame();
@@ -191,17 +218,23 @@ Future<void> main() async {
 Future<void> _wait(Duration duration) => Future<void>.delayed(duration);
 
 /// Where the page is on screen.
-Rect _canvasRect() {
-  final box = _canvas().renderObject! as RenderBox;
+Rect _canvasRect() => _rectOf<InfiniteCanvas>();
+
+/// The page, as the window shows it.
+Element _canvas() => _find<InfiniteCanvas>();
+
+/// Where the widget [T] is on screen.
+Rect _rectOf<T extends Widget>() {
+  final box = _find<T>().renderObject! as RenderBox;
   return box.localToGlobal(Offset.zero) & box.size;
 }
 
-/// The page, as the window shows it.
-Element _canvas() {
+/// The widget [T], as the window shows it.
+Element _find<T extends Widget>() {
   Element? found;
   void visit(Element element) {
     if (found != null) return;
-    if (element.widget is InfiniteCanvas) {
+    if (element.widget is T) {
       found = element;
       return;
     }
@@ -359,6 +392,44 @@ class _Input {
               logicalKey: logical,
               timeStamp: _time,
             ),
+    );
+  }
+
+  /// The mouse pressed at [from] and dragged by [distance], evenly over
+  /// [duration], then let go.
+  Future<void> drag(Offset from, Offset distance, Duration duration) async {
+    final pointer = _gesture++;
+    _send(
+      PointerDownEvent(
+        timeStamp: _time,
+        position: from,
+        device: _mouse,
+        pointer: pointer,
+      ),
+    );
+    final steps = duration.inMicroseconds ~/ _report.inMicroseconds;
+    var at = from;
+    for (var step = 1; step <= steps; step++) {
+      await _wait(_report);
+      final next = from + distance * (step / steps);
+      _send(
+        PointerMoveEvent(
+          timeStamp: _time,
+          position: next,
+          delta: next - at,
+          device: _mouse,
+          pointer: pointer,
+        ),
+      );
+      at = next;
+    }
+    _send(
+      PointerUpEvent(
+        timeStamp: _time,
+        position: at,
+        device: _mouse,
+        pointer: pointer,
+      ),
     );
   }
 

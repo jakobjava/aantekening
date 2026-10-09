@@ -8,13 +8,9 @@ import 'package:flutter/widgets.dart';
 import 'canvas_controller.dart';
 
 /// Where the view is along one axis of the page, for a scrollbar or a map
-/// of the page to show, in the view's space, from as far back as the view
-/// goes ([CanvasController.originRange]).
-///
-/// One paper runs on without end to the right and down, so how far it
-/// scrolls is made up: from its top-left corner to half a view past its
-/// content, and never short of where the view already is. Sheets scroll as
-/// far as the view goes about them.
+/// of the page to show, in the view's space: from as far back as the view
+/// goes ([CanvasController.originRange]) to as far on, and never short of
+/// where the view already is.
 @immutable
 class ScrollSpan {
   const ScrollSpan({
@@ -32,19 +28,8 @@ class ScrollSpan {
     final length =
         (vertical ? controller.viewSize.height : controller.viewSize.width) /
         view.zoom;
-    if (view.fold != null) {
-      return ScrollSpan(
-        extent: math.max(start + length, last - first + length),
-        start: start,
-        length: length,
-      );
-    }
-    final content = controller.contentBounds;
-    final contentEnd = content.isEmpty
-        ? 0.0
-        : (vertical ? content.bottom : content.right);
     return ScrollSpan(
-      extent: math.max(start + length, contentEnd + length / 2),
+      extent: math.max(start + length, last - first + length),
       start: start,
       length: length,
     );

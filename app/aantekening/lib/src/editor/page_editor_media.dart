@@ -198,7 +198,6 @@ extension _Media on _PageEditorState {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.maybeOf(context)
-        ?.showAppSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.maybeOf(context)?.showMessage(message);
   }
 }

@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../look/controls.dart';
+import '../look/cursor_list.dart';
 import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
@@ -186,7 +187,6 @@ class _SearchLineState extends ConsumerState<SearchLine>
           };
     return FloatingIn(
       animation: _shown,
-      glass: true,
       alignment: Alignment.topCenter,
       child: Glass(
         child: Column(
@@ -251,7 +251,8 @@ class _SearchLineState extends ConsumerState<SearchLine>
             if (hits.isNotEmpty) ...<Widget>[
               Divider(height: 1, color: tones.glassRim),
               Flexible(
-                child: ListView.builder(
+                child: CursorList(
+                  cursor: showing,
                   shrinkWrap: true,
                   padding: const EdgeInsets.all(5),
                   itemCount: hits.length,

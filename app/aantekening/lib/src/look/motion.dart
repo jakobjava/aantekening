@@ -4,8 +4,6 @@
 /// all where the system asks for less motion.
 library;
 
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
 import 'glass.dart';
@@ -59,14 +57,12 @@ extension MotionAccess on BuildContext {
   }
 }
 
-/// Shows the dialog [builder] makes over [context]: it settles in over the
-/// window, which frosts behind it while what floats is frosted — unless it
-/// is glass itself, [overGlass], which the window shows through.
+/// Shows the dialog [builder] makes — on [Glass], as every one is — over
+/// [context]: it settles in over the window, which shows through it.
 Future<T?> showAppDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool barrierDismissible = true,
-  bool overGlass = false,
 }) {
   final motion = context.motion;
   final tones = context.tones;
@@ -74,91 +70,84 @@ Future<T?> showAppDialog<T>({
     context: context,
     barrierDismissible: barrierDismissible,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    barrierColor: overGlass ? tones.scrim.withValues(alpha: 0.04) : tones.scrim,
+    barrierColor: tones.scrim.withValues(alpha: 0.04),
     transitionDuration: motion.of(Motion.settle),
     pageBuilder: (context, _, _) => SafeArea(child: Builder(builder: builder)),
-    transitionBuilder: (context, animation, _, child) => FloatingIn(
-      animation: animation,
-      frostsBehind: tones.frosted && !overGlass,
-      glass: overGlass,
-      child: child,
-    ),
+    transitionBuilder: (context, animation, _, child) =>
+        FloatingIn(animation: animation, child: child),
   );
 }
 
-/// [child] floating in as [animation] runs: fading in and growing the last
-/// little way to its size, with a little give — and, with [frostsBehind],
-/// frosting what lies behind it as it comes. A [glass] child fades in by
-/// itself, its frost coming as it does ([GlassArriving]): faded as a whole,
-/// what lies beneath it would be drawn again, blurred, every frame.
+/// [child], a pane of [Glass], floating in as [animation] runs: fading in
+/// and growing the last little way to its size, with a little give. The
+/// glass fades in by itself, its frost coming as it does
+/// ([GlassArriving]): faded as a whole, what lies beneath it would be drawn
+/// again, blurred, every frame.
 class FloatingIn extends StatelessWidget {
   const FloatingIn({
     required this.animation,
     required this.child,
-    this.frostsBehind = false,
-    this.glass = false,
     this.alignment = Alignment.center,
     super.key,
   });
 
   final Animation<double> animation;
   final Widget child;
-  final bool frostsBehind;
-
-  /// Whether [child] is a pane of [Glass], which fades in by itself.
-  final bool glass;
 
   /// Where it grows from.
   final Alignment alignment;
 
-  /// How far behind it is blurred, once it is in.
-  static const double _frost = 6;
-
   @override
   Widget build(BuildContext context) {
-    final fade = CurvedAnimation(
-      parent: animation,
-      curve: Motion.ease,
-      reverseCurve: Curves.easeIn,
-    );
     final grow = CurvedAnimation(
       parent: animation,
       curve: Motion.lively,
       reverseCurve: Curves.easeIn,
     );
-    final grown = ScaleTransition(
-      scale: Tween<double>(begin: 0.96, end: 1).animate(grow),
-      alignment: alignment,
-      child: child,
-    );
-    final floating = glass
-        ? GlassArriving(arriving: fade, child: grown)
-        : FadeTransition(opacity: fade, child: grown);
-    if (!frostsBehind) return floating;
-    return AnimatedBuilder(
-      animation: fade,
-      child: floating,
-      builder: (context, floating) => fade.value == 0
-          ? floating!
-          : BackdropFilter(
-              filter: ui.ImageFilter.blur(
-                sigmaX: _frost * fade.value,
-                sigmaY: _frost * fade.value,
-              ),
-              child: floating,
-            ),
+    return GlassArriving(
+      arriving: CurvedAnimation(
+        parent: animation,
+        curve: Motion.ease,
+        reverseCurve: Curves.easeIn,
+      ),
+      child: ScaleTransition(
+        scale: Tween<double>(begin: 0.96, end: 1).animate(grow),
+        alignment: alignment,
+        child: child,
+      ),
     );
   }
 }
 
-/// Messages along the foot of the window.
+/// Messages along the foot of the window, on glass.
 extension AppMessages on ScaffoldMessengerState {
-  ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showAppSnackBar(
-    SnackBar snackBar,
-  ) {
+  /// Says [message] along the foot of the window, with [action], if given,
+  /// beside it — named as its label says. It goes by itself after a while.
+  void showMessage(
+    String message, {
+    ({String label, VoidCallback run})? action,
+  }) {
     final motion = context.motion;
-    return showSnackBar(
-      snackBar,
+    showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        padding: EdgeInsets.zero,
+        clipBehavior: Clip.none,
+        persist: false,
+        content: _Message(
+          message: message,
+          action: action == null
+              ? null
+              : (
+                  label: action.label,
+                  run: () {
+                    hideCurrentSnackBar();
+                    action.run();
+                  },
+                ),
+        ),
+      ),
       snackBarAnimationStyle: AnimationStyle(
         duration: motion.of(Motion.settle),
         reverseDuration: motion.of(Motion.leave),
@@ -167,15 +156,41 @@ extension AppMessages on ScaffoldMessengerState {
   }
 
   /// Says [message] in place of what was said before, with a way to [undo]
-  /// what it tells of. It goes by itself after a while, as any message
-  /// does: one with an action otherwise stays until it is closed.
+  /// what it tells of.
   void showUndoable(String message, VoidCallback undo) {
     hideCurrentSnackBar();
-    showAppSnackBar(
-      SnackBar(
-        content: Text(message),
-        action: SnackBarAction(label: 'Undo', onPressed: undo),
-        persist: false,
+    showMessage(message, action: (label: 'Undo', run: undo));
+  }
+}
+
+/// A message on glass, and what can be done about it.
+class _Message extends StatelessWidget {
+  const _Message({required this.message, this.action});
+
+  final String message;
+  final ({String label, VoidCallback run})? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final action = this.action;
+    return Glass(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 6, action == null ? 16 : 6, 6),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  message,
+                  style: TextStyle(color: context.tones.text),
+                ),
+              ),
+            ),
+            if (action != null)
+              TextButton(onPressed: action.run, child: Text(action.label)),
+          ],
+        ),
       ),
     );
   }

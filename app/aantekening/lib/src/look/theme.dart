@@ -274,24 +274,15 @@ abstract final class AppTheme {
         menuStyle: _menuStyle(tones, floating),
         textStyle: text.bodyMedium,
       ),
+      // How a dialog is laid out; it is on glass ([GlassDialog]).
       dialogTheme: DialogThemeData(
-        backgroundColor: tones.raised,
-        surfaceTintColor: Colors.transparent,
-        elevation: _floatingElevation,
-        shadowColor: tones.shadow,
-        shape: floating,
         insetPadding: const EdgeInsets.all(24),
         titleTextStyle: text.titleMedium,
         contentTextStyle: text.bodyMedium,
         actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        barrierColor: tones.scrim,
       ),
-      snackBarTheme: SnackBarThemeData(
-        backgroundColor: tones.raised,
-        contentTextStyle: text.bodyMedium?.copyWith(color: tones.text),
-        actionTextColor: tones.emphasis,
-        shape: floating,
-        elevation: _floatingElevation,
+      // Where a message is; it is on glass ([AppMessages]).
+      snackBarTheme: const SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         width: 480,
       ),

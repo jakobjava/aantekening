@@ -150,9 +150,10 @@ the accent with rounded corners, its handles drops of the accent in white
 rings. A text box shows nothing of itself — no outline, no band — until it
 is clicked, when it is framed as a picture is, with handles for its width
 alone; the strip along its top that moves it is still there, drawn as
-nothing, the pointer over it saying it moves. Settings, dialogs,
-tooltips and messages, which are read and filled in, are solid raised
-panels in the same rounded shape. Corners are rounded throughout as one (`Corners`): panels and cards,
+nothing, the pointer over it saying it moves. Settings, dialogs
+(`GlassDialog`) and messages are on glass as everything that floats is;
+only tooltips, small and gone in a moment, are solid raised panels in the
+same rounded shape. Corners are rounded throughout as one (`Corners`): panels and cards,
 controls, small marks; a note set apart is a `Callout`, a bar of colour
 down its side. What floats in settles with a little give and fades as it
 goes, and the focus ring glides to what the keys moved to (`Motion`,
@@ -171,6 +172,12 @@ where the system asks for less motion.
   beneath it is drawn again, blurred, every frame — a pane floating in took
   up to 200 ms a frame. It fades in by itself instead (`GlassArriving`), its
   blur and colour growing with it, which costs no more than a pane at rest.
+* The light along the glass's edge and the sheen across its top are drawn
+  in strips and corners of one or two colours, on what clips the glass to
+  its shape: a gradient across a rounded shape, or along a line round it,
+  is drawn again at each step a pane is sized by hand, and sizing the AI
+  took up to 120 ms a frame, a third of its frames late; it now takes what
+  moving it does, a frame in 4 ms on average.
 * Keys taken ahead of the focus are hidden from the window's shortcuts as
   well, which therefore stand aside while a catch is made (`CommandKeys`);
   a dialog opened from the picker takes the keys back from it while it is

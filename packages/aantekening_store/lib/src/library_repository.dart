@@ -99,6 +99,16 @@ class LibraryRepository {
     });
   }
 
+  /// Arranges the notebooks [ids] in that order, as shown sorted some other
+  /// way, say. It is no change to them.
+  Future<void> arrangeNotebooksAs(List<String> ids) async =>
+      _db.transaction(() => _db.arrangeAs('notebooks', ids));
+
+  /// Arranges the sections [ids] in that order among those beside each, as
+  /// shown sorted some other way, say. It is no change to them.
+  Future<void> arrangeSectionsAs(List<String> ids) async =>
+      _db.transaction(() => _db.arrangeAs('sections', ids));
+
   /// When each notebook not in the bin last changed: it, or any page in it
   /// not in the bin, by notebook.
   Future<Map<String, int>> notebookChanges() async => <String, int>{
@@ -112,6 +122,21 @@ class LibraryRepository {
     ))
       str(row, 'id'): integer(row, 'changed'),
   };
+
+  /// When each section of [notebookId] not in the bin last changed: it, or
+  /// any page in it not in the bin, by section.
+  Future<Map<String, int>> sectionChanges(String notebookId) async =>
+      <String, int>{
+        for (final row in _db.select(
+          'SELECT s.id AS id, MAX(s.updated_at, COALESCE(('
+          '  SELECT MAX(p.updated_at) FROM pages p '
+          '  WHERE p.section_id = s.id AND p.deleted_at IS NULL), 0)) '
+          'AS changed '
+          'FROM sections s WHERE s.notebook_id = ? AND s.deleted_at IS NULL',
+          <Object?>[notebookId],
+        ))
+          str(row, 'id'): integer(row, 'changed'),
+      };
 
   /// Renames a notebook.
   Future<void> renameNotebook(String id, String title) async {
@@ -214,6 +239,44 @@ class LibraryRepository {
       'UPDATE sections SET title = ?, updated_at = ? WHERE id = ?',
       <Object?>[title, _now, id],
     );
+  }
+
+  /// Puts a section, with its subsections, among the sections of its
+  /// notebook under [parentId] — after the section [after], which must be
+  /// one of them, or else first — as the person arranges them. It is no
+  /// change to the section.
+  ///
+  /// Throws [ArgumentError] when [parentId] is the section or one of its
+  /// subsections.
+  Future<void> arrangeSection(
+    String sectionId, {
+    String? parentId,
+    String? after,
+  }) async {
+    _db.transaction(() {
+      final section = _findSection(sectionId);
+      if (section == null) {
+        throw ArgumentError.value(sectionId, 'sectionId', 'no such section');
+      }
+      if (parentId != null && _isDescendantOrSelf(parentId, sectionId)) {
+        throw ArgumentError.value(
+          parentId,
+          'parentId',
+          'a section cannot be moved inside itself',
+        );
+      }
+      final position = _db.positionAmong(
+        'sections',
+        _siblings,
+        <Object?>[section.notebookId, parentId],
+        after: after,
+        first: true,
+      );
+      _db.run(
+        'UPDATE sections SET parent_id = ?, position = ? WHERE id = ?',
+        <Object?>[parentId, position, sectionId],
+      );
+    });
   }
 
   /// Re-parents [sectionId] and places it at [position] among its new siblings.
@@ -414,11 +477,10 @@ class LibraryRepository {
       _subtree(ancestor).contains(candidate);
 
   double _nextSectionPosition(String notebookId, String? parentId) =>
-      _db.nextPosition(
-        'sections',
-        'notebook_id = ? AND parent_id IS ?',
-        <Object?>[notebookId, parentId],
-      );
+      _db.nextPosition('sections', _siblings, <Object?>[notebookId, parentId]);
+
+  /// The sections of a notebook under one parent, or at its top.
+  static const String _siblings = 'notebook_id = ? AND parent_id IS ?';
 
   double _nextNotebookPosition() =>
       _db.nextPosition('notebooks', '1', const <Object?>[]);

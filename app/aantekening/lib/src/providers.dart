@@ -77,27 +77,48 @@ final notebooksProvider = FutureProvider<List<Notebook>>((ref) async {
   ref.watch(libraryRevisionProvider);
   final order = ref.watch(listOrderProvider(OrderedList.notebooks));
   final store = await ref.watch(storeProvider.future);
-  final notebooks = await store.library.listNotebooks();
-  if (order != ListOrder.changedNewest && order != ListOrder.changedOldest) {
-    return order.sort(notebooks);
-  }
-  // A notebook changes as its pages do.
-  ref.watch(pageContentsRevisionProvider);
-  final changes = await store.library.notebookChanges();
-  return order.sort(
-    notebooks,
-    changedAt: (notebook) => changes[notebook.id] ?? notebook.updatedAt,
+  return _ordered(
+    ref,
+    order,
+    await store.library.listNotebooks(),
+    store.library.notebookChanges,
   );
 });
 
-/// Every section of a notebook, at any depth, in their tree.
+/// [items] in [order]; ordered by when each last changed, that is when it
+/// or any page in it did, as [changes] tells.
+Future<List<T>> _ordered<T extends TreeNode>(
+  Ref ref,
+  ListOrder order,
+  List<T> items,
+  Future<Map<String, int>> Function() changes,
+) async {
+  if (!order.byChange) return order.sort(items);
+  ref.watch(pageContentsRevisionProvider);
+  final changed = await changes();
+  return order.sort(
+    items,
+    changedAt: (item) => changed[item.id] ?? item.updatedAt,
+  );
+}
+
+/// Every section of a notebook, at any depth, in their tree, each level in
+/// the order the sections are listed in.
 final sectionTreeProvider = FutureProvider.family<Hierarchy<Section>, String>((
   ref,
   notebookId,
 ) async {
   ref.watch(libraryRevisionProvider);
+  final order = ref.watch(listOrderProvider(OrderedList.sections));
   final store = await ref.watch(storeProvider.future);
-  return Section.hierarchy(await store.library.listAllSections(notebookId));
+  return Section.hierarchy(
+    await _ordered(
+      ref,
+      order,
+      await store.library.listAllSections(notebookId),
+      () => store.library.sectionChanges(notebookId),
+    ),
+  );
 });
 
 /// One section.

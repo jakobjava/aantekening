@@ -90,6 +90,11 @@ extension _Storage on _PageEditorState {
         when !_controller.selection.contains(revealed.elementId)) {
       _update(() => _revealed = null);
     }
+    if (_glidedTo case final glided?
+        when !_controller.selection.contains(glided)) {
+      _glidedTo = null;
+      _glide.value = null;
+    }
     final tool = _controller.tool;
     if (tool.draws) _lastInkTool = tool;
     _syncBoxFormatting();
@@ -149,9 +154,8 @@ extension _Storage on _PageEditorState {
     final store = _store;
     if (store == null) return;
     if (!await openAttachedFile(store, file) && mounted) {
-      ScaffoldMessenger.maybeOf(context)?.showAppSnackBar(
-        const SnackBar(content: Text('The file could not be opened.')),
-      );
+      ScaffoldMessenger.maybeOf(context)
+          ?.showMessage('The file could not be opened.');
     }
   }
 
@@ -190,13 +194,9 @@ extension _Storage on _PageEditorState {
     );
     _libraryRevision.bump();
     if (!mounted || kept == null) return;
-    ScaffoldMessenger.maybeOf(context)?.showAppSnackBar(
-      SnackBar(
-        content: Text(
-          'This page was changed on another computer while you were '
-          'editing it. Their version is kept as “${kept.title}”.',
-        ),
-      ),
+    ScaffoldMessenger.maybeOf(context)?.showMessage(
+      'This page was changed on another computer while you were '
+      'editing it. Their version is kept as “${kept.title}”.',
     );
   }
 

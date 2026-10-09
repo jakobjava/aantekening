@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../look/appearance.dart';
+import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 
@@ -47,7 +48,7 @@ class _LatexDialogState extends State<_LatexDialog> {
         const SingleActivator(LogicalKeyboardKey.numpadEnter, control: true):
             _insert,
       },
-      child: AlertDialog(
+      child: GlassDialog(
         title: const Text('Insert LaTeX'),
         content: SizedBox(
           width: 560,

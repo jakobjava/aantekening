@@ -41,8 +41,12 @@ page moves by whole device pixels (`PageSpace`), from a corner a whole
 number of them from the page's (`pageRegion`), so a tile lands on the
 screen's own pixels and looks as the strokes would. Zooming out, the tiles
 are shrunk with the page, and drawn again for the zoom it has come to each
-time it outgrows them; zooming in, the strokes themselves are drawn until
-the zoom stops, sharp at every step.
+time it outgrows them; ~~zooming in, the strokes themselves are drawn until
+the zoom stops, sharp at every step.~~ zooming in, the tiles are scaled up
+with the page, and drawn sharp again once the zoom rests, as PDF pages are.
+Of the tiles needed again, those in view are drawn at once and two more
+each frame after, so the thread drawing the frames is never held up by a
+whole row of them.
 
 **The canvas is a repaint boundary,** so the page built again repaints the
 page alone.
@@ -90,8 +94,16 @@ quarter for two frames at a time as tiles went and came back.
 * A tile costs memory a stroke does not: about four megabytes of the
   graphics card's for each 512 pixels square with ink on it, about a view
   and a half's worth about the view.
-* Zooming in on a page dense with handwriting still draws every stroke at
-  every frame of the zoom, as it must to stay sharp.
+* ~~Zooming in on a page dense with handwriting still draws every stroke at
+  every frame of the zoom, as it must to stay sharp.~~ On a page of nearly
+  four thousand handwritten words, that took 18 ms a frame to draw, and
+  most frames of a pinch were late: ink is soft for as long as a zoom in
+  lasts instead, and a pinch has 9 late frames in 180 rather than 100 in
+  140.
+* A stroke's shape is worked out once, the first time it is drawn; on such
+  a page, scrolling onto strokes not yet drawn took up to 30 ms a frame.
+  The page's ink is recorded ahead (`InkAhead`), a few milliseconds at a
+  time while nothing moves, the nearest the view first.
 * GTK's own work for a frame — copying it into the window — is still about
   half of what a frame costs on Linux, and nothing in the app can change
   it: fewer frames are what saves it.

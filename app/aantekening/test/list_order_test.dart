@@ -150,18 +150,108 @@ void main() {
       expect(_shown(tester, titles), <String>['Gamma', 'Beta', 'Alpha']);
     });
 
-    testWidgets('pages sorted are not arranged by dragging', (tester) async {
+    testWidgets('a page dragged among pages sorted keeps them as they are '
+        'shown, arranged from then on', (tester) async {
       final preferences = Preferences.inMemory(<String, Object?>{
         'library.order.pages': 'nameAscending',
       });
       await openSection(tester, preferences);
+      expect(_shown(tester, titles), <String>['Alpha', 'Beta', 'Gamma']);
 
       final from = tester.getCenter(find.text('Gamma'));
-      final to = tester.getTopLeft(find.text('Alpha'));
+      final to = tester.getTopLeft(find.text('Alpha')) + const Offset(10, 1);
       await tester.dragFrom(from, to - from, kind: PointerDeviceKind.mouse);
       await tester.pumpAndSettle();
 
-      expect(await stored(), titles);
+      expect(await stored(), <String>['Gamma', 'Alpha', 'Beta']);
+      expect(_shown(tester, titles), <String>['Gamma', 'Alpha', 'Beta']);
+      expect(preferences['library.order.pages'], isNull, reason: 'arranged');
+    });
+
+    testWidgets('J and K move a section down and up', (tester) async {
+      final notebook = (await store.library.listNotebooks()).single;
+      await store.library.createSection(
+        notebookId: notebook.id,
+        title: 'Licht',
+      );
+      await openSection(tester, Preferences.inMemory());
+      Future<List<String>> sections() async => <String>[
+        for (final section in await store.library.listAllSections(notebook.id))
+          section.title,
+      ];
+
+      expect(await sections(), <String>['Wellen', 'Licht']);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyJ, character: 'J');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      expect(await sections(), <String>['Licht', 'Wellen']);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyK, character: 'K');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      expect(await sections(), <String>['Wellen', 'Licht']);
+    });
+
+    testWidgets('o orders the sections too, from their own column', (
+      tester,
+    ) async {
+      final notebook = (await store.library.listNotebooks()).single;
+      await store.library.createSection(
+        notebookId: notebook.id,
+        title: 'Akustik',
+      );
+      final preferences = Preferences.inMemory();
+      await openSection(tester, preferences);
+      const sections = <String>['Wellen', 'Akustik'];
+      expect(_shown(tester, sections), sections);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyO);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Name, A to Z').last);
+      await tester.pumpAndSettle();
+      expect(_shown(tester, sections), <String>['Akustik', 'Wellen']);
+      expect(preferences['library.order.sections'], 'nameAscending');
+
+      // Moved while sorted, they stay as shown, arranged from then on.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyK, character: 'K');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      expect(
+        <String>[
+          for (final section in await store.library.listAllSections(
+            notebook.id,
+          ))
+            section.title,
+        ],
+        <String>['Wellen', 'Akustik'],
+      );
+      expect(preferences['library.order.sections'], isNull);
+    });
+
+    testWidgets('drag a section above another', (tester) async {
+      final notebook = (await store.library.listNotebooks()).single;
+      await store.library.createSection(
+        notebookId: notebook.id,
+        title: 'Licht',
+      );
+      await openSection(tester, Preferences.inMemory());
+
+      final from = tester.getCenter(find.text('Licht'));
+      final to = tester.getTopLeft(find.text('Wellen')) + const Offset(10, 1);
+      await tester.dragFrom(from, to - from, kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+
+      expect(
+        <String>[
+          for (final section in await store.library.listAllSections(
+            notebook.id,
+          ))
+            section.title,
+        ],
+        <String>['Licht', 'Wellen'],
+      );
     });
 
     testWidgets('drag a notebook below another', (tester) async {

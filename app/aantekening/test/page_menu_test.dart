@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:aantekening/src/editor/media_views.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
+import 'package:aantekening/src/look/glass.dart';
 import 'package:aantekening/src/modes/key_guide.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
@@ -335,7 +336,7 @@ void main() {
       await tester.tap(menuItem('Edit TikZ source'));
       await tester.pumpAndSettle();
       final field = find.descendant(
-        of: find.widgetWithText(AlertDialog, 'TikZ picture'),
+        of: find.widgetWithText(GlassDialog, 'TikZ picture'),
         matching: find.byType(TextField),
       );
       await tester.enterText(field, r'\tikz \draw (0,0) -- (2,2);');
@@ -409,7 +410,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(
         find.descendant(
-          of: find.widgetWithText(AlertDialog, 'TikZ picture'),
+          of: find.widgetWithText(GlassDialog, 'TikZ picture'),
           matching: find.byType(TextField),
         ),
         r'\tikz \draw (0,0) -- (2,3);',

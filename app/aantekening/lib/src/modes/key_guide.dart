@@ -265,7 +265,6 @@ class _GuideViewState extends State<_GuideView>
         minSize: const Size(180, 120),
         child: FloatingIn(
           animation: _shown,
-          glass: true,
           alignment: Alignment.topCenter,
           child: Glass(
             // As large as the largest layer opened in it, so going from one

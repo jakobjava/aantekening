@@ -95,7 +95,6 @@ class _SettingsViewState extends State<SettingsView> {
 
   @override
   Widget build(BuildContext context) {
-    final tones = context.tones;
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.escape): () =>
@@ -119,7 +118,7 @@ class _SettingsViewState extends State<SettingsView> {
               (area.height - size.height) / 2,
             ),
             minSize: const Size(420, 320),
-            child: RaisedPanel(
+            child: Glass(
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final narrow = constraints.maxWidth < 640;
@@ -147,13 +146,10 @@ class _SettingsViewState extends State<SettingsView> {
                                 children: <Widget>[
                                   SizedBox(
                                     width: 216,
-                                    child: ColoredBox(
-                                      color: tones.pane,
-                                      child: _PageList(
-                                        page: _page,
-                                        onPicked: (page) =>
-                                            setState(() => _page = page),
-                                      ),
+                                    child: _PageList(
+                                      page: _page,
+                                      onPicked: (page) =>
+                                          setState(() => _page = page),
                                     ),
                                   ),
                                   const VerticalDivider(width: 1),

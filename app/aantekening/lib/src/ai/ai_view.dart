@@ -102,7 +102,6 @@ class _AiPaneState extends State<AiPane> with SingleTickerProviderStateMixin {
         minSize: const Size(320, 240),
         child: FloatingIn(
           animation: _shown,
-          glass: true,
           alignment: Alignment.centerRight,
           // A click on it is its own, not the notes' beneath.
           child: Listener(

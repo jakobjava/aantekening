@@ -70,7 +70,7 @@ class _NewPageDialogState extends State<NewPageDialog> {
         const SingleActivator(LogicalKeyboardKey.keyP): () =>
             _set(_choice.copyWith(layout: NoteLayout.pages)),
       },
-      child: AlertDialog(
+      child: GlassDialog(
         title: const Text('New page'),
         content: SizedBox(
           width: 440,

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 
@@ -101,7 +102,7 @@ Future<SheetTemplate?> chooseSheetTemplate(
         const SingleActivator(LogicalKeyboardKey.numpadEnter): () =>
             take(selected),
       },
-      child: AlertDialog(
+      child: GlassDialog(
         title: Text(title),
         content: SizedBox(
           width: 3 * 78,

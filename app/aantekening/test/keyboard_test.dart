@@ -4,6 +4,7 @@ import 'package:aantekening/src/commands/app_command.dart';
 import 'package:aantekening/src/commands/key_chord.dart';
 import 'package:aantekening/src/commands/shortcuts.dart';
 import 'package:aantekening/src/editor/page_editor.dart';
+import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/look/appearance.dart';
 import 'package:aantekening/src/look/chooser.dart';
 import 'package:aantekening/src/look/theme.dart';
@@ -279,15 +280,95 @@ void main() {
     expect(tabs().active, 1);
     expect(tabs().beside, 0);
 
+    final editors = tester.stateList(find.byType(PageEditor)).toList();
     await tester.tapAt(first.center);
     await tester.pumpAndSettle();
     expect(tabs().active, 0, reason: 'clicked into');
+    expect(
+      tester.stateList(find.byType(PageEditor)),
+      editors,
+      reason: 'neither page opened again',
+    );
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<TextBoxEditor>(),
+      isNotNull,
+      reason: 'the click went on to the page, placing a caret',
+    );
 
+    await press(tester, LogicalKeyboardKey.escape);
     await press(tester, LogicalKeyboardKey.space);
     await typeKeys(tester, 'wq');
     expect(find.byType(PageEditor), findsOneWidget);
     expect(tabs().beside, isNull);
     expect(tabs().tabs, hasLength(2), reason: 'the other still a tab');
+  });
+
+  testWidgets('the line between split panes is dragged to share the window '
+      'otherwise, and is remembered', (tester) async {
+    final container = await open(tester);
+    await container.read(libraryActionsProvider).openIdInNewTab(pages[1].id);
+    await tester.pumpAndSettle();
+    container.read(tabsProvider.notifier).split(stacked: false);
+    await tester.pumpAndSettle();
+    Rect first() => tester.getRect(find.byType(PageEditor).first);
+    final before = first();
+
+    final line = Offset(before.right + 0.5, before.center.dy);
+    await tester.dragFrom(line, const Offset(-150, 0));
+    await tester.pumpAndSettle();
+    expect(first().width, closeTo(before.width - 150, 1));
+    expect(
+      preferences['tabs.share'],
+      closeTo((before.width - 150) / (before.width * 2), 0.01),
+    );
+
+    await tester.dragFrom(
+      Offset(first().right + 0.5, before.center.dy),
+      const Offset(-2000, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      first().width,
+      closeTo(SplitShare.least * (before.width * 2), 1),
+      reason: 'neither pane goes',
+    );
+  });
+
+  testWidgets('the picker keeps the row the keys are on in view', (
+    tester,
+  ) async {
+    for (var i = 1; i <= 40; i++) {
+      await store.pages.createPage(sectionId: mechanics.id, title: 'Page $i');
+    }
+    await open(tester);
+    await press(tester, LogicalKeyboardKey.keyE, control: true, shift: true);
+    await tester.pumpAndSettle();
+
+    /// Whether [title]'s row shows whole in its column.
+    bool shows(String title) {
+      final row = find.descendant(
+        of: find.byType(Picker),
+        matching: find.text(title),
+      );
+      if (row.evaluate().isEmpty) return false;
+      final list = tester.getRect(
+        find.ancestor(of: row, matching: find.byType(Scrollable)).first,
+      );
+      final rect = tester.getRect(row);
+      return rect.top >= list.top && rect.bottom <= list.bottom;
+    }
+
+    expect(shows('Page 40'), isFalse, reason: 'far down');
+    await typeKeys(tester, 'G');
+    expect(shows('Page 40'), isTrue, reason: 'the last, in view');
+    await typeKeys(tester, 'g');
+    expect(shows('Forces'), isTrue, reason: 'the first, in view again');
+    for (var i = 0; i < 25; i++) {
+      await press(tester, LogicalKeyboardKey.arrowDown);
+    }
+    await tester.pumpAndSettle();
+    expect(shows('Page 22'), isTrue, reason: 'followed down by the arrows');
   });
 
   testWidgets('the settings open, and close with Escape', (tester) async {

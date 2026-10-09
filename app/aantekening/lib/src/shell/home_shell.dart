@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,6 +18,7 @@ import '../editor/page_editor.dart';
 import '../files/notes_keeper.dart';
 import '../look/controls.dart';
 import '../look/floating_pane.dart';
+import '../look/motion.dart';
 import '../look/tones.dart';
 import '../preferences.dart';
 import '../providers.dart';
@@ -153,18 +155,30 @@ const double _searchGap = 8;
 
 /// The page of the tab showing — or, the window split, it and the page of
 /// the tab beside it, side by side or one above the other, in the order of
-/// their tabs. The one without the keys is dimmed, and a click in it gives
-/// it them.
-class _Panes extends ConsumerWidget {
+/// their tabs. A click in the one without the keys gives it them, and the
+/// line between them is dragged to share the window out otherwise.
+class _Panes extends ConsumerStatefulWidget {
   const _Panes({required this.top});
 
   /// Whether the status line lies along the top, rather than the foot.
   final bool top;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Panes> createState() => _PanesState();
+}
+
+class _PanesState extends ConsumerState<_Panes> {
+  /// The first pane's share while the line between them is dragged, saved
+  /// once it is let go; and the share, and how far the pointer has moved,
+  /// since it was taken hold of.
+  double? _dragged;
+  double _from = SplitShare.even;
+  double _moved = 0;
+
+  @override
+  Widget build(BuildContext context) {
     final tabs = ref.watch(tabsProvider);
-    final under = top
+    final under = widget.top
         ? const EdgeInsets.only(top: StatusLine.reach)
         : const EdgeInsets.only(bottom: StatusLine.reach);
     final beside = tabs.beside;
@@ -178,30 +192,172 @@ class _Panes extends ConsumerWidget {
     final stacked = tabs.stacked;
     EdgeInsets obscured(_Slot slot) => !stacked
         ? under
-        : (slot == _Slot.first) == top
+        : (slot == _Slot.first) == widget.top
         ? under
         : EdgeInsets.zero;
-    return Flex(
-      direction: stacked ? Axis.vertical : Axis.horizontal,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Expanded(
-          child: _Pane(
-            slot: _Slot.first,
-            index: first,
-            obscured: obscured(_Slot.first),
-          ),
-        ),
-        if (stacked) const Divider() else const VerticalDivider(width: 1),
-        Expanded(
-          child: _Pane(
-            slot: _Slot.second,
-            index: second,
-            obscured: obscured(_Slot.second),
-          ),
-        ),
-      ],
+    final saved = ref.watch(splitShareProvider);
+    final share = _dragged ?? saved;
+    final axis = stacked ? Axis.vertical : Axis.horizontal;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final whole = stacked ? constraints.maxHeight : constraints.maxWidth;
+        final room = math.max(whole - _SplitLine.thickness, 0.0);
+        final firstExtent = (room * share).roundToDouble();
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            Flex(
+              direction: axis,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SizedBox(
+                  width: stacked ? null : firstExtent,
+                  height: stacked ? firstExtent : null,
+                  child: _Pane(
+                    slot: _Slot.first,
+                    index: first,
+                    obscured: obscured(_Slot.first),
+                  ),
+                ),
+                if (stacked)
+                  const Divider(height: _SplitLine.thickness)
+                else
+                  const VerticalDivider(width: _SplitLine.thickness),
+                Expanded(
+                  child: _Pane(
+                    slot: _Slot.second,
+                    index: second,
+                    obscured: obscured(_Slot.second),
+                  ),
+                ),
+              ],
+            ),
+            _SplitLine(
+              axis: axis,
+              at: firstExtent,
+              onDragStart: () {
+                _from = share;
+                _moved = 0;
+              },
+              onDrag: (moved) => setState(() {
+                _moved += moved;
+                _dragged = room == 0
+                    ? share
+                    : SplitShare.clamp(_from + _moved / room);
+              }),
+              onDragEnd: () {
+                final dragged = _dragged;
+                if (dragged == null) return;
+                ref.read(splitShareProvider.notifier).set(dragged);
+                setState(() => _dragged = null);
+              },
+              onReset: () =>
+                  ref.read(splitShareProvider.notifier).set(SplitShare.even),
+            ),
+          ],
+        );
+      },
     );
+  }
+}
+
+/// Where the line between two panes is taken hold of: a strip wider than
+/// it is, over its middle, which shows it is taken in the accent.
+class _SplitLine extends StatefulWidget {
+  const _SplitLine({
+    required this.axis,
+    required this.at,
+    required this.onDragStart,
+    required this.onDrag,
+    required this.onDragEnd,
+    required this.onReset,
+  });
+
+  /// How thick the line drawn between the panes is.
+  static const double thickness = 1;
+
+  /// How wide the strip it is taken hold of by is.
+  static const double reach = 9;
+
+  /// The way the panes lie along.
+  final Axis axis;
+
+  /// How far along the line lies.
+  final double at;
+
+  final VoidCallback onDragStart;
+
+  /// Called with how far the pointer moved along [axis], as it drags the
+  /// line.
+  final ValueChanged<double> onDrag;
+  final VoidCallback onDragEnd;
+
+  /// Called on a double click: half each again.
+  final VoidCallback onReset;
+
+  @override
+  State<_SplitLine> createState() => _SplitLineState();
+}
+
+class _SplitLineState extends State<_SplitLine> {
+  bool _held = false;
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final across = widget.axis == Axis.horizontal;
+    final start = widget.at + _SplitLine.thickness / 2 - _SplitLine.reach / 2;
+    void let() {
+      setState(() => _held = false);
+      widget.onDragEnd();
+    }
+
+    final strip = MouseRegion(
+      cursor: across
+          ? SystemMouseCursors.resizeLeftRight
+          : SystemMouseCursors.resizeUpDown,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // From where it was pressed, so the line keeps under the pointer.
+        dragStartBehavior: DragStartBehavior.down,
+        onDoubleTap: widget.onReset,
+        onPanStart: (_) {
+          setState(() => _held = true);
+          widget.onDragStart();
+        },
+        onPanUpdate: (details) =>
+            widget.onDrag(across ? details.delta.dx : details.delta.dy),
+        onPanEnd: (_) => let(),
+        onPanCancel: let,
+        child: Center(
+          child: AnimatedContainer(
+            duration: Motion.quick,
+            width: across ? 3 : double.infinity,
+            height: across ? double.infinity : 3,
+            color: _held || _hovered
+                ? context.tones.emphasis
+                : context.tones.emphasis.withValues(alpha: 0),
+          ),
+        ),
+      ),
+    );
+    return across
+        ? Positioned(
+            left: start,
+            top: 0,
+            bottom: 0,
+            width: _SplitLine.reach,
+            child: strip,
+          )
+        : Positioned(
+            top: start,
+            left: 0,
+            right: 0,
+            height: _SplitLine.reach,
+            child: strip,
+          );
   }
 }
 
@@ -247,22 +403,14 @@ class _Pane extends ConsumerWidget {
             active: active,
             obscured: obscured,
           );
-    if (active) return editor;
+    // Built the same whichever has the keys, so giving them to the other
+    // pane keeps both editors as they are, and neither is drawn again.
     return Listener(
       // A click in it gives it the keys, and goes on to what was clicked.
-      onPointerDown: (_) => ref.read(tabsProvider.notifier).activate(index),
-      child: Stack(
-        fit: StackFit.passthrough,
-        children: <Widget>[
-          editor,
-          Positioned.fill(
-            child: IgnorePointer(
-              // Faded towards the paper, which is white in either mode.
-              child: ColoredBox(color: Tones.paper.withValues(alpha: 0.4)),
-            ),
-          ),
-        ],
-      ),
+      onPointerDown: active
+          ? null
+          : (_) => ref.read(tabsProvider.notifier).activate(index),
+      child: editor,
     );
   }
 }

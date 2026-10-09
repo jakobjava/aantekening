@@ -316,6 +316,11 @@ class PageRepository {
     });
   }
 
+  /// Arranges the pages [ids] in that order — each among its siblings, as
+  /// shown sorted some other way, say. It is no change to them.
+  Future<void> arrangePagesAs(List<String> ids) async =>
+      _db.transaction(() => _db.arrangeAs('pages', ids));
+
   /// Copies a page, with its subpages, into [sectionId], placed as
   /// [movePage] places a page; returns the copy.
   ///

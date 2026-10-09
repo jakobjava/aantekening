@@ -566,6 +566,7 @@ extension _Keys on _PageEditorState {
     _controller
       ..select(id, additive: additive)
       ..reveal(element.frame.bounds);
+    _glidedTo = id;
     _glide.value = _onScreen(_rectOf(element.frame.bounds));
   }
 

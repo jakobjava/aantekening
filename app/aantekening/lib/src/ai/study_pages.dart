@@ -168,7 +168,7 @@ class StudySetPage extends ConsumerWidget {
 Future<bool> _confirm(BuildContext context, String title, String body) async =>
     await showAppDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => GlassDialog(
         title: Text(title),
         content: Text(body),
         actions: <Widget>[
@@ -209,10 +209,7 @@ class StudyProfilePage extends ConsumerWidget {
           constraints: const BoxConstraints(maxWidth: 420),
           child: Column(
             children: <Widget>[
-              Text(
-                profile.name,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
+              Text(profile.name, style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 6),
               Text(
                 profile.purpose,
@@ -399,7 +396,8 @@ class StudyOverview extends ConsumerWidget {
           'Study',
           action: SmallButton(
             'New study profile…',
-            tooltip: 'Describe anything else to make from your notes: exam '
+            tooltip:
+                'Describe anything else to make from your notes: exam '
                 'tasks, a cheat sheet, a timeline',
             onPressed: () => editStudyProfile(context),
           ),
@@ -639,7 +637,7 @@ Future<String?> askName(BuildContext context, String current) {
   final controller = TextEditingController(text: current);
   return showAppDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (context) => GlassDialog(
       title: const Text('Rename'),
       content: TextField(
         controller: controller,

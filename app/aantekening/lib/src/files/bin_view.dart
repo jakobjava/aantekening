@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
@@ -49,7 +50,7 @@ String timeSaid(int time, {DateTime? now}) {
 Future<bool> confirmPurge(BuildContext context, String what) async =>
     await showAppDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => GlassDialog(
         title: Text('Delete $what for good?'),
         content: const Text(
           'It cannot be restored afterwards, here or on any computer that '
@@ -79,14 +80,10 @@ Future<void> emptyBin(BuildContext context, WidgetRef ref) async {
   await store.assets.collectGarbage();
   ref.read(libraryRevisionProvider.notifier).bump();
   if (!context.mounted) return;
-  ScaffoldMessenger.maybeOf(context)?.showAppSnackBar(
-    SnackBar(
-      content: Text(
-        pages == 1
-            ? 'One page deleted for good.'
-            : '$pages pages deleted for good.',
-      ),
-    ),
+  ScaffoldMessenger.maybeOf(context)?.showMessage(
+    pages == 1
+        ? 'One page deleted for good.'
+        : '$pages pages deleted for good.',
   );
 }
 
@@ -118,7 +115,7 @@ class BinView extends ConsumerWidget {
         const SingleActivator(LogicalKeyboardKey.escape): () =>
             Navigator.of(context).pop(),
       },
-      child: Dialog(
+      child: GlassDialog.bare(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640, maxHeight: 620),
           child: Column(

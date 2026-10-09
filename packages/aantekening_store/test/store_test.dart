@@ -380,7 +380,41 @@ void main() {
       expect(await titles(), <String>['C', 'B', 'A']);
     });
 
-    test('a notebook last changed when a page in it last changed', () async {
+    test('puts a section first, after another, or beneath another, and '
+        'does not count it a change', () async {
+      final book = await store.library.createNotebook(title: 'Book');
+      final sections = <Section>[
+        for (final title in <String>['A', 'B', 'C'])
+          await store.library.createSection(notebookId: book.id, title: title),
+      ];
+      Future<List<String>> titles() async => <String>[
+        for (final section in await store.library.listAllSections(book.id))
+          '${section.parentId == null ? '' : '  '}${section.title}',
+      ];
+
+      await store.library.arrangeSection(sections[2].id);
+      expect(await titles(), <String>['C', 'A', 'B']);
+      await store.library.arrangeSection(sections[2].id, after: sections[0].id);
+      expect(await titles(), <String>['A', 'C', 'B']);
+      await store.library.arrangeSection(
+        sections[1].id,
+        parentId: sections[0].id,
+      );
+      expect(await titles(), contains('  B'));
+
+      final after = await store.library.findSection(sections[2].id);
+      expect(after!.updatedAt, sections[2].updatedAt);
+      expect(
+        () => store.library.arrangeSection(
+          sections[0].id,
+          parentId: sections[1].id,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('a notebook and a section last changed when a page in them last '
+        'changed', () async {
       final sectionId = await workspace.seedSection();
       final notebook = (await store.library.listNotebooks()).single;
       final page = await store.pages.createPage(sectionId: sectionId);
@@ -393,6 +427,8 @@ void main() {
       final changes = await store.library.notebookChanges();
       expect(changes[notebook.id], saved!.updatedAt);
       expect(saved.updatedAt, greaterThanOrEqualTo(notebook.updatedAt));
+      final sections = await store.library.sectionChanges(notebook.id);
+      expect(sections, <String, int>{sectionId: saved.updatedAt});
     });
   });
 

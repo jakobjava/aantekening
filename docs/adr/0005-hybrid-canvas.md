@@ -14,7 +14,9 @@ One rendering strategy cannot serve both well.
 
 Paint ink with `CustomPainter` in page space. Render every other element as a
 real widget, laid out in page units and scaled with the page.
-Highlighter paints beneath the widget layer, pen above it.
+~~Highlighter paints beneath the widget layer, pen above it.~~ Both paint
+above it, the highlighter first and multiplied with what it lies on, so it
+marks pictures and PDF pages as it marks writing.
 
 ## Consequences
 
@@ -23,10 +25,13 @@ Highlighter paints beneath the widget layer, pen above it.
   `flutter_math_fork`; images get `Image`.
 * Ink costs no widgets at all, and the stroke in progress has its own layer, so
   a new sample repaints only that.
-* Splitting ink around the widget layer means ink cannot interleave arbitrarily
-  with text in paint order. Bound to the tools rather than to `z`, this matches
-  what the instruments mean physically: a highlighter goes under writing, a pen
-  over it.
+* ~~Splitting ink around the widget layer means ink cannot interleave
+  arbitrarily with text in paint order. Bound to the tools rather than to `z`,
+  this matches what the instruments mean physically: a highlighter goes under
+  writing, a pen over it.~~ Beneath the widgets, a highlighter went behind
+  every picture and PDF page it was drawn over. Multiplied over them, black
+  text stays black under it, as under a real marker, and ink still cannot
+  interleave with the widgets in paint order.
 * ~~Elements are placed individually rather than under one big `Transform`,
   because a transformed, overflowing layer silently loses hit-testing and
   keyboard focus for anything outside its box.~~ They are now laid out in

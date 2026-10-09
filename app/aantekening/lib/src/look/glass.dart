@@ -3,6 +3,7 @@
 /// them without hiding them.
 library;
 
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -217,8 +218,13 @@ class GlassArriving extends InheritedWidget {
 }
 
 /// The light liquid glass catches: along its edge, brightest at the top
-/// left, gone along the middle, glinting again at the foot and right; and
-/// a sheen across its top that fades as it goes down.
+/// left, dim at the other two corners, glinting again at the bottom right;
+/// and a sheen across its top that fades as it goes down.
+///
+/// Drawn on what clips it to its shape: in strips and corners of one colour
+/// or two, a pane sized by hand is drawn again at each step as cheaply as
+/// it is moved — a gradient across a rounded shape, or along a line round
+/// it, takes many times as long.
 class _LiquidEdge extends CustomPainter {
   const _LiquidEdge({
     required this.borderRadius,
@@ -233,33 +239,70 @@ class _LiquidEdge extends CustomPainter {
   /// How far down the sheen reaches.
   static const double _sheenDepth = 28;
 
+  /// How thick the edge's light is, and how far in from the very edge its
+  /// middle lies.
+  static const double _rim = 1.2;
+  static const double _inset = 0.75;
+
+  /// How much of [light] each corner catches.
+  static const double _topLeft = 1;
+  static const double _bottomRight = 0.55;
+  static const double _dim = 0.15;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final area = Offset.zero & size;
-    final shape = borderRadius.toRRect(area);
-    canvas.drawRRect(
-      shape,
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, _sheenDepth),
       Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[sheen, sheen.withValues(alpha: 0)],
-          stops: <double>[0, (_sheenDepth / size.height).clamp(0, 1)],
-        ).createShader(area),
+        ..shader = ui.Gradient.linear(
+          Offset.zero,
+          const Offset(0, _sheenDepth),
+          <Color>[sheen, sheen.withValues(alpha: 0)],
+        ),
     );
     Color of(double share) => light.withValues(alpha: light.a * share);
-    canvas.drawRRect(
-      shape.deflate(0.75),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[of(1), of(0.25), of(0.08), of(0.55)],
-          stops: const <double>[0, 0.35, 0.7, 1],
-        ).createShader(area),
+    final (w, h) = (size.width, size.height);
+    final (tl, tr, br, bl) = (
+      borderRadius.topLeft.x,
+      borderRadius.topRight.x,
+      borderRadius.bottomRight.x,
+      borderRadius.bottomLeft.x,
     );
+    // Each side, from one corner to the next, in the light of each.
+    void side(Offset from, Offset to, double a, double b) {
+      final across = from.dx == to.dx
+          ? const Offset(_rim / 2, 0)
+          : const Offset(0, _rim / 2);
+      canvas.drawRect(
+        Rect.fromPoints(from - across, to + across),
+        Paint()..shader = ui.Gradient.linear(from, to, <Color>[of(a), of(b)]),
+      );
+    }
+
+    const i = _inset;
+    side(Offset(tl, i), Offset(w - tr, i), _topLeft, _dim);
+    side(Offset(i, tl), Offset(i, h - bl), _topLeft, _dim);
+    side(Offset(bl, h - i), Offset(w - br, h - i), _dim, _bottomRight);
+    side(Offset(w - i, tr), Offset(w - i, h - br), _dim, _bottomRight);
+    // Each corner, round, in its own light.
+    void corner(Offset centre, double radius, double start, double share) {
+      if (radius <= i) return;
+      canvas.drawArc(
+        Rect.fromCircle(center: centre, radius: radius - i),
+        start,
+        math.pi / 2,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _rim
+          ..color = of(share),
+      );
+    }
+
+    corner(Offset(tl, tl), tl, math.pi, _topLeft);
+    corner(Offset(w - tr, tr), tr, -math.pi / 2, _dim);
+    corner(Offset(w - br, h - br), br, 0, _bottomRight);
+    corner(Offset(bl, h - bl), bl, math.pi / 2, _dim);
   }
 
   @override
@@ -304,30 +347,104 @@ class _ShadowOutside extends CustomPainter {
       !listEquals(oldDelegate.shadows, shadows);
 }
 
-/// [child] on a solid panel floating over the window — the settings, a
-/// dialog of its own making — rounded, edged and casting a soft shadow, as
-/// the theme's dialogs are.
-class RaisedPanel extends StatelessWidget {
-  const RaisedPanel({required this.child, super.key});
+/// A dialog on [Glass], laid out as an [AlertDialog] lays one out: its
+/// [title] over its [content], with its [actions] along its foot — or, made
+/// [GlassDialog.bare], [child] alone, laid out as it lays itself out.
+class GlassDialog extends StatelessWidget {
+  const GlassDialog({
+    this.title,
+    this.content,
+    this.actions = const <Widget>[],
+    this.actionsAlignment = MainAxisAlignment.end,
+    super.key,
+  }) : child = null;
 
-  final Widget child;
+  const GlassDialog.bare({required Widget this.child, super.key})
+    : title = null,
+      content = null,
+      actions = const <Widget>[],
+      actionsAlignment = MainAxisAlignment.end;
+
+  final Widget? title;
+  final Widget? content;
+  final List<Widget> actions;
+  final MainAxisAlignment actionsAlignment;
+  final Widget? child;
+
+  /// The narrowest a dialog is.
+  static const double minWidth = 280;
 
   @override
   Widget build(BuildContext context) {
-    final tones = context.tones;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: Corners.panelRadius,
-        boxShadow: tones.floatingShadows,
-      ),
-      child: Material(
-        color: tones.raised,
-        shape: RoundedRectangleBorder(
-          borderRadius: Corners.panelRadius,
-          side: BorderSide(color: tones.glassRim),
+    final theme = Theme.of(context);
+    final dialog = theme.dialogTheme;
+    final title = this.title;
+    final content = this.content;
+    final body =
+        child ??
+        IntrinsicWidth(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (title != null)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    24,
+                    24,
+                    24,
+                    content == null ? 20 : 16,
+                  ),
+                  child: DefaultTextStyle(
+                    style: dialog.titleTextStyle ?? theme.textTheme.titleLarge!,
+                    child: Semantics(
+                      namesRoute: true,
+                      container: true,
+                      child: title,
+                    ),
+                  ),
+                ),
+              if (content != null)
+                Flexible(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      24,
+                      title == null ? 20 : 0,
+                      24,
+                      24,
+                    ),
+                    child: DefaultTextStyle(
+                      style:
+                          dialog.contentTextStyle ??
+                          theme.textTheme.bodyMedium!,
+                      child: content,
+                    ),
+                  ),
+                ),
+              if (actions.isNotEmpty)
+                Padding(
+                  padding:
+                      dialog.actionsPadding ??
+                      const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                  child: OverflowBar(
+                    alignment: actionsAlignment,
+                    spacing: 8,
+                    overflowAlignment: OverflowBarAlignment.end,
+                    children: actions,
+                  ),
+                ),
+            ],
+          ),
+        );
+    return Padding(
+      padding:
+          (dialog.insetPadding ?? const EdgeInsets.all(24)) +
+          MediaQuery.viewInsetsOf(context),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: minWidth),
+          child: Glass(child: body),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: child,
       ),
     );
   }

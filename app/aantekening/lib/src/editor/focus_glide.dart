@@ -1,5 +1,6 @@
 /// A ring that glides from what had the keys to what they moved to, so the
-/// eye follows the jump, and then fades.
+/// eye follows the jump, and then fades — or goes at once, when what it is
+/// round is let go of.
 library;
 
 import 'dart:async';
@@ -11,7 +12,7 @@ import '../look/motion.dart';
 
 /// Draws a ring round [target] — a rectangle in this widget's own
 /// coordinates — each time it changes: from where the last one was, gliding
-/// there, then fading away.
+/// there, then fading away. Set to null, it is gone at once.
 class FocusGlide extends StatefulWidget {
   const FocusGlide({
     required this.target,
@@ -84,10 +85,10 @@ class _FocusGlideState extends State<FocusGlide> with TickerProviderStateMixin {
     final target = widget.target.value;
     final motion = context.motion;
     if (target == null) {
-      if (widget.stays) {
-        _fade.duration = motion.of(Motion.quick);
-        unawaited(_fade.reverse());
-      }
+      // What it was round is let go of: the ring goes with it, at once.
+      _staying?.cancel();
+      _glide.stop();
+      _fade.value = 0;
       return;
     }
     // From where it was, if it is still showing; else it appears there.

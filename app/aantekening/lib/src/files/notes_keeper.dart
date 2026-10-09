@@ -86,9 +86,13 @@ class _NotesKeeperState extends ConsumerState<NotesKeeper> {
 
   /// Lets the app stop only once everything is on disk.
   Future<AppExitResponse> _beforeExit() async {
-    await keepEverything(ref);
     final store = ref.read(storeProvider).value;
-    await store?.close();
+    try {
+      await keepEverything(ref);
+    } finally {
+      // Closed whatever else failed, so the database is left whole.
+      await store?.close();
+    }
     return AppExitResponse.exit;
   }
 

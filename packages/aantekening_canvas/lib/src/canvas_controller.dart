@@ -58,9 +58,16 @@ class CanvasController extends ChangeNotifier {
   PenSettings _pen = PenSettings.defaultPen;
   PenSettings _highlighter = PenSettings.defaultHighlighter;
 
+  /// The host's placeholders, such as the empty text box behind a caret:
+  /// on the page for now, but nothing it holds yet. They are no part of
+  /// what the page spans, and undo and redo never bring one back.
+  Set<String> Function() placeholders = _noPlaceholders;
+
+  static Set<String> _noPlaceholders() => const <String>{};
+
   /// Whether presses, and selections dragged across the page, pass over
   /// the element [id] to what lies beneath it, as though it were not there:
-  /// the host's placeholders, such as the empty text box behind a caret.
+  /// most of the host's [placeholders].
   bool Function(String id) passesOver = _takesPresses;
 
   static bool _takesPresses(String id) => false;
@@ -284,7 +291,10 @@ class CanvasController extends ChangeNotifier {
 
   /// Where the view's origin may lie at [zoom], for the view's size.
   ///
-  /// One paper is seen anywhere from its top-left corner on, without end.
+  /// One paper is seen from its top-left corner on, as far as half a view
+  /// past what is on it — room to go on writing, which grows as it is
+  /// written in — and never less than a view shows of it at 100%, nor than
+  /// its width ([CanvasSettings.paperWidth]).
   /// Sheets are seen with a little desk about them, and no further: across,
   /// in the middle while they are narrower than the view; down, from above
   /// the first to below the last, and in the middle while they are shorter.
@@ -293,7 +303,34 @@ class CanvasController extends ChangeNotifier {
     final fold = _fold;
     final hidden = _obscured / zoom;
     if (fold == null) {
-      return (min: Offset(-hidden.left, -hidden.top), max: Offset.infinite);
+      final content = contentBounds;
+      double last(double contentEnd, double shown, double home, double after) =>
+          math.max(contentEnd + shown / 2, home) + after - shown;
+      final shown = viewSize / zoom;
+      final min = Offset(-hidden.left, -hidden.top);
+      return (
+        min: min,
+        max: Offset(
+          math.max(
+            min.dx,
+            last(
+              content.isEmpty ? 0 : content.right,
+              shown.width,
+              math.max(viewSize.width, _document.canvas.paperWidth ?? 0),
+              hidden.right,
+            ),
+          ),
+          math.max(
+            min.dy,
+            last(
+              content.isEmpty ? 0 : content.bottom,
+              shown.height,
+              viewSize.height,
+              hidden.bottom,
+            ),
+          ),
+        ),
+      );
     }
     final margin = deskMargin / zoom;
     (double, double) along(
@@ -326,12 +363,19 @@ class CanvasController extends ChangeNotifier {
   }
 
   /// [value] moved just far enough to lie within [originRange].
+  ///
+  /// A view of one paper already further on than that — what was there has
+  /// been taken away — is left where it is: it only goes no further.
   CanvasViewport _within(CanvasViewport value) {
     final range = originRange(value.zoom);
     final origin = value.origin;
+    final now = viewport.origin;
+    final far = _fold == null
+        ? Offset(math.max(range.max.dx, now.dx), math.max(range.max.dy, now.dy))
+        : range.max;
     final within = Offset(
-      origin.dx.clamp(range.min.dx, range.max.dx),
-      origin.dy.clamp(range.min.dy, range.max.dy),
+      origin.dx.clamp(range.min.dx, far.dx),
+      origin.dy.clamp(range.min.dy, far.dy),
     );
     return within == origin ? value : value.copyWith(origin: within);
   }
@@ -651,8 +695,11 @@ class CanvasController extends ChangeNotifier {
     return elements;
   }
 
-  /// What the page's content spans, worked out once for each version of it.
-  Aabb get contentBounds => _contentBounds ??= _document.contentBounds;
+  /// What the page's content spans, worked out once for each version of it:
+  /// all but the [placeholders], such as the empty box behind a caret.
+  Aabb get contentBounds => _contentBounds ??= NoteElement.boundsOf(
+    _withoutPlaceholders(_document).elements,
+  );
   Aabb? _contentBounds;
 
   /// The topmost unlocked element at a page-space point, not one presses
@@ -1257,14 +1304,14 @@ class CanvasController extends ChangeNotifier {
 
   void undo() {
     if (_undoStack.isEmpty) return;
-    _redoStack.add(_document);
+    _redoStack.add(_withoutPlaceholders(_document));
     _document = _shownAsNow(_undoStack.removeLast());
     _afterHistoryChange();
   }
 
   void redo() {
     if (_redoStack.isEmpty) return;
-    _undoStack.add(_document);
+    _undoStack.add(_withoutPlaceholders(_document));
     _document = _shownAsNow(_redoStack.removeLast());
     _afterHistoryChange();
   }
@@ -1341,9 +1388,14 @@ class CanvasController extends ChangeNotifier {
     _changed();
   }
 
+  /// [document] as history keeps it: without the [placeholders], which
+  /// were never anything on the page.
+  PageDocument _withoutPlaceholders(PageDocument document) =>
+      document.withElementsRemoved(placeholders());
+
   /// Keeps [before] as what undo goes back to.
   void _record(PageDocument before) {
-    _undoStack.add(before);
+    _undoStack.add(_withoutPlaceholders(before));
     if (_undoStack.length > undoLimit) _undoStack.removeAt(0);
     _redoStack.clear();
   }

@@ -257,7 +257,17 @@ void main() {
   testWidgets('Space held moves the page with the pointer, and opens no '
       'menu as it is let go', (tester) async {
     await openEditor(tester, store, pageId);
-    final canvas = _canvas(tester);
+    // Something far off, for the page to reach as far as.
+    final canvas = _canvas(tester)
+      ..addElement(
+        const TextElement(
+          id: 'far',
+          frame: Frame(x: 4000, y: 4000, width: 200, height: 60),
+          createdAt: 0,
+          updatedAt: 0,
+        ),
+      );
+    await tester.pump();
     final before = canvas.viewport.origin;
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.space);

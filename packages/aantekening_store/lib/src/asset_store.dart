@@ -43,7 +43,16 @@ class AssetStore {
 
     final file = File(_pathForHash(digest));
     await file.parent.create(recursive: true);
-    await file.writeAsBytes(bytes, flush: true);
+    // Whole or not at all under its name: written aside, then moved over,
+    // so neither a crash nor the same bytes imported at once leaves a file
+    // cut short where it is read.
+    final aside = File('${file.path}.${Ulid.generate()}.tmp');
+    try {
+      await aside.writeAsBytes(bytes, flush: true);
+      await aside.rename(file.path);
+    } finally {
+      if (await aside.exists()) await aside.delete();
+    }
 
     final asset = AssetRef(
       id: Ulid.generate(),

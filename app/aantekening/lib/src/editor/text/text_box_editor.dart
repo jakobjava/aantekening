@@ -902,31 +902,17 @@ class TextBoxEditorState extends State<TextBoxEditor>
             onPointerUp: _onPointerUp,
             onPointerCancel: _onPointerUp,
             behavior: HitTestBehavior.opaque,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                // Nothing of the box shows until it is clicked, when the page
-                // frames it as anything picked. A caret a formula is begun at
-                // is not yet picked on the page, which draws no frame round
-                // it: it draws the same frame itself.
-                border:
-                    widget.isEditing && !widget.selected && !widget.caretOnly
-                    ? Border.all(color: tones.paperEmphasis, width: 1.5)
-                    : null,
-                borderRadius: const BorderRadius.all(
-                  Radius.circular(RichTextStyles.boxCorner),
-                ),
-              ),
-              // The content is laid out at its natural size and reported, so
-              // the box can grow to fit it; until the frame catches up, the
-              // overflow still paints.
-              child: OverflowBox(
-                alignment: Alignment.topLeft,
-                minWidth: autoWidth ? TextBoxEditor.minAutoWidth : null,
-                maxWidth: autoWidth ? _widest : null,
-                minHeight: 0,
-                maxHeight: double.infinity,
-                child: SizeReporter(onSize: _reportSize, child: content),
-              ),
+            // Nothing of the box shows until it is clicked, when the page
+            // frames it as anything picked. The content is laid out at its
+            // natural size and reported, so the box can grow to fit it;
+            // until the frame catches up, the overflow still paints.
+            child: OverflowBox(
+              alignment: Alignment.topLeft,
+              minWidth: autoWidth ? TextBoxEditor.minAutoWidth : null,
+              maxWidth: autoWidth ? _widest : null,
+              minHeight: 0,
+              maxHeight: double.infinity,
+              child: SizeReporter(onSize: _reportSize, child: content),
             ),
           ),
         ),

@@ -26,6 +26,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -287,10 +288,10 @@ void main() {
       // Typed in the dialog, n is the name's, not the picker's again.
       await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byType(GlassDialog), findsOneWidget);
       await tester.enterText(
         find.descendant(
-          of: find.byType(AlertDialog),
+          of: find.byType(GlassDialog),
           matching: find.byType(TextField),
         ),
         'Algebra',
@@ -300,7 +301,7 @@ void main() {
       await tester.tap(find.text('Create'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(GlassDialog), findsNothing);
       expect(find.byType(Picker), findsNothing, reason: 'its page is open');
       await showPanes(tester);
       expect(inPanes(find.text('Algebra')), findsOneWidget);
@@ -444,7 +445,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(
         find.descendant(
-          of: find.byType(AlertDialog),
+          of: find.byType(GlassDialog),
           matching: find.byType(TextField),
         ),
         'Kinematics',
@@ -461,6 +462,37 @@ void main() {
       await tester.pump(PageTitle.typingPause);
       await tester.pumpAndSettle();
       expect(inPanes(find.text('Dynamics')), findsOneWidget);
+    });
+
+    testWidgets('a title too long for one line goes on over more, the page '
+        'making room for it, and Enter leaves it', (tester) async {
+      await openPage(tester);
+      final canvas = find.byType(InfiniteCanvas);
+      double titleHeight() =>
+          tester.widget<InfiniteCanvas>(canvas).header!.frame.height;
+      final oneLine = titleHeight();
+
+      await tester.enterText(
+        titleField,
+        'Versuch Synthese Azofarbstoff Orange II Suspension in Wasser und '
+        'Umkristallisation aus Ethanol',
+      );
+      await tester.pumpAndSettle();
+      expect(titleHeight(), greaterThan(oneLine), reason: 'over more lines');
+      final date = tester.getRect(find.byTooltip('Change the date'));
+      final title = tester.getRect(find.byType(PageTitle));
+      expect(date.bottom, lessThanOrEqualTo(title.bottom), reason: 'room');
+
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<EditableText>(titleField).focusNode.hasFocus,
+        isFalse,
+      );
+      expect(
+        tester.widget<EditableText>(titleField).controller.text,
+        isNot(contains('\n')),
+      );
     });
 
     testWidgets('keys typed in the title are not the page\'s shortcuts', (
@@ -986,6 +1018,35 @@ void main() {
         second.id,
         second.id,
       ]);
+    });
+
+    testWidgets('a tab shows the whole of its name while all fit, and the '
+        'widest are cut short only once they do not', (tester) async {
+      const long =
+          'A rather long title for the lecture on the laws of thermodynamics';
+      final first = await openPage(tester);
+      await store.pages.createPage(sectionId: first.sectionId, title: long);
+      containerOf(tester).read(libraryRevisionProvider.notifier).bump();
+      await tester.pumpAndSettle();
+      await showPanes(tester);
+      await rightClick(tester, inPanes(find.text(long)));
+      await tester.tap(inMenu('Open in new tab'));
+      await tester.pumpAndSettle();
+      bool cut(String title) => tester
+          .renderObject<RenderParagraph>(tabNamed(title))
+          .didExceedMaxLines;
+      expect(cut(long), isFalse);
+      expect(cut('Lecture 1'), isFalse);
+
+      for (var i = 0; i < 3; i++) {
+        await pressWithControl(tester, LogicalKeyboardKey.keyT);
+      }
+      expect(cut(long), isTrue, reason: 'the widest gives way');
+      expect(cut('Lecture 1'), isFalse, reason: 'a short one need not');
+      expect(
+        tester.getRect(tabNamed(long)).right,
+        lessThan(tester.getRect(find.byType(StatusLine)).right),
+      );
     });
 
     testWidgets('each tab has a search of its own', (tester) async {

@@ -38,7 +38,7 @@ class _KeyboardSettingsState extends ConsumerState<KeyboardSettings> {
       context: context,
       builder: (context) => _CaptureDialog(command: command),
     );
-    if (chord == null) return;
+    if (chord == null || !mounted) return;
     ref.read(shortcutsProvider.notifier).bind(command, <KeyChord>[
       ?chord.chord,
     ]);
@@ -274,7 +274,7 @@ class _CaptureDialogState extends ConsumerState<_CaptureDialog> {
     return Focus(
       autofocus: true,
       onKeyEvent: _onKey,
-      child: AlertDialog(
+      child: GlassDialog(
         title: Text('Shortcut for “${widget.command.label}”'),
         content: SizedBox(
           width: 360,

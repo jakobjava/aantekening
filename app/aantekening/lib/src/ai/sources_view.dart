@@ -198,7 +198,7 @@ class SourceLine extends StatelessWidget {
     final color = Origins.colourOf(first.origin, tones);
     final quote = _quoteOf(first, max: 140);
     return Material(
-      color: tones.pane,
+      color: tones.lift,
       child: InkWell(
         onTap: () => onOpen(first),
         child: Padding(

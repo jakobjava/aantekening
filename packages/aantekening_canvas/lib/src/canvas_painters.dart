@@ -1,6 +1,8 @@
 /// The painted layers of the canvas: paper, ink, wet ink and selection.
 library;
 
+import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:aantekening_core/aantekening_core.dart';
@@ -165,10 +167,11 @@ class BackgroundPainter extends CustomPainter {
 
 /// Draws committed ink strokes.
 ///
-/// Ink is split into two layers around the widget-based elements: highlighter
-/// under them, pen over them. That reproduces what the tools mean physically —
-/// a highlighter goes beneath writing, a pen on top — while keeping the text
-/// and formula elements as real widgets that can be edited and selected.
+/// Ink is drawn over the widget-based elements in layers: highlighter first,
+/// multiplied with what it lies on, so the writing, pictures and PDF pages it
+/// covers show through it as through a real marker; then the pen on top. The
+/// text and formula elements stay real widgets that can be edited and
+/// selected.
 ///
 /// Each ink element is recorded once into a picture in page space and replayed
 /// under the viewport transform. Panning and zooming then cost one picture per
@@ -181,15 +184,18 @@ class InkPainter extends CustomPainter {
     this.pixelsPerUnit,
     this.tiles,
     this.tileScale = 1,
-    this.zooming,
-    this.pixelRatio = 1,
     this.fold,
     this.devicePixelsPerUnit = 1,
-  }) : super(repaint: zooming);
+    this.seen,
+  }) : super(repaint: tiles?.unmade);
 
   final List<InkElement> elements;
   final CanvasViewport viewport;
   final InkLayer layer;
+
+  /// The part of the view seen now, in the coordinates [viewport] lays the
+  /// page out in: the [tiles] over it are drawn first.
+  final Aabb Function()? seen;
 
   /// The sheets the page is shown as: each sheet's ink is drawn within it,
   /// moved down by the gaps above it. Null for one paper.
@@ -199,20 +205,12 @@ class InkPainter extends CustomPainter {
   /// sheets are drawn a whole number of them.
   final double devicePixelsPerUnit;
 
-  /// Where the ink is kept as pixels in tiles, for a view that scrolls but
-  /// is not being zoomed; null to draw the strokes themselves.
+  /// Where the ink is kept as pixels in tiles, scaled with the page as it
+  /// zooms; null to draw the strokes themselves.
   final InkTiles? tiles;
 
   /// Device pixels per page unit the [tiles] are drawn at.
   final double tileScale;
-
-  /// The view, while it is being zoomed: zoomed in further than the tiles
-  /// were drawn for, the strokes are drawn instead, sharp, and the ink is
-  /// drawn again at every step of the zoom.
-  final ValueListenable<CanvasViewport>? zooming;
-
-  /// Device pixels per screen pixel.
-  final double pixelRatio;
 
   /// How many pixels a page unit is drawn across, where the ink is to be
   /// kept as pixels, for a view that does not zoom; null to draw the strokes
@@ -242,8 +240,8 @@ class InkPainter extends CustomPainter {
         ? <SheetPiece>[(area: region, down: 0)]
         : fold.piecesOf(region, devicePixelsPerUnit: devicePixelsPerUnit);
     final tiles = this.tiles;
-    final zoom = zooming?.value.zoom;
-    if (tiles != null && (zoom == null || zoom * pixelRatio <= tileScale)) {
+    if (tiles != null) {
+      final seen = this.seen?.call();
       tiles.paint(
         canvas,
         region,
@@ -251,6 +249,7 @@ class InkPainter extends CustomPainter {
         _pictureOf,
         scale: tileScale,
         pieces: fold == null ? null : pieces,
+        seen: seen == null ? null : _rectIn(seen, region),
       );
       return;
     }
@@ -350,7 +349,9 @@ class InkPainter extends CustomPainter {
 
   /// The element's strokes on this layer, recorded once. Elements are
   /// immutable, so an edited element is a new object with a new picture.
-  ui.Picture? _pictureOf(InkElement element) {
+  ui.Picture? _pictureOf(InkElement element) => _recorded(layer, element);
+
+  static ui.Picture? _recorded(InkLayer layer, InkElement element) {
     final cache = _pictures[layer]!;
     final cached = cache[element];
     if (cached != null) return cached;
@@ -361,6 +362,21 @@ class InkPainter extends CustomPainter {
       if (layer.accepts(stroke)) paintStroke(canvas, stroke);
     }
     return cache[element] = recorder.endRecording();
+  }
+
+  /// The elements whose strokes are recorded on every layer.
+  static final Expando<bool> _recordedWhole = Expando<bool>('recorded');
+
+  /// Whether [element]'s strokes are recorded, ready to draw ([record]).
+  static bool isRecorded(InkElement element) =>
+      _recordedWhole[element] ?? false;
+
+  /// Records [element]'s strokes on every layer, as they will be drawn.
+  static void record(InkElement element) {
+    for (final layer in InkLayer.values) {
+      _recorded(layer, element);
+    }
+    _recordedWhole[element] = true;
   }
 
   /// Paints one stroke in page space. Inverting ink is painted white, to
@@ -409,8 +425,6 @@ class InkPainter extends CustomPainter {
       old.pixelsPerUnit != pixelsPerUnit ||
       !identical(old.tiles, tiles) ||
       old.tileScale != tileScale ||
-      old.zooming != zooming ||
-      old.pixelRatio != pixelRatio ||
       old.fold != fold ||
       old.devicePixelsPerUnit != devicePixelsPerUnit ||
       !_sameElements(old.elements, elements);
@@ -439,6 +453,19 @@ class InkTiles {
 
   final Map<(int, int), _InkTile> _tiles = <(int, int), _InkTile>{};
 
+  /// How many tiles out of sight are drawn each time the layer is painted.
+  /// Each is drawn on the thread that draws the frames, which waited on a
+  /// whole row of them as the view came upon it; the rest wait for the
+  /// frames after.
+  static const int _unseenEachTime = 2;
+
+  /// Says that tiles were left to draw, once the layer they were left out
+  /// of is painted: it is painted again, in the next frame, to draw them.
+  Listenable get unmade => _unmade;
+  final ValueNotifier<int> _unmade = ValueNotifier<int>(0);
+  bool _askedAgain = false;
+  bool _disposed = false;
+
   /// How many tiles have been drawn, again or for the first time.
   @visibleForTesting
   int get drawn => _drawn;
@@ -452,6 +479,13 @@ class InkTiles {
     _tiles.clear();
   }
 
+  /// Lets go of every tile, for good.
+  void dispose() {
+    clear();
+    _disposed = true;
+    _unmade.dispose();
+  }
+
   /// Draws [region] of the page, the page point at its corner at
   /// [canvas]'s origin, from [elements], whose strokes on this layer
   /// [pictureOf] gives, [scale] device pixels to a page unit, drawing again
@@ -459,6 +493,9 @@ class InkTiles {
   ///
   /// On sheets, each of [pieces] is drawn within its sheet, moved down as
   /// it says; a tile over two sheets is drawn on each, cut at its edge.
+  ///
+  /// Tiles drawn for the first time, or again, are drawn over [seen] — in
+  /// [canvas]'s coordinates — first; of the rest, a few each time.
   void paint(
     Canvas canvas,
     Aabb region,
@@ -466,6 +503,7 @@ class InkTiles {
     ui.Picture? Function(InkElement element) pictureOf, {
     required double scale,
     List<SheetPiece>? pieces,
+    Rect? seen,
   }) {
     if (scale != _scale) {
       clear();
@@ -475,8 +513,18 @@ class InkTiles {
     final paint = Paint()
       ..filterQuality = FilterQuality.low
       ..blendMode = layer.blendMode;
+    final making = _Making(seen);
     if (pieces == null) {
-      _paintArea(canvas, region, region, elements, pictureOf, shown, paint);
+      _paintArea(
+        canvas,
+        region,
+        region,
+        elements,
+        pictureOf,
+        shown,
+        paint,
+        making,
+      );
     } else {
       for (final piece in pieces) {
         canvas
@@ -491,9 +539,18 @@ class InkTiles {
           pictureOf,
           shown,
           paint,
+          making.movedUp(piece.down),
         );
         canvas.restore();
       }
+    }
+    if (making.left && !_askedAgain) {
+      // Once this painting is done: not while it is painted.
+      _askedAgain = true;
+      scheduleMicrotask(() {
+        _askedAgain = false;
+        if (!_disposed) _unmade.value++;
+      });
     }
     // What is no longer about the view, or no longer inked, is let go.
     _tiles.removeWhere((key, tile) {
@@ -513,43 +570,63 @@ class InkTiles {
     ui.Picture? Function(InkElement element) pictureOf,
     Set<(int, int)> shown,
     Paint paint,
+    _Making making,
   ) {
     final unit = side / _scale;
     final first = ((area.left / unit).floor(), (area.top / unit).floor());
     final last = ((area.right / unit).ceil(), (area.bottom / unit).ceil());
-    for (var row = first.$2; row < last.$2; row++) {
-      for (var column = first.$1; column < last.$1; column++) {
-        final place = Aabb(
-          column * unit,
-          row * unit,
-          (column + 1) * unit,
-          (row + 1) * unit,
-        );
-        final inked = <InkElement>[
-          for (final element in elements)
-            if (element.bounds.intersects(place) && pictureOf(element) != null)
-              element,
-        ];
-        if (inked.isEmpty) continue;
-        final key = (column, row);
-        shown.add(key);
-        var tile = _tiles[key];
-        if (tile == null || !_sameElements(tile.elements, inked)) {
-          tile?.image.dispose();
-          tile = _tiles[key] = _InkTile(inked, _draw(place, inked, pictureOf));
-        }
-        canvas.drawImageRect(
-          tile.image,
-          const Rect.fromLTWH(0, 0, side + 0.0, side + 0.0),
-          Rect.fromLTRB(
-            place.left - region.left,
-            place.top - region.top,
-            place.right - region.left,
-            place.bottom - region.top,
-          ),
-          paint,
-        );
+    // The ink on each tile, in the order it is drawn: each element is put
+    // on the tiles it lies over, rather than every tile looking through
+    // all of them.
+    final inkOn = <(int, int), List<InkElement>>{};
+    for (final element in elements) {
+      final bounds = element.bounds;
+      final columns = (
+        math.max(first.$1, (bounds.left / unit).floor()),
+        math.min(last.$1, (bounds.right / unit).ceil()),
+      );
+      final rows = (
+        math.max(first.$2, (bounds.top / unit).floor()),
+        math.min(last.$2, (bounds.bottom / unit).ceil()),
+      );
+      if (columns.$1 >= columns.$2 ||
+          rows.$1 >= rows.$2 ||
+          pictureOf(element) == null) {
+        continue;
       }
+      for (var row = rows.$1; row < rows.$2; row++) {
+        for (var column = columns.$1; column < columns.$2; column++) {
+          (inkOn[(column, row)] ??= <InkElement>[]).add(element);
+        }
+      }
+    }
+    for (final MapEntry(key: key, value: inked) in inkOn.entries) {
+      final (column, row) = key;
+      final place = Aabb(
+        column * unit,
+        row * unit,
+        (column + 1) * unit,
+        (row + 1) * unit,
+      );
+      final drawn = Rect.fromLTRB(
+        place.left - region.left,
+        place.top - region.top,
+        place.right - region.left,
+        place.bottom - region.top,
+      );
+      var tile = _tiles[key];
+      if (tile == null || !_sameElements(tile.elements, inked)) {
+        if (!making.takes(drawn)) continue;
+        tile?.image.dispose();
+        tile = _tiles[key] = _InkTile(inked, _draw(place, inked, pictureOf));
+      }
+      shown.add(key);
+      canvas.drawImageRect(
+        tile.image,
+        const Rect.fromLTWH(0, 0, side + 0.0, side + 0.0),
+        drawn,
+        paint,
+      );
     }
   }
 
@@ -573,6 +650,43 @@ class InkTiles {
   }
 }
 
+/// Which tiles are drawn as a layer is painted: all over what is seen, and
+/// a few of the rest.
+class _Making {
+  _Making(this.seen) : _parent = null;
+
+  _Making._moved(this.seen, this._parent);
+
+  /// What is seen, in the canvas's coordinates; null for all of it.
+  final Rect? seen;
+
+  /// The one counting, for each sheet's part of the layer.
+  final _Making? _parent;
+
+  int _unseen = 0;
+  bool _left = false;
+
+  /// Whether a tile was left undrawn.
+  bool get left => _parent?.left ?? _left;
+
+  /// The same, for a canvas moved down [down].
+  _Making movedUp(double down) =>
+      _Making._moved(seen?.translate(0, -down), _parent ?? this);
+
+  /// Whether a tile over [drawn] is drawn now.
+  bool takes(Rect drawn) {
+    final seen = this.seen;
+    if (seen == null || seen.overlaps(drawn)) return true;
+    final counting = _parent ?? this;
+    if (counting._unseen < InkTiles._unseenEachTime) {
+      counting._unseen++;
+      return true;
+    }
+    counting._left = true;
+    return false;
+  }
+}
+
 class _InkTile {
   _InkTile(this.elements, this.image);
 
@@ -583,10 +697,10 @@ class _InkTile {
 
 /// Which strokes an [InkPainter] draws.
 enum InkLayer {
-  /// Highlighter, drawn beneath the element widgets.
-  beneath(BlendMode.multiply),
+  /// Highlighter, drawn over the element widgets and multiplied with them.
+  marking(BlendMode.multiply),
 
-  /// Pen, pencil and marker, drawn above them.
+  /// Pen, pencil and marker, drawn above the highlighter.
   above(BlendMode.srcOver),
 
   /// Ink in the inverse of what is beneath it ([NoteColors.inverse]),
@@ -602,7 +716,7 @@ enum InkLayer {
   bool accepts(InkStroke stroke) => switch (this) {
     InkLayer.inverting => stroke.color == NoteColors.inverse,
     _ when stroke.color == NoteColors.inverse => false,
-    InkLayer.beneath => stroke.tool == InkTool.highlighter,
+    InkLayer.marking => stroke.tool == InkTool.highlighter,
     InkLayer.above => stroke.tool != InkTool.highlighter,
   };
 }

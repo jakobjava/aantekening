@@ -100,10 +100,10 @@ class _PageContentState extends State<_PageContent> {
   Map<String, (NoteElement, Widget?)> _placed =
       <String, (NoteElement, Widget?)>{};
 
-  /// The ink beneath the elements and above them, kept as pixels while the
-  /// view is not being zoomed.
+  /// The ink over the elements, kept as pixels while the view is not being
+  /// zoomed.
   final Map<InkLayer, InkTiles> _inkTiles = <InkLayer, InkTiles>{
-    for (final layer in const <InkLayer>[InkLayer.beneath, InkLayer.above])
+    for (final layer in const <InkLayer>[InkLayer.marking, InkLayer.above])
       layer: InkTiles(layer),
   };
 
@@ -137,7 +137,7 @@ class _PageContentState extends State<_PageContent> {
     widget.view.removeListener(_onViewChanged);
     widget.zooming?.removeListener(_onViewChanged);
     for (final tiles in _inkTiles.values) {
-      tiles.clear();
+      tiles.dispose();
     }
     super.dispose();
   }
@@ -198,13 +198,15 @@ class _PageContentState extends State<_PageContent> {
     final pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
     final devicePixelsPerUnit = _zoom * pixelRatio;
     final pixelsPerUnit = widget.still ? _zoom * pixelRatio : null;
+    Aabb seen() => widget.view.value.visibleBounds(widget.size);
     InkTiles? tilesOf(InkLayer layer) => widget.still ? null : _inkTiles[layer];
-    // Zooming out, the ink stays as tiles, drawn again for the zoom the
-    // view has come to each time it outgrows them; zooming in, it is drawn
-    // as strokes until the zoom stops.
+    // While the view zooms, the ink stays as tiles, scaled with the page:
+    // zooming out, drawn again for the zoom it has come to each time it
+    // outgrows them; zooming in, drawn sharp again once the zoom rests, as
+    // PDF pages are. Drawn as strokes at every step of a zoom in, dense
+    // handwriting took three times a frame to draw.
     final tileScale =
         (_laidOutZooming ? math.min(_zoom, viewport.zoom) : _zoom) * pixelRatio;
-    final zooming = _laidOutZooming ? widget.view : null;
     final ink = <InkElement>[
       for (final element in shown)
         if (element is InkElement && !element.locked) element,
@@ -243,37 +245,21 @@ class _PageContentState extends State<_PageContent> {
             // The pictures and PDF pages set as the background, beneath all
             // ink, and never pressed.
             IgnorePointer(child: RepaintBoundary(child: layer(true))),
-            paint(
-              InkPainter(
-                elements: ink,
-                viewport: fromOrigin,
-                layer: InkLayer.beneath,
-                pixelsPerUnit: pixelsPerUnit,
-                tiles: tilesOf(InkLayer.beneath),
-                tileScale: tileScale,
-                zooming: zooming,
-                pixelRatio: pixelRatio,
-                fold: fold,
-                devicePixelsPerUnit: devicePixelsPerUnit,
-              ),
-            ),
             RepaintBoundary(child: layer(false, header: widget.header)),
-            for (final above in const <InkLayer>[
-              InkLayer.above,
-              InkLayer.inverting,
-            ])
+            // Over the pictures, PDF pages and text alike, the highlighter
+            // as the pen: multiplied with them, it marks what it covers.
+            for (final inkLayer in InkLayer.values)
               paint(
                 InkPainter(
                   elements: ink,
                   viewport: fromOrigin,
-                  layer: above,
+                  layer: inkLayer,
                   pixelsPerUnit: pixelsPerUnit,
-                  tiles: tilesOf(above),
+                  tiles: tilesOf(inkLayer),
                   tileScale: tileScale,
-                  zooming: zooming,
-                  pixelRatio: pixelRatio,
                   fold: fold,
                   devicePixelsPerUnit: devicePixelsPerUnit,
+                  seen: seen,
                 ),
               ),
             if (!widget.still)

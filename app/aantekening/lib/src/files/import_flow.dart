@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 import '../providers.dart';
@@ -118,8 +119,7 @@ Future<List<String>> _choose(NotesImporter importer) async {
 }
 
 void _say(BuildContext context, String message) =>
-    ScaffoldMessenger.maybeOf(context)
-        ?.showAppSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.maybeOf(context)?.showMessage(message);
 
 /// Says how an import went, listing what could not be brought over.
 Future<void> _report(
@@ -133,7 +133,7 @@ Future<void> _report(
   }
   return showAppDialog<void>(
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (context) => GlassDialog(
       title: Text(outcome),
       content: SizedBox(
         width: 520,
@@ -255,7 +255,7 @@ class _ImportProgressState extends State<_ImportProgress> {
   Widget build(BuildContext context) {
     final tones = context.tones;
     final failure = _failure;
-    return AlertDialog(
+    return GlassDialog(
       title: Text('Importing from ${widget.importer.name}'),
       content: SizedBox(
         width: 420,

@@ -2,13 +2,16 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../look/motion.dart';
+import '../look/date_time_dialogs.dart';
 import '../look/tones.dart';
 import '../providers.dart';
 import '../shell/library_actions.dart';
@@ -26,6 +29,7 @@ class PageTitle extends ConsumerStatefulWidget {
     required this.pageId,
     this.highlight,
     this.onFinished,
+    this.onFramed,
     super.key,
   });
 
@@ -38,7 +42,13 @@ class PageTitle extends ConsumerStatefulWidget {
   /// keyboard to the page beneath it.
   final VoidCallback? onFinished;
 
-  /// Where the title sits on the page, in page units.
+  /// Called with where the title lies on the page once it is laid out at
+  /// another height: a title too long for one line goes on over more, and
+  /// pushes its date down.
+  final ValueChanged<Frame>? onFramed;
+
+  /// Where the title sits on the page, in page units, while it takes one
+  /// line.
   static const Frame frame = Frame(x: 40, y: 24, width: 560, height: 70);
 
   /// How long typing pauses before the page is renamed.
@@ -136,14 +146,7 @@ class _PageTitleState extends ConsumerState<PageTitle> {
   }
 
   Future<void> _pickDate(DateTime date) async {
-    final picked = await showAppDialog<DateTime>(
-      context: context,
-      builder: (_) => DatePickerDialog(
-        initialDate: date,
-        firstDate: DateTime(1900),
-        lastDate: DateTime(2200),
-      ),
-    );
+    final picked = await askForDate(context, date);
     if (picked == null) return;
     await _actions.setPageDate(
       widget.pageId,
@@ -152,11 +155,7 @@ class _PageTitleState extends ConsumerState<PageTitle> {
   }
 
   Future<void> _pickTime(DateTime date) async {
-    final picked = await showAppDialog<TimeOfDay>(
-      context: context,
-      builder: (_) =>
-          TimePickerDialog(initialTime: TimeOfDay.fromDateTime(date)),
-    );
+    final picked = await askForTime(context, TimeOfDay.fromDateTime(date));
     if (picked == null) return;
     await _actions.setPageDate(
       widget.pageId,
@@ -167,7 +166,6 @@ class _PageTitleState extends ConsumerState<PageTitle> {
   @override
   Widget build(BuildContext context) {
     final page = _page;
-    final localizations = MaterialLocalizations.of(context);
     final date = page == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(page.createdAt);
@@ -178,6 +176,18 @@ class _PageTitleState extends ConsumerState<PageTitle> {
       fontSize: 12.5,
       color: RichTextStyles.inkMuted,
     );
+    return _ReportsHeight(
+      onHeight: (height) => widget.onFramed?.call(
+        PageTitle.frame.copyWith(
+          height: math.max(PageTitle.frame.height, height),
+        ),
+      ),
+      child: _titleAndDate(context, date, muted),
+    );
+  }
+
+  Widget _titleAndDate(BuildContext context, DateTime? date, TextStyle muted) {
+    final localizations = MaterialLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -213,6 +223,17 @@ class _PageTitleState extends ConsumerState<PageTitle> {
                 child: TextField(
                   controller: _title,
                   focusNode: _focus,
+                  // Over as many lines as it takes, but one line of text:
+                  // Enter leaves it, and a line break pasted is a space.
+                  maxLines: null,
+                  keyboardType: TextInputType.text,
+                  textInputAction: TextInputAction.done,
+                  inputFormatters: <TextInputFormatter>[
+                    FilteringTextInputFormatter.deny(
+                      RegExp(r'[\r\n]+'),
+                      replacementString: ' ',
+                    ),
+                  ],
                   style: RichTextStyles.paperType.copyWith(
                     fontSize: PageTitle.titleSize,
                     fontWeight: FontWeight.w300,
@@ -261,6 +282,55 @@ class _PageTitleState extends ConsumerState<PageTitle> {
           ),
       ],
     );
+  }
+}
+
+/// Lays [child] out as tall as it needs, at the width given, and tells
+/// [onHeight] its height whenever it changes, after the frame: the title's
+/// frame on the page follows, and until then what overruns it is painted.
+class _ReportsHeight extends SingleChildRenderObjectWidget {
+  const _ReportsHeight({required this.onHeight, required super.child});
+
+  final ValueChanged<double> onHeight;
+
+  @override
+  _RenderReportsHeight createRenderObject(BuildContext context) =>
+      _RenderReportsHeight(onHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderReportsHeight renderObject,
+  ) {
+    renderObject.onHeight = onHeight;
+  }
+}
+
+class _RenderReportsHeight extends RenderProxyBox {
+  _RenderReportsHeight(this.onHeight);
+
+  ValueChanged<double> onHeight;
+
+  /// The height last told, which a frame of the given height already is
+  /// at first.
+  double? _told;
+
+  @override
+  void performLayout() {
+    size = constraints.biggest;
+    final child = this.child;
+    if (child == null) return;
+    child.layout(
+      BoxConstraints.tightFor(width: size.width),
+      parentUsesSize: true,
+    );
+    final height = child.size.height;
+    _told ??= size.height;
+    if (height == _told) return;
+    _told = height;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (attached && height == _told) onHeight(height);
+    });
   }
 }
 

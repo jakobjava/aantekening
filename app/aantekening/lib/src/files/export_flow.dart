@@ -40,8 +40,7 @@ Future<void> exportNotes(
     pages: <String>[if (node is PageRef) node.id],
   );
   if (!context.mounted) return;
-  ScaffoldMessenger.maybeOf(context)
-      ?.showAppSnackBar(SnackBar(content: Text('Saved to $path')));
+  ScaffoldMessenger.maybeOf(context)?.showMessage('Saved to $path');
 }
 
 /// [title] with what a file name may not hold replaced.

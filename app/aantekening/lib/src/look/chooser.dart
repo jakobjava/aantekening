@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../modes/key_catch.dart';
 import 'controls.dart';
+import 'cursor_list.dart';
 import 'floating_pane.dart';
 import 'glass.dart';
 import 'motion.dart';
@@ -67,7 +68,6 @@ Future<void> showChooser(
   final ahead = TypeAhead();
   return showAppDialog<void>(
     context: context,
-    overGlass: true,
     builder: (context) => Chooser(
       choicesFor: choicesFor,
       hintFor: hintFor,
@@ -113,7 +113,6 @@ class Chooser extends ConsumerStatefulWidget {
 
 class _ChooserState extends ConsumerState<Chooser> {
   late final TextEditingController _query;
-  final ScrollController _scroll = ScrollController();
   int _highlight = 0;
 
   @override
@@ -136,7 +135,6 @@ class _ChooserState extends ConsumerState<Chooser> {
   @override
   void dispose() {
     _query.dispose();
-    _scroll.dispose();
     super.dispose();
   }
 
@@ -150,15 +148,6 @@ class _ChooserState extends ConsumerState<Chooser> {
   void _move(int by, int count) {
     if (count == 0) return;
     setState(() => _highlight = (_highlight + by).clamp(0, count - 1));
-    final top = _highlight * Chooser._rowHeight;
-    if (!_scroll.hasClients) return;
-    final position = _scroll.position;
-    if (top < position.pixels) {
-      _scroll.jumpTo(top);
-    } else if (top + Chooser._rowHeight >
-        position.pixels + position.viewportDimension) {
-      _scroll.jumpTo(top + Chooser._rowHeight - position.viewportDimension);
-    }
   }
 
   KeyEventResult _onKey(KeyEvent event, List<Choice> choices) {
@@ -242,8 +231,8 @@ class _ChooserState extends ConsumerState<Chooser> {
                           typed.isEmpty ? 'Nothing here yet' : 'No match',
                         ),
                       )
-                    : ListView.builder(
-                        controller: _scroll,
+                    : CursorList(
+                        cursor: _highlight,
                         shrinkWrap: true,
                         padding: const EdgeInsets.all(4),
                         itemExtent: Chooser._rowHeight,

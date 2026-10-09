@@ -26,6 +26,14 @@ TextElement _textBox(String id, {double x = 0, double y = 0}) => TextElement(
   updatedAt: 0,
 );
 
+/// A page with a picture far down and to the right, which it scrolls to.
+CanvasController _farReaching() => CanvasController()
+  ..loadDocument(
+    PageDocument.empty(
+      id: 'p',
+    ).withElementAdded(_image('far', x: 20000, y: 20000)),
+  );
+
 /// Hosts a canvas filling an 800×600 view, or the part of it below and to
 /// the right of [offset], where an app's toolbars and sidebars leave it.
 Widget _host(
@@ -117,6 +125,52 @@ void main() {
       expect(controller.hitTest(const Offset(150, 100))?.id, 'picture');
       controller.undo();
       expect(controller.document.elementById('picture')!.locked, isTrue);
+    });
+
+    testWidgets('ink far out of view is made ready to draw while nothing '
+        'moves', (tester) async {
+      final controller = _farReaching()
+        ..beginStroke(const Offset(20000, 20200))
+        ..extendStroke(const Offset(20100, 20250))
+        ..endStroke();
+      final far = controller.document.elements.whereType<InkElement>().single;
+      await tester.pumpWidget(_host(controller));
+      expect(InkPainter.isRecorded(far), isFalse, reason: 'never drawn yet');
+
+      // Once the page has been drawn, and is still.
+      for (var frame = 0; frame < 3; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(InkPainter.isRecorded(far), isTrue);
+    });
+
+    testWidgets('a highlighter marks a picture as it marks the paper, '
+        'drawn over it', (tester) async {
+      final controller = CanvasController()
+        ..loadDocument(
+          PageDocument.empty(id: 'p').withElementAdded(_image('picture')),
+        )
+        ..setTool(CanvasTool.highlighter)
+        ..beginStroke(const Offset(20, 50))
+        ..extendStroke(const Offset(180, 50))
+        ..endStroke();
+      await tester.pumpWidget(_host(controller));
+
+      // The tree in the order it is painted: what comes later is drawn over.
+      final painted = <Widget>[
+        for (final element in tester.allElements) element.widget,
+      ];
+      final picture = painted.indexWhere(
+        (widget) => widget is ColoredBox && widget.color == Colors.blue,
+      );
+      final marking = painted.indexWhere(
+        (widget) =>
+            widget is CustomPaint &&
+            widget.painter is InkPainter &&
+            (widget.painter! as InkPainter).layer == InkLayer.marking,
+      );
+      expect(picture, isNot(-1));
+      expect(marking, greaterThan(picture));
     });
 
     testWidgets('a right-click reports where it was, and picks nothing', (
@@ -313,7 +367,7 @@ void main() {
     testWidgets('a notch glides the page on, and there exactly', (
       tester,
     ) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       await tester.pumpWidget(_host(controller));
       final mouse = TestPointer(1, PointerDeviceKind.mouse);
       await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
@@ -328,7 +382,7 @@ void main() {
     });
 
     testWidgets('notches in quick succession add up', (tester) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       await tester.pumpWidget(_host(controller));
       final mouse = TestPointer(1, PointerDeviceKind.mouse);
       await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
@@ -344,7 +398,7 @@ void main() {
     testWidgets('a smooth wheel or a touchpad is followed at once', (
       tester,
     ) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       await tester.pumpWidget(_host(controller));
       final mouse = TestPointer(1, PointerDeviceKind.mouse);
       await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
@@ -478,7 +532,7 @@ void main() {
     });
 
     testWidgets('two-finger trackpad scrolling pans', (tester) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       await tester.pumpWidget(_host(controller));
 
       final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
@@ -764,7 +818,7 @@ void main() {
     testWidgets('a finger dragged across empty canvas scrolls it', (
       tester,
     ) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       final taps = <Offset>[];
       await tester.pumpWidget(_host(controller, onEmptyTap: taps.add));
 
@@ -993,7 +1047,7 @@ void main() {
     });
 
     testWidgets('the header moves and scales with the page', (tester) async {
-      final controller = CanvasController()
+      final controller = _farReaching()
         ..viewport = const CanvasViewport(origin: Offset(20, 10), zoom: 2);
       await tester.pumpWidget(
         _host(
@@ -1318,7 +1372,7 @@ void main() {
     testWidgets('a pinch after a scroll zooms about the pointer', (
       tester,
     ) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       await tester.pumpWidget(_host(controller));
 
       final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
@@ -1396,7 +1450,7 @@ void main() {
     testWidgets('a quick two-finger scroll carries on after the fingers lift', (
       tester,
     ) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       await tester.pumpWidget(_host(controller));
 
       final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
@@ -1425,7 +1479,7 @@ void main() {
 
     testWidgets('a scroll follows the fingers exactly, and a quick one '
         'coasts on', (tester) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       await tester.pumpWidget(_host(controller));
       final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
       const at = Offset(400, 300);
@@ -1541,7 +1595,7 @@ void main() {
     testWidgets('a hard flick coasts far, but a bounded distance', (
       tester,
     ) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       await tester.pumpWidget(_host(controller));
 
       final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
@@ -1599,7 +1653,7 @@ void main() {
       testWidgets('fingers put down stop the page where they catch it', (
         tester,
       ) async {
-        final controller = CanvasController();
+        final controller = _farReaching();
         await tester.pumpWidget(_host(controller));
         final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
         await scroll(
@@ -1628,7 +1682,7 @@ void main() {
 
       testWidgets('fingers resting stop it before they move, where the '
           'platform tells of them', (tester) async {
-        final controller = CanvasController();
+        final controller = _farReaching();
         final fingers = ValueNotifier<TouchpadFingers>(TouchpadFingers.lifted);
         addTearDown(fingers.dispose);
         await tester.pumpWidget(_host(controller, touchpadFingers: fingers));
@@ -1690,7 +1744,7 @@ void main() {
     testWidgets('a pan scale brings touchpad deltas back to finger distance', (
       tester,
     ) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       await tester.pumpWidget(_host(controller, trackpadPanScale: 10 / 53));
 
       final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
@@ -1752,7 +1806,7 @@ void main() {
       tester,
     ) async {
       // Scrolled down the page, away from its top and left edges.
-      final controller = CanvasController()
+      final controller = _farReaching()
         ..viewport = const CanvasViewport(origin: Offset(500, 500));
       // Below a ribbon and beside the sidebars, as in the app. The events are
       // as recorded from a touchpad under KDE Plasma: each reports the running
@@ -1803,7 +1857,7 @@ void main() {
     testWidgets('a pinch starting before the scroll ends does not jump', (
       tester,
     ) async {
-      final controller = CanvasController();
+      final controller = _farReaching();
       await tester.pumpWidget(_host(controller));
 
       await tester.sendEventToBinding(start(1));

@@ -67,12 +67,15 @@ subpages beneath a row or unfolds them, and Enter opens a page — or goes into
 a notebook or a section. t opens the page in a new tab. In a column, n makes a
 new notebook, section or page, N a subsection or a subpage, r renames, d
 deletes, x, y and p cut, copy and paste, and Space (or a right-click) shows
-everything else that can be done to the row. **o** orders the notebooks or
-the pages: by when they were made, when they last changed or by name,
-either way round — or as you arranged them, with J and K or by dragging one
-above or below another with the mouse or a pen. b opens the bin, Tab turns
+everything else that can be done to the row. J and K move a notebook,
+section or page down and up, as dragging it above or below another with the
+mouse or a pen does. **o** orders the notebooks, the sections or the pages:
+by when they were made, when they last changed or by name, either way round
+— or as you arranged them; moving one in a list ordered otherwise keeps the list as it
+is shown, as arranged from then on. b opens the bin, Tab turns
 to the **graph** of everything, ? shows every key and Esc puts it away. It
 goes once a page is picked; a new page opens with the caret in its title.
+A title too long for one line goes on over more, pushing the date down.
 **Space P** (Ctrl+P) finds a page by a few letters of its name.
 
 **/** (Ctrl+F) opens the **search line**: the best match opens as it is
@@ -89,9 +92,11 @@ it, not lost — **i** and the words straight after it, Space held into **d e**,
 ### Splitting the window
 
 **Space w v** shows the page of another tab beside this one, and **Space w
-s** beneath it — a new tab's, chosen in the picker, if there is no other. The
-page without the keys is faded; Alt and h, j, k or l, or a click in it,
-gives it them. **Space w q** shows one page again, the other staying a tab.
+s** beneath it — a new tab's, chosen in the picker, if there is no other.
+Alt and h, j, k or l, or a click in the other page, gives it the keys. Drag
+the line between them to share the window otherwise, and double-click it for
+half each again; the share is remembered. **Space w q** shows one page
+again, the other staying a tab.
 A page is written on in one place at a time: beside itself, it is not opened
 twice.
 
@@ -121,8 +126,9 @@ system's setting for less motion stops it too.
 A page is one of two kinds of paper, chosen when it is made — **New page**
 asks, offering what was chosen last, so Enter makes another of the same:
 
-* **Canvas**: one paper without end, to the right and down, to write
-  anywhere on.
+* **Canvas**: one paper going on to the right and down as far as you
+  write, to write anywhere on: it scrolls half a window past what is on it,
+  and further as you write there.
 * **Pages**: sheets of A4 or Letter, in the middle of the window, one
   after another, as in a paper notebook or GoodNotes, each printed blank,
   lined, squared, dotted, with music staves, or for Cornell notes.

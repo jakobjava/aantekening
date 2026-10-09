@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/motion.dart';
 
 /// Where the pages of a printout go.
@@ -64,7 +65,7 @@ class _PrintoutPlaceDialogState extends State<_PrintoutPlaceDialog> {
         const SingleActivator(LogicalKeyboardKey.enter): _take,
         const SingleActivator(LogicalKeyboardKey.numpadEnter): _take,
       },
-      child: AlertDialog(
+      child: GlassDialog(
         title: Text('Insert a printout of $pages'),
         content: SizedBox(
           width: 380,

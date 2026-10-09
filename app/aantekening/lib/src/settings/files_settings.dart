@@ -20,6 +20,7 @@ import '../files/import_flow.dart';
 import '../files/notes_keeper.dart';
 import '../files/notes_location.dart';
 import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 import '../providers.dart';
@@ -62,7 +63,7 @@ Future<void> _attempt(
   try {
     await work();
   } on Object catch (error) {
-    messenger?.showAppSnackBar(SnackBar(content: Text('$error')));
+    messenger?.showMessage('$error');
   }
 }
 
@@ -116,7 +117,7 @@ class _NotesFolderSectionState extends ConsumerState<_NotesFolderSection> {
     final target = holdsNotes ? chosen : notesFolderIn(chosen);
     final agreed = await showAppDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => GlassDialog(
         title: Text(
           holdsNotes ? 'Open the notes in this folder?' : 'Move your notes?',
         ),
@@ -233,8 +234,7 @@ class _BackupsSection extends ConsumerWidget {
     Future<void> backUp() async {
       final path = await backups.backUpNow();
       if (path == null || !context.mounted) return;
-      ScaffoldMessenger.maybeOf(context)
-          ?.showAppSnackBar(SnackBar(content: Text('Backed up to $path')));
+      ScaffoldMessenger.maybeOf(context)?.showMessage('Backed up to $path');
     }
 
     return SettingsSection(

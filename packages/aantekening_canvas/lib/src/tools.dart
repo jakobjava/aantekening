@@ -23,7 +23,8 @@ enum CanvasTool {
   /// Draw ink with a round, pressure-sensitive nib.
   pen,
 
-  /// Highlight with a translucent chisel nib, beneath text and ink.
+  /// Highlight with a translucent chisel nib, over text and pictures and
+  /// beneath ink.
   highlighter,
 
   /// Drag out the shape chosen ([CanvasController.shapeKind]) in the pen's

@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../command_menu.dart';
 import '../look/controls.dart';
 import '../look/glass.dart';
 import '../look/marks.dart';
@@ -790,25 +791,16 @@ class _SmallCard extends StatelessWidget {
               SmallCaps(tag, color: due ? tones.emphasis : null),
               const Spacer(),
               if (onEdit != null || onDelete != null)
-                MenuAnchor(
-                  menuChildren: <Widget>[
-                    if (onEdit != null)
-                      MenuItemButton(
-                        onPressed: onEdit,
-                        child: const Text('Correct'),
-                      ),
-                    if (onDelete != null)
-                      MenuItemButton(
-                        onPressed: onDelete,
-                        child: const Text('Take out'),
-                      ),
-                  ],
-                  builder: (context, controller, _) => MarkButton(
-                    MarkShape.more,
-                    tooltip: 'More',
-                    onPressed: () => controller.isOpen
-                        ? controller.close()
-                        : controller.open(),
+                MarkButton(
+                  MarkShape.more,
+                  tooltip: 'More',
+                  onPressed: () => unawaited(
+                    showCommandMenu(context, <List<MenuCommand>>[
+                      <MenuCommand>[
+                        if (onEdit != null) MenuCommand('Correct', onEdit),
+                        if (onDelete != null) MenuCommand('Take out', onDelete),
+                      ],
+                    ]),
                   ),
                 ),
             ],
@@ -852,7 +844,7 @@ Future<StudyCard?> _editCard(BuildContext context, StudyCard card) {
   final back = TextEditingController(text: card.back);
   return showAppDialog<StudyCard>(
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (context) => GlassDialog(
       title: const Text('Correct the card'),
       content: SizedBox(
         width: 480,

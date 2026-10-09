@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import 'list_order.dart';
 import 'new_page_choice.dart';
 import 'tabs.dart';
 import 'tree_rows.dart';
@@ -218,40 +219,91 @@ class LibraryActions {
 
   // -------------------------------------------------------------- arranging
 
-  /// Puts [moved] just above [beside], or just below it, as its sibling: a
-  /// page dropped there as the person arranges the pages of a section.
-  Future<void> arrangePage(
-    PageRef moved,
-    PageRef beside, {
+  /// Puts [moved] — a notebook, a section or a page — just above [beside],
+  /// or just below it, as its sibling, as the person arranges them. A list
+  /// shown sorted some other way is kept first as it is shown, and listed
+  /// as arranged from then on, so what is moved moves from where it is seen.
+  Future<void> arrange(
+    TreeNode moved,
+    TreeNode beside, {
     required bool above,
   }) async {
-    final tree = await _ref.read(pageTreeProvider(beside.sectionId).future);
-    final parentId = tree.parentOf(beside.id);
-    final siblings = parentId == null ? tree.roots : tree.childrenOf(parentId);
     final store = await _store;
-    await store.pages.arrangePage(
-      moved.id,
-      parentId: parentId,
-      after: _after(siblings, moved, beside, above: above)?.id,
-    );
+    switch ((moved, beside)) {
+      case (Notebook(), Notebook()):
+        final shown = await _ref.read(notebooksProvider.future);
+        await _keepShown(
+          OrderedList.notebooks,
+          () => store.library.arrangeNotebooksAs(<String>[
+            for (final notebook in shown) notebook.id,
+          ]),
+        );
+        await store.library.arrangeNotebook(
+          moved.id,
+          after: _after(shown, moved, beside, above: above)?.id,
+        );
+      case (Section(), final Section beside):
+        final tree = await _ref.read(
+          sectionTreeProvider(beside.notebookId).future,
+        );
+        await _keepShown(
+          OrderedList.sections,
+          () => store.library.arrangeSectionsAs(<String>[
+            for (final entry in tree.walk()) entry.id,
+          ]),
+        );
+        final parentId = tree.parentOf(beside.id);
+        await store.library.arrangeSection(
+          moved.id,
+          parentId: parentId,
+          after: _after(
+            _siblings(tree, parentId),
+            moved,
+            beside,
+            above: above,
+          )?.id,
+        );
+      case (PageRef(), final PageRef beside):
+        final tree = await _ref.read(pageTreeProvider(beside.sectionId).future);
+        await _keepShown(
+          OrderedList.pages,
+          () => store.pages.arrangePagesAs(<String>[
+            for (final entry in tree.walk()) entry.id,
+          ]),
+        );
+        final parentId = tree.parentOf(beside.id);
+        await store.pages.arrangePage(
+          moved.id,
+          parentId: parentId,
+          after: _after(
+            _siblings(tree, parentId),
+            moved,
+            beside,
+            above: above,
+          )?.id,
+        );
+      case _:
+        return;
+    }
     _changed();
   }
 
-  /// Puts [moved] just above [beside], or just below it, as the person
-  /// arranges the notebooks.
-  Future<void> arrangeNotebook(
-    Notebook moved,
-    Notebook beside, {
-    required bool above,
-  }) async {
-    final notebooks = await _ref.read(notebooksProvider.future);
-    final store = await _store;
-    await store.library.arrangeNotebook(
-      moved.id,
-      after: _after(notebooks, moved, beside, above: above)?.id,
-    );
-    _changed();
+  /// Keeps [list], if it is shown sorted some other way, as it is shown —
+  /// by [keep] — and lists it as arranged from now on.
+  Future<void> _keepShown(
+    OrderedList list,
+    Future<void> Function() keep,
+  ) async {
+    if (_ref.read(listOrderProvider(list)) == ListOrder.arranged) return;
+    await keep();
+    _ref.read(listOrderProvider(list).notifier).choose(ListOrder.arranged);
   }
+
+  /// The items of [tree] beneath [parentId], or at its top.
+  static List<T> _siblings<T extends TreeNode>(
+    Hierarchy<T> tree,
+    String? parentId,
+  ) => parentId == null ? tree.roots : tree.childrenOf(parentId);
 
   /// What [moved] goes after among [siblings] to be just above or below
   /// [beside]: the one above [beside], or [beside] itself; null to go

@@ -17,15 +17,16 @@ import 'canvas_painters.dart';
 import 'canvas_scope.dart';
 import 'canvas_viewport.dart';
 import 'element_transforms.dart';
+import 'ink_ahead.dart';
 import 'lasso.dart';
 import 'page_space.dart';
 import 'selection_handles.dart';
 import 'tools.dart';
 
-part 'infinite_canvas_pointer.dart';
 part 'infinite_canvas_gestures.dart';
 part 'infinite_canvas_hover.dart';
 part 'infinite_canvas_layers.dart';
+part 'infinite_canvas_pointer.dart';
 
 /// Builds the widget for an element, or returns null to leave it unpainted.
 ///
@@ -312,10 +313,14 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   CanvasController get _controller => widget.controller;
 
+  /// The page's ink, made ready to draw while nothing moves.
+  late InkAhead _inkAhead;
+
   @override
   void initState() {
     super.initState();
     _listen(_controller);
+    _inkAhead = InkAhead(_controller);
     widget.touchpadFingers?.addListener(_onTouchpadFingers);
   }
 
@@ -325,6 +330,8 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     if (oldWidget.controller != widget.controller) {
       _stopListening(oldWidget.controller);
       _listen(widget.controller);
+      _inkAhead.dispose();
+      _inkAhead = InkAhead(widget.controller);
     }
     if (oldWidget.touchpadFingers != widget.touchpadFingers) {
       oldWidget.touchpadFingers?.removeListener(_onTouchpadFingers);
@@ -340,6 +347,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     _hold?.cancel();
     _motion.dispose();
     _stopListening(_controller);
+    _inkAhead.dispose();
     super.dispose();
   }
 

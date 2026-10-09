@@ -275,6 +275,7 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
       providerKeyName(widget.config.id),
       key.isEmpty ? null : key,
     );
+    if (!mounted) return;
     _key.clear();
     ref.invalidate(aiModelProvider);
     await _readKey();
@@ -283,6 +284,7 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
 
   Future<void> _remove() async {
     await _secrets.write(providerKeyName(widget.config.id), null);
+    if (!mounted) return;
     final settings = ref.read(aiSettingsProvider);
     ref
         .read(aiSettingsProvider.notifier)
@@ -721,6 +723,7 @@ class _WebSettingsState extends ConsumerState<_WebSettings> {
                     await ref
                         .read(aiSecretsProvider)
                         .write(braveKeyName, _brave.text.trim());
+                    if (!mounted) return;
                     _brave.clear();
                     ref.invalidate(webSearchProvider);
                   },

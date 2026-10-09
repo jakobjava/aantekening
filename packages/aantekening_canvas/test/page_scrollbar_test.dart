@@ -51,7 +51,7 @@ Widget _host(CanvasController controller) => MaterialApp(
 
 void main() {
   group('how far a page scrolls', () {
-    test('half a view past its content, and never short of the view', () {
+    test('half a view past its content, and no further', () {
       final controller = CanvasController()
         ..viewSize = const Size(800, 600)
         ..loadDocument(_tallPage());
@@ -61,7 +61,30 @@ void main() {
       expect(down.length, 600);
 
       controller.viewport = const CanvasViewport(origin: Offset(0, 5000));
-      expect(ScrollSpan.of(controller, Axis.vertical).extent, 5600);
+      expect(controller.viewport.origin.dy, 2000 + 300 - 600);
+    });
+
+    test('a view left past what is taken away stays there, and goes back', () {
+      final controller = CanvasController()
+        ..viewSize = const Size(800, 600)
+        ..loadDocument(_tallPage())
+        ..viewport = const CanvasViewport(origin: Offset(0, 1700))
+        ..removeElements(<String>{'tall'});
+      expect(controller.viewport.origin.dy, 1700);
+      expect(ScrollSpan.of(controller, Axis.vertical).extent, 1700 + 600);
+
+      controller.viewport = const CanvasViewport(origin: Offset(0, 1800));
+      expect(controller.viewport.origin.dy, 1700, reason: 'no further');
+      controller.viewport = const CanvasViewport(origin: Offset(0, 900));
+      expect(controller.viewport.origin.dy, 900);
+    });
+
+    test('a page reaches at least as far as a view of it at 100%', () {
+      final controller = CanvasController()
+        ..viewSize = const Size(800, 600)
+        ..viewport = const CanvasViewport(zoom: 2)
+        ..viewport = const CanvasViewport(origin: Offset(1000, 1000), zoom: 2);
+      expect(controller.viewport.origin, const Offset(400, 300));
     });
 
     test('an empty page scrolls no further than the view', () {

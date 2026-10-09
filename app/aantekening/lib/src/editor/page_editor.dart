@@ -261,6 +261,12 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// there.
   final ValueNotifier<Rect?> _glide = ValueNotifier<Rect?>(null);
 
+  /// What the ring glides to, which takes it away when let go of.
+  String? _glidedTo;
+
+  /// Where the page's title lies, taller for a title over more lines.
+  Frame _titleFrame = PageTitle.frame;
+
   /// Space while it is held, or null.
   _SpaceHeld? _space;
 
@@ -376,6 +382,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       (_, next) => _onChangedElsewhere(next.value),
     );
     _controller
+      ..placeholders = (() => _placed)
       ..passesOver = _onlyCaret
       ..addListener(_onCanvasChanged);
     _stopTracingView = traceViewOf(_controller);
@@ -700,7 +707,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
                       _firstMatchIn(highlight),
                     ),
                     header: CanvasHeader(
-                      frame: PageTitle.frame,
+                      frame: _titleFrame,
                       child: Listener(
                         // Going to the title ends typing in a text box.
                         onPointerDown: (_) =>
@@ -710,6 +717,11 @@ class _PageEditorState extends ConsumerState<PageEditor> {
                           pageId: pageId,
                           highlight: highlight,
                           onFinished: _canvasFocus.requestFocus,
+                          onFramed: (frame) {
+                            if (frame != _titleFrame) {
+                              setState(() => _titleFrame = frame);
+                            }
+                          },
                         ),
                       ),
                     ),

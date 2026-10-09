@@ -1,5 +1,5 @@
-/// How the pages of a section, and the notebooks, are listed: as the person
-/// arranged them, or by when they were made, when they last changed, or
+/// How the notebooks, the sections of a notebook and the pages of a
+/// section are listed: as the person arranged them, or by when they were made, when they last changed, or
 /// their names, either way round.
 library;
 
@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../preferences.dart';
 
 /// The lists that can be ordered.
-enum OrderedList { pages, notebooks }
+enum OrderedList { pages, sections, notebooks }
 
 enum ListOrder {
   /// As the person arranged them, by dragging them where they belong.
@@ -24,6 +24,10 @@ enum ListOrder {
   const ListOrder(this.label);
 
   final String label;
+
+  /// Whether it orders by when each last changed, which is worked out from
+  /// what lies within each.
+  bool get byChange => this == changedNewest || this == changedOldest;
 
   /// [items], which come as they were arranged, in this order; items that
   /// tie stay as they were arranged. When each last changed is its own date,

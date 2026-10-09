@@ -10,6 +10,7 @@ import 'package:aantekening/src/editor/text/shrink_to_width.dart';
 import 'package:aantekening/src/editor/text/table_view.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/editor/text/text_styles.dart';
+import 'package:aantekening/src/look/glass.dart';
 import 'package:aantekening/src/modes/key_guide.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
@@ -618,7 +619,7 @@ void main() {
       await rightClick(tester, tester.getCenter(find.byType(TikzView)));
       await tester.tap(find.text('Edit TikZ source'));
       await tester.pumpAndSettle();
-      final window = find.widgetWithText(AlertDialog, 'TikZ picture');
+      final window = find.widgetWithText(GlassDialog, 'TikZ picture');
       final field = find.descendant(
         of: window,
         matching: find.byType(TextField),
@@ -667,7 +668,7 @@ void main() {
       await tester.tap(find.text('Edit TikZ source'));
       await tester.pumpAndSettle();
       return find.descendant(
-        of: find.widgetWithText(AlertDialog, 'TikZ picture'),
+        of: find.widgetWithText(GlassDialog, 'TikZ picture'),
         matching: find.byType(TextField),
       );
     }
@@ -899,7 +900,7 @@ void main() {
       expect(caret.bottom, lessThanOrEqualTo(drawnBox.bottom));
     });
 
-    Finder formulaWindow() => find.widgetWithText(AlertDialog, 'Formula');
+    Finder formulaWindow() => find.widgetWithText(GlassDialog, 'Formula');
     Finder windowField() =>
         find.descendant(of: formulaWindow(), matching: find.byType(TextField));
 
@@ -1498,7 +1499,7 @@ void main() {
     await typeKeys(tester, 'il');
     await tester.enterText(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byType(GlassDialog),
         matching: find.byType(TextField),
       ),
       'Let \$f(x) = x^2\$. Then\n'
@@ -1510,7 +1511,7 @@ void main() {
     await press(tester, LogicalKeyboardKey.enter, control: true);
     await tester.pumpAndSettle();
 
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(GlassDialog), findsNothing);
     final blocks = blocksOf(tester);
     expect(blocks.first.plainText, 'Notes');
     expect(blocks[1].runs[1], const TextRun.imported('f(x) = x^2'));
@@ -1532,7 +1533,7 @@ void main() {
     await typeKeys(tester, 'il');
     await tester.enterText(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byType(GlassDialog),
         matching: find.byType(TextField),
       ),
       r'Water is $\ce{H2O}$, and $\frac{a}{b}$.',
@@ -2190,23 +2191,11 @@ void main() {
     group('a caret placed on the paper', () {
       CanvasController canvasOf(WidgetTester tester) =>
           tester.widget<InfiniteCanvas>(find.byType(InfiniteCanvas)).controller;
+
       /// Whether the box shows as a box, framed — by the page, as anything
       /// picked is, or by itself while a formula is begun at a caret — not
       /// yet only a caret.
-      bool framed(WidgetTester tester) =>
-          selectedOnCanvas(tester).isNotEmpty ||
-          tester
-              .widgetList<DecoratedBox>(
-                find.descendant(
-                  of: find.byType(TextBoxEditor),
-                  matching: find.byType(DecoratedBox),
-                ),
-              )
-              .any(
-                (box) =>
-                    box.decoration is BoxDecoration &&
-                    (box.decoration as BoxDecoration).border != null,
-              );
+      bool framed(WidgetTester tester) => selectedOnCanvas(tester).isNotEmpty;
 
       testWidgets('beside a box, lets a click through to the box', (
         tester,
@@ -2242,8 +2231,10 @@ void main() {
         expect(canvasOf(tester).document.elements, hasLength(1));
       });
 
-      testWidgets('with a formula begun, shows as the box it will be, and '
-          'left, goes leaving nothing to undo', (tester) async {
+      testWidgets('with a formula begun, is picked as the box it will be, '
+          'with its handles, and left, goes leaving nothing to undo', (
+        tester,
+      ) async {
         await openEditor(tester, store, pageId);
         await startTextBox(tester);
         final canvas = canvasOf(tester);
@@ -2252,7 +2243,8 @@ void main() {
         await tester.pumpAndSettle();
         expect(inFormula(tester), isTrue);
         expect(framed(tester), isTrue, reason: 'a box to type it in');
-        expect(canvas.selection, isEmpty, reason: 'nothing written yet');
+        expect(canvas.selection, hasLength(1), reason: 'with its handles');
+        expect(canvas.isDirty, isFalse, reason: 'nothing written yet');
 
         await press(tester, LogicalKeyboardKey.keyM, control: true);
         await tester.pumpAndSettle();

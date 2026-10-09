@@ -598,7 +598,8 @@ void main() {
     test('revealing a region scrolls only as far as needed', () {
       final controller = CanvasController()
         ..viewSize = const Size(800, 600)
-        ..addElement(_text('a'));
+        ..addElement(_text('a'))
+        ..addElement(_text('far', y: 5000));
 
       controller.reveal(const Aabb(100, 100, 300, 200));
       expect(controller.viewport.origin, Offset.zero, reason: 'in view');
@@ -612,6 +613,36 @@ void main() {
         3000 - 48,
         reason: 'too tall to fit: its top is shown',
       );
+    });
+
+    test('a placeholder is no part of what the page holds', () {
+      final controller = CanvasController()
+        ..placeholders = (() => const <String>{'caret'})
+        ..addElement(_text('a'))
+        ..addElement(_text('caret', y: 5000));
+      expect(
+        controller.contentBounds,
+        controller.elementById('a')!.bounds,
+        reason: 'a caret placed far down does not make the page longer',
+      );
+    });
+
+    test('undo and redo never bring a placeholder back', () {
+      final placed = <String>{};
+      final controller = CanvasController()..placeholders = (() => placed);
+      placed.add('caret');
+      controller
+        ..addElement(_text('caret'), recordUndo: false)
+        ..select('caret')
+        // Moved while it is a placeholder: no step of history holds it.
+        ..translateSelection(const Offset(10, 0));
+      placed.remove('caret');
+      controller.removeElements(<String>{'caret'}, recordUndo: false);
+
+      controller.undo();
+      expect(controller.elementById('caret'), isNull);
+      controller.redo();
+      expect(controller.elementById('caret'), isNull);
     });
 
     test('only visible elements are returned for painting', () {
@@ -690,6 +721,7 @@ void main() {
       List<InkElement> elements, {
       InkTiles? tiles,
       double scale = 1.5,
+      Aabb? seen,
     }) async {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder)
@@ -701,6 +733,7 @@ void main() {
         layer: InkLayer.above,
         tiles: tiles,
         tileScale: scale,
+        seen: seen == null ? null : () => seen,
       ).paint(canvas, Size(region.width, region.height));
       final image = await recorder.endRecording().toImage(
         (region.width * scale).round(),
@@ -741,6 +774,36 @@ void main() {
       await draw(ink, tiles: tiles, scale: 2);
       expect(tiles.drawn, greaterThan(first + 1), reason: 'a new zoom');
       tiles.clear();
+    });
+
+    testWidgets('draws the tiles seen first, and a few of the rest each time', (
+      tester,
+    ) async {
+      final tiles = InkTiles(InkLayer.above);
+      // A tile is 512 / 1.5 units across: one stroke on each of six.
+      final everywhere = <InkElement>[
+        for (final (index, at) in const <Offset>[
+          Offset(20, 40),
+          Offset(360, 40),
+          Offset(700, 40),
+          Offset(20, 380),
+          Offset(360, 380),
+          Offset(700, 380),
+        ].indexed)
+          handwriting('$index', at),
+      ];
+      var asked = 0;
+      void ask() => asked++;
+      tiles.unmade.addListener(ask);
+      const corner = Aabb(0, 0, 100, 100);
+
+      await tester.runAsync(() => draw(everywhere, tiles: tiles, seen: corner));
+      expect(tiles.drawn, 1 + 2, reason: 'the one seen, and two more');
+      expect(asked, 1, reason: 'painted again for the rest');
+      await tester.runAsync(() => draw(everywhere, tiles: tiles, seen: corner));
+      await tester.runAsync(() => draw(everywhere, tiles: tiles, seen: corner));
+      expect(tiles.drawn, 6);
+      tiles.dispose();
     });
   });
 

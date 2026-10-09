@@ -5,6 +5,8 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../look/controls.dart';
+import '../look/glass.dart';
 import '../look/tones.dart';
 import 'library_menu.dart';
 
@@ -58,7 +60,6 @@ class _ArrangeableRowState<T extends TreeNode>
   @override
   Widget build(BuildContext context) {
     if (!widget.enabled) return widget.child;
-    final line = context.tones.paperEmphasis;
     final target = DragTarget<T>(
       onWillAcceptWithDetails: (details) =>
           details.data.id != widget.item.id &&
@@ -81,7 +82,9 @@ class _ArrangeableRowState<T extends TreeNode>
                 right: 0,
                 top: above ? 0 : null,
                 bottom: above ? null : 0,
-                child: IgnorePointer(child: Container(height: 2, color: line)),
+                child: const IgnorePointer(
+                  child: Drop.under(width: double.infinity),
+                ),
               ),
           ],
         );
@@ -131,15 +134,18 @@ class _Carried extends StatelessWidget {
   final String title;
 
   @override
-  Widget build(BuildContext context) => Material(
-    elevation: 4,
-    borderRadius: BorderRadius.circular(4),
-    color: context.tones.pane,
+  Widget build(BuildContext context) => Glass(
+    borderRadius: Corners.controlRadius,
     child: ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 260),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        child: Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 13, color: context.tones.text),
+        ),
       ),
     ),
   );

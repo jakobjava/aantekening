@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../files/bin_view.dart';
 import '../graph/graph_panel.dart';
 import '../look/controls.dart';
+import '../look/cursor_list.dart';
 import '../look/floating_pane.dart';
 import '../look/glass.dart';
 import '../look/marks.dart';
@@ -48,7 +49,6 @@ Future<void> showPicker(BuildContext context, WidgetRef ref, PickerView view) {
   final keys = PickerKeys();
   return showAppDialog<void>(
     context: context,
-    overGlass: true,
     builder: (context) => Picker(initial: view, keys: keys),
   ).whenComplete(keys.release);
 }
@@ -336,41 +336,40 @@ class _PickerState extends ConsumerState<Picker> {
     }
   }
 
-  /// The list [column] is ordered as, or null for one that is only ever
-  /// as arranged.
-  static OrderedList? _listOf(_Column column) => switch (column) {
+  /// The list [column] is ordered as.
+  static OrderedList _listOf(_Column column) => switch (column) {
     _Column.notebooks => OrderedList.notebooks,
-    _Column.sections => null,
+    _Column.sections => OrderedList.sections,
     _Column.pages => OrderedList.pages,
   };
 
-  /// Whether [column]'s rows are listed as they were arranged, and so can
-  /// be moved among themselves.
-  bool _arranged(_Column column) => switch (_listOf(column)) {
-    final list? => ref.watch(listOrderProvider(list)) == ListOrder.arranged,
-    null => false,
-  };
-
   /// Moves the row the cursor is on [by] one, down or up, among its
-  /// neighbours.
+  /// neighbours: past what lies beneath it.
   void _shift(int by) {
-    if (!_arranged(_column)) return;
     final rows = _rowsOf(_column);
     final at = rows.indexWhere((row) => row.node.id == _cursorOf(_column));
-    final to = at + by;
-    if (at < 0 || to < 0 || to >= rows.length) return;
-    final actions = ref.read(libraryActionsProvider);
-    switch ((rows[at].node, rows[to].node)) {
-      case (final Notebook moved, final Notebook beside):
-        unawaited(actions.arrangeNotebook(moved, beside, above: by < 0));
-      case (final PageRef moved, final PageRef beside):
-        unawaited(actions.arrangePage(moved, beside, above: by < 0));
-    }
+    if (at < 0) return;
+    final moved = rows[at].node;
+    final to = rows
+        .skip(by > 0 ? at + 1 : 0)
+        .take(by > 0 ? rows.length : at)
+        .where((row) => !_beneath(row, moved));
+    final beside = by > 0 ? to.firstOrNull : to.lastOrNull;
+    if (beside == null) return;
+    unawaited(
+      ref
+          .read(libraryActionsProvider)
+          .arrange(moved, beside.node, above: by < 0),
+    );
   }
+
+  /// Whether [row] lies beneath [node].
+  static bool _beneath(_Row row, TreeNode node) =>
+      row.place.ancestors.any((above) => above.id == node.id);
 
   /// How the column is ordered, to choose from.
   KeyLayer _orders() {
-    final list = _listOf(_column) ?? OrderedList.pages;
+    final list = _listOf(_column);
     final order = ref.read(listOrderProvider(list));
     final keys = galleryKeys(ListOrder.values.length);
     return KeyLayer.of('Order of the ${list.name}', <KeyAction>[
@@ -407,7 +406,6 @@ class _PickerState extends ConsumerState<Picker> {
   /// them.
   KeyLayer _keys() {
     final pages = _column == _Column.pages;
-    final sortable = _listOf(_column) != null;
     return KeyLayer('Picker', <KeyGroup>[
       KeyGroup(title: 'Move', <KeyAction>[
         KeyAction(
@@ -471,11 +469,9 @@ class _PickerState extends ConsumerState<Picker> {
         KeyAction('x', 'Cut', run: () => _clip(cut: true)),
         KeyAction('y', 'Copy', run: () => _clip(cut: false)),
         KeyAction('p', 'Paste', run: _paste),
-        if (sortable) ...<KeyAction>[
-          KeyAction('J', 'Move down', run: () => _shift(1)),
-          KeyAction('K', 'Move up', run: () => _shift(-1)),
-          KeyAction('o', 'Order', layer: _orders),
-        ],
+        KeyAction('J', 'Move down', run: () => _shift(1)),
+        KeyAction('K', 'Move up', run: () => _shift(-1)),
+        KeyAction('o', 'Order', layer: _orders),
       ]),
       KeyGroup(<KeyAction>[
         KeyAction(ModeKey.space, 'More', run: _menu, also: const <String>['.']),
@@ -643,16 +639,14 @@ class _PickerState extends ConsumerState<Picker> {
                   _Column.pages => 5,
                 },
                 child: _ColumnView(
+                  // Its scroll its own, as the columns shown change.
+                  key: ValueKey<_Column>(column),
                   label: column.label,
                   active: column == _column,
                   rows: _rowsOf(column),
                   cursor: _cursorOf(column),
                   open: open,
-                  order: switch (_listOf(column)) {
-                    final list? => ref.watch(listOrderProvider(list)),
-                    null => null,
-                  },
-                  arranged: _arranged(column),
+                  order: ref.watch(listOrderProvider(_listOf(column))),
                   empty: switch (column) {
                     _Column.notebooks => 'No notebooks yet — n makes one',
                     _Column.sections =>
@@ -733,11 +727,11 @@ class _ColumnView extends ConsumerWidget {
     required this.cursor,
     required this.open,
     required this.order,
-    required this.arranged,
     required this.empty,
     required this.onTap,
     required this.onMenu,
     required this.onFold,
+    super.key,
   });
 
   final String label;
@@ -745,8 +739,7 @@ class _ColumnView extends ConsumerWidget {
   final List<_Row> rows;
   final String? cursor;
   final Set<String?> open;
-  final ListOrder? order;
-  final bool arranged;
+  final ListOrder order;
   final String empty;
   final ValueChanged<TreeNode> onTap;
   final ValueChanged<TreeNode> onMenu;
@@ -769,8 +762,7 @@ class _ColumnView extends ConsumerWidget {
             children: <Widget>[
               SmallCaps(label, color: active ? tones.emphasis : tones.muted),
               const Spacer(),
-              if (order case final order? when order != ListOrder.arranged)
-                KeyHint(order.label),
+              if (order != ListOrder.arranged) KeyHint(order.label),
             ],
           ),
         ),
@@ -783,7 +775,13 @@ class _ColumnView extends ConsumerWidget {
                     style: TextStyle(fontSize: 12.5, color: tones.faint),
                   ),
                 )
-              : ListView.builder(
+              : CursorList(
+                  cursor: switch (rows.indexWhere(
+                    (row) => row.node.id == cursor,
+                  )) {
+                    -1 => null,
+                    final index => index,
+                  },
                   padding: const EdgeInsets.fromLTRB(5, 0, 5, 6),
                   itemCount: rows.length,
                   itemExtent: _PickerRow.height,
@@ -799,29 +797,21 @@ class _ColumnView extends ConsumerWidget {
                       onMenu: () => onMenu(node),
                       onFold: () => onFold(node.id),
                     );
+                    Widget arrangeable<T extends TreeNode>(T node) =>
+                        ArrangeableRow<T>(
+                          item: node,
+                          enabled: true,
+                          accepts: (moved) =>
+                              !_PickerState._beneath(rows[index], moved),
+                          onArrange: (moved, {required above}) => unawaited(
+                            actions.arrange(moved, node, above: above),
+                          ),
+                          child: row,
+                        );
                     return switch (node) {
-                      final Notebook notebook when arranged =>
-                        ArrangeableRow<Notebook>(
-                          item: notebook,
-                          enabled: true,
-                          onArrange: (moved, {required above}) => unawaited(
-                            actions.arrangeNotebook(
-                              moved,
-                              notebook,
-                              above: above,
-                            ),
-                          ),
-                          child: row,
-                        ),
-                      final PageRef page when arranged =>
-                        ArrangeableRow<PageRef>(
-                          item: page,
-                          enabled: true,
-                          onArrange: (moved, {required above}) => unawaited(
-                            actions.arrangePage(moved, page, above: above),
-                          ),
-                          child: row,
-                        ),
+                      final Notebook notebook => arrangeable(notebook),
+                      final Section section => arrangeable(section),
+                      final PageRef page => arrangeable(page),
                       _ => row,
                     };
                   },

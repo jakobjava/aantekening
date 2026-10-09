@@ -185,14 +185,17 @@ class AantekeningDatabase {
 
   /// Spaces the rows of [table] matching [where] evenly again, in the order
   /// they are in — those in the bin too, to go back where they were.
-  void _renumber(String table, String where, List<Object?> parameters) {
-    final ids = <String>[
-      for (final row in select(
-        'SELECT id FROM $table WHERE $where ORDER BY position, id',
-        parameters,
-      ))
-        row['id']! as String,
-    ];
+  void _renumber(String table, String where, List<Object?> parameters) =>
+      arrangeAs(table, <String>[
+        for (final row in select(
+          'SELECT id FROM $table WHERE $where ORDER BY position, id',
+          parameters,
+        ))
+          row['id']! as String,
+      ]);
+
+  /// Numbers the rows [ids] of [table] afresh, in that order.
+  void arrangeAs(String table, List<String> ids) {
     final positions = FractionalIndex.rebalanced(ids.length);
     for (var i = 0; i < ids.length; i++) {
       run('UPDATE $table SET position = ? WHERE id = ?', <Object?>[

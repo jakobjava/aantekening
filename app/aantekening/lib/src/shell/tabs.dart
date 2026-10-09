@@ -463,3 +463,30 @@ class TabsController extends Notifier<TabsState> {
 final tabsProvider = NotifierProvider<TabsController, TabsState>(
   TabsController.new,
 );
+
+/// How much of the window split the first pane takes — the left, or the
+/// upper — remembered between sessions.
+class SplitShare extends Notifier<double> {
+  static const String _key = 'tabs.share';
+
+  /// Half each, as a split begins.
+  static const double even = 0.5;
+
+  /// The least either pane is left with.
+  static const double least = 0.15;
+
+  @override
+  double build() => switch (ref.preference(_key)) {
+    final num share => clamp(share.toDouble()),
+    _ => even,
+  };
+
+  static double clamp(double share) => share.clamp(least, 1 - least);
+
+  void set(double share) {
+    state = clamp(share);
+    ref.savePreference(_key, state == even ? null : state);
+  }
+}
+
+final splitShareProvider = NotifierProvider<SplitShare, double>(SplitShare.new);

@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import 'block_paragraph.dart';
+import 'text_styles.dart';
 
 /// The formula being edited, as it is drawn over the text: its source, and
 /// the caret, selection and highlights in it, in offsets of the source, and
@@ -155,6 +156,12 @@ class RenderFormulaLayer extends RenderProxyBox {
   /// The room between the line the formula is in and the field beneath.
   static const double _gap = 3;
 
+  /// The field's corners, as round as those of the box it lies along.
+  static const Radius _fieldCorner = Radius.circular(RichTextStyles.boxCorner);
+
+  /// The corners of the outline round the formula as it is typeset.
+  static const Radius _slotCorner = Radius.circular(3);
+
   final TextPainter _painter = TextPainter(
     textDirection: TextDirection.ltr,
     textScaler: TextScaler.noScaling,
@@ -297,7 +304,10 @@ class RenderFormulaLayer extends RenderProxyBox {
             ..strokeWidth = _blockPaint.caretWidth * 0.7 * screenPixelIn(this));
     final slot = _slot;
     if (stroke != null && slot != null) {
-      canvas.drawRect(slot.inflate(1), stroke);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(slot.inflate(1), _slotCorner),
+        stroke,
+      );
     }
     final box = _box;
     if (box == null) return;
@@ -311,7 +321,8 @@ class RenderFormulaLayer extends RenderProxyBox {
         rect.toRect().shift(text),
     ];
 
-    canvas.drawRect(box, Paint()..color = _blockPaint.formulaColor);
+    final field = RRect.fromRectAndRadius(box, _fieldCorner);
+    canvas.drawRRect(field, Paint()..color = _blockPaint.formulaColor);
     for (final mark in formula.marks) {
       final paint = Paint()..color = mark.color;
       for (final rect in rangeRects(mark.range.start, mark.range.end)) {
@@ -343,7 +354,7 @@ class RenderFormulaLayer extends RenderProxyBox {
         );
       }
     }
-    if (stroke != null) canvas.drawRect(box, stroke);
+    if (stroke != null) canvas.drawRRect(field, stroke);
 
     final caret = formula.caret;
     if (caret != null && caretShows) {
