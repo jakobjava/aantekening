@@ -31,20 +31,10 @@ jobs:
 
       - run: flutter pub get
 
-      - run: dart analyze
-
-      - name: Test
-        shell: bash
-        run: |
-          set -e
-          (cd packages/aantekening_core && dart test)
-          (cd packages/aantekening_store && dart test)
-          (cd packages/aantekening_interchange && dart test)
-          (cd packages/aantekening_ai && dart test)
-          (cd packages/aantekening_spell && dart test)
-          (cd packages/aantekening_math && flutter test)
-          (cd packages/aantekening_canvas && flutter test)
-          (cd app/aantekening && flutter test)
+      # Format, analysis and every package's tests, as tool/check.dart runs
+      # them anywhere.
+      - name: Check
+        run: dart tool/check.dart
 
       - name: Build for Windows
         if: runner.os == 'Windows'

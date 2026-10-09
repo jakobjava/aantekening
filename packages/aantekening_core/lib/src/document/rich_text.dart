@@ -757,8 +757,9 @@ class TextBlock {
     ];
     // A picture kept as a formula on a line of its own, before pictures
     // were objects in the text, is read as one.
-    if (runs case [TextRun(math: MathMode.latex, :final text)]
-        when LatexSource.isPicture(text)) {
+    if (runs case [
+      TextRun(math: MathMode.latex, :final text),
+    ] when LatexSource.isPicture(text)) {
       return TextBlock.embedded(
         BlockEmbed.tikz(text),
         indent: readInt(json, 'indent'),

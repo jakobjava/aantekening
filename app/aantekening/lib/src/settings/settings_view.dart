@@ -180,8 +180,17 @@ class _TitleBar extends StatelessWidget {
     child: Row(
       children: <Widget>[
         Text('Settings', style: Theme.of(context).textTheme.titleMedium),
-        const Spacer(),
-        const KeyHint('Ctrl+Page Up/Down  pages    Esc  close'),
+        const SizedBox(width: 12),
+        // Shortened, or gone, where the window is narrow.
+        const Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: KeyHint(
+              'Ctrl+Page Up/Down  pages    Esc  close',
+              overflow: TextOverflow.fade,
+            ),
+          ),
+        ),
         const SizedBox(width: 12),
         MarkButton(
           MarkShape.close,

@@ -429,61 +429,71 @@ class _Head extends ConsumerWidget {
     final state = ref.watch(aiSessionProvider(scope));
     final info = ref.watch(aiScopeInfoProvider(scope)).value;
     final colour = EditorMode.ai.colourOn(tones);
-    return SizedBox(
-      height: 42,
-      child: Row(
-        children: <Widget>[
-          const SizedBox(width: 14),
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: colour,
-              borderRadius: const BorderRadius.all(Radius.circular(4)),
+    // At least as tall as its words, however large they are.
+    return LayoutBuilder(
+      builder: (context, constraints) => ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 42),
+        child: Row(
+          children: <Widget>[
+            const SizedBox(width: 14),
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: colour,
+                borderRadius: const BorderRadius.all(Radius.circular(4)),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          SmallCaps('AI', color: colour),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Row(
-              children: <Widget>[
-                Flexible(
-                  child: Text(
-                    info?.title ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+            const SizedBox(width: 8),
+            SmallCaps('AI', color: colour),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Row(
+                children: <Widget>[
+                  Flexible(
+                    child: Text(
+                      info?.title ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
-                if (!state.atOverview) ...<Widget>[
-                  const SizedBox(width: 10),
-                  PillButton(
-                    'Overview',
-                    leading: Mark(
-                      MarkShape.arrowLeft,
-                      size: 9,
-                      color: tones.text,
+                  if (!state.atOverview) ...<Widget>[
+                    const SizedBox(width: 10),
+                    PillButton(
+                      'Overview',
+                      leading: Mark(
+                        MarkShape.arrowLeft,
+                        size: 9,
+                        color: tones.text,
+                      ),
+                      tooltip: 'Back to the overview  (o)',
+                      onPressed: ref
+                          .read(aiSessionProvider(scope).notifier)
+                          .newThread,
                     ),
-                    tooltip: 'Back to the overview  (o)',
-                    onPressed: ref
-                        .read(aiSessionProvider(scope).notifier)
-                        .newThread,
-                  ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          const KeyHint('?  keys   Esc  notes'),
-          const SizedBox(width: 14),
-        ],
+            // Only where there is room for it beside the rest.
+            if (constraints.maxWidth >= _roomForKeys) ...<Widget>[
+              const SizedBox(width: 10),
+              const KeyHint('?  keys   Esc  notes'),
+            ],
+            const SizedBox(width: 14),
+          ],
+        ),
       ),
     );
   }
+
+  /// How wide the head is at least for the keys to be said in it, beside
+  /// the scope and the way back to the overview.
+  static const double _roomForKeys = 440;
 }
 
 // -------------------------------------------------------------------- main

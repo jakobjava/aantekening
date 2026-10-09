@@ -324,6 +324,15 @@ class ChoiceRow<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tones = context.tones;
+    // Given less room than its choices take — a narrow window, large
+    // words — it scrolls rather than spilling out of where it is.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: _choices(tones),
+    );
+  }
+
+  Widget _choices(Tones tones) {
     return Container(
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
@@ -448,7 +457,9 @@ class _LevelSliderState extends State<LevelSlider> {
   /// Set where it is pressed, and from then on by the keys too.
   void _setAt(Offset local) {
     _focus.requestFocus();
-    _set(local.dx / widget.width);
+    // As wide as it is drawn: narrower than [LevelSlider.width] where there
+    // is less room.
+    _set(local.dx / (context.size?.width ?? widget.width));
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {

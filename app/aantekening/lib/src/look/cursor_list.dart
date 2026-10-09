@@ -4,7 +4,8 @@ library;
 
 import 'package:flutter/widgets.dart';
 
-/// A list of rows each [itemExtent] tall, one of them the [cursor]'s: as the
+/// A list of rows each [itemExtent] tall — taller with larger words, as
+/// [scaled] makes it — one of them the [cursor]'s: as the
 /// cursor moves — by the keys, or as the list changes under it — the list
 /// scrolls just far enough to show its row whole, as it does when it first
 /// shows.
@@ -28,6 +29,15 @@ class CursorList extends StatefulWidget {
 
   final EdgeInsets padding;
   final bool shrinkWrap;
+
+  /// [extent], the height of a row of words of their usual size, made as
+  /// much taller as the words are made larger: rows hold what is in them
+  /// at any size of words.
+  static double scaled(BuildContext context, double extent) {
+    const words = 13.0;
+    final scale = MediaQuery.textScalerOf(context).scale(words) / words;
+    return scale <= 1 ? extent : extent * scale;
+  }
 
   @override
   State<CursorList> createState() => _CursorListState();
@@ -72,12 +82,10 @@ class _CursorListState extends State<CursorList> {
     }
     // From the edge of the list for the first and last rows, so its padding
     // shows with them.
-    final top = cursor == 0
-        ? 0.0
-        : widget.padding.top + cursor * widget.itemExtent;
+    final top = cursor == 0 ? 0.0 : widget.padding.top + cursor * _extent;
     final bottom = cursor == widget.itemCount - 1
         ? position.maxScrollExtent + position.viewportDimension
-        : widget.padding.top + (cursor + 1) * widget.itemExtent;
+        : widget.padding.top + (cursor + 1) * _extent;
     final double to;
     if (top < position.pixels) {
       to = top;
@@ -91,13 +99,15 @@ class _CursorListState extends State<CursorList> {
     );
   }
 
+  double get _extent => CursorList.scaled(context, widget.itemExtent);
+
   @override
   Widget build(BuildContext context) => ListView.builder(
     controller: _scroll,
     shrinkWrap: widget.shrinkWrap,
     padding: widget.padding,
     itemCount: widget.itemCount,
-    itemExtent: widget.itemExtent,
+    itemExtent: _extent,
     itemBuilder: widget.itemBuilder,
   );
 }

@@ -173,42 +173,66 @@ class _Line extends StatelessWidget {
   final String keys;
   final List<Widget> trailing;
 
+  /// How wide a line is at least for its keys to go beside what they do;
+  /// narrower, they go beneath it.
+  static const double _sideBySide = 480;
+
   @override
   Widget build(BuildContext context) {
     final tones = context.tones;
+    final what = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(label, style: const TextStyle(fontSize: 13)),
+        if (description case final description?)
+          Text(
+            description,
+            style: TextStyle(fontSize: 11.5, color: tones.muted),
+          ),
+      ],
+    );
+    Text keysText({required TextAlign align}) => Text(
+      keys,
+      textAlign: align,
+      style: TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.w500,
+        color: tones.text,
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < _sideBySide) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Text(label, style: const TextStyle(fontSize: 13)),
-                if (description case final description?)
-                  Text(
-                    description,
-                    style: TextStyle(fontSize: 11.5, color: tones.muted),
-                  ),
+                what,
+                const SizedBox(height: 2),
+                Row(
+                  children: <Widget>[
+                    Expanded(child: keysText(align: TextAlign.left)),
+                    if (trailing.isNotEmpty) const SizedBox(width: 10),
+                    ...trailing,
+                  ],
+                ),
               ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 150),
-            child: Text(
-              keys,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w500,
-                color: tones.text,
+            );
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(child: what),
+              const SizedBox(width: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 150),
+                child: keysText(align: TextAlign.right),
               ),
-            ),
-          ),
-          if (trailing.isNotEmpty) const SizedBox(width: 10),
-          ...trailing,
-        ],
+              if (trailing.isNotEmpty) const SizedBox(width: 10),
+              ...trailing,
+            ],
+          );
+        },
       ),
     );
   }

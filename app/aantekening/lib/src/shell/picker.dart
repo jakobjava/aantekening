@@ -558,7 +558,9 @@ class _PickerState extends ConsumerState<Picker> {
       (most, column) => math.max(most, _rowsOf(column).length),
     );
     _tallest = math.max(_tallest, switch (_view) {
-      PickerView.library => _ColumnView.chrome + longest * _PickerRow.height,
+      PickerView.library =>
+        _ColumnView.chrome +
+            longest * CursorList.scaled(context, _PickerRow.height),
       PickerView.graph => _graphHeight,
     });
     final shown = switch (_view) {
@@ -688,29 +690,47 @@ class _Views extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: Row(
-        children: <Widget>[
-          const SizedBox(width: 10),
-          for (final each in PickerView.values)
-            DropTab(
-              each.label,
-              showing: each == view,
-              onPressed: () => onShow(each),
-            ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: KeyHint(
-                'Tab  switch     ?  keys     Esc  close',
-                overflow: TextOverflow.fade,
+    // At least as tall as its words, however large they are.
+    return LayoutBuilder(
+      builder: (context, constraints) => ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 40),
+        child: Row(
+          children: <Widget>[
+            const SizedBox(width: 10),
+            // As wide as they are; in a window too narrow for them, they
+            // scroll.
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: math.max(0, constraints.maxWidth - 38),
+              ),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    for (final each in PickerView.values)
+                      DropTab(
+                        each.label,
+                        showing: each == view,
+                        onPressed: () => onShow(each),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 16),
-        ],
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: KeyHint(
+                  'Tab  switch     ?  keys     Esc  close',
+                  overflow: TextOverflow.fade,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+          ],
+        ),
       ),
     );
   }
@@ -760,8 +780,12 @@ class _ColumnView extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(14, 8, 12, 4),
           child: Row(
             children: <Widget>[
-              SmallCaps(label, color: active ? tones.emphasis : tones.muted),
-              const Spacer(),
+              Expanded(
+                child: SmallCaps(
+                  label,
+                  color: active ? tones.emphasis : tones.muted,
+                ),
+              ),
               if (order != ListOrder.arranged) KeyHint(order.label),
             ],
           ),
@@ -971,9 +995,13 @@ class _Footer extends StatelessWidget {
                   children: <Widget>[
                     KeyCap(key),
                     const SizedBox(width: 6),
-                    Text(
-                      called ?? action.label,
-                      style: TextStyle(fontSize: 12, color: tones.muted),
+                    Flexible(
+                      child: Text(
+                        called ?? action.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: tones.muted),
+                      ),
                     ),
                   ],
                 ),

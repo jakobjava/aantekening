@@ -1,0 +1,32 @@
+name: Deep check
+
+# Every night, and when asked: the fuzzers feed every importer and the page
+# format tens of thousands of damaged files, and two computers sharing a
+# notes folder are simulated a thousand ways, crashes among them — longer
+# than a push should wait for.
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  deep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.4
+          cache: true
+
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libsecret-1-dev
+
+      - run: flutter pub get
+
+      - name: Deep check
+        run: dart tool/check.dart --deep --coverage

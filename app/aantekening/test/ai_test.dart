@@ -617,7 +617,10 @@ void main() {
 
     expect(container.read(tabsProvider).current.pageId, isNull);
     expect(
-      find.descendant(of: find.byType(AiView), matching: find.text('Mechanics')),
+      find.descendant(
+        of: find.byType(AiView),
+        matching: find.text('Mechanics'),
+      ),
       findsOneWidget,
     );
     expect(

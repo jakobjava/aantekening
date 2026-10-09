@@ -407,8 +407,7 @@ abstract final class SelectionHandles {
         final along = other - corner;
         final length = along.distance;
         if (length == 0) return corner;
-        return corner +
-            along / length * math.min(outlineCorner, length / 2);
+        return corner + along / length * math.min(outlineCorner, length / 2);
       }
 
       final start = towards(before);

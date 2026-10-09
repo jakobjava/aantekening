@@ -352,9 +352,14 @@ void main() {
       await tester.scrollUntilVisible(
         example,
         200,
+        // The sheet's own list, not the row of syntaxes across its top.
         scrollable: find.descendant(
           of: find.byType(CheatSheet),
-          matching: find.byType(Scrollable),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Scrollable &&
+                widget.axisDirection == AxisDirection.down,
+          ),
         ),
       );
       await tester.tap(example);

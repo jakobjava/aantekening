@@ -168,11 +168,13 @@ class AppearanceSettings extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  LevelSlider(
-                    label: 'Grain',
-                    value: appearance.grain,
-                    onChanged: (grain) => update(
-                      (appearance) => appearance.copyWith(grain: grain),
+                  Flexible(
+                    child: LevelSlider(
+                      label: 'Grain',
+                      value: appearance.grain,
+                      onChanged: (grain) => update(
+                        (appearance) => appearance.copyWith(grain: grain),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -310,33 +312,38 @@ class _PairTile extends StatelessWidget {
         onTap: onTap,
         child: Container(
           width: 96,
-          height: 54,
+          // Taller, not spilling, with larger words.
+          constraints: const BoxConstraints(minHeight: 54),
           padding: const EdgeInsets.fromLTRB(9, 6, 9, 6),
           decoration: BoxDecoration(
             color: pair.base,
             border: Border.all(color: tones.line),
             borderRadius: Corners.controlRadius,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: <Widget>[
-              Text(
-                'Aa',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  color: pair.text,
+          child: IntrinsicHeight(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: <Widget>[
+                Text(
+                  'Aa',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: pair.text,
+                  ),
                 ),
-              ),
-              Text(
-                pair.name,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Color.lerp(pair.base, pair.text, 0.64),
+                Text(
+                  pair.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Color.lerp(pair.base, pair.text, 0.64),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

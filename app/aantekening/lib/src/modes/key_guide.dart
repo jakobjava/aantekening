@@ -353,7 +353,18 @@ class _GuidePane extends StatelessWidget {
         ),
       );
     } else {
-      body = _columnsOf(context, groups, most: _most, fill: false);
+      // As many columns as the window has room for, each as wide as it
+      // may grow, at most [_most].
+      final room = MediaQuery.sizeOf(context).width - _margins;
+      body = _columnsOf(
+        context,
+        groups,
+        most: ((room + _gap) / (_columnWidth.maxWidth + _gap)).floor().clamp(
+          1,
+          _most,
+        ),
+        fill: false,
+      );
     }
     final pane = Column(
       mainAxisSize: MainAxisSize.min,
@@ -407,6 +418,10 @@ class _GuidePane extends StatelessWidget {
 
   /// The space between columns, the rule down its middle.
   static const double _gap = 11;
+
+  /// How much of the window's width is not the guide's columns: its
+  /// margin from the window's edges, and its own padding.
+  static const double _margins = 2 * 10 + 2 * 6 + 2;
 
   /// How wide a column is, at least, in a guide sized by hand.
   static const double _fitted = 170;
