@@ -428,6 +428,23 @@ Until one is chosen they are kept in the app's data folder (on Windows,
 `%APPDATA%\dev.aantekening\aantekening\workspace`). Starting the app with
 `AANTEKENING_HOME=/path/to/dir` uses another folder for that session.
 
+If the folder the notes were opened from holds none when the app starts —
+a drive not plugged in, a sync not yet done — the app says so and waits:
+**Try again** once they are back, or **Start new notes there** to begin
+afresh in that folder. The notes open in one window at a time; a second
+window says they are open in the first.
+
+A page that cannot be saved — the disk full, say — is kept in the app's
+data folder, under `index/rescued`, and put back when the app next opens,
+as the page itself or beside it, marked "(rescued)".
+
+## If something goes wrong
+
+What went wrong is noted, with when, in `logs/errors.log` in the app's data
+folder (on Linux, `~/.local/share/dev.aantekening.aantekening`; on Windows,
+`%APPDATA%\dev.aantekening\aantekening`). Nothing in it leaves the computer;
+it is what to attach to a report of a problem.
+
 ## If scrolling misbehaves
 
 Run the app with `AANTEKENING_TRACE_INPUT=1` to print every pointer event as

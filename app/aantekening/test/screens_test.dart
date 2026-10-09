@@ -83,6 +83,22 @@ void main() {
     }, variant: platformFor(windows['wide']!));
   }
 
+  // A page of every kind of thing, to see each drawn.
+  for (final dark in <bool>[false, true]) {
+    final name = 'wide ${dark ? 'dark' : 'light'} a-rich-page';
+    if (asked != '1' && !name.contains(asked)) continue;
+    testWidgets(name, (tester) async {
+      await openLongLibrary(
+        tester,
+        store,
+        windows['wide']!,
+        dark: dark,
+        contents: richPage,
+      );
+      await _picture(tester, p.join(out.path, '$name.png'));
+    }, variant: platformFor(windows['wide']!));
+  }
+
   for (final MapEntry(key: windowName, value: window) in windows.entries) {
     for (final dark in <bool>[false, true]) {
       for (final MapEntry(key: pane, value: keys) in panes.entries) {
@@ -128,6 +144,21 @@ Future<void> _loadTypefaces() async {
     };
     if (family != null) (families[family] ??= <String>[]).add(file.path);
   }
+  // Pages are set in the system's own typeface, Roboto as Material names
+  // it on Linux, which the system finds the nearest of: Noto Sans here, if
+  // it is installed, or else Carlito, carried with the app.
+  final noto = Directory('/usr/share/fonts/noto');
+  final system = noto.existsSync()
+      ? <String>[
+          for (final file in noto.listSync())
+            if (RegExp(r'NotoSans-(Regular|Bold|Italic|BoldItalic)\.ttf$')
+                .hasMatch(file.path))
+              file.path,
+        ]
+      : <String>[];
+  families['Roboto'] = system.isNotEmpty
+      ? system
+      : <String>[...?families['Carlito']];
   for (final MapEntry(key: family, value: files) in families.entries) {
     final loader = FontLoader(family);
     for (final file in files) {

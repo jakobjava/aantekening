@@ -1,12 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'src/app.dart';
 import 'src/editor/trackpad.dart';
+import 'src/error_log.dart';
 import 'src/input_trace.dart';
 
 void main() {
   AantekeningBinding.ensureInitialized();
+  ErrorLog.install();
+  unawaited(
+    getApplicationSupportDirectory().then(
+      (folder) => ErrorLog.keepIn(folder.path),
+      onError: (Object _) {},
+    ),
+  );
   installInputTrace();
   listenToTouchpadFingers();
   registerFontLicence();
