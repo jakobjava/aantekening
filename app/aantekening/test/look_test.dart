@@ -7,6 +7,7 @@ import 'package:aantekening/src/commands/key_chord.dart';
 import 'package:aantekening/src/commands/shortcuts.dart';
 import 'package:aantekening/src/look/appearance.dart';
 import 'package:aantekening/src/look/controls.dart';
+import 'package:aantekening/src/look/glass.dart';
 import 'package:aantekening/src/look/grain.dart';
 import 'package:aantekening/src/look/tones.dart';
 import 'package:flutter/material.dart';
@@ -274,6 +275,30 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.home);
       await tester.pump();
       expect(level, 0);
+    });
+  });
+
+  group('Glass', () {
+    testWidgets('frosts all of itself, held wider than what is on it', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: GlassDialog(content: SizedBox(width: 40, height: 20)),
+        ),
+      );
+      final glass = tester.getSize(find.byType(Glass));
+      expect(glass.width, GlassDialog.minWidth);
+      expect(
+        tester.getSize(
+          find.descendant(
+            of: find.byType(Glass),
+            matching: find.byType(ClipRRect),
+          ),
+        ),
+        glass,
+        reason: 'no part of it is left clear, its shadow cast round it',
+      );
     });
   });
 

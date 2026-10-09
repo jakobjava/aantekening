@@ -185,7 +185,11 @@ class Glass extends StatelessWidget {
         shadows: tones.floatingShadows,
       ),
     );
+    // The pane is held to what the glass is held to: let loose within a
+    // dialog's least width, or a pane sized by hand, it would shrink to
+    // what is on it, its shadow cast round the larger shape.
     return Stack(
+      fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
           child: arriving == null
