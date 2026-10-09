@@ -17,6 +17,7 @@ import '../commands/key_chord.dart';
 import '../commands/shortcuts.dart';
 import '../editor/page_editor.dart';
 import '../files/notes_keeper.dart';
+import '../look/control_warmup.dart';
 import '../look/controls.dart';
 import '../look/floating_pane.dart';
 import '../look/motion.dart';
@@ -53,6 +54,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   void initState() {
     super.initState();
     unawaited(_forgetMissing());
+    // What panes are made of is laid out once, unseen, as the window opens.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) warmControls(context);
+    });
     _unregister = ref
         .read(commandHandlersProvider)
         .register(windowCommands(context, ref));

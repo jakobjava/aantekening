@@ -19,6 +19,11 @@
 /// notes, the settings or the keychain: the page is kept in memory, its
 /// files in a temporary folder. With `AANTEKENING_BENCH_LAYOUT=pages` the
 /// page is shown as pages, cut into sheets.
+///
+/// `AANTEKENING_BENCH_ONLY=AI` measures only what its name holds;
+/// `AANTEKENING_BENCH_TRACE=1` puts each widget's building, laying out and
+/// drawing in the timeline, and `AANTEKENING_BENCH_HOLD=30` keeps the app
+/// open that many seconds at the end, for the timeline to be read.
 library;
 
 import 'dart:async';
@@ -45,12 +50,21 @@ import 'package:aantekening_interchange/aantekening_interchange.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 Future<void> main() async {
   AantekeningBinding.ensureInitialized();
+  // Each widget's building and drawing in the timeline, to be read with
+  // DevTools or the VM service: what a frame spent its time on.
+  if (Platform.environment['AANTEKENING_BENCH_TRACE'] != null) {
+    debugProfileBuildsEnabled = true;
+    debugProfileBuildsEnabledUserWidgets = true;
+    debugProfileLayoutsEnabled = true;
+    debugProfilePaintsEnabled = true;
+  }
   final folder = Directory.systemTemp.createTempSync('aantekening_bench_');
   final store = AantekeningStore.inMemory(
     assetDirectory: Directory('${folder.path}/assets')..createSync(),
@@ -100,7 +114,14 @@ Future<void> main() async {
   await _wait(const Duration(seconds: 4));
   final input = _Input(_canvasRect());
   final runs = <_Run>[];
+  // Only the measures whose names hold AANTEKENING_BENCH_ONLY, if set — the
+  // AI pane's, say — what comes before them done but not measured.
+  final only = Platform.environment['AANTEKENING_BENCH_ONLY'] ?? '';
   Future<void> measure(String name, Future<void> Function() action) async {
+    if (!name.contains(only)) {
+      if (name.startsWith('AI')) await action();
+      return;
+    }
     final run = _Run.begin(name);
     await action();
     // Coasting, gliding and rendering what the move uncovered.
@@ -173,6 +194,14 @@ Future<void> main() async {
     container.read(tabsProvider.notifier).toggleAi();
     await _wait(const Duration(milliseconds: 600));
   });
+  // Closed, and opened again: what of opening is paid each time, and what
+  // only the first.
+  container.read(tabsProvider.notifier).toggleAi();
+  await _wait(const Duration(seconds: 1));
+  await measure('AI pane opening again', () async {
+    container.read(tabsProvider.notifier).toggleAi();
+    await _wait(const Duration(milliseconds: 600));
+  });
   final pane = _rectOf<AiView>();
   await measure('AI pane moved', () async {
     await input.drag(
@@ -210,6 +239,11 @@ Future<void> main() async {
   out.writeln('Memory: ${(ProcessInfo.maxRss / 1e6).round()} MB at most');
   stdout.write(out);
   await stdout.flush();
+  // Held open a while, if asked, for the timeline to be read.
+  final hold = int.tryParse(
+    Platform.environment['AANTEKENING_BENCH_HOLD'] ?? '',
+  );
+  if (hold != null) await _wait(Duration(seconds: hold));
   await store.close();
   folder.deleteSync(recursive: true);
   exit(0);

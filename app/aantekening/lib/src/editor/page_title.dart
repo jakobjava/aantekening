@@ -257,7 +257,9 @@ class _PageTitleState extends ConsumerState<PageTitle> {
           // Transparent, so the pickers' buttons show their ink on the paper.
           Material(
             type: MaterialType.transparency,
-            child: Row(
+            // The time beneath the date where both do not fit on a line.
+            child: Wrap(
+              spacing: 12,
               children: <Widget>[
                 _DateButton(
                   label: localizations.formatFullDate(date),
@@ -265,7 +267,6 @@ class _PageTitleState extends ConsumerState<PageTitle> {
                   style: muted,
                   onPressed: () => _pickDate(date),
                 ),
-                const SizedBox(width: 12),
                 _DateButton(
                   label: localizations.formatTimeOfDay(
                     TimeOfDay.fromDateTime(date),

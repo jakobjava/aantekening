@@ -336,12 +336,11 @@ void main() {
       await tester.pumpAndSettle();
       final sized = picker();
       expect(sized.topLeft, before.topLeft);
-      expect(sized.width, closeTo(before.width - 200, 0.01));
-      expect(sized.height, closeTo(before.height + 120, 0.01));
-      expect(
-        preferences['pane.picker'],
-        containsPair('width', closeTo(before.width - 200, 0.01)),
-      );
+      // Its edges land on the grid panes are sized on, the nearest to
+      // where they were let go.
+      expect(sized.width, closeTo(before.width - 200, 4.5));
+      expect(sized.height, closeTo(before.height + 120, 4.5));
+      expect(preferences['pane.picker'], containsPair('width', sized.width));
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();

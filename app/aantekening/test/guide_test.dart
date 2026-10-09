@@ -212,7 +212,9 @@ void main() {
       kind: PointerDeviceKind.mouse,
     );
     await tester.pumpAndSettle();
-    expect(menu().width, closeTo(moved.width - 150, 0.5));
+    // Its edge lands on the grid panes are sized on, the nearest to where
+    // it was let go.
+    expect(menu().width, closeTo(moved.width - 150, 4.5));
     expect(find.byType(KeyGuideRow), findsWidgets, reason: 'still all there');
     final sized = menu();
 

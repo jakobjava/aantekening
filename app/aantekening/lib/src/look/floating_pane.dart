@@ -268,8 +268,23 @@ class _FloatingPaneState extends ConsumerState<FloatingPane> {
     if (grip.movesBottom) {
       bottom = (bottom + moved.dy).clamp(top + least.height, area.height);
     }
+    // The edges moved land on a grid of [_sizeStep]: each size the glass is
+    // drawn at needs layers of its own made for it, which sizes changing
+    // by fractions of a pixel would make every frame.
+    double snap(double edge) => (edge / _sizeStep).roundToDouble() * _sizeStep;
+    if (grip.movesLeft) left = snap(left).clamp(0, right - least.width);
+    if (grip.movesRight) {
+      right = snap(right).clamp(left + least.width, area.width);
+    }
+    if (grip.movesTop) top = snap(top).clamp(0, bottom - least.height);
+    if (grip.movesBottom) {
+      bottom = snap(bottom).clamp(top + least.height, area.height);
+    }
     return (at: Offset(left, top), size: Size(right - left, bottom - top));
   }
+
+  /// The grid the edges of a pane being sized land on.
+  static const double _sizeStep = 8;
 
   void _end() {
     final live = _live;
