@@ -465,7 +465,12 @@ Future<void> main() async {
     final other = await Process.start(Platform.resolvedExecutable, <String>[
       script.path,
     ]);
-    addTearDown(other.kill);
+    // Gone before the folder is cleared away: Windows deletes no file
+    // a process still holds.
+    addTearDown(() async {
+      other.kill();
+      await other.exitCode;
+    });
     await other.stdout.first;
 
     await expectLater(computer('a'), throwsA(isA<NotesInUse>()));
@@ -473,7 +478,8 @@ Future<void> main() async {
     await other.exitCode;
     final again = await computer('a');
     await again.close();
-  });
+    // Starting another Dart program takes a while on a slow computer.
+  }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('notes from before notes folders are put in the folder', () async {
     Directory(notes).createSync(recursive: true);
