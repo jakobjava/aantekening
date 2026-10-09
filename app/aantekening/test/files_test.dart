@@ -211,6 +211,9 @@ void main() {
         isTrue,
         reason: 'the folder they were in is left as it was',
       );
+      // Closed before its folder is cleared away: Windows deletes no file
+      // that is open.
+      await after.close();
     },
   );
 
@@ -260,6 +263,7 @@ void main() {
         (await back.library.listNotebooks()).map((notebook) => notebook.title),
         contains('Physics'),
       );
+      await back.close();
     },
   );
 
