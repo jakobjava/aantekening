@@ -350,6 +350,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   bool _ready = false;
   bool _disposed = false;
 
+  /// The pages whose contents were rescued, not saved, since they were
+  /// last saved: what was rescued goes once they are.
+  final Set<String> _rescued = <String>{};
+
   /// What went wrong opening or saving the page, said above it.
   String? _error;
 

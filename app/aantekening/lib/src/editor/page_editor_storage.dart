@@ -165,29 +165,54 @@ extension _Storage on _PageEditorState {
   }
 
   /// Saves the open page now, if it has changes, finishing when it has: as
-  /// the app does before it stops.
+  /// the app does before it stops. Throws if what is on it could neither be
+  /// saved nor rescued.
   Future<void> _saveOpenPage() async {
     final pageId = widget.pageId;
     if (pageId == null || !_ready || !_controller.isDirty) return;
     _autosave?.cancel();
-    await _persist(pageId, _controller.document);
+    if (!await _persist(pageId, _controller.document)) {
+      throw StateError('“${_controller.document.id}” could not be saved');
+    }
   }
 
-  /// Takes in a change another computer made to the open page: shows it,
-  /// if nothing has been changed here; otherwise keeps it as a page of its
-  /// own before this one's changes are saved over it, and says so.
+  /// Takes in a change another computer made to the open page: shows it in
+  /// place, where it is being looked at, if nothing has been changed here;
+  /// otherwise — or if something is changed while it is read — keeps it as
+  /// a page of its own before this one's changes are saved over it, and
+  /// says so.
   Future<void> _onChangedElsewhere(FolderChanges? changes) async {
     final pageId = widget.pageId;
     if (changes == null || pageId == null || !changes.pages.contains(pageId)) {
       return;
     }
-    if (!_ready || !_controller.isDirty) {
-      _views[pageId] = _controller.viewport;
+    final store = _store;
+    if (!_ready || store == null) {
+      // Still being read: read again, to be sure it is their version.
       await _load();
       return;
     }
-    final store = _store;
-    if (store == null) return;
+    if (!_controller.isDirty) {
+      final before = _controller.document;
+      final PageDocument? stored;
+      try {
+        stored = await store.pages.loadDocument(pageId);
+      } on Object {
+        return;
+      }
+      if (!mounted || pageId != widget.pageId || stored == null) return;
+      if (identical(_controller.document, before) && !_controller.isDirty) {
+        final view = _controller.viewport;
+        _controller
+          ..loadDocument(
+            MathStorage.withLatexFormulas(_withoutEmptyTextBoxes(stored))
+                .withContentOnPage(),
+          )
+          ..viewport = view;
+        return;
+      }
+      // Changed here while their version was read.
+    }
     final kept = await store.pages.keepVersion(
       pageId,
       note: 'changed elsewhere',
@@ -208,21 +233,25 @@ extension _Storage on _PageEditorState {
     unawaited(_persist(pageId, _controller.document));
   }
 
-  /// Writes [document] to disk.
+  /// Writes [document] to disk, saying whether what it holds is safe: saved,
+  /// or — if it could not be — rescued, to be put back into the notes the
+  /// next time they are opened.
   ///
   /// Also called from [dispose] for the final save, so it touches neither
   /// `ref` nor the widget once the widget is gone.
-  Future<void> _persist(String pageId, PageDocument document) async {
+  Future<bool> _persist(String pageId, PageDocument document) async {
     final store = _store;
     // Nothing can have been edited on a page that never loaded.
-    if (store == null) return;
+    if (store == null) return true;
     if (!_disposed) _saving.value = true;
+    // A caret placed is not saved: it is nothing yet.
+    final saved = _placed.isEmpty
+        ? document
+        : document.withElementsRemoved(_placed);
     try {
-      // A caret placed is not saved: it is nothing yet.
-      await store.pages.saveDocument(
-        pageId,
-        _placed.isEmpty ? document : document.withElementsRemoved(_placed),
-      );
+      await store.pages.saveDocument(pageId, saved);
+      // What was rescued of it before is in what was saved now.
+      if (_rescued.remove(pageId)) store.rescue.release(pageId);
       if (!_disposed && pageId == widget.pageId) {
         _controller.markSaved(document);
         // A save that failed before has now been made good.
@@ -231,10 +260,25 @@ extension _Storage on _PageEditorState {
       // The page list shows previews derived from the body, so it has to be
       // refreshed once the save lands.
       _contentsRevision.bump();
+      return true;
     } on Object catch (error) {
-      if (!_disposed) {
-        _update(() => _error = 'This page could not be saved: $error');
+      var rescued = false;
+      try {
+        await store.rescuePage(saved);
+        _rescued.add(pageId);
+        rescued = true;
+      } on Object {
+        // Said below: nothing more can be done here.
       }
+      if (!_disposed) {
+        _update(
+          () => _error = rescued
+              ? 'This page could not be saved: $error. What is on it is '
+                    'kept safe, and is put back when aantekening next opens.'
+              : 'This page could not be saved: $error',
+        );
+      }
+      return rescued;
     } finally {
       if (!_disposed) _saving.value = false;
     }

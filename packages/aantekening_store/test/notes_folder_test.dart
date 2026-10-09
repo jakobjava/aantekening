@@ -332,6 +332,93 @@ void main() {
     expect(await second.pages.listPages(sectionId), isEmpty);
   });
 
+  test('a page changed elsewhere after it was deleted here is kept', () async {
+    final first = await computer('a');
+    addTearDown(first.close);
+    final (sectionId, pageId) = await seed(first);
+    await first.mirror!.flush();
+    final second = await computer('b');
+    addTearDown(second.close);
+
+    // Changed on the second computer, and synced...
+    await second.pages.saveDocument(
+      pageId,
+      documentWithText(pageId, 'written later'),
+    );
+    await second.mirror!.flush();
+    // ...while the first, not yet seeing it, deletes the page for good.
+    await first.pages.deletePage(pageId);
+    await first.bin.empty();
+    await first.mirror!.flush();
+
+    final kept = (await first.pages.listPages(sectionId)).single;
+    expect(kept.title, contains('other version'));
+    expect(await textOf(first, kept.id), 'written later');
+    await first.mirror!.flush();
+    await second.mirror!.scan();
+    expect(await textOf(second, kept.id), 'written later');
+  });
+
+  test(
+    'a page kept when its section is gone goes in a notebook of its own',
+    () async {
+      final first = await computer('a');
+      addTearDown(first.close);
+      final (sectionId, pageId) = await seed(first);
+      await first.mirror!.flush();
+      final second = await computer('b');
+      addTearDown(second.close);
+
+      await second.pages.saveDocument(
+        pageId,
+        documentWithText(pageId, 'written later'),
+      );
+      await second.mirror!.flush();
+      first.bin.purgeSection(sectionId);
+      await first.mirror!.flush();
+
+      final pages = await first.pages.listAllPages();
+      final kept = pages.single;
+      expect(
+        (await first.library.findSection(kept.sectionId))!.title,
+        'Rescued',
+      );
+      expect(await textOf(first, kept.id), 'written later');
+    },
+  );
+
+  test('what cannot be written waits until it changes, never let go', () async {
+    final store = await computer('a');
+    addTearDown(store.close);
+    final (_, pageId) = await seed(store);
+    await store.mirror!.flush();
+    // A page whose contents cannot be read from the index.
+    store.database.run(
+      'UPDATE page_bodies SET body = ? WHERE page_id = ?',
+      <Object?>[
+        Uint8List.fromList(<int>[1, 2, 3]),
+        pageId,
+      ],
+    );
+
+    await store.mirror!.flush();
+    expect(store.mirror!.status.pending, 1, reason: 'still waiting');
+    expect(store.mirror!.status.problem, contains(pageId));
+    await store.mirror!.flush();
+    expect(store.mirror!.status.pending, 1);
+
+    await store.pages.saveDocument(pageId, documentWithText(pageId, 'fixed'));
+    await store.mirror!.flush();
+    expect(store.mirror!.status.pending, 0);
+    expect(store.mirror!.status.problem, isNull);
+    final file =
+        EntityFile.decode(
+              File(p.join(notes, 'pages', '$pageId.json.gz')).readAsBytesSync(),
+            )!
+            as PageFile;
+    expect(file.document.extractSearchText(), 'fixed');
+  });
+
   test('notes from before notes folders are put in the folder', () async {
     Directory(notes).createSync(recursive: true);
     final legacy = AantekeningDatabase.open(

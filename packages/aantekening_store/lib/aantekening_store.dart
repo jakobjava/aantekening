@@ -20,6 +20,7 @@ export 'src/files/notes_folder.dart';
 export 'src/fts_query.dart';
 export 'src/library_repository.dart';
 export 'src/page_repository.dart' show BodyEncoding, PageRepository;
+export 'src/rescue.dart';
 export 'src/schema.dart';
 export 'src/search_repository.dart';
 export 'src/store.dart';

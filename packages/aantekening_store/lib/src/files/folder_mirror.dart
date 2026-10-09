@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -15,6 +16,7 @@ import '../bin_repository.dart';
 import '../database.dart';
 import '../library_repository.dart';
 import '../page_repository.dart';
+import '../rescue.dart';
 import '../row_read.dart';
 import 'entity_files.dart';
 import 'notes_folder.dart';
@@ -231,7 +233,9 @@ final class FolderMirror {
     );
     final seq = integer(rows.first, 'seq');
     final pending = integer(rows.first, 'n');
-    if (pending == 0) {
+    // What waits only until it changes wakes the checking again when it
+    // does.
+    if (pending <= _stuck.length) {
       _lastSeq = seq;
       _ticker?.cancel();
       _ticker = null;
@@ -263,18 +267,30 @@ final class FolderMirror {
   ///
   /// A file that cannot be written now — the folder is on a drive taken
   /// out, or locked by a sync service — stays waiting, and is tried again
-  /// in a while. One that cannot be written as it is waits instead until it
-  /// changes, rather than being tried again and again.
+  /// in a while. One that cannot be written as it is stays waiting too, but
+  /// is tried again only once it changes, or the app starts again, rather
+  /// than again and again; it is never let go unwritten.
   Future<void> flush() => _serially(() async {
     String? problem;
+    var after = -1;
     while (true) {
       final rows = _db.select(
-        'SELECT kind, id, seq FROM mirror_outbox ORDER BY seq LIMIT 64',
+        'SELECT kind, id, seq FROM mirror_outbox WHERE seq > ? '
+        'ORDER BY seq LIMIT 64',
+        <Object?>[after],
       );
       if (rows.isEmpty) break;
       for (final row in rows) {
-        final kind = EntityKind.named(str(row, 'kind'));
+        final name = str(row, 'kind');
         final id = str(row, 'id');
+        final seq = integer(row, 'seq');
+        after = seq;
+        final key = '$name/$id';
+        if (_stuck[key] case (final at, final error) when at == seq) {
+          problem ??= error;
+          continue;
+        }
+        final kind = EntityKind.named(name);
         try {
           if (kind != null) await _write(kind, id);
         } on FileSystemException catch (error) {
@@ -282,17 +298,24 @@ final class FolderMirror {
           _report('Could not write to the notes folder: ${error.message}');
           return;
         } on Object catch (error) {
-          problem = 'Could not write $kind $id to the notes folder: $error';
+          problem = 'Could not write $name $id to the notes folder: $error';
+          _stuck[key] = (seq, problem);
+          continue;
         }
+        _stuck.remove(key);
         _db.run(
           'DELETE FROM mirror_outbox WHERE kind = ? AND id = ? AND seq = ?',
-          <Object?>[str(row, 'kind'), id, integer(row, 'seq')],
+          <Object?>[name, id, seq],
         );
       }
     }
     _lastWritten = _clock();
     _report(problem);
   });
+
+  /// What could not be written as it was, by kind and id: the change it
+  /// was at, and why. Tried again once it changes.
+  final Map<String, (int, String)> _stuck = <String, (int, String)>{};
 
   void _report(String? problem) {
     _problem = problem;
@@ -377,7 +400,7 @@ final class FolderMirror {
           return;
         }
         if (record == null || theirDigest != record.digest) {
-          _keepTheirs(EntityFile.decode(theirs), file);
+          await _keepTheirs(EntityFile.decode(theirs), file);
         }
       }
     } else if (exists && record?.digest == digest) {
@@ -387,30 +410,51 @@ final class FolderMirror {
     _remember(path, kind, id, File(path).statSync(), digest);
   }
 
-  static Uint8List _encode(EntityFile file) => file.encode();
+  /// [file]'s bytes, once it is sure what it holds can be read back: a
+  /// page's contents damaged in the index must not be written over a good
+  /// file, and from there to every computer.
+  static Uint8List _encode(EntityFile file) {
+    if (file is PageFile) {
+      if (file.documentJson case final json?) {
+        if (jsonDecode(utf8.decode(json)) is! Map<String, Object?>) {
+          throw const FormatException('The page is damaged in the index');
+        }
+      }
+    }
+    return file.encode();
+  }
 
   /// Keeps [theirs], a page another copy of the notes wrote that is about
-  /// to be written over by [ours], as a page of its own if they differ.
-  void _keepTheirs(EntityFile? theirs, EntityFile ours) {
-    if (theirs is! PageFile || ours is! PageFile) return;
+  /// to be written over by [ours], as a page of its own if they differ —
+  /// or if [ours] is the page deleted for good here, which it was changed
+  /// elsewhere since.
+  Future<void> _keepTheirs(EntityFile? theirs, EntityFile ours) async {
+    if (theirs is! PageFile) return;
+    if (ours is Tombstone) {
+      await _keepAsCopy(theirs);
+      return;
+    }
+    if (ours is! PageFile) return;
     if (theirs.document.encode() == ours.document.encode() &&
         theirs.page.title == ours.page.title) {
       return;
     }
-    _keepAsCopy(theirs);
+    await _keepAsCopy(theirs);
   }
 
   /// Adds the page [copy] holds as a page of its own, beside the page it is
-  /// a copy of, so that neither version is lost; returns its id, or null
-  /// if its section is not here.
-  String? _keepAsCopy(PageFile copy) {
+  /// a copy of, so that neither version is lost — or, if its section is
+  /// not here, in a notebook of rescued pages; returns its id.
+  Future<String> _keepAsCopy(PageFile copy) async {
     final id = Ulid.generate();
     final page = copy.page;
     final sectionExists = _db.select(
       'SELECT 1 FROM sections WHERE id = ?',
       <Object?>[page.sectionId],
     ).isNotEmpty;
-    if (!sectionExists) return null;
+    final sectionId = sectionExists
+        ? page.sectionId
+        : (await Rescue.rescuedSection(_library)).id;
     final parentExists =
         page.parentId != null &&
         _db.select('SELECT 1 FROM pages WHERE id = ?', <Object?>[
@@ -420,8 +464,8 @@ final class FolderMirror {
       PageFile(
         page: PageRef(
           id: id,
-          sectionId: page.sectionId,
-          parentId: parentExists ? page.parentId : null,
+          sectionId: sectionId,
+          parentId: parentExists && sectionExists ? page.parentId : null,
           title: '${page.title} (other version)',
           position: page.position + 1e-6,
           createdAt: page.createdAt,
@@ -480,7 +524,7 @@ final class FolderMirror {
         continue;
       }
       if (entry.isCopy) {
-        _readCopy(entry, file);
+        await _readCopy(entry, file);
       } else if (file.id == entry.id) {
         waiting.add(_Arrival(entry, file, stat, digest));
       } else {
@@ -654,14 +698,14 @@ final class FolderMirror {
 
   /// Reads a copy a sync service made of a file: a page that differs from
   /// the page is kept as a page of its own; then the copy goes.
-  void _readCopy(FolderEntry entry, EntityFile file) {
+  Future<void> _readCopy(FolderEntry entry, EntityFile file) async {
     if (file is PageFile) {
       final ours = _pages.pageFile(file.id);
       if (ours == null ||
           ours.document.encode() != file.document.encode() ||
           ours.page.title != file.page.title) {
         // Kept by the triggers, so it is written as a file of its own.
-        if (_keepAsCopy(file) == null) return;
+        await _keepAsCopy(file);
       }
     }
     try {

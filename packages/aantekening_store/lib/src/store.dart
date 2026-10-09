@@ -4,6 +4,7 @@ library;
 
 import 'dart:io';
 
+import 'package:aantekening_core/aantekening_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
@@ -17,6 +18,7 @@ import 'files/folder_mirror.dart';
 import 'files/notes_folder.dart';
 import 'library_repository.dart';
 import 'page_repository.dart';
+import 'rescue.dart';
 import 'search_repository.dart';
 
 /// The notes, open: the notes folder that keeps them, and the database
@@ -40,6 +42,7 @@ class AantekeningStore {
     required this.ai,
     required this.bin,
     required this.drafts,
+    required this.rescue,
     this.folder,
     this.mirror,
   });
@@ -75,6 +78,7 @@ class AantekeningStore {
       database,
       notesFolder,
       AssetStore(database, folder.assets),
+      Rescue(p.join(indexFolder, 'rescued', identity)),
       folder: folder,
     );
     final mirror = store.mirror!;
@@ -86,6 +90,14 @@ class AantekeningStore {
       mirror.enqueueAll();
       await mirror.flush();
       await folder.writeIdentity(identity);
+    }
+    // What could not be saved last time goes back into the notes; a page
+    // that cannot be put back yet stays rescued, and must not keep the
+    // notes from opening.
+    try {
+      store.rescued = await store.rescue.restore(store.pages, store.library);
+    } on Object {
+      store.rescued = const <PageRef>[];
     }
     if (automatic) mirror.startAutomatically();
     return store;
@@ -101,13 +113,19 @@ class AantekeningStore {
     final assets =
         assetDirectory ??
         Directory.systemTemp.createTempSync('aantekening_assets_');
-    return _assemble(database, ':memory:', AssetStore(database, assets));
+    return _assemble(
+      database,
+      ':memory:',
+      AssetStore(database, assets),
+      Rescue(p.join(assets.path, 'rescued')),
+    );
   }
 
   static AantekeningStore _assemble(
     AantekeningDatabase database,
     String directory,
-    AssetStore assets, {
+    AssetStore assets,
+    Rescue rescue, {
     NotesFolder? folder,
   }) {
     final pages = PageRepository(database);
@@ -123,6 +141,7 @@ class AantekeningStore {
       ai: AiRepository(database),
       bin: bin,
       drafts: DraftStoring(database, library, pages, assets),
+      rescue: rescue,
       folder: folder,
       mirror: folder == null
           ? null
@@ -199,6 +218,26 @@ class AantekeningStore {
 
   /// Storing notes read from elsewhere.
   final DraftStoring drafts;
+
+  /// Where a page that could not be saved is kept until it can be.
+  final Rescue rescue;
+
+  /// The pages put back from [rescue] as the notes were opened: what could
+  /// not be saved the last time.
+  List<PageRef> rescued = const <PageRef>[];
+
+  /// Keeps [document], the contents of the page it belongs to, where
+  /// nothing can lose them, when they could not be saved: to be put back
+  /// into the notes the next time they are opened.
+  Future<File> rescuePage(PageDocument document) async {
+    PageRef? page;
+    try {
+      page = await pages.findPage(document.id);
+    } on Object {
+      // The index itself may be what failed; the contents are what matter.
+    }
+    return rescue.keep(document, page: page);
+  }
 
   /// Writing notebooks, sections and pages out in this app's own form.
   ArchiveExport get exports => ArchiveExport(database, pages, assets);

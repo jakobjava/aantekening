@@ -6,9 +6,11 @@ library;
 import 'dart:async';
 import 'dart:ui';
 
-import 'package:flutter/widgets.dart';
+import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../look/motion.dart';
 import '../providers.dart';
 import 'backup_settings.dart';
 import 'notes_location.dart';
@@ -71,8 +73,26 @@ class _NotesKeeperState extends ConsumerState<NotesKeeper> {
   }
 
   Future<void> _backUpWhenOpen() async {
-    await ref.read(storeProvider.future);
-    if (mounted) await ref.read(backupsProvider.notifier).backUpIfDue();
+    final store = await ref.read(storeProvider.future);
+    if (!mounted) return;
+    _sayRescued(store.rescued);
+    await ref.read(backupsProvider.notifier).backUpIfDue();
+  }
+
+  /// Says which pages were put back that could not be saved last time.
+  void _sayRescued(List<PageRef> rescued) {
+    if (rescued.isEmpty) return;
+    final names = <String>[
+      for (final page in rescued)
+        '“${page.title.isEmpty ? 'Untitled' : page.title}”',
+    ].join(', ');
+    ScaffoldMessenger.maybeOf(context)?.showMessage(
+      rescued.length == 1
+          ? 'A page could not be saved last time, and is put back: $names.'
+          : '${rescued.length} pages could not be saved last time, and are '
+                'put back: $names.',
+    );
+    ref.read(libraryRevisionProvider.notifier).bump();
   }
 
   @override
@@ -84,15 +104,28 @@ class _NotesKeeperState extends ConsumerState<NotesKeeper> {
 
   void _keep() => unawaited(keepEverything(ref));
 
-  /// Lets the app stop only once everything is on disk.
+  /// Whether closing was stopped once already because something could not
+  /// be saved: asked again, the app closes.
+  bool _exitRefused = false;
+
+  /// Lets the app stop only once everything is on disk — or, if something
+  /// could be neither saved nor rescued, once asked again after being told.
   Future<AppExitResponse> _beforeExit() async {
     final store = ref.read(storeProvider).value;
     try {
       await keepEverything(ref);
-    } finally {
-      // Closed whatever else failed, so the database is left whole.
-      await store?.close();
+    } on Object catch (error) {
+      if (!_exitRefused && mounted) {
+        _exitRefused = true;
+        ScaffoldMessenger.maybeOf(context)?.showMessage(
+          'Some changes could not be saved ($error). Close again to quit '
+          'without them.',
+        );
+        return AppExitResponse.cancel;
+      }
     }
+    // Closed whatever else failed, so the database is left whole.
+    await store?.close();
     return AppExitResponse.exit;
   }
 
