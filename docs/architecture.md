@@ -149,3 +149,28 @@ for every structure and symbol on the Math tab and every example on the cheat
 sheet. The spell checker was held to libhunspell's own verdicts on a large word
 list in each language, and its tests keep small dictionaries whose verdicts are
 Hunspell's.
+
+Beyond the examples, the tests try many ways things go:
+
+* **Two computers sharing a notes folder** (`store/test/sync_simulation_test`)
+  write, add, rename, delete, delete for good, put back and crash in every
+  order, writing to and reading from the folder at random moments; however it
+  goes, both end with the same notes, and the last words each wrote on each
+  page are in them.
+* **Fuzzers** feed every importer (`interchange/test/fuzz_test`) and the page
+  format (`core/test/page_format_fuzz_test`) damaged files — bits flipped, cut
+  short, values of every type swapped in — which must be refused or read whole,
+  and soon: never a hang, never memory without end.
+* **A layout sweep** (`app/test/layout_sweep_test`) opens everything that
+  floats in windows from a wide screen to a small phone, words at their size
+  and larger, light and dark, as Linux and as Android; nothing may overflow.
+* **Pictures** of each pane, and of a page of everything, are drawn in the
+  app's typefaces with `AANTEKENING_SCREENS=1 flutter test
+  test/screens_test.dart`, into `build/screens`, to be looked at.
+
+`dart tool/check.dart` runs it all as CI does — format, analysis with infos
+fatal, every package's tests — `--coverage` saying how much of each package
+the tests reach, and `--deep` running the fuzzers and the simulation tens of
+thousands of times, as CI does nightly. `store/benchmark/store_benchmark.dart`
+times the store over thousands of pages, and how long the window waits on it;
+`app/benchmark/canvas_benchmark.dart` the frames of a heavy page.
