@@ -169,7 +169,8 @@ another program — goes where it is let go, a label beside the pointer
 saying so while it is held there:
 
 * a picture (PNG, JPEG, WebP, BMP) as a picture, and a GIF as a picture
-  that plays; one dragged out of a browser is fetched from the web;
+  that plays, even with the desktop's animations turned off; one dragged
+  out of a browser is fetched from the web;
 * a PDF as a printout, asking where it goes as **Insert PDF printout**
   does, the sheets from the one it is let go on;
 * a LaTeX document (`.tex`) in a box, typeset as **Space i l** does, and a

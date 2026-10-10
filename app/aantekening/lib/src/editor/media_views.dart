@@ -47,31 +47,54 @@ class AssetImageView extends ConsumerWidget {
                 final whole = MemoryImage(data);
                 final width = shownPixels(context, constraints.maxWidth);
                 final height = shownPixels(context, constraints.maxHeight);
-                return Image(
-                  image: switch (fit) {
-                    // Filling the box, a picture may run past it either way.
-                    MediaFit.cover => whole,
-                    MediaFit.contain => ResizeImage(
-                      whole,
-                      width: width,
-                      height: height,
-                      policy: ResizeImagePolicy.fit,
-                    ),
-                    MediaFit.stretch => ResizeImage(
-                      whole,
-                      width: width,
-                      height: height,
-                    ),
-                  },
-                  fit: switch (fit) {
-                    MediaFit.contain => BoxFit.contain,
-                    MediaFit.cover => BoxFit.cover,
-                    MediaFit.stretch => BoxFit.fill,
-                  },
-                  gaplessPlayback: true,
+                return _Playing(
+                  child: Image(
+                    image: switch (fit) {
+                      // Filling the box, a picture may run past it either way.
+                      MediaFit.cover => whole,
+                      MediaFit.contain => ResizeImage(
+                        whole,
+                        width: width,
+                        height: height,
+                        policy: ResizeImagePolicy.fit,
+                      ),
+                      MediaFit.stretch => ResizeImage(
+                        whole,
+                        width: width,
+                        height: height,
+                      ),
+                    },
+                    fit: switch (fit) {
+                      MediaFit.contain => BoxFit.contain,
+                      MediaFit.cover => BoxFit.cover,
+                      MediaFit.stretch => BoxFit.fill,
+                    },
+                    gaplessPlayback: true,
+                  ),
                 );
               },
             ),
+    );
+  }
+}
+
+/// [child], its GIFs playing however the desktop is set about motion.
+///
+/// With the desktop's animations turned off — KDE's animation speed at
+/// instant, which GTK reads as `gtk-enable-animations=false` — Flutter
+/// holds an animated picture still at its first frame; a GIF put on a page
+/// is put there to be seen moving.
+class _Playing extends StatelessWidget {
+  const _Playing({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!(MediaQuery.maybeDisableAnimationsOf(context) ?? false)) return child;
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(disableAnimations: false),
+      child: child,
     );
   }
 }

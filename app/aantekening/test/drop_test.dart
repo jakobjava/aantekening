@@ -5,6 +5,7 @@ import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -80,6 +81,29 @@ void main() {
     );
     expect(asset!.mimeType, 'image/gif');
     expect(asset.originalName, 'wave.gif');
+  });
+
+  testWidgets('a GIF plays with the desktop\'s animations turned off', (
+    tester,
+  ) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await openEditor(tester, store, pageId);
+    await drop(tester, fileAt('wave.gif', _gif), const Offset(500, 400));
+
+    // The picture shown, as Flutter hands one over for each frame.
+    final shown = <int>{};
+    for (var i = 0; i < 6; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 60)),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      shown.add(
+        identityHashCode(tester.widget<RawImage>(find.byType(RawImage)).image),
+      );
+    }
+    expect(shown.length, greaterThan(1), reason: 'its frames shown in turn');
   });
 
   testWidgets('LaTeX, text and other files dropped together lie one under '
