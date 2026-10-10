@@ -24,10 +24,11 @@ class PageEntry {
   /// Where it is and when it was written, in a line.
   String get context => <String>[
     if (path.isNotEmpty) path.join(' › '),
-    if (createdAt != null) _date(createdAt!),
+    if (createdAt != null) dateOf(createdAt!),
   ].join(' · ');
 
-  static String _date(DateTime date) =>
+  /// [date] as a day, 2026-10-10.
+  static String dateOf(DateTime date) =>
       '${date.year}-${date.month.toString().padLeft(2, '0')}-'
       '${date.day.toString().padLeft(2, '0')}';
 }

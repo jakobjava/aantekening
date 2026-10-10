@@ -194,6 +194,12 @@ class ProviderConfig {
         price: local ? ModelPrice.free : null,
       ),
       room: contextTokens,
+      promptCache: switch (preset) {
+        ProviderPreset.requesty => PromptCache.requesty,
+        ProviderPreset.openRouter => PromptCache.openRouter,
+        ProviderPreset.openAi => PromptCache.openAi,
+        _ => PromptCache.implicit,
+      },
       client: client,
     ),
   };

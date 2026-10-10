@@ -389,13 +389,89 @@ void main() {
     expect(sources.sources.single.title, 'Forces');
   });
 
+  test('later questions to a model without tools bring only the passages '
+      'not given already', () async {
+    final given = NoteContext.pageSource((await notes.digest('p2'))!);
+    final provider = ScriptedProvider(<List<ChatEvent>>[
+      <ChatEvent>[
+        const MessageDone(
+          ChatMessage(ChatRole.assistant, <ChatPart>[]),
+          stop: StopReason.done,
+        ),
+      ],
+    ], capabilities: const ModelCapabilities(contextTokens: 8000));
+    await NoteAgent(provider: provider, model: 'm', reader: notes)
+        .ask(
+          scope: section,
+          history: <ChatMessage>[
+            ChatMessage.user(<ChatPart>[
+              SourcesPart(<Source>[given]),
+              const TextPart('Hi'),
+            ]),
+            ChatMessage.assistant(const <ChatPart>[TextPart('Hello')]),
+          ],
+          question: 'What about acceleration?',
+        )
+        .last;
+    expect(
+      provider.asked.single.messages.last.parts.whereType<SourcesPart>(),
+      isEmpty,
+      reason: 'all it found was given with the first question',
+    );
+  });
+
+  test(
+    'a page given whole is not given again, unless it has changed',
+    () async {
+      final tools = NoteTools(reader: notes, scope: section);
+      const call = ToolCallPart(
+        id: 't',
+        name: NoteTools.readPage,
+        input: <String, Object?>{'page_id': 'p1'},
+      );
+      final whole = NoteContext.pageSource((await notes.digest('p1'))!);
+      final again = await tools.run(call, given: <Source>[whole]);
+      expect(again.content.single, isA<TextPart>());
+      expect((again.content.single as TextPart).text, contains('given whole'));
+
+      final before = Source(
+        uri: whole.uri,
+        title: whole.title,
+        origin: whole.origin,
+        passages: const <SourcePassage>[
+          SourcePassage('Speed is time over distance.', uri: 'x'),
+        ],
+      );
+      final changed = await tools.run(call, given: <Source>[before]);
+      expect(changed.content.single, isA<SourcesPart>());
+    },
+  );
+
   test('a section too big for the budget is named, page by page', () async {
-    final built = await NoteContext(
-      notes,
-    ).build(section, budget: const ContextBudget(characters: 40, images: 0));
-    expect(built.sources.map((s) => s.title), <String>['Speed']);
-    expect(built.overview, contains('"Forces"'));
-    expect(built.overview, contains('not given here'));
+    Future<String> overview({required bool tools}) async {
+      final built = await NoteContext(notes).build(
+        section,
+        budget: const ContextBudget(characters: 40, images: 0),
+        tools: tools,
+      );
+      expect(built.sources.map((s) => s.title), <String>['Speed']);
+      return built.overview;
+    }
+
+    final withTools = await overview(tools: true);
+    expect(withTools, contains('"Forces" [page p2] — not given'));
+    expect(withTools, contains('"Speed" [page p1]\n'));
+    expect(withTools, contains('read_page'));
+    expect(
+      'Physics:'.allMatches(withTools),
+      hasLength(1),
+      reason: 'where the pages are, said once for them all',
+    );
+    expect(
+      await overview(tools: false),
+      isNot(contains('read_page')),
+      reason: 'a model without tools cannot read on',
+    );
   });
 
   test('as much of the notes goes with a question as is chosen, and no '

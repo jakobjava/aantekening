@@ -14,6 +14,24 @@ import 'provider.dart';
 import 'sse.dart';
 import 'streamed_answer.dart';
 
+/// What a service is told so that what a conversation sends again is read
+/// from its cache — for the models it does not cache by themselves.
+enum PromptCache {
+  /// The service caches what it can by itself, or cannot be told.
+  implicit,
+
+  /// Requesty: it marks what to cache for the models that need it, such as
+  /// Claude and Gemini.
+  requesty,
+
+  /// OpenRouter: it caches Claude from a mark on the request, and keeps a
+  /// conversation with the provider that holds its cache.
+  openRouter,
+
+  /// OpenAI: requests with the same key go to the same cache.
+  openAi,
+}
+
 /// Talks to an OpenAI-compatible chat completions endpoint, streaming.
 ///
 /// This API is what nearly every runtime and service offers, so one class
@@ -27,6 +45,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
     this.apiKey,
     this.defaults = const ModelCapabilities(vision: true, tools: true),
     this.room,
+    this.promptCache = PromptCache.implicit,
     http.Client? client,
   }) : client = client ?? http.Client(),
        _ownsClient = client == null;
@@ -46,6 +65,9 @@ class OpenAiCompatibleProvider implements ChatProvider {
   /// provider says, which is what the model could take, not how a server
   /// of one's own runs it. Null for what the provider says.
   final int? room;
+
+  /// What the service is told about caching.
+  final PromptCache promptCache;
 
   /// The room a model on a server of one's own can be set to have.
   static const List<int> roomChoices = <int>[8192, 16384, 32768, 65536, 131072];
@@ -230,6 +252,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
           'content': message.text,
           if (calls.isNotEmpty)
             'tool_calls': <Object?>[for (final call in calls) toolCall(call)],
+          ...?_reasoningFor(message, request.model),
         });
         continue;
       }
@@ -316,7 +339,62 @@ class OpenAiCompatibleProvider implements ChatProvider {
     'stream_options': <String, Object?>{'include_usage': true},
     'messages': messages,
     if (tools.isNotEmpty) 'tools': tools,
+    ...switch (promptCache) {
+      PromptCache.implicit => const <String, Object?>{},
+      PromptCache.requesty => <String, Object?>{
+        'requesty': <String, Object?>{'auto_cache': true},
+      },
+      PromptCache.openRouter => <String, Object?>{
+        'cache_control': <String, Object?>{'type': 'ephemeral'},
+        'session_id': conversationKey(request),
+      },
+      PromptCache.openAi => <String, Object?>{
+        'prompt_cache_key': conversationKey(request),
+      },
+    },
   };
+
+  /// What tells the requests of one conversation apart from others', the
+  /// same however often it is asked: from its instructions and its first
+  /// message, which every later request begins with.
+  static String conversationKey(ChatRequest request) {
+    final first = request.messages.firstOrNull;
+    final text = jsonEncode(<Object?>[request.system, first?.toJson()]);
+    // FNV-1a, 64 bits.
+    var hash = 0xcbf29ce484222325;
+    for (final unit in utf8.encode(text)) {
+      hash = (hash ^ unit) * 0x100000001b3;
+    }
+    return 'aantekening-${hash.toUnsigned(64).toRadixString(16)}';
+  }
+
+  /// The keys reasoning comes under, as services stream it.
+  static const List<String> _reasoningKeys = <String>[
+    'reasoning_content',
+    'reasoning',
+  ];
+
+  /// What [message] was reasoned, to hand back to [model] under the key it
+  /// came by: a model that thinks between its tool calls goes on from
+  /// there, and some refuse to go on without it. Only to the model that
+  /// reasoned it; and under `reasoning` only through a router, which takes
+  /// back what it gave — a server of its own may refuse a key it does not
+  /// know, where `reasoning_content` is taken back by those that give it.
+  Map<String, Object?>? _reasoningFor(ChatMessage message, String model) {
+    final router =
+        promptCache == PromptCache.openRouter ||
+        promptCache == PromptCache.requesty;
+    for (final part in message.parts.whereType<NativePart>()) {
+      if (part.provider != providerId || part.block['model'] != model) continue;
+      return <String, Object?>{
+        if (part.block['reasoning_content'] case final String text)
+          'reasoning_content': text,
+        if (part.block['reasoning'] case final String text when router)
+          'reasoning': text,
+      };
+    }
+    return null;
+  }
 
   /// A message of the person's, of [content]: text and images.
   @protected
@@ -384,6 +462,8 @@ class OpenAiCompatibleProvider implements ChatProvider {
 
     final calls =
         <int, ({StringBuffer id, StringBuffer name, StringBuffer args})>{};
+    final reasoned = StringBuffer();
+    String? reasoningKey;
     var stop = StopReason.done;
     var usage = const Usage();
     await for (final event in serverEvents(response.stream)) {
@@ -401,9 +481,13 @@ class OpenAiCompatibleProvider implements ChatProvider {
       final delta =
           (choice['delta'] as Map?)?.cast<String, Object?>() ??
           const <String, Object?>{};
-      final reasoning = delta['reasoning_content'] ?? delta['reasoning'];
-      if (reasoning is String && reasoning.isNotEmpty) {
-        yield Reasoning(withoutThinkTags(reasoning));
+      for (final key in _reasoningKeys) {
+        if (delta[key] case final String reasoning when reasoning.isNotEmpty) {
+          reasoningKey ??= key;
+          if (key != reasoningKey) continue;
+          reasoned.write(reasoning);
+          yield Reasoning(withoutThinkTags(reasoning));
+        }
       }
       if (delta['content'] case final String piece when piece.isNotEmpty) {
         yield* Stream<ChatEvent>.fromIterable(answer.add(piece));
@@ -448,6 +532,11 @@ class OpenAiCompatibleProvider implements ChatProvider {
       ChatMessage.assistant(<ChatPart>[
         if (answer.text.isNotEmpty) TextPart(answer.text),
         ...toolCalls,
+        if (reasoningKey != null)
+          NativePart(providerId, <String, Object?>{
+            'model': request.model,
+            reasoningKey: '$reasoned',
+          }),
       ]),
       stop: stop,
       usage: usage,

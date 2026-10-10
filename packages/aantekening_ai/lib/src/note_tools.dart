@@ -120,8 +120,12 @@ class NoteTools {
     };
   }
 
-  /// Runs [call], answering what it asks or saying why it cannot.
-  Future<ToolResultPart> run(ToolCallPart call) async {
+  /// Runs [call], answering what it asks or saying why it cannot — after
+  /// the model was [given] those sources.
+  Future<ToolResultPart> run(
+    ToolCallPart call, {
+    List<Source> given = const <Source>[],
+  }) async {
     final input = call.input;
     final broken = input[ToolCallPart.invalidInputKey];
     if (broken != null) {
@@ -133,7 +137,7 @@ class NoteTools {
     try {
       return switch (call.name) {
         searchNotes => await _search(call),
-        readPage => await _read(call),
+        readPage => await _read(call, given),
         lookAt when vision => await _look(call),
         searchWeb when webSearch != null => await _web(call),
         _ => _error(call, 'There is no tool called ${call.name}.'),
@@ -179,19 +183,47 @@ class NoteTools {
     );
   }
 
-  Future<ToolResultPart> _read(ToolCallPart call) async {
+  /// The page asked for, whole — or, where it was given whole already and
+  /// has not changed since, where to find it.
+  Future<ToolResultPart> _read(ToolCallPart call, List<Source> given) async {
     final id = '${call.input['page_id'] ?? ''}'.trim();
     final digest = await reader.digest(id);
     if (digest == null) return _error(call, 'There is no page $id.');
     final entry = (await reader.pagesIn(NoteLink.page(id))).firstOrNull;
+    final page = NoteContext.pageSource(
+      digest,
+      context: entry?.context,
+      limit: 60000,
+    );
+    if (given.any((source) => _same(source, page))) {
+      return ToolResultPart(
+        callId: call.id,
+        content: <ChatPart>[
+          TextPart(
+            'The page "${page.title}" [page $id] was given whole above, and '
+            'is still as it was then: read and cite it there.',
+          ),
+        ],
+      );
+    }
     return ToolResultPart(
       callId: call.id,
       content: <ChatPart>[
-        SourcesPart(<Source>[
-          NoteContext.pageSource(digest, context: entry?.context, limit: 60000),
-        ]),
+        SourcesPart(<Source>[page]),
       ],
     );
+  }
+
+  /// Whether [a] and [b] are the same page, word for word.
+  static bool _same(Source a, Source b) {
+    if (a.uri != b.uri || a.passages.length != b.passages.length) return false;
+    for (var i = 0; i < a.passages.length; i++) {
+      if (a.passages[i].text != b.passages[i].text ||
+          a.passages[i].uri != b.passages[i].uri) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<ToolResultPart> _look(ToolCallPart call) async {

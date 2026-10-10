@@ -112,6 +112,52 @@ void main() {
       expect(body['cache_control'], <String, Object?>{'type': 'ephemeral'});
     });
 
+    test('reads what the request before cached, however many blocks the '
+        'answer since came back as', () {
+      List<Object?> blocksOf(Map<String, Object?> body) => <Object?>[
+        for (final message in body['messages']! as List<Object?>)
+          ...(message! as Map)['content']! as List<Object?>,
+      ];
+      bool marked(Object? block) =>
+          (block! as Map).containsKey('cache_control');
+      final provider = AnthropicProvider(apiKey: 'k');
+      final first = question('How fast?');
+      expect(
+        blocksOf(provider.body(first)).where(marked),
+        isEmpty,
+        reason: 'a first question is cached where it ends, by the request',
+      );
+
+      // An answer citing passage after passage: many blocks.
+      final answer = ChatMessage.assistant(<ChatPart>[
+        NativePart(AnthropicProvider.providerId, <String, Object?>{
+          'content': <Object?>[
+            for (var i = 0; i < 30; i++)
+              <String, Object?>{'type': 'text', 'text': 'Part $i. '},
+          ],
+        }),
+      ]);
+      final body = provider.body(
+        ChatRequest(
+          model: 'claude-opus-5',
+          system: 'Help.',
+          messages: <ChatMessage>[
+            ...first.messages,
+            answer,
+            ChatMessage.user(const <ChatPart>[TextPart('And why?')]),
+          ],
+        ),
+      );
+      final messages = body['messages']! as List<Object?>;
+      final asked = (messages.first! as Map)['content']! as List<Object?>;
+      expect(
+        marked(asked.last),
+        isTrue,
+        reason: 'where the request before ended',
+      );
+      expect(blocksOf(body).where(marked), hasLength(1));
+    });
+
     test('streams text, cites the passage it drew on, and keeps the turn '
         'as it came', () async {
       final fake = server(
@@ -495,6 +541,119 @@ void main() {
         'It is fast.',
         reason: 'the reasoning is no part of what is kept',
       );
+    });
+
+    test('hands what a model reasoned before its tool calls back to it, '
+        'and to no other', () async {
+      String chunk(Map<String, Object?> delta) =>
+          'data: ${jsonEncode(<String, Object?>{
+            'choices': <Object?>[
+              <String, Object?>{'delta': delta},
+            ],
+          })}\n\n';
+      final fake = server(
+        <String>[
+          chunk(<String, Object?>{'reasoning_content': 'Search first.'}),
+          chunk(<String, Object?>{
+            'tool_calls': <Object?>[
+              <String, Object?>{
+                'index': 0,
+                'id': 'c1',
+                'function': <String, Object?>{
+                  'name': 'search_notes',
+                  'arguments': '{"query":"speed"}',
+                },
+              },
+            ],
+          }),
+          'data: [DONE]\n\n',
+        ].join(),
+      );
+      final asked = ChatMessage.user(const <ChatPart>[TextPart('How fast?')]);
+      final events = await provider(fake.client)
+          .chat(
+            ChatRequest(
+              model: 'mimo',
+              system: '',
+              messages: <ChatMessage>[asked],
+            ),
+          )
+          .toList();
+      final turn = (events.last as MessageDone).message;
+      final kept = ChatMessage.fromJson(
+        jsonDecode(jsonEncode(turn.toJson())) as Map<String, Object?>,
+      );
+
+      Map<String, Object?> handedBack(String model) {
+        final body = provider(http.Client()).body(
+          ChatRequest(
+            model: model,
+            system: '',
+            messages: <ChatMessage>[
+              asked,
+              kept,
+              ChatMessage.user(const <ChatPart>[
+                ToolResultPart(
+                  callId: 'c1',
+                  content: <ChatPart>[TextPart('Nothing.')],
+                ),
+              ]),
+            ],
+          ),
+        );
+        return (body['messages']! as List)
+            .cast<Map<String, Object?>>()
+            .firstWhere((m) => m['role'] == 'assistant');
+      }
+
+      expect(handedBack('mimo')['reasoning_content'], 'Search first.');
+      expect(handedBack('qwen'), isNot(contains('reasoning_content')));
+    });
+
+    test('tells each router how to cache, the same for every request of a '
+        'conversation', () {
+      Map<String, Object?> body(PromptCache cache, String question) =>
+          OpenAiCompatibleProvider(
+            name: 'Router',
+            baseUrl: 'https://router.example/v1',
+            promptCache: cache,
+          ).body(
+            ChatRequest(
+              model: 'm',
+              system: 'Help.',
+              messages: <ChatMessage>[
+                ChatMessage.user(const <ChatPart>[
+                  SourcesPart(<Source>[lecture]),
+                  TextPart('How fast?'),
+                ]),
+                ChatMessage.assistant(const <ChatPart>[TextPart('Fast.')]),
+                ChatMessage.user(<ChatPart>[TextPart(question)]),
+              ],
+            ),
+          );
+
+      expect(body(PromptCache.requesty, 'Why?')['requesty'], <String, Object?>{
+        'auto_cache': true,
+      });
+      final openRouter = body(PromptCache.openRouter, 'Why?');
+      expect(openRouter['cache_control'], <String, Object?>{
+        'type': 'ephemeral',
+      });
+      expect(
+        openRouter['session_id'],
+        body(PromptCache.openRouter, 'And then?')['session_id'],
+        reason: 'one conversation, one key',
+      );
+      expect(body(PromptCache.openAi, 'Why?')['prompt_cache_key'], isNotNull);
+      final implicit = body(PromptCache.implicit, 'Why?');
+      for (final key in <String>[
+        'requesty',
+        'cache_control',
+        'session_id',
+        'prompt_cache_key',
+      ]) {
+        expect(implicit, isNot(contains(key)));
+      }
     });
 
     test('gathers a tool call streamed in pieces', () async {

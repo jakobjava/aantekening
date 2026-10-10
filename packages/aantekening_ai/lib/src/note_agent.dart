@@ -198,10 +198,11 @@ class NoteAgent {
             scope,
             budget: _budget(capabilities),
             question: question,
+            tools: capabilities.tools,
           )
         : null;
     final found = history.isNotEmpty && !capabilities.tools
-        ? await _passagesAbout(question, scope)
+        ? _notGiven(await _passagesAbout(question, scope), history)
         : const <Source>[];
     final messages = <ChatMessage>[
       ...history,
@@ -258,7 +259,7 @@ class NoteAgent {
           final results = <ChatPart>[];
           for (final call in calls) {
             yield progress(AgentStage.working, tools.describe(call));
-            results.add(await tools.run(call));
+            results.add(await tools.run(call, given: sourcesIn(messages)));
           }
           messages.add(ChatMessage.user(results));
           // A space between what was written before the tools and after.
@@ -340,7 +341,7 @@ class NoteAgent {
           // JSON names its sources by number; free text cites them as the
           // provider does.
           if (kind.structured)
-            TextPart(CitationMarkers.write(sources, first: 1))
+            TextPart(CitationMarkers.write(sources, first: 1, links: false))
           else
             SourcesPart(sources),
           ...given.images,
@@ -503,6 +504,44 @@ class NoteAgent {
   static String _tokens(int tokens) => tokens < 1000
       ? '$tokens'
       : '${(tokens / 1000).toStringAsFixed(tokens < 10000 ? 1 : 0)}k';
+
+  /// Of [found], the passages not given already in [history]: the same
+  /// words of the same page, which the model has, and can cite where they
+  /// were given.
+  static List<Source> _notGiven(List<Source> found, List<ChatMessage> history) {
+    final had = <(String, String)>{
+      for (final source in sourcesIn(history))
+        for (final passage in source.passages) (passage.uri, passage.text),
+    };
+    final fresh = <Source>[];
+    for (final source in found) {
+      final passages = <SourcePassage>[];
+      var kept = false;
+      for (final passage in source.passages) {
+        final known = had.contains((passage.uri, passage.text));
+        if (!known) {
+          // A sentence goes on from the one before only if that is here.
+          passages.add(
+            kept || !passage.follows
+                ? passage
+                : SourcePassage(passage.text, uri: passage.uri),
+          );
+        }
+        kept = !known;
+      }
+      if (passages.isEmpty) continue;
+      fresh.add(
+        Source(
+          uri: source.uri,
+          title: source.title,
+          origin: source.origin,
+          context: source.context,
+          passages: passages,
+        ),
+      );
+    }
+    return fresh;
+  }
 
   Future<List<Source>> _passagesAbout(String question, ScopeInfo scope) async {
     final tools = NoteTools(reader: reader, scope: scope);

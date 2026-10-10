@@ -76,6 +76,19 @@ nothing. What it has to become:
   the printouts in them drawn where the layout put them.
   Handwriting over printouts and drawings are shown up front; plain PDF
   pages, whose text is given, are looked at when needed.
+  Nothing is given twice: a later question to a model without tools
+  brings only the passages it was not given before, and a page it reads
+  that was given whole and has not changed is pointed to where it was.
+  What a conversation sends again is read from the provider's cache: for
+  Claude, from where the request before ended, marked as such, since an
+  answer citing passage after passage comes back in more blocks than the
+  cache looks back over.
+  Routers are told to cache what they can: Requesty with `auto_cache`,
+  OpenRouter with a mark on the request and the conversation's key, so it
+  stays with the provider holding its cache, and OpenAI with that key. A
+  model that reasons between its tool calls (MiMo, DeepSeek, Kimi) is
+  handed its reasoning back under the key it gave it, as such models ask,
+  and some refuse to go on without.
 * **An agent, not a prompt** (`NoteAgent`): models that use tools search the
   notes — the scope, or everything — read pages, look at visuals, and search
   the web through the app where their provider cannot. Models that cannot

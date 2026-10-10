@@ -17,8 +17,14 @@ abstract final class CitationMarkers {
       'or [3] for a source as a whole. Never make up a number.';
 
   /// [sources] as text, the [first]th numbered [first]: each a tag round
-  /// its passages, each after its number, a paragraph to a line.
-  static String write(List<Source> sources, {required int first}) {
+  /// its passages, each after its number, a paragraph to a line. With
+  /// [links], each says where it is, for a model with tools to read on
+  /// from there.
+  static String write(
+    List<Source> sources, {
+    required int first,
+    bool links = true,
+  }) {
     final out = StringBuffer();
     for (var i = 0; i < sources.length; i++) {
       final source = sources[i];
@@ -27,7 +33,7 @@ abstract final class CitationMarkers {
         '<source n="$n" title="${_attribute(source.title)}" '
         'from="${source.origin == SourceOrigin.notes ? 'your notes' : 'the web'}"'
         '${source.context == null ? '' : ' where="${_attribute(source.context!)}"'}'
-        ' link="${source.uri}">',
+        '${links ? ' link="${source.uri}"' : ''}>',
       );
       // The sentences of a paragraph on its line, each numbered.
       for (var j = 0; j < source.passages.length; j++) {

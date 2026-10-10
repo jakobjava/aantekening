@@ -67,11 +67,13 @@ class NoteContext {
   /// The notes of [scope] for a first question — [question], if it is
   /// known — within [budget]: its pages whole while they fit, those most
   /// about the question first, and the rest named in the overview; and
-  /// what is on them to look at, writing over PDF pages first.
+  /// what is on them to look at, writing over PDF pages first. With
+  /// [tools], the model is told it can read what was not given.
   Future<ScopeContext> build(
     ScopeInfo scope, {
     required ContextBudget budget,
     String? question,
+    bool tools = false,
   }) async {
     final pages = await reader.pagesIn(scope.link);
     final ranked = question == null || question.trim().isEmpty
@@ -96,7 +98,12 @@ class NoteContext {
       // notebook, a page is given whole or named.
       final alone = scope.link.kind == NoteLinkKind.page;
       if (!alone && digest.length > room) continue;
-      final source = pageSource(digest, context: page.context, limit: room);
+      final source = pageSource(
+        digest,
+        context: page.context,
+        limit: room,
+        tools: tools,
+      );
       sources.add(source);
       given.add(page.id);
       room -= digest.length;
@@ -120,7 +127,7 @@ class NoteContext {
     }
 
     return ScopeContext(
-      overview: _overview(scope, pages, given),
+      overview: _overview(scope, pages, given, tools: tools),
       sources: sources,
       images: images,
     );
@@ -136,17 +143,41 @@ class NoteContext {
           _ => 3,
         };
 
-  String _overview(ScopeInfo scope, List<PageEntry> pages, Set<String> given) {
+  /// What [scope] holds, page by page under the sections they are in,
+  /// each named once, saying which were not [given].
+  String _overview(
+    ScopeInfo scope,
+    List<PageEntry> pages,
+    Set<String> given, {
+    required bool tools,
+  }) {
     final out = StringBuffer()
       ..writeln(
         'The ${scope.kindName} "${scope.title}"'
         '${scope.path.isEmpty ? '' : ', in ${scope.path.join(' › ')}'}, '
-        'holds ${pages.length} ${pages.length == 1 ? 'page' : 'pages'}:',
+        'holds ${pages.length} ${pages.length == 1 ? 'page' : 'pages'}'
+        '${pages.length == given.length ? ', all given here' : ''}:',
       );
+    String? place;
     for (final page in pages) {
+      final where = page.path.join(' › ');
+      if (where != place && pages.length > 1) {
+        out.writeln('${where.isEmpty ? 'At the top' : where}:');
+        place = where;
+      }
       out.writeln(
-        '- "${page.title}" (${page.context}) [page ${page.id}]'
-        '${given.contains(page.id) ? '' : ' — not given here; read it with read_page if it matters'}',
+        '- "${page.title}"'
+        '${page.createdAt == null ? '' : ' (${PageEntry.dateOf(page.createdAt!)})'}'
+        ' [page ${page.id}]'
+        '${given.contains(page.id) ? '' : ' — not given'}',
+      );
+    }
+    if (pages.length > given.length) {
+      out.writeln(
+        tools
+            ? 'Pages marked "not given" are not among the sources here: read '
+                  'one with read_page when it matters.'
+            : 'Pages marked "not given" did not fit with the sources here.',
       );
     }
     return out.toString();
@@ -156,7 +187,12 @@ class NoteContext {
   /// visual named where it is, for the model to ask to see. With [limit],
   /// no more than that many characters of it, and a last passage saying
   /// the page goes on.
-  static Source pageSource(PageDigest digest, {String? context, int? limit}) {
+  static Source pageSource(
+    PageDigest digest, {
+    String? context,
+    int? limit,
+    bool tools = true,
+  }) {
     final passages = <SourcePassage>[];
     final shown = <String>{};
     var length = 0;
@@ -195,8 +231,10 @@ class NoteContext {
     if (cut) {
       passages.add(
         SourcePassage(
-          '[The page goes on; read it whole with read_page '
-          '${digest.pageId}.]',
+          tools
+              ? '[The page goes on; read it whole with read_page '
+                    '${digest.pageId}.]'
+              : '[The page goes on, beyond what fits here.]',
           uri: digest.link.toString(),
         ),
       );

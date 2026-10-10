@@ -82,7 +82,12 @@ class AnthropicProvider implements ChatProvider {
         nativeCitations: true,
         nativeWebSearch: true,
         contextTokens:
-            context ?? (model.startsWith('claude-haiku') ? 200000 : 1000000),
+            context ??
+            (model.startsWith('claude-haiku-4') ||
+                    model.startsWith('claude-haiku-3') ||
+                    model.startsWith('claude-3')
+                ? 200000
+                : 1000000),
         price: _prices.entries
             .where((entry) => model.startsWith(entry.key))
             .firstOrNull
@@ -90,10 +95,11 @@ class AnthropicProvider implements ChatProvider {
       );
 
   /// What each model costs, which Anthropic's listing does not say: its
-  /// list prices as of June 2026, by the start of its name, the most
+  /// list prices as of October 2026, by the start of its name, the most
   /// particular first. Reading what was kept costs a tenth of reading
   /// afresh on most, keeping it for five minutes a quarter more, and a
-  /// search of the web a cent.
+  /// search of the web a cent. Haiku 5.5 costs five times as much for a
+  /// prompt over 100k tokens, which is more notes than go by default.
   static final Map<String, ModelPrice> _prices = <String, ModelPrice>{
     'claude-fable-5-1': _price(10, 50, cacheRead: 0.25),
     'claude-mythos-5-1': _price(10, 50, cacheRead: 0.25),
@@ -103,8 +109,10 @@ class AnthropicProvider implements ChatProvider {
     'claude-opus-4-8': _price(5, 25),
     'claude-opus-4-7': _price(5, 25),
     'claude-opus-4-6': _price(5, 25),
+    'claude-sonnet-5-5': _price(2, 10, cacheRead: 0.2),
     'claude-sonnet-5': _price(2, 10),
     'claude-sonnet-4': _price(3, 15),
+    'claude-haiku-5-5': _price(0.1, 0.5),
     'claude-haiku-4-5': _price(1, 5),
   };
 
@@ -131,36 +139,67 @@ class AnthropicProvider implements ChatProvider {
       : 'web_search_20260209';
 
   /// The request body for [request].
-  Map<String, Object?> body(ChatRequest request) => <String, Object?>{
-    'model': request.model,
-    'max_tokens': request.maxTokens ?? 64000,
-    'stream': true,
-    // Everything before the newest message is cached: the instructions, the
-    // tools, and the notes given with the first question.
-    'cache_control': <String, Object?>{'type': 'ephemeral'},
-    if (_refuses(request.model)) 'fallbacks': 'default',
-    'system': <Object?>[
-      <String, Object?>{'type': 'text', 'text': request.system},
-    ],
-    'tools': <Object?>[
-      for (final tool in request.tools)
-        <String, Object?>{
-          'name': tool.name,
-          'description': tool.description,
-          'input_schema': tool.schema,
-          'eager_input_streaming': true,
-        },
-      if (request.webSearch)
-        <String, Object?>{
-          'type': _webSearchTool(request.model),
-          'name': 'web_search',
-          'max_uses': 5,
-        },
-    ],
-    'messages': <Object?>[
+  Map<String, Object?> body(ChatRequest request) {
+    final messages = <Map<String, Object?>>[
       for (final message in request.messages) _message(message),
-    ],
-  };
+    ];
+    _markCached(messages);
+    return <String, Object?>{
+      'model': request.model,
+      'max_tokens': request.maxTokens ?? 64000,
+      'stream': true,
+      // Everything up to the newest message is cached: the instructions, the
+      // tools, the notes given with the first question, and the
+      // conversation since.
+      'cache_control': <String, Object?>{'type': 'ephemeral'},
+      if (_refuses(request.model)) 'fallbacks': 'default',
+      'system': <Object?>[
+        <String, Object?>{'type': 'text', 'text': request.system},
+      ],
+      'tools': <Object?>[
+        for (final tool in request.tools)
+          <String, Object?>{
+            'name': tool.name,
+            'description': tool.description,
+            'input_schema': tool.schema,
+            'eager_input_streaming': true,
+          },
+        if (request.webSearch)
+          <String, Object?>{
+            'type': _webSearchTool(request.model),
+            'name': 'web_search',
+            'max_uses': 5,
+          },
+      ],
+      'messages': messages,
+    };
+  }
+
+  /// Marks where the request before this one ended as cached, to be read
+  /// from there.
+  ///
+  /// The mark the request carries itself, on its last block, looks back no
+  /// more than twenty blocks for what was cached before; and an answer
+  /// citing the notes comes back as a block for each passage it cites, so
+  /// the next question would miss what was cached and pay to cache all of
+  /// it, the notes too, again. The request before ended with the person's
+  /// message before the last of Claude's.
+  static void _markCached(List<Map<String, Object?>> messages) {
+    final answer = messages.lastIndexWhere((m) => m['role'] == 'assistant');
+    if (answer < 0) return;
+    final asked = messages
+        .sublist(0, answer)
+        .lastWhere((m) => m['role'] == 'user', orElse: () => const {});
+    final content = asked['content'];
+    if (content is! List || content.isEmpty) return;
+    final last = content.last;
+    if (last is Map<String, Object?>) {
+      content.last = <String, Object?>{
+        ...last,
+        'cache_control': <String, Object?>{'type': 'ephemeral'},
+      };
+    }
+  }
 
   Map<String, Object?> _message(ChatMessage message) {
     final native = message.parts
