@@ -54,6 +54,23 @@ void main() {
       expect(turns.first.usage, <String, Object?>{'input': 10});
       expect((await ai.threadsAbout(page)).single.id, thread.id);
       expect(await ai.threadsAbout(section), isEmpty);
+
+      await ai.updateTurn(
+        turns.first.id,
+        answer: <String, Object?>{'markdown': 'Mass times its acceleration.'},
+      );
+      await ai.updateTurn(
+        turns.last.id,
+        messages: <Object?>[
+          <String, Object?>{'role': 'assistant'},
+        ],
+      );
+      final changed = await ai.turnsOf(thread.id);
+      expect(changed.first.answer['markdown'], 'Mass times its acceleration.');
+      expect(changed.first.messages, hasLength(1), reason: 'left as it was');
+      expect(changed.first.usage, <String, Object?>{'input': 10});
+      expect(changed.last.messages, hasLength(1));
+      expect(changed.last.answer['markdown'], 'Mass times g.');
     },
   );
 

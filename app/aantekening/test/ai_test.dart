@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:aantekening/src/ai/ai_session.dart';
 import 'package:aantekening/src/ai/ai_state.dart';
 import 'package:aantekening/src/ai/ai_view.dart';
+import 'package:aantekening/src/ai/answer_view.dart';
 import 'package:aantekening/src/ai/flashcards_view.dart';
 import 'package:aantekening/src/ai/sources_view.dart';
 import 'package:aantekening/src/ai/study_pages.dart';
@@ -12,6 +13,7 @@ import 'package:aantekening/src/editor/focus_glide.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/look/chooser.dart';
 import 'package:aantekening/src/look/controls.dart';
+import 'package:aantekening/src/look/glass.dart';
 import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening/src/modes/editor_mode.dart';
 import 'package:aantekening/src/modes/key_guide.dart';
@@ -95,7 +97,11 @@ class FakeProvider implements ChatProvider {
       yield const Reasoning('They ask about force.\nNewton’s second law.');
       await gate.future;
     }
-    if (question.contains('flashcards')) {
+    if (question.contains('<part>')) {
+      yield const TextDelta('Force is what makes a mass accelerate');
+      yield CitedSpan(<Citation>[citation]);
+      yield const TextDelta(', simply put.');
+    } else if (question.contains('flashcards')) {
       yield const TextDelta(
         'Cards from your notes:\n\n```flashcards\n'
         '[{"front": "What is force?", "back": "Mass times acceleration"},'
@@ -424,6 +430,88 @@ void main() {
 
     // What it cost is said with who answered, reckoned from the price.
     expect(find.textContaining(RegExp(r' · ≈ \$0\.0')), findsOneWidget);
+  });
+
+  testWidgets('a part of an answer selected is written again in its '
+      'place, as asked, and the conversation goes on from it', (tester) async {
+    await openShell(tester);
+    await pressControl(tester, LogicalKeyboardKey.keyJ);
+    await ask(tester, 'What is force?');
+
+    // On its first word.
+    await tester.longPressAt(
+      tester.getTopLeft(
+            find
+                .descendant(
+                  of: find.byType(AnswerView),
+                  matching: find.textContaining(
+                    'mass times acceleration',
+                    findRichText: true,
+                  ),
+                )
+                .first,
+          ) +
+          const Offset(12, 10),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Write this again…'));
+    await tester.pumpAndSettle();
+    expect(find.text('Write this again'), findsOneWidget);
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(GlassDialog),
+        matching: find.byType(TextField),
+      ),
+      'simpler',
+    );
+    await tester.tap(find.text('Write again'));
+    await tester.pumpAndSettle();
+
+    final asked = model.asked.last;
+    expect(asked.messages.last.text, contains('<part>\nForce is mass'));
+    expect(
+      asked.messages.last.text,
+      contains('What should be different: simpler'),
+    );
+    expect(
+      asked.messages.first.text,
+      contains('What is force?'),
+      reason: 'asked in the conversation, after all of it',
+    );
+
+    expect(
+      find.textContaining('simply put.', findRichText: true),
+      findsWidgets,
+    );
+    expect(
+      find.textContaining(
+        'Beyond your notes, it is named after Newton.',
+        findRichText: true,
+      ),
+      findsWidgets,
+      reason: 'the rest of the answer as it was',
+    );
+    expect(find.byType(FootnoteMark), findsOneWidget);
+
+    final thread = (await tester.runAsync(
+      () => store.ai.threadsAbout(NoteLink.page(page.id)),
+    ))!.single;
+    final turns = (await tester.runAsync(() => store.ai.turnsOf(thread.id)))!;
+    expect(turns, hasLength(1), reason: 'no new question');
+    expect(
+      turns.single.messages,
+      hasLength(4),
+      reason: 'what was asked again and written, after the answer',
+    );
+
+    await ask(tester, 'And its unit?');
+    expect(model.asked.last.messages.map((m) => m.role), <ChatRole>[
+      ChatRole.user,
+      ChatRole.assistant,
+      ChatRole.user,
+      ChatRole.assistant,
+      ChatRole.user,
+    ], reason: 'the next question goes on from the part written again');
   });
 
   testWidgets('shows how an answer is coming along: each step, how long '

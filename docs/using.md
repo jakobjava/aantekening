@@ -384,6 +384,13 @@ The line to ask in is at its foot: **i** or Enter goes to it, Enter asks,
 **Web** lets the answer search the web, and the model's name opens the
 settings to choose another.
 
+To have part of an answer written again, select it and choose **Write this
+again…** from the menu of what is selected (a right-click, or a long press).
+The paragraphs, list items or formulas the selection touches are written
+again in their place, as you say — *simpler*, *with an example* — or just
+better if you say nothing; the rest of the answer stays as it was, and the
+conversation goes on from the answer as it now is.
+
 To keep everything on your computer, install [Ollama](https://ollama.com),
 pull a model that can use tools and see pictures, and add **Ollama** under
 *On this computer*:

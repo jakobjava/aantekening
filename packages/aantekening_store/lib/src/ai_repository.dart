@@ -235,6 +235,25 @@ class AiRepository {
     });
   }
 
+  /// Changes turn [id]: what its answer shows, the turn as the model had
+  /// it, what it took — each only if given.
+  Future<void> updateTurn(
+    String id, {
+    Map<String, Object?>? answer,
+    List<Object?>? messages,
+    Map<String, Object?>? usage,
+  }) async => _db.run(
+    'UPDATE ai_turns SET answer = COALESCE(?, answer), '
+    'messages = COALESCE(?, messages), usage = COALESCE(?, usage) '
+    'WHERE id = ?',
+    <Object?>[
+      answer == null ? null : jsonEncode(answer),
+      messages == null ? null : jsonEncode(messages),
+      usage == null ? null : jsonEncode(usage),
+      id,
+    ],
+  );
+
   AiTurn _turn(Row row) => AiTurn(
     id: str(row, 'id'),
     threadId: str(row, 'thread_id'),

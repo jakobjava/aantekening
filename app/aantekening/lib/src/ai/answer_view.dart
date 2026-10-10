@@ -25,10 +25,15 @@ class AnswerView extends StatelessWidget {
     required this.onOpen,
     this.showSources = true,
     this.onAddCards,
+    this.onRewrite,
     super.key,
   });
 
   final AiAnswer answer;
+
+  /// Has a section of the answer written again: offered for what is
+  /// selected in it, as the whole blocks the selection lies in.
+  final ValueChanged<AnswerSection>? onRewrite;
 
   /// Opens a cited source.
   final void Function(Citation citation) onOpen;
@@ -51,7 +56,9 @@ class AnswerView extends StatelessWidget {
     ).parse(answer.markdown);
     final builder = _Blocks(context, answer, footnotes, onOpen, onAddCards);
     final blocks = builder.blocks(nodes);
-    return SelectionArea(
+    return _Selectable(
+      answer: answer,
+      onRewrite: onRewrite,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -69,6 +76,54 @@ class AnswerView extends StatelessWidget {
       ),
     );
   }
+}
+
+/// [child], whose text can be selected: and, with [onRewrite], the part
+/// of [answer] selected written again, from the menu of what is selected.
+class _Selectable extends StatefulWidget {
+  const _Selectable({
+    required this.answer,
+    required this.onRewrite,
+    required this.child,
+  });
+
+  final AiAnswer answer;
+  final ValueChanged<AnswerSection>? onRewrite;
+  final Widget child;
+
+  @override
+  State<_Selectable> createState() => _SelectableState();
+}
+
+class _SelectableState extends State<_Selectable> {
+  /// What is selected, as it is shown.
+  String _selected = '';
+
+  @override
+  Widget build(BuildContext context) => SelectionArea(
+    onSelectionChanged: (content) => _selected = content?.plainText ?? '',
+    contextMenuBuilder: (context, region) {
+      final onRewrite = widget.onRewrite;
+      final section = onRewrite == null || _selected.trim().isEmpty
+          ? null
+          : widget.answer.sectionOf(_selected);
+      return AdaptiveTextSelectionToolbar.buttonItems(
+        anchors: region.contextMenuAnchors,
+        buttonItems: <ContextMenuButtonItem>[
+          ...region.contextMenuButtonItems,
+          if (section != null)
+            ContextMenuButtonItem(
+              label: 'Write this again…',
+              onPressed: () {
+                region.hideToolbar();
+                onRewrite!(section);
+              },
+            ),
+        ],
+      );
+    },
+    child: widget.child,
+  );
 }
 
 /// What the grey rule down an answer's side means.

@@ -558,6 +558,24 @@ class NoteAgent {
     ];
   }
 
+  /// What asks for [part] of the answer to [question] to be written again
+  /// — as [instruction] says, where it says anything — to take its place.
+  static String rewriteRequest(
+    String part, {
+    required String question,
+    String instruction = '',
+  }) {
+    final how = instruction.trim();
+    return '''
+Write this part of your answer to "$question" again${how.isEmpty ? ', better: clearer and more accurate, and true to the notes' : '. What should be different: $how'}
+
+<part>
+$part
+</part>
+
+Answer with the new version of that part alone, ready to take its place in the answer: the same kind of Markdown (a paragraph, a list, a heading with what follows it), in the language the part is written in, drawing on and citing the notes as before — with nothing before or after it.''';
+  }
+
   /// The standing instructions for making study sets of [form] about
   /// [scope], for a student who says [about] of themselves.
   static String studyPrompt(

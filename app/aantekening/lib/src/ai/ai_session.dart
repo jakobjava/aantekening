@@ -89,17 +89,20 @@ class AiStep {
 /// took to get there.
 @immutable
 class PendingTurn {
-  /// [question], just asked — or, with [profile], a set of it being made.
+  /// [question], just asked — or, with [profile], a set of it being made;
+  /// or, with [rewriting], a part of that turn's answer written again.
   factory PendingTurn({
     required String question,
     required bool local,
     StudyProfile? profile,
+    String? rewriting,
   }) {
     final now = DateTime.now();
     return PendingTurn._(
       question: question,
       local: local,
       profile: profile,
+      rewriting: rewriting,
       startedAt: now,
       progress: const AgentProgress(
         answer: AiAnswer(),
@@ -116,6 +119,7 @@ class PendingTurn {
     required this.question,
     required this.local,
     required this.profile,
+    required this.rewriting,
     required this.startedAt,
     required this.progress,
     required this.since,
@@ -128,6 +132,10 @@ class PendingTurn {
   /// The profile of the study set being made, if it is one rather than an
   /// answer.
   final StudyProfile? profile;
+
+  /// The id of the turn a part of whose answer is being written again, if
+  /// that is what this is.
+  final String? rewriting;
 
   /// Whether the model runs on this computer, where reading is slow.
   final bool local;
@@ -157,6 +165,7 @@ class PendingTurn {
       question: question,
       local: local,
       profile: profile,
+      rewriting: rewriting,
       startedAt: startedAt,
       progress: next,
       since: same ? since : now,
@@ -428,6 +437,135 @@ class AiSession extends Notifier<AiSessionState> {
     );
   }
 
+  /// Writes [section] of the answer to [turn] again — as [instruction]
+  /// says, where it says anything — in its place, the rest of the answer
+  /// as it was. With [searchWeb], the web may be searched.
+  ///
+  /// The model is asked in the conversation, after all of it, so it knows
+  /// what it wrote and why; and what it was asked and wrote is added at the
+  /// conversation's end, never between what was said before, so the next
+  /// question goes on from the answer as it now is, and what the provider
+  /// kept of the conversation still holds.
+  Future<void> rewrite(
+    AiTurn turn,
+    AnswerSection section, {
+    String instruction = '',
+    required bool searchWeb,
+  }) async {
+    if (state.pending != null) return;
+    final model = await ref.read(aiModelProvider.future);
+    if (model == null) {
+      state = state.copyWith(error: () => 'Choose a model to ask first.');
+      return;
+    }
+    final reader = await ref.read(workspaceReaderProvider.future);
+    final info = await reader.scope(scope);
+    if (info == null) return;
+    final web = await ref.read(webSearchProvider.future);
+    final history = <ChatMessage>[
+      for (final each in state.turns)
+        for (final json in each.messages)
+          ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
+    ];
+    final answer = AiAnswer.fromJson(turn.answer);
+    final part = answer.textOf(section);
+    final how = instruction.trim();
+
+    state = state.copyWith(
+      itemId: () => null,
+      shownProfile: () => null,
+      pending: () => PendingTurn(
+        question: how.isEmpty
+            ? 'Write this again: “${_excerpt(part)}”'
+            : 'Write this again — $how: “${_excerpt(part)}”',
+        local: model.config.local,
+        rewriting: turn.id,
+      ),
+      error: () => null,
+    );
+    await _follow(
+      _agent(model, reader, web: web).ask(
+        scope: info,
+        history: history,
+        question: NoteAgent.rewriteRequest(
+          part,
+          question: turn.question,
+          instruction: how,
+        ),
+        searchWeb: searchWeb,
+      ),
+      read: () => state.pending,
+      write: (pending) => state = state.copyWith(pending: () => pending),
+      started: (subscription) => _answering = subscription,
+      onDone: (progress) => _keepRewrite(turn, section, progress),
+    );
+  }
+
+  /// Keeps what [progress] wrote of [section] of the answer to [turn] in
+  /// its place, and what was asked and written at the conversation's end.
+  Future<void> _keepRewrite(
+    AiTurn asked,
+    AnswerSection section,
+    AgentProgress progress,
+  ) async {
+    if (progress.answer.isEmpty) {
+      state = state.copyWith(
+        pending: () => null,
+        error: () => 'The model wrote nothing in its place. Try again.',
+      );
+      return;
+    }
+    final store = await _store;
+    // As they are now, whichever conversation shows.
+    final turns = await store.ai.turnsOf(asked.threadId);
+    final turn = turns.where((each) => each.id == asked.id).firstOrNull;
+    final last = turns.lastOrNull;
+    if (turn == null || last == null) {
+      state = state.copyWith(pending: () => null);
+      return;
+    }
+    final answer = AiAnswer.fromJson(turn.answer)
+        .replacing(section, progress.answer);
+    final added = <Object?>[for (final m in progress.messages) m.toJson()];
+    await store.ai.updateTurn(
+      turn.id,
+      answer: <String, Object?>{...turn.answer, ...answer.toJson()},
+      messages: last.id == turn.id
+          ? <Object?>[...turn.messages, ...added]
+          : null,
+      usage: _added(turn.usage, _usageOf(progress)),
+    );
+    if (last.id != turn.id) {
+      await store.ai.updateTurn(
+        last.id,
+        messages: <Object?>[...last.messages, ...added],
+      );
+    }
+    state = state.copyWith(pending: () => null);
+    await _load(threadId: turn.threadId);
+  }
+
+  /// [usage] with [more] added to it: the tokens and what they cost; how
+  /// long it took stays as it was.
+  static Map<String, Object?> _added(
+    Map<String, Object?>? usage,
+    Map<String, Object?> more,
+  ) => <String, Object?>{
+    ...?usage,
+    for (final MapEntry(:key, :value) in more.entries)
+      if (key != _tookKey)
+        key: switch ((usage?[key], value)) {
+          (final num a, final num b) => a + b,
+          _ => value,
+        },
+  };
+
+  /// The start of [text], to say in a line what it is.
+  static String _excerpt(String text) {
+    final line = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return line.length <= 60 ? line : '${line.substring(0, 57)}…';
+  }
+
   /// Makes a study set as [profile] describes it from the notes of the
   /// scope, shown as it is written, and keeps it — in place of the one made
   /// before, what was learnt of its cards carried over. Made alongside
@@ -642,12 +780,17 @@ class AiSession extends Notifier<AiSessionState> {
     await _load();
   }
 
-  /// Stops the answer coming, keeping what came of it.
+  /// Stops the answer coming, keeping what came of it — but for a part
+  /// being written again, which stays as it was.
   Future<void> stop() async {
     final pending = state.pending;
     await _answering?.cancel();
     _answering = null;
     if (pending == null) return;
+    if (pending.rewriting != null) {
+      state = state.copyWith(pending: () => null);
+      return;
+    }
     final model = await ref.read(aiModelProvider.future);
     if (model != null && !pending.answer.isEmpty) {
       await _keepTurn(

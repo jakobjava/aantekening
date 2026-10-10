@@ -678,6 +678,11 @@ class _Conversation extends ConsumerWidget {
             kept: session.isKept(turn),
             onKeep: () => unawaited(session.keep(turn)),
             onAddCards: (cards) => unawaited(session.addCards(cards)),
+            // One thing at a time: not while another is being answered.
+            onRewrite: pending != null
+                ? null
+                : (section) =>
+                      unawaited(_rewrite(context, ref, session, turn, section)),
           ),
         if (pending != null)
           _Exchange(
@@ -691,6 +696,120 @@ class _Conversation extends ConsumerWidget {
   }
 }
 
+/// Asks how [section] of the answer to [turn] should be written again,
+/// then has it written so.
+Future<void> _rewrite(
+  BuildContext context,
+  WidgetRef ref,
+  AiSession session,
+  AiTurn turn,
+  AnswerSection section,
+) async {
+  final part = AiAnswer.fromJson(turn.answer).textOf(section);
+  final instruction = await _askHowToRewrite(context, part);
+  if (instruction == null) return;
+  final model = ref.read(aiModelProvider).value;
+  await session.rewrite(
+    turn,
+    section,
+    instruction: instruction,
+    searchWeb:
+        ref.read(aiSettingsProvider).searchWeb &&
+        _webAvailable(model, ref.read(webSearchProvider)),
+  );
+}
+
+/// Shows [part] and asks what should be different when it is written
+/// again: the words given, empty for nothing in particular, or null to
+/// leave it as it is.
+Future<String?> _askHowToRewrite(BuildContext context, String part) =>
+    showAppDialog<String>(
+      context: context,
+      builder: (context) => _RewriteDialog(part: part),
+    );
+
+/// The dialog behind [_askHowToRewrite].
+class _RewriteDialog extends StatefulWidget {
+  const _RewriteDialog({required this.part});
+
+  final String part;
+
+  @override
+  State<_RewriteDialog> createState() => _RewriteDialogState();
+}
+
+class _RewriteDialogState extends State<_RewriteDialog> {
+  final TextEditingController _how = TextEditingController();
+
+  @override
+  void dispose() {
+    _how.dispose();
+    super.dispose();
+  }
+
+  void _write() => Navigator.of(context).pop(_how.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    final tones = context.tones;
+    return GlassDialog(
+      title: const Text('Write this again'),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 180),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: tones.strongLine, width: 3),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    widget.part,
+                    style: TextStyle(fontSize: 12.5, color: tones.muted),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _how,
+              autofocus: true,
+              minLines: 1,
+              maxLines: 4,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                hintText: 'What should be different? (optional)',
+                helperText: 'Simpler, with an example, shorter, in German, …',
+              ),
+              onSubmitted: (_) => _write(),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _write, child: const Text('Write again')),
+      ],
+    );
+  }
+}
+
+/// Whether the web can be searched with [model]: by its provider, or by
+/// the search set up.
+bool _webAvailable(AiModel? model, AsyncValue<WebSearch?> search) =>
+    model != null &&
+    (model.config.kind == ProviderKind.anthropic || search.value != null);
+
 /// A question, set off to the right in the accent's tint, and its answer
 /// beneath it.
 class _Exchange extends StatelessWidget {
@@ -703,6 +822,7 @@ class _Exchange extends StatelessWidget {
     this.kept = false,
     this.onKeep,
     this.onAddCards,
+    this.onRewrite,
   });
 
   final String question;
@@ -717,6 +837,9 @@ class _Exchange extends StatelessWidget {
   final bool kept;
   final VoidCallback? onKeep;
   final ValueChanged<List<StudyCard>>? onAddCards;
+
+  /// Has a section of the answer written again.
+  final ValueChanged<AnswerSection>? onRewrite;
 
   @override
   Widget build(BuildContext context) {
@@ -762,6 +885,7 @@ class _Exchange extends StatelessWidget {
               onOpen: onOpen,
               showSources: done,
               onAddCards: onAddCards,
+              onRewrite: done ? onRewrite : null,
             ),
           if (done)
             Row(
@@ -893,10 +1017,6 @@ class _AskLineState extends ConsumerState<_AskLine> {
   }
 
   void _focused() => setState(() {});
-
-  bool _webAvailable(AiModel? model, AsyncValue<WebSearch?> search) =>
-      model != null &&
-      (model.config.kind == ProviderKind.anthropic || search.value != null);
 
   void _send() {
     final question = _text.text.trim();
