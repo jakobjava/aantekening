@@ -129,7 +129,7 @@ asks, offering what was chosen last, so Enter makes another of the same:
 * **Canvas**: one paper going on to the right and down as far as you
   write, to write anywhere on: it scrolls half a window past what is on it,
   and further as you write there.
-* **Pages**: sheets of A4 or Letter, in the middle of the window, one
+* **Pages**: sheets of A4, upright or landscape, in the middle of the window, one
   after another, as in a paper notebook or GoodNotes, each printed blank,
   lined, squared, dotted, with music staves, or for Cornell notes.
 

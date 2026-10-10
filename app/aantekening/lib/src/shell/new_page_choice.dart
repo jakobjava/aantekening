@@ -14,7 +14,7 @@ class NewPageChoice {
   const NewPageChoice({
     this.layout = NoteLayout.canvas,
     this.template = SheetTemplate.lined,
-    this.size = SheetSize.a4,
+    this.orientation = SheetOrientation.portrait,
   });
 
   final NoteLayout layout;
@@ -22,25 +22,28 @@ class NewPageChoice {
   /// What its first sheet is printed with, shown as sheets.
   final SheetTemplate template;
 
-  /// How large its sheets are, shown as sheets.
-  final SheetSize size;
+  /// Which way up its sheets are turned, shown as sheets.
+  final SheetOrientation orientation;
 
   /// The settings a page starts with, made as this says.
   CanvasSettings get canvas => layout == NoteLayout.pages
       ? CanvasSettings(
           layout: NoteLayout.pages,
-          sheets: Sheets(size: size, templates: <SheetTemplate>[template]),
+          sheets: Sheets(
+            orientation: orientation,
+            templates: <SheetTemplate>[template],
+          ),
         )
       : CanvasSettings.defaults;
 
   NewPageChoice copyWith({
     NoteLayout? layout,
     SheetTemplate? template,
-    SheetSize? size,
+    SheetOrientation? orientation,
   }) => NewPageChoice(
     layout: layout ?? this.layout,
     template: template ?? this.template,
-    size: size ?? this.size,
+    orientation: orientation ?? this.orientation,
   );
 
   @override
@@ -48,10 +51,10 @@ class NewPageChoice {
       other is NewPageChoice &&
       other.layout == layout &&
       other.template == template &&
-      other.size == size;
+      other.orientation == orientation;
 
   @override
-  int get hashCode => Object.hash(layout, template, size);
+  int get hashCode => Object.hash(layout, template, orientation);
 }
 
 /// What the last page made started as, offered first for the next — and
@@ -59,7 +62,7 @@ class NewPageChoice {
 class NewPageChoiceController extends Notifier<NewPageChoice> {
   static const String _layout = 'newPage.layout';
   static const String _template = 'newPage.template';
-  static const String _size = 'newPage.size';
+  static const String _orientation = 'newPage.orientation';
 
   @override
   NewPageChoice build() {
@@ -69,7 +72,11 @@ class NewPageChoiceController extends Notifier<NewPageChoice> {
     return NewPageChoice(
       layout: named(_layout, NoteLayout.values, start.layout),
       template: named(_template, SheetTemplate.values, start.template),
-      size: named(_size, SheetSize.values, start.size),
+      orientation: named(
+        _orientation,
+        SheetOrientation.values,
+        start.orientation,
+      ),
     );
   }
 
@@ -79,7 +86,7 @@ class NewPageChoiceController extends Notifier<NewPageChoice> {
     ref
       ..savePreference(_layout, choice.layout.name)
       ..savePreference(_template, choice.template.name)
-      ..savePreference(_size, choice.size.name);
+      ..savePreference(_orientation, choice.orientation.name);
   }
 }
 

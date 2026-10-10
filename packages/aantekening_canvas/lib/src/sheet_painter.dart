@@ -73,7 +73,13 @@ void paintSheets(
 /// What a template prints on a sheet of one size: lines, from end to end,
 /// and dots, in page units from the sheet's corner.
 class _Printed {
-  _Printed({required this.spacing, this.lines, this.margins, this.dots});
+  _Printed({
+    required this.spacing,
+    double? pitch,
+    this.lines,
+    this.margins,
+    this.dots,
+  }) : pitch = pitch ?? spacing;
 
   /// The template of [template] for sheets [width] by [height], worked
   /// out once.
@@ -85,6 +91,10 @@ class _Printed {
 
   /// The least gap between two of its lines or dots, in page units.
   final double spacing;
+
+  /// How far apart its pattern repeats, in page units: [spacing], but for
+  /// a staff, five lines repeating a staff apart.
+  final double pitch;
 
   /// The ends of each line, two points to a line.
   final Float32List? lines;
@@ -231,6 +241,7 @@ class _Printed {
         }
         return _Printed(
           spacing: _staffLine,
+          pitch: _staffPitch,
           lines: Float32List.fromList(lines),
         );
       case SheetTemplate.cornell:
@@ -261,38 +272,51 @@ class SheetThumbnail extends StatelessWidget {
     required this.template,
     this.width = 54,
     this.size = SheetSize.a4,
+    this.orientation = SheetOrientation.portrait,
     super.key,
   });
 
   final SheetTemplate template;
   final double width;
   final SheetSize size;
+  final SheetOrientation orientation;
 
   @override
-  Widget build(BuildContext context) => CustomPaint(
-    size: Size(width, width * size.height / size.width),
-    painter: _ThumbnailPainter(template, size),
-  );
+  Widget build(BuildContext context) {
+    final sheet = Sheets(size: size, orientation: orientation);
+    return CustomPaint(
+      size: Size(width, width * sheet.height / sheet.width),
+      painter: _ThumbnailPainter(template, sheet),
+    );
+  }
 }
 
 class _ThumbnailPainter extends CustomPainter {
   const _ThumbnailPainter(this.template, this.sheet);
 
   final SheetTemplate template;
-  final SheetSize sheet;
+  final Sheets sheet;
+
+  /// How far apart, on screen, a thumbnail's pattern has to repeat to be
+  /// seen as itself: closer, dots and squares run into a moiré, and lines
+  /// into a grey.
+  static const double _legible = 4;
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
     canvas.drawRect(rect, Paint()..color = const Color(0xFFFFFFFF));
     if (template != SheetTemplate.blank) {
-      // Drawn however close its lines come: small, they read as the
-      // template's pattern.
+      // Drawn small, a pattern finer than the screen can show is drawn as
+      // on a smaller sheet: the paper's kind shown, rather than its count
+      // of lines.
+      final pitch = _Printed.of(template, sheet.width, sheet.height).pitch;
+      final zoom = math.max(size.width / sheet.width, _legible / pitch);
       _Printed.of(
         template,
-        sheet.width,
-        sheet.height,
-      ).paint(canvas, rect, size.width / sheet.width, dark: false);
+        size.width / zoom,
+        size.height / zoom,
+      ).paint(canvas, rect, zoom, dark: false);
     }
     canvas.drawRect(
       rect.deflate(0.5),

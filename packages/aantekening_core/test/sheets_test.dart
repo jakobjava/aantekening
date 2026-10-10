@@ -12,6 +12,24 @@ void main() {
       expect(sheets.bandOf(2), const Aabb(0, 2112, 816, 3168));
     });
 
+    test('turned landscape, are as wide as they were tall', () {
+      final sheets = Sheets(orientation: SheetOrientation.landscape);
+      expect(sheets.width, SheetSize.a4.height);
+      expect(sheets.height, SheetSize.a4.width);
+      expect(sheets.bandOf(1), const Aabb(0, 793.7, 1122.5, 1587.4));
+      expect(
+        sheets.fittedTo(const Aabb(0, 0, 1000, 300)).scale,
+        1,
+        reason: 'as wide as the turned sheet already',
+      );
+      expect(Sheets.fromJson(sheets.toJson()), sheets);
+      expect(
+        Sheets().toJson().containsKey('orientation'),
+        isFalse,
+        reason: 'pages made upright are written as before',
+      );
+    });
+
     test('fit the writing on a page: as wide as it is, and enough of them', () {
       final fitted = Sheets(
         templates: const <SheetTemplate>[SheetTemplate.lined],

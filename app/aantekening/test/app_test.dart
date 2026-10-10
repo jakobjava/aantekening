@@ -584,13 +584,16 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Squared'));
-      await tester.tap(find.text('Letter'));
+      expect(find.text('Letter'), findsNothing, reason: 'new pages are A4');
+      await tester.tap(find.text('Landscape'));
       await tester.tap(find.text('Create'));
       await tester.pumpAndSettle();
 
       final sheets = canvasShown(tester).document.canvas.sheetsShown!;
       expect(sheets.templates, <SheetTemplate>[SheetTemplate.grid]);
-      expect(sheets.size, SheetSize.letter);
+      expect(sheets.size, SheetSize.a4);
+      expect(sheets.orientation, SheetOrientation.landscape);
+      expect(sheets.width, greaterThan(sheets.height));
       expect(tabNamed('Untitled page'), findsOneWidget);
 
       await showPanes(tester);

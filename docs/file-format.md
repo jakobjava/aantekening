@@ -16,7 +16,8 @@ notes folder (see [The notes folder](#the-notes-folder)), the `body` blob of
     "paperWidth": 816,                   // optional printable-width guide
     "layout": "pages",                   // optional: "canvas" (the default)
     "sheets": {                          // the sheets, once ever shown as pages
-      "size": "a4",                      // "a4" or "letter"
+      "size": "a4",                      // "a4", or "letter" for older pages
+      "orientation": "landscape",        // optional: "portrait" (the default)
       "scale": 1,                        // how many times the paper's size
       "templates": ["lined", "grid"]     // one a sheet: blank, lined, grid,
     }                                    //   dotted, music or cornell
@@ -27,9 +28,10 @@ notes folder (see [The notes folder](#the-notes-folder)), the `body` blob of
 
 A page shown as pages is the same page cut into `sheets`: bands a sheet
 tall from its top, one after another, `size` times `scale` in page units
-(A4 is 793.7 by 1122.5, Letter 816 by 1056), as many as there are
-`templates`. Nothing in `elements` changes with `layout`; the sheets are
-kept when the page is shown as one paper again, to go back to (ADR 32).
+(A4 is 793.7 by 1122.5, Letter 816 by 1056), width and height swapped when
+`orientation` is `landscape`, as many as there are `templates`. Nothing in
+`elements` changes with `layout`; the sheets are kept when the page is
+shown as one paper again, to go back to (ADR 32).
 
 ## Elements
 

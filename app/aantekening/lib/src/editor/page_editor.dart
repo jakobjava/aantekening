@@ -38,7 +38,6 @@ import '../modes/mode_keys.dart';
 import '../providers.dart';
 import '../search/search_session.dart';
 import '../shell/library_actions.dart';
-import '../shell/new_page_choice.dart';
 import '../shell/tabs.dart';
 import '../spelling/proofreader.dart';
 import '../spelling/spelling.dart';

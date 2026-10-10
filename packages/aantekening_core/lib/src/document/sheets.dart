@@ -23,6 +23,8 @@ enum NoteLayout {
 }
 
 /// The size of a sheet, upright, in page units: a ninety-sixth of an inch.
+///
+/// New pages are A4; Letter is kept for the pages made on it before.
 enum SheetSize {
   a4('A4', 793.7, 1122.5),
   letter('Letter', 816, 1056);
@@ -32,6 +34,16 @@ enum SheetSize {
   final String label;
   final double width;
   final double height;
+}
+
+/// Which way up a sheet is turned: its short side across, or its long.
+enum SheetOrientation {
+  portrait('Portrait'),
+  landscape('Landscape');
+
+  const SheetOrientation(this.label);
+
+  final String label;
 }
 
 /// What is printed on a sheet before anything is written on it.
@@ -59,6 +71,7 @@ enum SheetTemplate {
 class Sheets {
   Sheets({
     this.size = SheetSize.a4,
+    this.orientation = SheetOrientation.portrait,
     this.scale = 1,
     List<SheetTemplate> templates = const <SheetTemplate>[SheetTemplate.blank],
   }) : templates = List<SheetTemplate>.unmodifiable(
@@ -69,6 +82,9 @@ class Sheets {
 
   final SheetSize size;
 
+  /// Which way up the sheets are turned.
+  final SheetOrientation orientation;
+
   /// How many times [size] the sheets are: more than once only for a page
   /// whose writing was wider than a sheet, which is made to fit it.
   final double scale;
@@ -77,8 +93,15 @@ class Sheets {
   /// sheets, and never none.
   final List<SheetTemplate> templates;
 
-  double get width => size.width * scale;
-  double get height => size.height * scale;
+  bool get landscape => orientation == SheetOrientation.landscape;
+
+  /// How wide and tall a sheet of [size] is, turned as [orientation] has
+  /// it, before [scale].
+  double get paperWidth => landscape ? size.height : size.width;
+  double get paperHeight => landscape ? size.width : size.height;
+
+  double get width => paperWidth * scale;
+  double get height => paperHeight * scale;
 
   int get count => templates.length;
 
@@ -95,8 +118,8 @@ class Sheets {
   Sheets fittedTo(Aabb content) {
     final fit = content.isEmpty
         ? scale
-        : math.max(1.0, content.right / size.width);
-    final grown = Sheets(size: size, scale: fit, templates: templates);
+        : math.max(1.0, content.right / paperWidth);
+    final grown = copyWith(scale: fit);
     return grown.holding(content);
   }
 
@@ -115,22 +138,31 @@ class Sheets {
 
   Sheets copyWith({
     SheetSize? size,
+    SheetOrientation? orientation,
     double? scale,
     List<SheetTemplate>? templates,
   }) => Sheets(
     size: size ?? this.size,
+    orientation: orientation ?? this.orientation,
     scale: scale ?? this.scale,
     templates: templates ?? this.templates,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'size': size.name,
+    if (landscape) 'orientation': orientation.name,
     'scale': scale,
     'templates': <String>[for (final template in templates) template.name],
   };
 
   static Sheets fromJson(Map<String, Object?> json) => Sheets(
     size: readEnum(json, 'size', SheetSize.values, SheetSize.a4),
+    orientation: readEnum(
+      json,
+      'orientation',
+      SheetOrientation.values,
+      SheetOrientation.portrait,
+    ),
     scale: math.max(1, readDouble(json, 'scale', 1)),
     templates: <SheetTemplate>[
       for (final name in readStringList(json, 'templates'))
@@ -142,11 +174,13 @@ class Sheets {
   bool operator ==(Object other) =>
       other is Sheets &&
       other.size == size &&
+      other.orientation == orientation &&
       other.scale == scale &&
       _sameTemplates(other.templates, templates);
 
   @override
-  int get hashCode => Object.hash(size, scale, Object.hashAll(templates));
+  int get hashCode =>
+      Object.hash(size, orientation, scale, Object.hashAll(templates));
 
   static bool _sameTemplates(List<SheetTemplate> a, List<SheetTemplate> b) {
     if (a.length != b.length) return false;

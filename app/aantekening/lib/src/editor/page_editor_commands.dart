@@ -23,6 +23,7 @@ extension _Commands on _PageEditorState {
       title: 'Add a sheet after sheet ${after + 1}',
       selected: sheets.templates[after],
       size: sheets.size,
+      orientation: sheets.orientation,
       action: 'Add',
     );
     if (template == null || !mounted) return;

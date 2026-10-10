@@ -99,21 +99,22 @@ class _NewPageDialogState extends State<NewPageDialog> {
                 const SizedBox(height: 6),
                 SheetTemplatePicker(
                   selected: _choice.template,
-                  size: _choice.size,
+                  orientation: _choice.orientation,
                   onSelected: (template) =>
                       _set(_choice.copyWith(template: template)),
                 ),
                 const SizedBox(height: 12),
                 Row(
                   children: <Widget>[
-                    const SmallCaps('Size'),
+                    const SmallCaps('Orientation'),
                     const SizedBox(width: 12),
-                    ChoiceRow<SheetSize>(
-                      choices: SheetSize.values,
-                      selected: _choice.size,
-                      labelOf: (size) => size.label,
+                    ChoiceRow<SheetOrientation>(
+                      choices: SheetOrientation.values,
+                      selected: _choice.orientation,
+                      labelOf: (orientation) => orientation.label,
                       compact: true,
-                      onSelected: (size) => _set(_choice.copyWith(size: size)),
+                      onSelected: (orientation) =>
+                          _set(_choice.copyWith(orientation: orientation)),
                     ),
                   ],
                 ),

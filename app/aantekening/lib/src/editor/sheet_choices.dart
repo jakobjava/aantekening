@@ -18,6 +18,7 @@ class SheetTemplatePicker extends StatelessWidget {
     required this.selected,
     required this.onSelected,
     this.size = SheetSize.a4,
+    this.orientation = SheetOrientation.portrait,
     super.key,
   });
 
@@ -25,6 +26,7 @@ class SheetTemplatePicker extends StatelessWidget {
   final SheetTemplate? selected;
   final ValueChanged<SheetTemplate> onSelected;
   final SheetSize size;
+  final SheetOrientation orientation;
 
   @override
   Widget build(BuildContext context) => Wrap(
@@ -35,6 +37,7 @@ class SheetTemplatePicker extends StatelessWidget {
         _TemplateTile(
           template: template,
           size: size,
+          orientation: orientation,
           selected: template == selected,
           onTap: () => onSelected(template),
         ),
@@ -46,12 +49,14 @@ class _TemplateTile extends StatelessWidget {
   const _TemplateTile({
     required this.template,
     required this.size,
+    required this.orientation,
     required this.selected,
     required this.onTap,
   });
 
   final SheetTemplate template;
   final SheetSize size;
+  final SheetOrientation orientation;
   final bool selected;
   final VoidCallback onTap;
 
@@ -70,7 +75,11 @@ class _TemplateTile extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            SheetThumbnail(template: template, size: size),
+            SheetThumbnail(
+              template: template,
+              size: size,
+              orientation: orientation,
+            ),
             const SizedBox(height: 4),
             Text(
               template.label,
@@ -91,6 +100,7 @@ Future<SheetTemplate?> chooseSheetTemplate(
   required String title,
   required SheetTemplate selected,
   required SheetSize size,
+  SheetOrientation orientation = SheetOrientation.portrait,
   String action = 'Choose',
 }) => showAppDialog<SheetTemplate>(
   context: context,
@@ -109,6 +119,7 @@ Future<SheetTemplate?> chooseSheetTemplate(
           child: SheetTemplatePicker(
             selected: selected,
             size: size,
+            orientation: orientation,
             onSelected: take,
           ),
         ),

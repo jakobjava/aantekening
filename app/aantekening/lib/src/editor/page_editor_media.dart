@@ -143,8 +143,8 @@ extension _Media on _PageEditorState {
   }
 
   /// [printout] as a page of its own, beside this one and named after its
-  /// file: shown as pages, a sheet of the size last chosen for one to each
-  /// of its pages, set as its background. A book, say, to read and write
+  /// file: shown as pages, an A4 sheet turned as its first page is for one
+  /// to each of its pages, set as its background. A book, say, to read and write
   /// in.
   Future<void> _printAsNewPage(List<BlockEmbed> printout) async {
     final store = _store;
@@ -152,7 +152,9 @@ extension _Media on _PageEditorState {
     if (store == null || pageId == null || printout.isEmpty) return;
     final file = await store.assets.find(printout.first.assetId);
     final sheets = Sheets(
-      size: ref.read(newPageChoiceProvider).size,
+      orientation: printout.first.aspectRatio > 1
+          ? SheetOrientation.landscape
+          : SheetOrientation.portrait,
       templates: <SheetTemplate>[for (final _ in printout) SheetTemplate.blank],
     );
     await ref
