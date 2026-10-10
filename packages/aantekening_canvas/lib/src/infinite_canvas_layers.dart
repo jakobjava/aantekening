@@ -192,7 +192,8 @@ class _PageContentState extends State<_PageContent> {
     final shown = controller.elementsIn(region);
     final origin = Offset(region.left, region.top);
     // The painters draw in page space moved to the region's corner; on
-    // sheets, each sheet's part moved down by the gaps above it.
+    // sheets, each sheet's part moved down by the gaps above it, and across
+    // to lie in the middle under the widest.
     final fromOrigin = CanvasViewport(origin: origin);
     final fold = viewport.fold;
     final pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;

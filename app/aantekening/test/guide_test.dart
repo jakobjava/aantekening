@@ -390,6 +390,54 @@ void main() {
     expect(templates()[canvas.currentSheet], SheetTemplate.grid);
   });
 
+  testWidgets('a sheet is added turned landscape among upright ones', (
+    tester,
+  ) async {
+    await store.pages.saveDocument(
+      pageId,
+      PageDocument(
+        id: pageId,
+        canvas: CanvasSettings(
+          layout: NoteLayout.pages,
+          sheets: Sheets(templates: const <SheetTemplate>[SheetTemplate.lined]),
+        ),
+      ),
+    );
+    await openEditor(tester, store, pageId);
+    final canvas = _canvas(tester);
+    List<SheetOrientation> turned() =>
+        canvas.document.canvas.sheetsShown!.orientations;
+
+    // L turns it, and Enter adds it so.
+    await press(tester, LogicalKeyboardKey.space);
+    await typeKeys(tester, 'sa');
+    await press(tester, LogicalKeyboardKey.keyL);
+    await press(tester, LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(turned(), <SheetOrientation>[
+      SheetOrientation.portrait,
+      SheetOrientation.landscape,
+    ]);
+    expect(canvas.currentSheet, 1, reason: 'shown');
+
+    // Offered as the sheet in view is; a click turns it upright again.
+    await press(tester, LogicalKeyboardKey.space);
+    await typeKeys(tester, 'sa');
+    await tester.tap(find.text('Portrait'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Squared'));
+    await tester.pumpAndSettle();
+    expect(turned(), <SheetOrientation>[
+      SheetOrientation.portrait,
+      SheetOrientation.landscape,
+      SheetOrientation.portrait,
+    ]);
+    expect(
+      canvas.document.canvas.sheetsShown!.templates.last,
+      SheetTemplate.grid,
+    );
+  });
+
   testWidgets('a shape chosen in Draw is dragged out in the pen', (
     tester,
   ) async {

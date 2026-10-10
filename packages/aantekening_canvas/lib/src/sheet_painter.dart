@@ -30,11 +30,8 @@ void paintSheets(
 
   final zoom = viewport.zoom;
   final top = viewport.origin.dy;
-  final first = math.max(0, ((top - fold.gap) / fold.pitch).floor());
-  final last = math.min(
-    fold.count - 1,
-    ((top + size.height / zoom) / fold.pitch).floor(),
-  );
+  final first = fold.sheetAtView(top);
+  final last = fold.sheetAtView(top + size.height / zoom);
   final dark = paper.computeLuminance() < 0.4;
   final shadow = Paint()..color = const Color(0x1F000000);
   final edge = Paint()
@@ -57,7 +54,7 @@ void paintSheets(
         ? sheets.templates[index]
         : sheets.templates.last;
     if (template != SheetTemplate.blank) {
-      final printed = _Printed.of(template, sheets.width, sheets.height);
+      final printed = _Printed.of(template, inView.width, inView.height);
       printed.paint(
         canvas,
         rect,
@@ -285,7 +282,7 @@ class SheetThumbnail extends StatelessWidget {
   Widget build(BuildContext context) {
     final sheet = Sheets(size: size, orientation: orientation);
     return CustomPaint(
-      size: Size(width, width * sheet.height / sheet.width),
+      size: Size(width, width * sheet.heightOf(0) / sheet.widthOf(0)),
       painter: _ThumbnailPainter(template, sheet),
     );
   }
@@ -310,7 +307,11 @@ class _ThumbnailPainter extends CustomPainter {
       // Drawn small, a pattern finer than the screen can show is drawn as
       // on a smaller sheet: the paper's kind shown, rather than its count
       // of lines.
-      final pitch = _Printed.of(template, sheet.width, sheet.height).pitch;
+      final pitch = _Printed.of(
+        template,
+        sheet.widthOf(0),
+        sheet.heightOf(0),
+      ).pitch;
       final zoom = math.max(size.width / sheet.width, _legible / pitch);
       _Printed.of(
         template,

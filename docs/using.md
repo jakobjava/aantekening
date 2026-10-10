@@ -142,8 +142,9 @@ for when it is pages again.
 
 Shown as pages, **Space s**, the sheets, adds a sheet after the
 one in view (**Add sheet**, Ctrl+Shift+Enter, or the button below the last
-sheet), asking what it is printed with — as the sheet in view is, for
-Enter; sets what the sheet in view is printed with, or every sheet
+sheet), asking what it is printed with and which way up it is turned
+(**P** upright, **L** landscape) — as the sheet in view is, for Enter — so
+upright and landscape sheets can follow one another; sets what the sheet in view is printed with, or every sheet
 (**Paper**); moves the sheet in view up or down with what is on it (**Move
 up**, **Move down**); and deletes it with what is on it (**Delete sheet**,
 which Ctrl+Z puts back). Writing below the last sheet adds sheets enough
@@ -153,8 +154,8 @@ hand there; a pen writes only on the sheets, and a line drawn off the edge
 of one stops there. **Fit page** fits the whole sheet in view.
 
 A PDF printout asks where it goes: **on new sheets**, a sheet to each of
-its pages after the one in view (on a page shown as pages); **on this
-page**, over what is there — on the sheets from the one in view on, or
+its pages, turned as that page is, after the one in view (on a page
+shown as pages); **on this page**, over what is there — on the sheets from the one in view on, or
 down a canvas; or **as a new page** of its own, shown as pages, a sheet to
 each of its pages and named after the file, as for a book. On sheets of
 their own, its pages are set as the sheets' background, to write over

@@ -103,21 +103,43 @@ extension _Media on _PageEditorState {
     required bool onNew,
   }) {
     final first = _controller.currentSheet + (onNew ? 1 : 0);
-    // On sheets of their own, they are what the sheets are printed with.
-    final placed = _onSheets(printout, sheets, first, background: onNew);
+    final blank = <SheetTemplate>[
+      for (final _ in printout) SheetTemplate.blank,
+    ];
+    final turned = <SheetOrientation>[
+      for (final page in printout) _turnedFor(page),
+    ];
+    // On sheets of their own, they are what the sheets are printed with,
+    // each turned as its page is.
+    final placed = _onSheets(
+      printout,
+      onNew ? sheets.inserting(first, blank, turned) : sheets,
+      first,
+      background: onNew,
+    );
     _controller.setTool(CanvasTool.select);
     if (onNew) {
-      _controller.insertSheets(first, <SheetTemplate>[
-        for (final _ in printout) SheetTemplate.blank,
-      ], onThem: placed);
+      _controller.insertSheets(
+        first,
+        blank,
+        orientations: turned,
+        onThem: placed,
+      );
     } else {
       // Sheets enough to lie on are added as they are needed.
       _controller
         ..addElements(placed)
         ..selectAll(placed.map((element) => element.id));
     }
-    _controller.reveal(sheets.bandOf(first));
+    _controller.reveal(
+      (_controller.document.canvas.sheetsShown ?? sheets).bandOf(first),
+    );
   }
+
+  /// Which way up a sheet for [page] of a printout is turned: as it is.
+  static SheetOrientation _turnedFor(BlockEmbed page) => page.aspectRatio > 1
+      ? SheetOrientation.landscape
+      : SheetOrientation.portrait;
 
   /// [printout]'s pages on the sheets from [first] on, each as large as its
   /// sheet takes it, in its middle: set as their background, to be written
@@ -143,19 +165,19 @@ extension _Media on _PageEditorState {
   }
 
   /// [printout] as a page of its own, beside this one and named after its
-  /// file: shown as pages, an A4 sheet turned as its first page is for one
-  /// to each of its pages, set as its background. A book, say, to read and write
-  /// in.
+  /// file: shown as pages, an A4 sheet turned as the page is for one to
+  /// each of its pages, set as its background. A book, say, to read and
+  /// write in.
   Future<void> _printAsNewPage(List<BlockEmbed> printout) async {
     final store = _store;
     final pageId = widget.pageId;
     if (store == null || pageId == null || printout.isEmpty) return;
     final file = await store.assets.find(printout.first.assetId);
     final sheets = Sheets(
-      orientation: printout.first.aspectRatio > 1
-          ? SheetOrientation.landscape
-          : SheetOrientation.portrait,
       templates: <SheetTemplate>[for (final _ in printout) SheetTemplate.blank],
+      orientations: <SheetOrientation>[
+        for (final page in printout) _turnedFor(page),
+      ],
     );
     await ref
         .read(libraryActionsProvider)
@@ -183,16 +205,16 @@ extension _Media on _PageEditorState {
   /// Where something [aspectRatio] wide to its height lies on [sheet], as
   /// large as the sheet takes it, in its middle.
   static Frame _onSheet(double aspectRatio, Sheets sheets, int sheet) {
-    var width = sheets.width;
+    final band = sheets.bandOf(sheet);
+    var width = band.width;
     var height = width / aspectRatio;
-    if (height > sheets.height) {
-      height = sheets.height;
+    if (height > band.height) {
+      height = band.height;
       width = height * aspectRatio;
     }
-    final band = sheets.bandOf(sheet);
     return Frame(
-      x: (sheets.width - width) / 2,
-      y: band.top + (sheets.height - height) / 2,
+      x: (band.width - width) / 2,
+      y: band.top + (band.height - height) / 2,
       width: width,
       height: height,
     );

@@ -15,7 +15,7 @@ void main() {
     test('turned landscape, are as wide as they were tall', () {
       final sheets = Sheets(orientation: SheetOrientation.landscape);
       expect(sheets.width, SheetSize.a4.height);
-      expect(sheets.height, SheetSize.a4.width);
+      expect(sheets.heightOf(0), SheetSize.a4.width);
       expect(sheets.bandOf(1), const Aabb(0, 793.7, 1122.5, 1587.4));
       expect(
         sheets.fittedTo(const Aabb(0, 0, 1000, 300)).scale,
@@ -27,6 +27,56 @@ void main() {
         Sheets().toJson().containsKey('orientation'),
         isFalse,
         reason: 'pages made upright are written as before',
+      );
+    });
+
+    test('turned each its own way, lie one under another as tall as each', () {
+      final sheets = Sheets(
+        templates: const <SheetTemplate>[
+          SheetTemplate.lined,
+          SheetTemplate.grid,
+          SheetTemplate.lined,
+        ],
+        orientations: const <SheetOrientation>[
+          SheetOrientation.portrait,
+          SheetOrientation.landscape,
+        ],
+      );
+      const upright = 1122.5;
+      const turned = 793.7;
+      expect(
+        sheets.orientations.last,
+        SheetOrientation.landscape,
+        reason: 'past those given, as the last given',
+      );
+      expect(sheets.width, upright, reason: 'as wide as the widest');
+      expect(
+        sheets.bandOf(1),
+        const Aabb(0, upright, upright, upright + turned),
+      );
+      expect(sheets.sheetAt(upright - 1), 0);
+      expect(sheets.sheetAt(upright + 1), 1);
+      expect(sheets.sheetAt(upright + 2 * turned + 1), 3, reason: 'below');
+      expect(sheets.bottom, upright + 2 * turned);
+
+      final grown = sheets.holding(Aabb(0, 0, 10, sheets.bottom + 10));
+      expect(grown.count, 4);
+      expect(grown.orientationOf(3), SheetOrientation.landscape);
+
+      final read = Sheets.fromJson(sheets.toJson());
+      expect(read, sheets);
+      expect(read.orientations, sheets.orientations);
+      expect(
+        sheets.inserting(1, const <SheetTemplate>[
+          SheetTemplate.blank,
+        ]).orientations,
+        const <SheetOrientation>[
+          SheetOrientation.portrait,
+          SheetOrientation.portrait,
+          SheetOrientation.landscape,
+          SheetOrientation.landscape,
+        ],
+        reason: 'turned as the sheet before it, unless told',
       );
     });
 

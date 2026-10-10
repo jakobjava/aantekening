@@ -592,8 +592,10 @@ void main() {
       final sheets = canvasShown(tester).document.canvas.sheetsShown!;
       expect(sheets.templates, <SheetTemplate>[SheetTemplate.grid]);
       expect(sheets.size, SheetSize.a4);
-      expect(sheets.orientation, SheetOrientation.landscape);
-      expect(sheets.width, greaterThan(sheets.height));
+      expect(sheets.orientations, <SheetOrientation>[
+        SheetOrientation.landscape,
+      ]);
+      expect(sheets.width, greaterThan(sheets.heightOf(0)));
       expect(tabNamed('Untitled page'), findsOneWidget);
 
       await showPanes(tester);

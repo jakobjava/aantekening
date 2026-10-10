@@ -198,7 +198,8 @@ class InkPainter extends CustomPainter {
   final Aabb Function()? seen;
 
   /// The sheets the page is shown as: each sheet's ink is drawn within it,
-  /// moved down by the gaps above it. Null for one paper.
+  /// moved down by the gaps above it, and across as its sheet is. Null for
+  /// one paper.
   final SheetFold? fold;
 
   /// Device pixels per page unit, as the page is laid out: the gaps between
@@ -237,7 +238,7 @@ class InkPainter extends CustomPainter {
     final region = viewport.visibleBounds(size);
     final fold = this.fold;
     final pieces = fold == null
-        ? <SheetPiece>[(area: region, down: 0)]
+        ? <SheetPiece>[(area: region, down: 0, across: 0)]
         : fold.piecesOf(region, devicePixelsPerUnit: devicePixelsPerUnit);
     final tiles = this.tiles;
     if (tiles != null) {
@@ -258,7 +259,7 @@ class InkPainter extends CustomPainter {
       for (final piece in pieces) {
         canvas
           ..save()
-          ..translate(0, piece.down)
+          ..translate(piece.across, piece.down)
           ..clipRect(_rectIn(piece.area, region));
         _drawStrokes(canvas, piece.area);
         canvas.restore();
@@ -491,8 +492,8 @@ class InkTiles {
   /// [pictureOf] gives, [scale] device pixels to a page unit, drawing again
   /// the tiles whose ink has changed.
   ///
-  /// On sheets, each of [pieces] is drawn within its sheet, moved down as
-  /// it says; a tile over two sheets is drawn on each, cut at its edge.
+  /// On sheets, each of [pieces] is drawn within its sheet, moved down and
+  /// across as it says; a tile over two sheets is drawn on each, cut at its edge.
   ///
   /// Tiles drawn for the first time, or again, are drawn over [seen] — in
   /// [canvas]'s coordinates — first; of the rest, a few each time.
@@ -529,7 +530,7 @@ class InkTiles {
       for (final piece in pieces) {
         canvas
           ..save()
-          ..translate(0, piece.down)
+          ..translate(piece.across, piece.down)
           ..clipRect(InkPainter._rectIn(piece.area, region));
         _paintArea(
           canvas,
@@ -539,7 +540,7 @@ class InkTiles {
           pictureOf,
           shown,
           paint,
-          making.movedUp(piece.down),
+          making.moved(piece.across, piece.down),
         );
         canvas.restore();
       }
@@ -669,9 +670,9 @@ class _Making {
   /// Whether a tile was left undrawn.
   bool get left => _parent?.left ?? _left;
 
-  /// The same, for a canvas moved down [down].
-  _Making movedUp(double down) =>
-      _Making._moved(seen?.translate(0, -down), _parent ?? this);
+  /// The same, for a canvas moved [across] and [down].
+  _Making moved(double across, double down) =>
+      _Making._moved(seen?.translate(-across, -down), _parent ?? this);
 
   /// Whether a tile over [drawn] is drawn now.
   bool takes(Rect drawn) {
@@ -760,7 +761,7 @@ class WetInkPainter extends CustomPainter {
     )) {
       canvas
         ..save()
-        ..translate(0, piece.down)
+        ..translate(piece.across, piece.down)
         ..clipRect(InkPainter._rectIn(piece.area, region));
       _paint(canvas, strokes, piece.area);
       canvas.restore();

@@ -504,18 +504,28 @@ class CanvasController extends ChangeNotifier {
   }
 
   /// Adds a sheet printed with [template] before the one at [index] — after
-  /// the last for [index] equal to how many there are — moving what lies
-  /// on the sheets from there on down by one.
-  void insertSheet(int index, SheetTemplate template) =>
-      insertSheets(index, <SheetTemplate>[template]);
+  /// the last for [index] equal to how many there are — turned as
+  /// [orientation], or as the sheet before it is; moving what lies on the
+  /// sheets from there on down by one.
+  void insertSheet(
+    int index,
+    SheetTemplate template, {
+    SheetOrientation? orientation,
+  }) => insertSheets(
+    index,
+    <SheetTemplate>[template],
+    orientations: <SheetOrientation>[?orientation],
+  );
 
-  /// Adds a sheet for each of [templates] before the one at [index], moving
-  /// what lies on the sheets from there on down by as many, and puts
+  /// Adds a sheet for each of [templates] before the one at [index], each
+  /// turned as [orientations] has it, or as the sheet before them is;
+  /// moving what lies on the sheets from there on down by as many, and puts
   /// [onThem] on the page, placed where it is to lie on the new sheets: all
   /// one change, undone as one.
   void insertSheets(
     int index,
     List<SheetTemplate> templates, {
+    List<SheetOrientation> orientations = const <SheetOrientation>[],
     List<NoteElement> onThem = const <NoteElement>[],
   }) {
     final sheets = _document.canvas.sheetsShown;
@@ -523,10 +533,7 @@ class CanvasController extends ChangeNotifier {
     final at = index.clamp(0, sheets.count);
     var next = _remapSheets(
       (sheet) => sheet < at ? sheet : sheet + templates.length,
-      sheets.copyWith(
-        templates: <SheetTemplate>[...sheets.templates]
-          ..insertAll(at, templates),
-      ),
+      sheets.inserting(at, templates, orientations),
     );
     for (final element in onThem) {
       next = next.withElementAdded(element);
@@ -547,9 +554,7 @@ class CanvasController extends ChangeNotifier {
             : sheet == index
             ? null
             : sheet - 1,
-        sheets.copyWith(
-          templates: <SheetTemplate>[...sheets.templates]..removeAt(index),
-        ),
+        sheets.without(index),
       ),
     );
   }
@@ -569,14 +574,7 @@ class CanvasController extends ChangeNotifier {
       for (final (place, sheet) in order.indexed) sheet: place,
     };
     _apply(
-      _remapSheets(
-        (sheet) => placeOf[sheet] ?? sheet,
-        sheets.copyWith(
-          templates: <SheetTemplate>[
-            for (final sheet in order) sheets.templates[sheet],
-          ],
-        ),
-      ),
+      _remapSheets((sheet) => placeOf[sheet] ?? sheet, sheets.reordered(order)),
     );
   }
 
@@ -604,15 +602,16 @@ class CanvasController extends ChangeNotifier {
   ///
   /// What lies on a sheet is what has its middle there: each stroke of
   /// handwriting by itself, so the strokes of one run of ink written over
-  /// two sheets go each with its own.
+  /// two sheets go each with its own. It keeps its place from the top of
+  /// its sheet.
   PageDocument _remapSheets(int? Function(int sheet) placeOf, Sheets sheets) {
-    final height = sheets.height;
+    final was = _document.canvas.sheetsShown ?? sheets;
     final now = DateTime.now().millisecondsSinceEpoch;
     // How far down what lies on [bounds] moves, or null if it goes.
     double? moveOf(Aabb bounds) {
-      final sheet = (bounds.centerY / height).floor();
+      final sheet = was.sheetAt(bounds.centerY);
       final place = placeOf(sheet);
-      return place == null ? null : (place - sheet) * height;
+      return place == null ? null : sheets.topOf(place) - was.topOf(sheet);
     }
 
     final elements = <NoteElement>[];

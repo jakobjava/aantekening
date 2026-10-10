@@ -13,23 +13,29 @@ extension _Commands on _PageEditorState {
     );
   }
 
-  /// Asks what the sheet to add after the one at [after] is printed with —
-  /// as that one is, unless another is chosen — then adds it, and shows it.
+  /// Asks what the sheet to add after the one at [after] is printed with,
+  /// and which way up it is turned — as that one is, unless another is
+  /// chosen — then adds it, and shows it.
   Future<void> _addSheet({required int after}) async {
     final sheets = _controller.document.canvas.sheetsShown;
     if (sheets == null) return;
-    final template = await chooseSheetTemplate(
+    final chosen = await chooseSheet(
       context,
       title: 'Add a sheet after sheet ${after + 1}',
       selected: sheets.templates[after],
       size: sheets.size,
-      orientation: sheets.orientation,
+      orientation: sheets.orientationOf(after),
       action: 'Add',
     );
-    if (template == null || !mounted) return;
-    _controller
-      ..insertSheet(after + 1, template)
-      ..reveal(sheets.bandOf(after + 1));
+    if (chosen == null || !mounted) return;
+    _controller.insertSheet(
+      after + 1,
+      chosen.template,
+      orientation: chosen.orientation,
+    );
+    _controller.reveal(
+      _controller.document.canvas.sheetsShown!.bandOf(after + 1),
+    );
   }
 
   /// Whether the sheet in view can move [by] one, up or down.

@@ -480,7 +480,7 @@ class PageLayers {
             template: template,
             width: 24,
             size: sheets.size,
-            orientation: sheets.orientation,
+            orientation: sheets.orientationOf(sheet),
           ),
         ),
       KeyAction(

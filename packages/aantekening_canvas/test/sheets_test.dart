@@ -6,7 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Sheets 100 wide and 200 tall, with gaps of 20 between.
-const SheetFold _fold = SheetFold(width: 100, height: 200, count: 3, gap: 20);
+final SheetFold _fold = SheetFold(width: 100, height: 200, count: 3, gap: 20);
 
 InkStroke _line(double x0, double y0, double x1, double y1) =>
     InkStroke.fromPoints(
@@ -61,6 +61,50 @@ void main() {
       expect(_fold.fold(const Offset(10, 250)), const Offset(10, 270));
       expect(_fold.fold(const Offset(10, 450)), const Offset(10, 490));
       expect(_fold.extent, 3 * 200 + 2 * 20);
+    });
+
+    test('lays a narrower sheet out in the middle under the widest', () {
+      final fold = SheetFold.sized(const <Size>[
+        Size(100, 200),
+        Size(200, 100),
+        Size(100, 200),
+      ], gap: 20);
+      expect(fold.width, 200);
+      expect(fold.extent, 500 + 2 * 20);
+      expect(fold.sheetInView(0), const Rect.fromLTWH(50, 0, 100, 200));
+      expect(fold.sheetInView(1), const Rect.fromLTWH(0, 220, 200, 100));
+      expect(fold.sheetInView(2), const Rect.fromLTWH(50, 340, 100, 200));
+      expect(fold.fold(const Offset(10, 50)), const Offset(60, 50));
+      expect(fold.fold(const Offset(10, 250)), const Offset(10, 270));
+      expect(fold.fold(const Offset(10, 350)), const Offset(60, 390));
+      for (final page in const <Offset>[
+        Offset(30, 0),
+        Offset(30, 199),
+        Offset(190, 250),
+        Offset(90, 450),
+      ]) {
+        expect(fold.unfold(fold.fold(page)), page);
+      }
+      // Beside a narrow sheet, its own edge, however wide the widest.
+      expect(fold.unfold(const Offset(190, 100)), const Offset(100, 100));
+      expect(fold.unfold(const Offset(10, 100)), const Offset(0, 100));
+      // In the gap below the wide sheet, nearer the narrow one: its top,
+      // under the point, in the middle.
+      expect(fold.unfold(const Offset(60, 335)), const Offset(10, 300));
+
+      final pieces = fold.piecesOf(const Aabb(0, 150, 200, 350));
+      expect(
+        <double>[for (final piece in pieces) piece.across],
+        <double>[0, -50, 0],
+        reason: 'each moved as its sheet, from the first in view',
+      );
+      expect(pieces[1].area, const Aabb(0, 200, 200, 300));
+      expect(pieces[2].area, const Aabb(0, 300, 100, 350));
+      expect(
+        CanvasViewport(fold: fold).visibleBounds(const Size(200, 400)),
+        Aabb(0, 0, 200, fold.unfold(const Offset(200, 400)).dy),
+        reason: 'as far across as any sheet seen',
+      );
     });
 
     test('finds the page under any point of the view', () {
@@ -128,7 +172,7 @@ void main() {
       controller.setLayout(NoteLayout.pages);
       final sheets = controller.document.canvas.sheetsShown!;
       expect(sheets.width, greaterThanOrEqualTo(1502), reason: 'as wide');
-      expect(sheets.count * sheets.height, greaterThanOrEqualTo(3002));
+      expect(sheets.count * sheets.heightOf(0), greaterThanOrEqualTo(3002));
       expect(identical(controller.document.elements, before), isTrue);
       expect(controller.fold, isNotNull);
 
@@ -183,7 +227,7 @@ void main() {
     });
 
     test('adds a sheet, moving what lies after it down, stroke by stroke', () {
-      final height = Sheets().height;
+      final height = Sheets().heightOf(0);
       final controller = laidOut(
         _paged(<NoteElement>[
           _ink('ink', <InkStroke>[
@@ -216,8 +260,55 @@ void main() {
       );
     });
 
+    test('adds a landscape sheet, what lies after it kept as far down its '
+        'own sheet', () {
+      final upright = Sheets().heightOf(0);
+      final turned = SheetSize.a4.width;
+      final controller = laidOut(
+        _paged(<NoteElement>[_box('later', y: upright + 300)]),
+      );
+
+      controller.insertSheet(
+        1,
+        SheetTemplate.blank,
+        orientation: SheetOrientation.landscape,
+      );
+      final sheets = controller.document.canvas.sheetsShown!;
+      expect(sheets.orientations, <SheetOrientation>[
+        SheetOrientation.portrait,
+        SheetOrientation.landscape,
+        SheetOrientation.portrait,
+      ]);
+      expect(
+        controller.document.elementById('later')!.frame.y,
+        closeTo(upright + turned + 300, 1e-6),
+      );
+      final fold = controller.fold!;
+      expect(fold.width, sheets.widthOf(1));
+      expect(
+        fold.sheetInView(0).center.dx,
+        closeTo(fold.sheetInView(1).center.dx, 1e-6),
+        reason: 'one under another, in the middle',
+      );
+
+      controller.moveSheet(1, 2);
+      expect(
+        controller.document.elementById('later')!.frame.y,
+        closeTo(upright + 300, 1e-6),
+        reason: 'moved with its sheet above the landscape one',
+      );
+      controller.removeSheet(2);
+      expect(
+        controller.document.canvas.sheetsShown!.orientations,
+        <SheetOrientation>[
+          SheetOrientation.portrait,
+          SheetOrientation.portrait,
+        ],
+      );
+    });
+
     test('adds sheets with things on them, undone as one', () {
-      final height = Sheets().height;
+      final height = Sheets().heightOf(0);
       final controller = laidOut(
         _paged(<NoteElement>[_box('later', y: height + 10)]),
       );
@@ -247,7 +338,7 @@ void main() {
     });
 
     test('deletes a sheet with what lies on it, moving what follows up', () {
-      final height = Sheets().height;
+      final height = Sheets().heightOf(0);
       final controller = laidOut(
         _paged(<NoteElement>[
           _ink('ink', <InkStroke>[
@@ -278,7 +369,7 @@ void main() {
     });
 
     test('moves a sheet with what lies on it, the others making room', () {
-      final height = Sheets().height;
+      final height = Sheets().heightOf(0);
       final controller = laidOut(
         _paged(<NoteElement>[
           _ink('ink', <InkStroke>[
@@ -333,7 +424,7 @@ void main() {
       final controller = laidOut(_paged(const <NoteElement>[]));
       controller.addElement(_box('far', y: 5000));
       final sheets = controller.document.canvas.sheetsShown!;
-      expect(sheets.count * sheets.height, greaterThan(5060));
+      expect(sheets.count * sheets.heightOf(0), greaterThan(5060));
       expect(sheets.templates.last, SheetTemplate.grid, reason: 'as the last');
     });
 
@@ -361,7 +452,7 @@ void main() {
       final fold = controller.fold!;
       // Halfway down the second sheet, on screen.
       final at = controller.viewport.toScreen(
-        Offset(fold.width / 2, fold.height * 1.5),
+        Offset(fold.width / 2, fold.heightOf(0) * 1.5),
       );
       controller.viewport = controller.viewport.copyWith(
         origin:
@@ -379,7 +470,7 @@ void main() {
 
       final ink = controller.document.elements.single as InkElement;
       expect(fold.sheetAt(ink.bounds.centerY), 1);
-      expect(ink.bounds.centerY, closeTo(fold.height * 1.5, 2));
+      expect(ink.bounds.centerY, closeTo(fold.heightOf(0) * 1.5, 2));
     });
 
     testWidgets('the desk is held to move the sheets, not written on', (
@@ -467,7 +558,7 @@ void main() {
     });
 
     testWidgets('places a box where the sheets lay it out', (tester) async {
-      final height = Sheets().height;
+      final height = Sheets().heightOf(0);
       final controller = CanvasController()
         ..loadDocument(_paged(<NoteElement>[_box('box', y: height + 40)]));
       await tester.pumpWidget(_host(controller));
@@ -511,7 +602,7 @@ void main() {
       tester.view.physicalSize = const Size(900, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      final height = Sheets().height;
+      final height = Sheets().heightOf(0);
       // Across the second sheet, near its top.
       final controller = CanvasController()
         ..loadDocument(
@@ -543,6 +634,64 @@ void main() {
       final unfolded = shown - Offset(0, controller.fold!.gap);
       expect(red(shown), lessThan(60), reason: 'black ink where it is shown');
       expect(red(unfolded), greaterThan(150), reason: 'none above the gap');
+    });
+
+    testWidgets('draws what is on a narrow sheet in the middle under a wide '
+        'one', (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final sheets = Sheets(
+        templates: const <SheetTemplate>[
+          SheetTemplate.blank,
+          SheetTemplate.blank,
+        ],
+        orientations: const <SheetOrientation>[
+          SheetOrientation.landscape,
+          SheetOrientation.portrait,
+        ],
+      );
+      final top = sheets.topOf(1);
+      final controller = CanvasController()
+        ..loadDocument(
+          PageDocument(
+            id: 'p',
+            canvas: CanvasSettings(layout: NoteLayout.pages, sheets: sheets),
+            elements: <NoteElement>[
+              _ink('ink', <InkStroke>[_line(100, top + 20, 300, top + 20)]),
+              _box('box', y: top + 200),
+            ],
+          ),
+        );
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(key: key, child: _host(controller)),
+      );
+      controller.viewport = controller.viewport.copyWith(
+        origin: Offset(controller.viewport.origin.dx, top - 100),
+      );
+      await tester.pump();
+
+      final render =
+          key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      final image = (await tester.runAsync(render.toImage))!;
+      final bytes = (await tester.runAsync(image.toByteData))!;
+      int red(Offset at) =>
+          bytes.getUint8((at.dy.round() * image.width + at.dx.round()) * 4);
+      final across = controller.fold!.acrossOf(1);
+      expect(across, greaterThan(100));
+      final shown = controller.viewport.toScreen(Offset(200, top + 20));
+      expect(red(shown), lessThan(60), reason: 'black ink where it is shown');
+      expect(
+        red(shown - Offset(across * controller.viewport.zoom, 0)),
+        greaterThan(150),
+        reason: 'none where it would lie unmoved',
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey<String>('shown box'))).dx,
+        closeTo(controller.viewport.toScreen(Offset(100, top + 200)).dx, 1),
+        reason: 'the box moved with its sheet',
+      );
     });
   });
 }

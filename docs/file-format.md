@@ -18,6 +18,8 @@ notes folder (see [The notes folder](#the-notes-folder)), the `body` blob of
     "sheets": {                          // the sheets, once ever shown as pages
       "size": "a4",                      // "a4", or "letter" for older pages
       "orientation": "landscape",        // optional: "portrait" (the default)
+      "orientations": ["portrait", "landscape"], // optional: one a sheet,
+                                         //   for sheets turned each its own way
       "scale": 1,                        // how many times the paper's size
       "templates": ["lined", "grid"]     // one a sheet: blank, lined, grid,
     }                                    //   dotted, music or cornell
@@ -26,10 +28,14 @@ notes folder (see [The notes folder](#the-notes-folder)), the `body` blob of
 }
 ```
 
-A page shown as pages is the same page cut into `sheets`: bands a sheet
-tall from its top, one after another, `size` times `scale` in page units
-(A4 is 793.7 by 1122.5, Letter 816 by 1056), width and height swapped when
-`orientation` is `landscape`, as many as there are `templates`. Nothing in
+A page shown as pages is the same page cut into `sheets`: bands from its
+top, one after another, each as tall as its sheet, `size` times `scale` in
+page units (A4 is 793.7 by 1122.5, Letter 816 by 1056), width and height
+swapped for a sheet turned `landscape`, as many as there are `templates`.
+Sheets all turned one way are written with `orientation`; sheets turned
+each its own way with `orientations`, one a sheet, which a reader without
+it shows upright. On screen a narrower sheet lies in the middle under a
+wider one, but on the page every sheet starts at its left edge. Nothing in
 `elements` changes with `layout`; the sheets are kept when the page is
 shown as one paper again, to go back to (ADR 32).
 

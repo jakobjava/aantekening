@@ -4,6 +4,7 @@ library;
 import 'dart:math' as math;
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// An immutable pan-and-zoom transform over the infinite canvas.
@@ -58,8 +59,11 @@ class CanvasViewport {
   /// [middle] is on, to screen pixels: a corner of a box, say, which stays
   /// a box across a gap between sheets.
   Offset toScreenWith(Offset page, Offset middle) {
+    final fold = this.fold;
     final shift = fold?.shiftAt(middle.dy) ?? 0;
-    return Offset(page.dx - origin.dx, page.dy + shift - origin.dy) * zoom;
+    final across = fold?.acrossAt(middle.dy) ?? 0;
+    return Offset(page.dx + across - origin.dx, page.dy + shift - origin.dy) *
+        zoom;
   }
 
   /// Zoom bounds, chosen to cover reading a whole lecture at a glance and
@@ -87,6 +91,12 @@ class CanvasViewport {
 
   /// The region of page space currently visible in a view of [size].
   Aabb visibleBounds(Size size) {
+    final fold = this.fold;
+    if (fold != null) {
+      return fold.seenIn(
+        Rect.fromPoints(origin, _viewAt(size.bottomRight(Offset.zero))),
+      );
+    }
     final topLeft = fromView(origin);
     final bottomRight = fromView(_viewAt(Offset(size.width, size.height)));
     return Aabb(topLeft.dx, topLeft.dy, bottomRight.dx, bottomRight.dy);
@@ -135,14 +145,16 @@ class CanvasViewport {
   }
 
   /// [bounds] of the page as the view's space lays it out: taller by the
-  /// gaps between the sheets it spans.
+  /// gaps between the sheets it spans, and moved right as the sheet its
+  /// middle is on.
   Aabb inView(Aabb bounds) {
     final fold = this.fold;
     if (fold == null) return bounds;
+    final across = fold.acrossAt(bounds.centerY);
     return Aabb(
-      bounds.left,
+      bounds.left + across,
       fold.foldY(bounds.top),
-      bounds.right,
+      bounds.right + across,
       fold.foldEnd(bounds.bottom),
     );
   }
@@ -173,46 +185,104 @@ class CanvasViewport {
 }
 
 /// The part [area] of the page on one sheet, laid out [down] page units
-/// further down than where it lies.
-typedef SheetPiece = ({Aabb area, double down});
+/// further down, and [across] further right, than where it lies.
+typedef SheetPiece = ({Aabb area, double down, double across});
 
 /// Sheets laid out one under another with a gap between each: the page cut
-/// into bands [height] tall, and each moved down by the gaps above it.
+/// into bands, each as tall as its sheet, and each moved down by the gaps
+/// above it — and a sheet narrower than the widest moved right, to lie in
+/// the middle under it.
 ///
 /// The page's content is where it is either way; only where it is shown
 /// changes, so a page shown as sheets and as one paper again is as it was.
 @immutable
 class SheetFold {
-  const SheetFold({
-    required this.width,
-    required this.height,
-    required this.count,
-    this.gap = defaultGap,
-  });
+  /// [count] sheets, each [width] by [height].
+  SheetFold({
+    required double width,
+    required double height,
+    required int count,
+    double gap = defaultGap,
+  }) : this.sized(<Size>[
+         for (var i = 0; i < math.max(1, count); i++) Size(width, height),
+       ], gap: gap);
+
+  /// A sheet of each of [sizes], the first first.
+  SheetFold.sized(List<Size> sizes, {this.gap = defaultGap})
+    : sizes = List<Size>.unmodifiable(sizes),
+      width = sizes.map((size) => size.width).reduce(math.max),
+      _tops = _topsOf(sizes);
 
   /// The fold of [sheets].
-  factory SheetFold.of(Sheets sheets) => SheetFold(
-    width: sheets.width,
-    height: sheets.height,
-    count: sheets.count,
-  );
+  factory SheetFold.of(Sheets sheets) => SheetFold.sized(<Size>[
+    for (var i = 0; i < sheets.count; i++)
+      Size(sheets.widthOf(i), sheets.heightOf(i)),
+  ]);
+
+  static List<double> _topsOf(List<Size> sizes) {
+    final tops = <double>[0];
+    for (final size in sizes) {
+      tops.add(tops.last + size.height);
+    }
+    return tops;
+  }
 
   /// The gap between two sheets, in page units.
   static const double defaultGap = 28;
 
+  /// How large each sheet is, in page units.
+  final List<Size> sizes;
+
+  /// How wide the widest sheet is.
   final double width;
-  final double height;
-  final int count;
   final double gap;
 
-  /// From one sheet's top to the next's, in the view's space.
-  double get pitch => height + gap;
+  /// Where each sheet's top lies on the page, and after them the last's
+  /// bottom.
+  final List<double> _tops;
+
+  int get count => sizes.length;
+
+  /// How wide and tall the sheet [index] is: past the last, as the last is.
+  double widthOf(int index) => sizes[index.clamp(0, count - 1)].width;
+  double heightOf(int index) => sizes[index.clamp(0, count - 1)].height;
+
+  /// How far right the sheet [index] is laid out, to lie in the middle under
+  /// the widest.
+  double acrossOf(int index) => (width - widthOf(index)) / 2;
+
+  /// Where the top of the sheet [index] lies on the page: past the last, as
+  /// though there were more sheets as tall as it.
+  double topOf(int index) {
+    if (index <= 0) return 0;
+    if (index <= count) return _tops[index];
+    return _tops[count] + (index - count) * heightOf(count - 1);
+  }
+
+  /// Where the top of the sheet [index] lies in the view's space.
+  double viewTopOf(int index) => topOf(index) + index * gap;
 
   /// How tall the sheets are laid out, gaps and all.
-  double get extent => count * height + (count - 1) * gap;
+  double get extent => _tops[count] + (count - 1) * gap;
 
   /// The sheet the page's [y] lies on, however far below the last.
-  int sheetAt(double y) => math.max(0, (y / height).floor());
+  int sheetAt(double y) => sheetOn(_tops, y, heightOf(count - 1));
+
+  /// The sheet the view's [view] lies on or in the gap below, of the sheets
+  /// there are.
+  int sheetAtView(double view) {
+    var low = 0;
+    var high = count - 1;
+    while (low < high) {
+      final middle = (low + high + 1) >> 1;
+      if (viewTopOf(middle) <= view) {
+        low = middle;
+      } else {
+        high = middle - 1;
+      }
+    }
+    return low;
+  }
 
   /// Where the page's [y] lies in the view's space.
   double foldY(double y) => y + shiftAt(y);
@@ -220,67 +290,94 @@ class SheetFold {
   /// Where the page's [y] lies in the view's space, as the end of something
   /// above it: a sheet's bottom edge is the end of that sheet, not the
   /// start of the next.
-  double foldEnd(double y) => y + gap * math.max(0, (y / height).ceil() - 1);
+  double foldEnd(double y) {
+    final sheet = sheetAt(y);
+    final ending = sheet > 0 && topOf(sheet) == y ? sheet - 1 : sheet;
+    return y + gap * ending;
+  }
 
   /// How far down the view's space lays out the page's [y]: by the gaps
   /// above its sheet.
   double shiftAt(double y) => gap * sheetAt(y);
 
+  /// How far right the view's space lays out the page's [y]: as its sheet.
+  double acrossAt(double y) => acrossOf(sheetAt(y));
+
   /// Where [frame] lies in the view's space: moved whole with the sheet its
   /// middle is on, so that what straddles two sheets is not torn apart.
   Frame foldFrame(Frame frame) {
-    final shift = shiftAt(frame.y + frame.height / 2);
-    return shift == 0 ? frame : frame.translate(0, shift);
+    final sheet = sheetAt(frame.y + frame.height / 2);
+    final down = gap * sheet;
+    final across = acrossOf(sheet);
+    return down == 0 && across == 0 ? frame : frame.translate(across, down);
   }
 
   /// The parts of [region] of the page that lie on sheets, each with how
-  /// much further down the view's space lays it out than it does
-  /// [region]'s top: the gaps between, each a whole number of device pixels
-  /// at [devicePixelsPerUnit], so that what is drawn in pixels stays on the
+  /// much further down and right the view's space lays it out than it does
+  /// [region]'s top: each a whole number of device pixels at
+  /// [devicePixelsPerUnit], so that what is drawn in pixels stays on the
   /// screen's own.
   List<SheetPiece> piecesOf(Aabb region, {double devicePixelsPerUnit = 1}) {
     final first = sheetAt(region.top);
     final last = math.min(sheetAt(region.bottom), count - 1);
-    final left = math.max(region.left, 0.0);
-    final right = math.min(region.right, width);
-    if (right <= left) return const <SheetPiece>[];
+    double whole(double units) =>
+        (units * devicePixelsPerUnit).roundToDouble() / devicePixelsPerUnit;
     return <SheetPiece>[
       for (var sheet = first; sheet <= last; sheet++)
         if (Aabb(
-              left,
-              math.max(region.top, sheet * height),
-              right,
-              math.min(region.bottom, (sheet + 1) * height),
+              math.max(region.left, 0.0),
+              math.max(region.top, topOf(sheet)),
+              math.min(region.right, widthOf(sheet)),
+              math.min(region.bottom, topOf(sheet + 1)),
             )
             case final area when !area.isEmpty)
           (
             area: area,
-            down:
-                (gap * (sheet - first) * devicePixelsPerUnit).roundToDouble() /
-                devicePixelsPerUnit,
+            down: whole(gap * (sheet - first)),
+            across: whole(acrossOf(sheet) - acrossOf(first)),
           ),
     ];
   }
 
   /// Where [page] lies in the view's space.
-  Offset fold(Offset page) => Offset(page.dx, foldY(page.dy));
+  Offset fold(Offset page) =>
+      Offset(page.dx + acrossAt(page.dy), foldY(page.dy));
 
   /// The page point at [view]: on a sheet, the point under it; beside one,
   /// the nearest of its edge; in a gap, the nearer sheet's edge. Nothing
   /// is written off the sheets.
   Offset unfold(Offset view) {
-    final sheet = (view.dy / pitch).floor().clamp(0, count - 1);
-    final within = view.dy - sheet * pitch;
+    var sheet = sheetAtView(view.dy);
+    final within = view.dy - viewTopOf(sheet);
+    final height = heightOf(sheet);
     final double y;
     if (within <= height) {
-      y = sheet * height + math.max(0.0, within);
+      y = topOf(sheet) + math.max(0.0, within);
     } else if (within - height < gap / 2 || sheet == count - 1) {
       // Just within the sheet above.
-      y = (sheet + 1) * height - _edge;
+      y = topOf(sheet + 1) - _edge;
     } else {
-      y = (sheet + 1) * height;
+      sheet++;
+      y = topOf(sheet);
     }
-    return Offset(view.dx.clamp(0.0, width), y);
+    return Offset((view.dx - acrossOf(sheet)).clamp(0.0, widthOf(sheet)), y);
+  }
+
+  /// The part of the page seen in [view], of the view's space: from the
+  /// sheet at its top to that at its bottom, and across as far as any of
+  /// them is seen.
+  Aabb seenIn(Rect view) {
+    final top = unfold(view.topLeft).dy;
+    final bottom = unfold(view.bottomRight).dy;
+    var left = width;
+    var right = 0.0;
+    final last = math.min(sheetAt(bottom), count - 1);
+    for (var sheet = math.min(sheetAt(top), last); sheet <= last; sheet++) {
+      final across = acrossOf(sheet);
+      left = math.min(left, (view.left - across).clamp(0.0, widthOf(sheet)));
+      right = math.max(right, (view.right - across).clamp(0.0, widthOf(sheet)));
+    }
+    return Aabb(left, top, math.max(left, right), bottom);
   }
 
   /// How far inside a sheet's bottom edge a point in the gap below it is
@@ -288,20 +385,20 @@ class SheetFold {
   static const double _edge = 1e-3;
 
   /// Where sheet [index] lies in the view's space.
-  Rect sheetInView(int index) => Rect.fromLTWH(0, index * pitch, width, height);
+  Rect sheetInView(int index) => Rect.fromLTWH(
+    acrossOf(index),
+    viewTopOf(index),
+    widthOf(index),
+    heightOf(index),
+  );
 
   /// The sheet [view] lies on or nearest, in the view's space.
-  int sheetNear(double view) =>
-      ((view + gap / 2) / pitch).floor().clamp(0, count - 1);
+  int sheetNear(double view) => sheetAtView(view + gap / 2);
 
   @override
   bool operator ==(Object other) =>
-      other is SheetFold &&
-      other.width == width &&
-      other.height == height &&
-      other.count == count &&
-      other.gap == gap;
+      other is SheetFold && other.gap == gap && listEquals(other.sizes, sizes);
 
   @override
-  int get hashCode => Object.hash(width, height, count, gap);
+  int get hashCode => Object.hash(Object.hashAll(sizes), gap);
 }
