@@ -146,7 +146,8 @@ build/linux/x64/profile/bundle/aantekening
 Built on Flutter and Dart (BSD-3), SQLite (public domain), `sqlite3.dart`,
 Riverpod, `pdfrx`, `archive` and `xml` (MIT), `flutter_math_fork`
 (MIT/Apache-2.0), PDFium (BSD-3/Apache-2.0), and `file_selector`, `http`,
-`path`, `crypto`, `path_provider` and `url_launcher` (BSD-3). The fonts it
+`path`, `crypto`, `path_provider` and `url_launcher` (BSD-3), and
+`desktop_drop` (Apache-2.0). The fonts it
 brings — IBM Plex, Carlito, and Inconsolata set to Consolas's measure — are
 under the SIL Open Font Licence.
 

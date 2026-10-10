@@ -162,6 +162,26 @@ their own, its pages are set as the sheets' background, to write over
 without picking them up; **Set picture as background**, in the menu on a
 right-click, takes one out of the background again.
 
+## Dropping things on a page
+
+Anything dragged onto a page from outside — a file manager, a browser,
+another program — goes where it is let go, a label beside the pointer
+saying so while it is held there:
+
+* a picture (PNG, JPEG, WebP, BMP) as a picture, and a GIF as a picture
+  that plays; one dragged out of a browser is fetched from the web;
+* a PDF as a printout, asking where it goes as **Insert PDF printout**
+  does, the sheets from the one it is let go on;
+* a LaTeX document (`.tex`) in a box, typeset as **Space i l** does, and a
+  text file (`.txt`, `.md`) or text dragged by itself in a box as it reads;
+* notes from OneNote, Xournal++ or another copy of this app, brought over
+  as **Settings → Files → Import** brings them;
+* any other file attached, shown as its name and opened with whatever
+  opens it.
+
+Several dropped together lie one under another. Let go on the text box
+being typed in, they go into it at the caret.
+
 ## Drawing and shapes
 
 Hold the pen still for half a second at the end of a stroke, without

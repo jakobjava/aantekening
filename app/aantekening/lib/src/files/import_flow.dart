@@ -30,17 +30,21 @@ const List<NotesImporter> importers = <NotesImporter>[
   AantekeningImporter(),
 ];
 
-/// Asks for what [importer] reads, reads it, and stores it where it goes:
-/// notebooks by themselves, sections in the notebook open, pages in the
-/// section open.
+/// Asks for what [importer] reads — unless given it, [dropped] on the
+/// window — reads it, and stores it where it goes: notebooks by
+/// themselves, sections in the notebook open, pages in the section open.
 ///
 /// What it shows and what it refreshes go through the window's own
 /// navigator and providers, not [context]'s: the settings it is started
 /// from may be closed or rebuilt while an import runs.
-Future<void> importNotes(BuildContext context, NotesImporter importer) async {
+Future<void> importNotes(
+  BuildContext context,
+  NotesImporter importer, {
+  List<String>? dropped,
+}) async {
   final container = ProviderScope.containerOf(context, listen: false);
   final window = Navigator.of(context, rootNavigator: true).context;
-  final paths = await _choose(importer);
+  final paths = dropped ?? await _choose(importer);
   if (paths.isEmpty || !window.mounted) return;
   final tab = container.read(tabsProvider).current;
   if (importer.target == ImportTarget.section && tab.sectionId == null) {

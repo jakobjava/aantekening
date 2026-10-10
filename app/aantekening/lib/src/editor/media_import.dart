@@ -3,9 +3,12 @@ library;
 
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:aantekening_interchange/aantekening_interchange.dart'
+    show mimeTypeOf;
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as p;
@@ -74,22 +77,59 @@ abstract final class MediaImport {
     final mimeType = AssetStore.mimeTypeForPath(file.path);
     if (mimeType == 'application/pdf') return _importPdf(store, file);
     if (mimeType.startsWith('image/') && mimeType != 'image/svg+xml') {
-      return <BlockEmbed>[await _importImage(store, file, mimeType)];
+      // Read once, for the store and for the picture's size.
+      final bytes = await file.readAsBytes();
+      return <BlockEmbed>[
+        await _importImage(store, bytes, mimeType, file.path),
+      ];
     }
     throw UnsupportedError('Cannot import ${file.path}: not a picture or PDF');
   }
 
+  /// Imports [bytes] of a picture or PDF named [name], from the web, say:
+  /// what they are is read from them.
+  static Future<List<BlockEmbed>> importBytes(
+    AantekeningStore store,
+    Uint8List bytes, {
+    required String name,
+  }) async {
+    final mimeType = mimeTypeOf(bytes, name: name);
+    if (mimeType == 'application/pdf') {
+      // Read from a file of its own, as a PDF chosen is.
+      final work = await Directory.systemTemp.createTemp('aantekening-pdf-');
+      try {
+        final file = File(p.join(work.path, p.basename(name)));
+        await file.writeAsBytes(bytes, flush: true);
+        return await _importPdf(store, file);
+      } finally {
+        await work.delete(recursive: true);
+      }
+    }
+    if (isPicture(mimeType)) {
+      return <BlockEmbed>[await _importImage(store, bytes, mimeType, name)];
+    }
+    throw UnsupportedError('Cannot import $name: not a picture or PDF');
+  }
+
+  /// Whether a file of [mimeType] is a picture drawn on the page.
+  static bool isPicture(String mimeType) => const <String>{
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+  }.contains(mimeType);
+
   static Future<BlockEmbed> _importImage(
     AantekeningStore store,
-    File file,
+    Uint8List bytes,
     String mimeType,
+    String name,
   ) async {
-    // Read once, for the store and for the picture's size.
-    final bytes = await file.readAsBytes();
     final asset = await store.assets.importBytes(
       bytes,
       mimeType: mimeType,
-      originalName: p.basename(file.path),
+      originalName: p.basename(name),
     );
 
     // Only the header is read to learn the size; the picture is decoded when

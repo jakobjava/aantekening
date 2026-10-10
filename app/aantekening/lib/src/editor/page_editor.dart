@@ -10,6 +10,7 @@ import 'package:aantekening_interchange/aantekening_interchange.dart'
     show LatexText;
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:aantekening_store/aantekening_store.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -22,6 +23,7 @@ import '../command_menu.dart';
 import '../commands/app_command.dart';
 import '../commands/shortcuts.dart';
 import '../files/attached_files.dart';
+import '../files/import_flow.dart' show importNotes;
 import '../files/notes_keeper.dart';
 import '../files/notes_location.dart';
 import '../input_trace.dart';
@@ -41,6 +43,7 @@ import '../shell/library_actions.dart';
 import '../shell/tabs.dart';
 import '../spelling/proofreader.dart';
 import '../spelling/spelling.dart';
+import 'drop_import.dart';
 import 'element_views.dart';
 import 'focus_glide.dart';
 import 'jump_labels.dart';
@@ -70,6 +73,7 @@ import 'trackpad.dart';
 part 'page_editor_chrome.dart';
 part 'page_editor_clipboard.dart';
 part 'page_editor_commands.dart';
+part 'page_editor_drop.dart';
 part 'page_editor_elements.dart';
 part 'page_editor_keys.dart';
 part 'page_editor_media.dart';
@@ -255,6 +259,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// Where on the page the menu was last opened with a right-click, or
   /// null where it was opened from the keys.
   Offset? _menuPoint;
+
+  /// Where something dragged from outside the app is held over the page,
+  /// in the canvas's own pixels; null while nothing is.
+  final ValueNotifier<Offset?> _dropHover = ValueNotifier<Offset?>(null);
 
   /// Where on the screen the keys last moved to, for the ring that glides
   /// there.
@@ -491,6 +499,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _leaveKeys();
     _unregisterSave();
     _autosave?.cancel();
+    _dropHover.dispose();
     _controller.removeListener(_onCanvasChanged);
     _stopTracingView();
     _disposed = true;
@@ -689,76 +698,78 @@ class _PageEditorState extends ConsumerState<PageEditor> {
           extras: _menuExtras,
           child: Listener(
             onPointerDown: _pressedWithKeys,
-            child: Stack(
-              children: <Widget>[
-                Positioned.fill(
-                  child: InfiniteCanvas(
-                    controller: _controller,
-                    claimsPointer: _claimsPointer,
-                    overlay: ValueListenableBuilder<Widget?>(
-                      valueListenable: _textController.formulaField,
-                      builder: (context, field, _) =>
-                          field ?? const SizedBox.shrink(),
-                    ),
-                    grips: _grips,
-                    onEmptyTap: _onEmptyTap,
-                    onCanvasPress: _onCanvasPress,
-                    onContextMenu: _onContextMenu,
-                    elementBuilder: (context, element) => _buildElement(
-                      element,
-                      highlight,
-                      _firstMatchIn(highlight),
-                    ),
-                    header: CanvasHeader(
-                      frame: _titleFrame,
-                      child: Listener(
-                        // Going to the title ends typing in a text box.
-                        onPointerDown: (_) =>
-                            _stopEditing(refocusCanvas: false),
-                        child: PageTitle(
-                          key: ValueKey<String>(pageId),
-                          pageId: pageId,
-                          highlight: highlight,
-                          onFinished: _canvasFocus.requestFocus,
-                          onFramed: (frame) {
-                            if (frame != _titleFrame) {
-                              setState(() => _titleFrame = frame);
-                            }
-                          },
+            child: _dropTarget(
+              Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: InfiniteCanvas(
+                      controller: _controller,
+                      claimsPointer: _claimsPointer,
+                      overlay: ValueListenableBuilder<Widget?>(
+                        valueListenable: _textController.formulaField,
+                        builder: (context, field, _) =>
+                            field ?? const SizedBox.shrink(),
+                      ),
+                      grips: _grips,
+                      onEmptyTap: _onEmptyTap,
+                      onCanvasPress: _onCanvasPress,
+                      onContextMenu: _onContextMenu,
+                      elementBuilder: (context, element) => _buildElement(
+                        element,
+                        highlight,
+                        _firstMatchIn(highlight),
+                      ),
+                      header: CanvasHeader(
+                        frame: _titleFrame,
+                        child: Listener(
+                          // Going to the title ends typing in a text box.
+                          onPointerDown: (_) =>
+                              _stopEditing(refocusCanvas: false),
+                          child: PageTitle(
+                            key: ValueKey<String>(pageId),
+                            pageId: pageId,
+                            highlight: highlight,
+                            onFinished: _canvasFocus.requestFocus,
+                            onFramed: (frame) {
+                              if (frame != _titleFrame) {
+                                setState(() => _titleFrame = frame);
+                              }
+                            },
+                          ),
                         ),
                       ),
-                    ),
-                    trackpadPanScale: _trackpadPanScale,
-                    selectionColor: context.tones.paperEmphasis,
-                    deskColor: context.tones.desk,
-                    afterSheets: SmallButton(
-                      '+  Add sheet',
-                      tooltip: ref
-                          .watch(shortcutsProvider)
-                          .tooltip(AppCommand.addSheet, describe: true),
-                      onPressed: () => unawaited(
-                        _addSheet(after: (_controller.fold?.count ?? 1) - 1),
+                      trackpadPanScale: _trackpadPanScale,
+                      selectionColor: context.tones.paperEmphasis,
+                      deskColor: context.tones.desk,
+                      afterSheets: SmallButton(
+                        '+  Add sheet',
+                        tooltip: ref
+                            .watch(shortcutsProvider)
+                            .tooltip(AppCommand.addSheet, describe: true),
+                        onPressed: () => unawaited(
+                          _addSheet(after: (_controller.fold?.count ?? 1) - 1),
+                        ),
                       ),
+                      penButtons: pen.buttons,
+                      shapesOnHold: pen.shapesOnHold,
+                      touchpadFingers: touchpadFingers,
                     ),
-                    penButtons: pen.buttons,
-                    shapesOnHold: pen.shapesOnHold,
-                    touchpadFingers: touchpadFingers,
                   ),
-                ),
-                Positioned.fill(
-                  child: FocusGlide(
-                    target: _glide,
-                    colour: _mode.colourOn(context.tones),
-                  ),
-                ),
-                if (_jump case final jump?)
                   Positioned.fill(
-                    child: JumpLabels(
-                      jump: jump,
+                    child: FocusGlide(
+                      target: _glide,
                       colour: _mode.colourOn(context.tones),
                     ),
                   ),
-              ],
+                  if (_jump case final jump?)
+                    Positioned.fill(
+                      child: JumpLabels(
+                        jump: jump,
+                        colour: _mode.colourOn(context.tones),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

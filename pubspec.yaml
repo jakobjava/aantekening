@@ -15,8 +15,11 @@ workspace:
   - packages/aantekening_spell
   - packages/aantekening_store
 
-# The typesetter, with fixes its latest release lacks: see its README.
+# The typesetter, and what takes things dropped on the window, with fixes
+# their latest releases lack: see their READMEs.
 dependency_overrides:
+  desktop_drop:
+    path: third_party/desktop_drop
   flutter_math_fork:
     path: third_party/flutter_math_fork
 

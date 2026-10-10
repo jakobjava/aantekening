@@ -18,7 +18,19 @@ extension _Media on _PageEditorState {
       return;
     }
     if (items.isEmpty || !mounted) return;
+    await _placeMedia(items, printout: kind == MediaKind.pdf);
+  }
 
+  /// Places pictures or, [printout], a PDF's pages: into the text box being
+  /// edited, at its caret, or onto the page — the first in the middle at
+  /// [at], a point on it, or with its top there, [fromTop]; or else in the
+  /// middle of the view — asking first where a printout goes.
+  Future<void> _placeMedia(
+    List<BlockEmbed> items, {
+    required bool printout,
+    Offset? at,
+    bool fromTop = false,
+  }) async {
     // At a bare caret the pictures go onto the paper where the caret is, as
     // in OneNote; in a box with text they go into the box.
     final editingId = _editingId;
@@ -33,7 +45,7 @@ extension _Media on _PageEditorState {
     }
 
     final sheets = _controller.document.canvas.sheetsShown;
-    if (kind == MediaKind.pdf) {
+    if (printout) {
       final place = await choosePrintoutPlace(
         context,
         pages: items.length,
@@ -53,6 +65,7 @@ extension _Media on _PageEditorState {
             items,
             sheets,
             onNew: place == PrintoutPlace.newSheets,
+            at: at == null ? null : sheets.sheetAt(at.dy),
           );
           return;
         case PrintoutPlace.newSheets || PrintoutPlace.here:
@@ -62,8 +75,14 @@ extension _Media on _PageEditorState {
     }
 
     final width = _controller.document.canvas.paperWidth ?? _defaultMediaWidth;
-    final center = _controller.viewCenter;
-    var y = center.dy - 120;
+    final center = at ?? _controller.viewCenter;
+    // Dropped, the first lies in the middle under the pointer.
+    var y = at == null
+        ? center.dy - 120
+        : fromTop
+        ? at.dy
+        : at.dy -
+              math.min(items.first.width, width) / items.first.aspectRatio / 2;
     if (editing != null && atBareCaret) {
       y = editing.frame.y + TextBoxEditor.grabBand;
       _stopEditing();
@@ -95,14 +114,15 @@ extension _Media on _PageEditorState {
   }
 
   /// [printout]'s pages, each on a sheet of its own — new sheets after the
-  /// one in view, [onNew], or else the sheets from the one in view on — as
-  /// large as the sheet takes it, in its middle, to be written on.
+  /// one [at], or in view, [onNew], or else the sheets from that one on —
+  /// as large as the sheet takes it, in its middle, to be written on.
   void _printOnSheets(
     List<BlockEmbed> printout,
     Sheets sheets, {
     required bool onNew,
+    int? at,
   }) {
-    final first = _controller.currentSheet + (onNew ? 1 : 0);
+    final first = (at ?? _controller.currentSheet) + (onNew ? 1 : 0);
     final blank = <SheetTemplate>[
       for (final _ in printout) SheetTemplate.blank,
     ];
