@@ -37,19 +37,23 @@ void main() {
       tester.widget<InfiniteCanvas>(find.byType(InfiniteCanvas)).controller;
 
   /// Drops [payload] at [at] in the window, as GTK hands it over: one
-  /// address a line, or text.
+  /// address a line, or text. It is held over the window first, as a drag
+  /// is, for a drop to be taken on any platform.
   Future<void> drop(WidgetTester tester, String payload, Offset at) async {
+    Future<void> send(String method, Object arguments) =>
+        tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          'desktop_drop',
+          const StandardMethodCodec().encodeMethodCall(
+            MethodCall(method, arguments),
+          ),
+          (_) {},
+        );
     await tester.runAsync(() async {
-      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-        'desktop_drop',
-        const StandardMethodCodec().encodeMethodCall(
-          MethodCall('performOperation_linux', <Object>[
-            payload,
-            <double>[at.dx, at.dy],
-          ]),
-        ),
-        (_) {},
-      );
+      await send('entered', <double>[at.dx, at.dy]);
+      await send('performOperation_linux', <Object>[
+        payload,
+        <double>[at.dx, at.dy],
+      ]);
       // Read and stored away from the test's clock.
       for (var i = 0; i < 20; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
