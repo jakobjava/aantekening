@@ -135,6 +135,64 @@ void main() {
     );
   });
 
+  testWidgets('a click on a box\'s text opens that box, though another '
+      'box\'s paper lies over it', (tester) async {
+    TextElement box(String id, String text, double x, int z) => TextElement(
+      id: id,
+      frame: Frame(x: x, y: 100, width: 80, height: 40),
+      z: z,
+      createdAt: 0,
+      updatedAt: 0,
+      blocks: <TextBlock>[
+        TextBlock(runs: <TextRun>[TextRun(text)]),
+      ],
+    );
+    // A box as wide as the narrowest, holding a letter: its paper covers
+    // the start of the next box's word.
+    await tester.runAsync(
+      () => store.pages.saveDocument(
+        pageId,
+        PageDocument(
+          id: pageId,
+          elements: <NoteElement>[
+            box('under', 'under', 140, 0),
+            box('over', 'b', 100, 1),
+          ],
+        ),
+      ),
+    );
+    await openEditor(tester, store, pageId);
+    Finder boxOf(String id) => find.byWidgetPredicate(
+      (widget) => widget is TextBoxEditor && widget.element.id == id,
+    );
+    String? editing() => tester
+        .widgetList<TextBoxEditor>(find.byType(TextBoxEditor))
+        .where((box) => box.isEditing)
+        .singleOrNull
+        ?.element
+        .id;
+    Offset textOf(String id) => tester.getTopLeft(
+      find.descendant(of: boxOf(id), matching: find.byType(RichText)),
+    );
+    final word = textOf('under') + const Offset(8, 8);
+    expect(tester.getRect(boxOf('over')).contains(word), isTrue);
+
+    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    expect(editing(), 'under');
+    expect(selectedOnCanvas(tester).single.id, 'under');
+
+    // On its paper with no text beneath, the box on top takes the click.
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.tapAt(
+      textOf('over') + const Offset(22, 8),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(editing(), 'over');
+  });
+
   testWidgets('letters that are tool shortcuts are typed, not obeyed', (
     tester,
   ) async {

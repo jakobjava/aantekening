@@ -11,6 +11,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import 'canvas_viewport.dart';
+import 'placed_content.dart';
 
 /// The part of the page worth laying out for a view of it: what is visible,
 /// and a quarter to a half as much again on every side.
@@ -241,13 +242,22 @@ class PagePlacement extends MultiChildRenderObjectWidget {
 /// Puts [child] at [frame] on the page of a [PagePlacement], laid out at
 /// the frame's size in page units.
 class PlacedOnPage extends ParentDataWidget<PlacedData> {
-  const PlacedOnPage({required this.frame, required super.child, super.key});
+  const PlacedOnPage({
+    required this.frame,
+    required super.child,
+    this.id,
+    super.key,
+  });
 
   final Frame frame;
+
+  /// The element it shows, if it is one.
+  final String? id;
 
   @override
   void applyParentData(RenderObject renderObject) {
     final data = renderObject.parentData! as PlacedData;
+    data.id = id;
     if (data.frame == frame) return;
     data.frame = frame;
     renderObject.parent?.markNeedsLayout();
@@ -259,6 +269,9 @@ class PlacedOnPage extends ParentDataWidget<PlacedData> {
 
 class PlacedData extends ContainerBoxParentData<RenderBox> {
   Frame frame = const Frame.origin(0, 0);
+
+  /// The element the child shows, if it is one.
+  String? id;
 
   /// The layer a turned child is painted in, where it needs one.
   final LayerHandle<TransformLayer> turned = LayerHandle<TransformLayer>();
@@ -338,29 +351,75 @@ class RenderPagePlacement extends RenderBox
     }
   }
 
+  /// Whether element [id] shows something at [global] — a text box its
+  /// text there, not its paper ([PlacedContent]) — or null where it is not
+  /// placed here, or all of its frame counts.
+  bool? showsAt(String id, Offset global) {
+    var child = firstChild;
+    while (child != null) {
+      final data = child.parentData! as PlacedData;
+      if (data.id == id) {
+        final content = RenderPlacedContent.of(child);
+        return content?.showsAt(content.globalToLocal(global));
+      }
+      child = data.nextSibling;
+    }
+    return null;
+  }
+
   @override
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    // A press on the paper of an element that says what it shows goes to
+    // what is shown beneath it, if anything is before an element that
+    // does not say — text boxes laid over one another are each pressed on
+    // their own text — and otherwise to the topmost element under it.
+    RenderBox? paper;
     var child = lastChild;
     while (child != null) {
       final data = child.parentData! as PlacedData;
-      final placed = child;
-      final hit = data.frame.rotation == 0
-          ? result.addWithPaintOffset(
-              offset: data.offset,
-              position: position,
-              hitTest: (result, position) =>
-                  placed.hitTest(result, position: position),
-            )
-          : result.addWithPaintTransform(
-              transform: _turn(data),
-              position: position,
-              hitTest: (result, position) =>
-                  placed.hitTest(result, position: position),
-            );
-      if (hit) return true;
+      final local = _toChild(data, position);
+      if ((Offset.zero & child.size).contains(local)) {
+        final content = RenderPlacedContent.of(child);
+        if (content == null) break;
+        final transform = content.getTransformTo(child)..invert();
+        if (content.showsAt(MatrixUtils.transformPoint(transform, local)) &&
+            _hitChild(result, child, position)) {
+          return true;
+        }
+        paper ??= child;
+      }
       child = data.previousSibling;
     }
+    if (paper != null && _hitChild(result, paper, position)) return true;
+    child = lastChild;
+    while (child != null) {
+      if (_hitChild(result, child, position)) return true;
+      child = (child.parentData! as PlacedData).previousSibling;
+    }
     return false;
+  }
+
+  /// [position], in this box's coordinates, in those of [data]'s child.
+  static Offset _toChild(PlacedData data, Offset position) =>
+      data.frame.rotation == 0
+      ? position - data.offset
+      : MatrixUtils.transformPoint(_turn(data)..invert(), position);
+
+  bool _hitChild(BoxHitTestResult result, RenderBox child, Offset position) {
+    final data = child.parentData! as PlacedData;
+    return data.frame.rotation == 0
+        ? result.addWithPaintOffset(
+            offset: data.offset,
+            position: position,
+            hitTest: (result, position) =>
+                child.hitTest(result, position: position),
+          )
+        : result.addWithPaintTransform(
+            transform: _turn(data),
+            position: position,
+            hitTest: (result, position) =>
+                child.hitTest(result, position: position),
+          );
   }
 
   @override

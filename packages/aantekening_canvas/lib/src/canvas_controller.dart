@@ -72,6 +72,11 @@ class CanvasController extends ChangeNotifier {
 
   static bool _takesPresses(String id) => false;
 
+  /// Whether the element [id] shows something at a page point — a text box
+  /// its text there, not the paper about it — as the canvas showing the
+  /// page has it laid out; null where all of its frame counts.
+  bool? Function(String id, Offset page)? showsAt;
+
   final SpatialIndex _index = SpatialIndex();
   final Map<String, NoteElement> _byId = <String, NoteElement>{};
   final Set<String> _selection = <String>{};
@@ -707,7 +712,10 @@ class CanvasController extends ChangeNotifier {
   /// Turned elements are tested against their turned shape, and ink only near
   /// its strokes: a page of handwriting has a large bounding box that is
   /// mostly empty paper, and should not swallow clicks meant for what lies
-  /// beneath it.
+  /// beneath it. A text box pressed on its paper, beside or below its text,
+  /// passes the press to the text of a box beneath it, where there is text
+  /// there before anything else ([showsAt]); the canvas's widgets are
+  /// pressed alike.
   NoteElement? hitTest(Offset page) {
     final probe = Aabb(
       page.dx - hitSlop,
@@ -715,17 +723,33 @@ class CanvasController extends ChangeNotifier {
       page.dx + hitSlop,
       page.dy + hitSlop,
     );
-    NoteElement? best;
+    final hits = <NoteElement>[];
     for (final id in _index.query(probe)) {
       final element = _byId[id];
       if (element == null || element.locked || passesOver(id)) continue;
       final hit = element is InkElement
           ? element.hitsStroke(page.dx, page.dy, hitSlop + 2)
           : element.frame.containsPoint(page.dx, page.dy, slop: hitSlop);
-      if (!hit) continue;
-      if (best == null || element.z >= best.z) best = element;
+      if (hit) hits.add(element);
     }
-    return best;
+    // Topmost first; of two at one height, the later.
+    final order = <NoteElement, int>{
+      for (final (i, element) in hits.indexed) element: i,
+    };
+    hits.sort(
+      (a, b) =>
+          a.z != b.z ? b.z.compareTo(a.z) : order[b]!.compareTo(order[a]!),
+    );
+    NoteElement? paper;
+    for (final element in hits) {
+      final shows = element is InkElement
+          ? null
+          : showsAt?.call(element.id, page);
+      if (shows == null) return paper ?? element;
+      if (shows) return element;
+      paper ??= element;
+    }
+    return paper;
   }
 
   /// Whether a press at [page], on [hit], lands on several things picked

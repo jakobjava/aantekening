@@ -109,11 +109,27 @@ class _PageContentState extends State<_PageContent> {
 
   bool get _isZooming => widget.zooming?.value ?? false;
 
+  /// Where the elements that can be pressed are placed.
+  final GlobalKey _placement = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     widget.view.addListener(_onViewChanged);
     widget.zooming?.addListener(_onViewChanged);
+    if (!widget.still) widget.controller.showsAt = _showsAt;
+  }
+
+  /// Whether the element [id] shows something at [page], as it is placed:
+  /// [CanvasController.showsAt].
+  bool? _showsAt(String id, Offset page) {
+    final placement = _placement.currentContext?.findRenderObject();
+    final space = context.findRenderObject();
+    if (placement is! RenderPagePlacement || space is! RenderBox) return null;
+    return placement.showsAt(
+      id,
+      space.localToGlobal(widget.view.value.toView(page)),
+    );
   }
 
   @override
@@ -127,6 +143,12 @@ class _PageContentState extends State<_PageContent> {
       oldWidget.zooming?.removeListener(_onViewChanged);
       widget.zooming?.addListener(_onViewChanged);
     }
+    if (!identical(oldWidget.controller, widget.controller)) {
+      if (oldWidget.controller.showsAt == _showsAt) {
+        oldWidget.controller.showsAt = null;
+      }
+      if (!widget.still) widget.controller.showsAt = _showsAt;
+    }
     // Built again from above, what the page holds, or what builds it, has
     // changed: every element is built anew.
     _placed = <String, (NoteElement, Widget?)>{};
@@ -136,6 +158,9 @@ class _PageContentState extends State<_PageContent> {
   void dispose() {
     widget.view.removeListener(_onViewChanged);
     widget.zooming?.removeListener(_onViewChanged);
+    if (widget.controller.showsAt == _showsAt) {
+      widget.controller.showsAt = null;
+    }
     for (final tiles in _inkTiles.values) {
       tiles.dispose();
     }
@@ -175,6 +200,7 @@ class _PageContentState extends State<_PageContent> {
             // text box its caret, a PDF page its rendered image — while
             // others are added, removed or scrolled out of view around it.
             key: ValueKey<String>(element.id),
+            id: element.id,
             frame: widget.view.value.frameInView(element.frame),
             // Painted once, and kept: the page painted again as what comes
             // into view is placed paints only that, not every formula of
@@ -218,6 +244,7 @@ class _PageContentState extends State<_PageContent> {
     final before = _placed;
     _placed = <String, (NoteElement, Widget?)>{};
     Widget layer(bool locked, {CanvasHeader? header}) => _ElementLayer(
+      placement: locked ? null : _placement,
       placed: <Widget>[
         for (final element in shown)
           if (element.locked == locked && element is! InkElement)
@@ -289,6 +316,7 @@ class _PageContentState extends State<_PageContent> {
 class _ElementLayer extends StatelessWidget {
   const _ElementLayer({
     required this.placed,
+    this.placement,
     required this.origin,
     required this.header,
     required this.headerFrame,
@@ -297,6 +325,9 @@ class _ElementLayer extends StatelessWidget {
 
   /// The elements' widgets, each a [PlacedOnPage].
   final List<Widget> placed;
+
+  /// The key of the [PagePlacement] they are placed by.
+  final GlobalKey? placement;
 
   /// The point of the view's space at the layer's top-left corner.
   final Offset origin;
@@ -313,6 +344,7 @@ class _ElementLayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final header = this.header;
     return PagePlacement(
+      key: placement,
       origin: origin,
       children: <Widget>[
         // Placed whether or not it is in view: scrolling it out of sight

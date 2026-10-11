@@ -18,6 +18,7 @@ export 'src/canvas_viewport.dart';
 export 'src/infinite_canvas.dart';
 export 'src/lasso.dart';
 export 'src/page_scrollbar.dart';
+export 'src/placed_content.dart';
 export 'src/selection_handles.dart';
 export 'src/sheet_painter.dart' show SheetThumbnail;
 export 'src/spatial_index.dart';

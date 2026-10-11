@@ -73,6 +73,59 @@ extension _Layout on TextBoxEditorState {
     return object is RenderTextTable ? object : null;
   }
 
+  /// How far beside and about a line's text a press still lands on it.
+  static const double _reach = 4;
+
+  /// Whether [local], in the box's coordinates, lies on what it holds — a
+  /// line's text, a list's mark, a picture or a table — rather than on the
+  /// paper about it ([PlacedContent]).
+  bool _showsAt(Offset local) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return true;
+    final global = box.localToGlobal(local);
+    bool within(RenderBox? object, {double inflate = 0}) =>
+        object != null &&
+        (Offset.zero & object.size)
+            .inflate(inflate)
+            .contains(object.globalToLocal(global));
+    for (final table in TextTables.tablesIn(_blocks)) {
+      if (within(_tableBox(table))) return true;
+    }
+    for (var i = 0; i < _blocks.length; i++) {
+      final block = _blocks[i];
+      if (block.isEmbed) {
+        if (within(_object(i), inflate: _reach)) return true;
+        continue;
+      }
+      final paragraph = _paragraph(i);
+      if (paragraph == null) continue;
+      final at = paragraph.globalToLocal(global);
+      final marked = switch (block.kind) {
+        TextBlockKind.bulleted ||
+        TextBlockKind.numbered ||
+        TextBlockKind.todo => RichTextStyles.markerWidth,
+        _ => 0.0,
+      };
+      final text = paragraph.paragraph;
+      final length = text.text.toPlainText().length;
+      if (length == 0) continue;
+      for (final run in text.getBoxesForSelection(
+        TextSelection(baseOffset: 0, extentOffset: length),
+        boxHeightStyle: BoxHeightStyle.max,
+      )) {
+        if (Rect.fromLTRB(
+          run.left - marked - _reach,
+          run.top - _reach,
+          run.right + _reach,
+          run.bottom + _reach,
+        ).contains(at)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   /// The lines a point at [global] can land on: those of the table cell it
   /// is in, or every line of the box.
   CellSpan _linesUnder(Offset global) {

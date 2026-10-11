@@ -3,9 +3,10 @@ library;
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show BoxHeightStyle;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart'
-    show SelectionHandle, SelectionHandles;
+    show PlacedContent, SelectionHandle, SelectionHandles;
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:aantekening_spell/aantekening_spell.dart' show WordSpan;
@@ -872,47 +873,54 @@ class TextBoxEditorState extends State<TextBoxEditor>
       ],
     );
 
-    return IgnorePointer(
-      ignoring: widget.caretOnly,
-      child: MouseRegion(
-        cursor:
-            _handleCursor ??
-            (widget.interactive ? SystemMouseCursors.text : MouseCursor.defer),
-        onHover: (event) {
-          final grabbed = widget.interactive ? _handleAt(event.position) : null;
-          final cursor = grabbed == null
-              ? null
-              : SelectionHandles.cursorFor(
-                  grabbed.handle,
-                  widget.element.frame.rotation,
-                );
-          if (cursor != _handleCursor) {
-            setState(() => _handleCursor = cursor);
-          }
-        },
-        onExit: (_) {
-          if (_handleCursor != null) setState(() => _handleCursor = null);
-        },
-        child: Focus(
-          focusNode: _focusNode,
-          onKeyEvent: _onKeyEvent,
-          child: Listener(
-            onPointerDown: _onPointerDown,
-            onPointerMove: _onPointerMove,
-            onPointerUp: _onPointerUp,
-            onPointerCancel: _onPointerUp,
-            behavior: HitTestBehavior.opaque,
-            // Nothing of the box shows until it is clicked, when the page
-            // frames it as anything picked. The content is laid out at its
-            // natural size and reported, so the box can grow to fit it;
-            // until the frame catches up, the overflow still paints.
-            child: OverflowBox(
-              alignment: Alignment.topLeft,
-              minWidth: autoWidth ? TextBoxEditor.minAutoWidth : null,
-              maxWidth: autoWidth ? _widest : null,
-              minHeight: 0,
-              maxHeight: double.infinity,
-              child: SizeReporter(onSize: _reportSize, child: content),
+    return PlacedContent(
+      showsAt: _showsAt,
+      child: IgnorePointer(
+        ignoring: widget.caretOnly,
+        child: MouseRegion(
+          cursor:
+              _handleCursor ??
+              (widget.interactive
+                  ? SystemMouseCursors.text
+                  : MouseCursor.defer),
+          onHover: (event) {
+            final grabbed = widget.interactive
+                ? _handleAt(event.position)
+                : null;
+            final cursor = grabbed == null
+                ? null
+                : SelectionHandles.cursorFor(
+                    grabbed.handle,
+                    widget.element.frame.rotation,
+                  );
+            if (cursor != _handleCursor) {
+              setState(() => _handleCursor = cursor);
+            }
+          },
+          onExit: (_) {
+            if (_handleCursor != null) setState(() => _handleCursor = null);
+          },
+          child: Focus(
+            focusNode: _focusNode,
+            onKeyEvent: _onKeyEvent,
+            child: Listener(
+              onPointerDown: _onPointerDown,
+              onPointerMove: _onPointerMove,
+              onPointerUp: _onPointerUp,
+              onPointerCancel: _onPointerUp,
+              behavior: HitTestBehavior.opaque,
+              // Nothing of the box shows until it is clicked, when the page
+              // frames it as anything picked. The content is laid out at its
+              // natural size and reported, so the box can grow to fit it;
+              // until the frame catches up, the overflow still paints.
+              child: OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: autoWidth ? TextBoxEditor.minAutoWidth : null,
+                maxWidth: autoWidth ? _widest : null,
+                minHeight: 0,
+                maxHeight: double.infinity,
+                child: SizeReporter(onSize: _reportSize, child: content),
+              ),
             ),
           ),
         ),
