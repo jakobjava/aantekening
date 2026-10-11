@@ -127,6 +127,29 @@ void main() {
       expect(controller.document.elementById('picture')!.locked, isTrue);
     });
 
+    test('takes several pictures beneath the rest in one step, in the '
+        'order they lay over one another', () {
+      final controller = withPicture()
+        ..addElement(_image('second', x: 300, y: 10))
+        ..select('picture')
+        ..select('second', additive: true);
+      final above = controller.document.elementById('second')!.z;
+      expect(above, greaterThan(controller.document.elementById('picture')!.z));
+
+      controller.setAsBackground(<String>['second', 'picture']);
+      final document = controller.document;
+      final picture = document.elementById('picture')!;
+      final second = document.elementById('second')!;
+      expect(picture.locked && second.locked, isTrue);
+      expect(second.z, greaterThan(picture.z));
+      expect(second.z, lessThan(document.elementById('first')!.z));
+      expect(controller.selection, isEmpty);
+
+      controller.undo();
+      expect(controller.document.elementById('picture')!.locked, isFalse);
+      expect(controller.document.elementById('second')!.locked, isFalse);
+    });
+
     testWidgets('ink far out of view is made ready to draw while nothing '
         'moves', (tester) async {
       final controller = _farReaching()

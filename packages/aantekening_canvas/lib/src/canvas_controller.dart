@@ -789,21 +789,38 @@ class CanvasController extends ChangeNotifier {
     required bool background,
     bool recordUndo = true,
   }) {
+    if (background) {
+      setAsBackground(<String>[id], recordUndo: recordUndo);
+      return;
+    }
     final element = _byId[id];
-    if (element == null || element.locked == background) return;
-    var lowest = element.z;
+    if (element == null || !element.locked) return;
+    _apply(
+      _document.withElementReplaced(element.withLocked(false)),
+      recordUndo: recordUndo,
+    );
+  }
+
+  /// Makes the elements [ids] part of the page's background, in one step:
+  /// beneath the rest of it, in the order they lay over one another.
+  void setAsBackground(Iterable<String> ids, {bool recordUndo = true}) {
+    final going = <NoteElement>[
+      for (final id in ids)
+        if (_byId[id] case final element? when !element.locked) element,
+    ]..sort((a, b) => a.z.compareTo(b.z));
+    if (going.isEmpty) return;
+    var lowest = going.first.z;
     for (final other in _document.elements) {
       if (other.z < lowest) lowest = other.z;
     }
-    _selection.remove(id);
-    _apply(
-      _document.withElementReplaced(
-        background
-            ? element.withLocked(true).withZ(lowest - 1)
-            : element.withLocked(false),
-      ),
-      recordUndo: recordUndo,
-    );
+    var document = _document;
+    for (final (i, element) in going.indexed) {
+      _selection.remove(element.id);
+      document = document.withElementReplaced(
+        element.withLocked(true).withZ(lowest - going.length + i),
+      );
+    }
+    _apply(document, recordUndo: recordUndo);
   }
 
   /// Selects [id], replacing the selection unless [additive] is set.

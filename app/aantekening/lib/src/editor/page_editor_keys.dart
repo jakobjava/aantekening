@@ -135,6 +135,11 @@ extension _Keys on _PageEditorState {
     final picture = selected.length == 1 && selected.single.asEmbed != null
         ? selected.single
         : null;
+    // Pictures, PDF pages and TikZ pictures, set as the background together.
+    final pictures = <String>[
+      for (final element in selected)
+        if (element.asEmbed != null) element.id,
+    ];
     final point = _menuPoint;
     final background = !some && point != null
         ? _controller.backgroundAt(point)
@@ -211,11 +216,13 @@ extension _Keys on _PageEditorState {
             'Edit TikZ source',
             run: () => unawaited(_editTikz(picture.id)),
           ),
-        if (picture != null)
+        if (pictures.isNotEmpty)
           KeyAction(
             'B',
-            'Set as background',
-            run: () => _controller.setBackground(picture.id, background: true),
+            pictures.length == selected.length
+                ? 'Set as background'
+                : 'Set pictures as background',
+            run: () => _controller.setAsBackground(pictures),
           ),
         if (background != null)
           KeyAction(

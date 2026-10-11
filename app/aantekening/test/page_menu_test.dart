@@ -210,6 +210,42 @@ void main() {
     expect(canvasOf(tester).document.elementById('picture')!.locked, isFalse);
   });
 
+  testWidgets('pictures picked together are set as the background '
+      'together', (tester) async {
+    mockClipboard(tester);
+    await savePage(
+      tester,
+      (asset) => <NoteElement>[
+        picture(asset),
+        ImageElement(
+          id: 'other',
+          frame: const Frame(x: 400, y: 160, width: 160, height: 80),
+          createdAt: 0,
+          updatedAt: 0,
+          assetId: asset,
+        ),
+      ],
+    );
+    await openEditor(tester, store, pageId);
+    canvasOf(tester)
+      ..select('picture')
+      ..select('other', additive: true);
+    await tester.pumpAndSettle();
+
+    await rightClick(
+      tester,
+      tester.getCenter(find.byType(AssetImageView).first),
+    );
+    expect(canvasOf(tester).selection, <String>{'picture', 'other'});
+    await tester.tap(menuItem('Set as background'));
+    await tester.pumpAndSettle();
+
+    final document = canvasOf(tester).document;
+    expect(document.elementById('picture')!.locked, isTrue);
+    expect(document.elementById('other')!.locked, isTrue);
+    expect(canvasOf(tester).selection, isEmpty);
+  });
+
   group('a picture in a text box', () {
     TextElement boxWith(String assetId) => TextElement(
       id: 'box',
