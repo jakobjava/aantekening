@@ -1,6 +1,6 @@
 # 25. Study profiles, and what the person says of themselves
 
-**Status:** accepted; revises how ADR 17 asks for a study set
+**Status:** accepted; revises how ADR 17 asks for a study set; what it asks for, revised by ADR 41
 
 ## Context
 
