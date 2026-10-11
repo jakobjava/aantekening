@@ -38,8 +38,16 @@ void main() {
 
   /// Drops [payload] at [at] in the window, as GTK hands it over: one
   /// address a line, or text. It is held over the window first, as a drag
-  /// is, for a drop to be taken on any platform.
-  Future<void> drop(WidgetTester tester, String payload, Offset at) async {
+  /// is, for a drop to be taken on any platform. Unless it [lands] nothing,
+  /// it is waited for until it is on the page: read and stored, which a
+  /// slow computer takes a while to do.
+  Future<void> drop(
+    WidgetTester tester,
+    String payload,
+    Offset at, {
+    bool lands = true,
+  }) async {
+    final before = canvasOf(tester).document.elements.length;
     Future<void> send(String method, Object arguments) =>
         tester.binding.defaultBinaryMessenger.handlePlatformMessage(
           'desktop_drop',
@@ -54,10 +62,18 @@ void main() {
         payload,
         <double>[at.dx, at.dy],
       ]);
-      // Read and stored away from the test's clock.
-      for (var i = 0; i < 20; i++) {
+      // Read and stored away from the test's clock, each thing in turn:
+      // waited for until something has landed and nothing more has for a
+      // while.
+      var count = before;
+      var still = 0;
+      for (var i = 0; i < (lands ? 500 : 20); i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
         await tester.pump();
+        final now = canvasOf(tester).document.elements.length;
+        still = now == count ? still + 1 : 0;
+        count = now;
+        if (lands && count != before && still >= 10) break;
       }
     });
     await tester.pumpAndSettle();
@@ -155,7 +171,7 @@ void main() {
 
   testWidgets('a drop that brings nothing readable says so', (tester) async {
     await openEditor(tester, store, pageId);
-    await drop(tester, '', const Offset(300, 300));
+    await drop(tester, '', const Offset(300, 300), lands: false);
     expect(find.text('What was dropped could not be read.'), findsOneWidget);
     expect(canvasOf(tester).document.elements, isEmpty);
   });
