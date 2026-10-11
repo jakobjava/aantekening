@@ -169,7 +169,13 @@ class BackgroundPainter extends CustomPainter {
 ///
 /// Ink is drawn over the widget-based elements in layers: highlighter first,
 /// multiplied with what it lies on, so the writing, pictures and PDF pages it
-/// covers show through it as through a real marker; then the pen on top. The
+/// covers show through it as through a real marker; then the pen on top.
+///
+/// The highlighter multiplies by [BlendMode.modulate], with its colour laid
+/// on white beforehand, rather than by [BlendMode.multiply]: the same
+/// colours over the paper, but one of the blends a GPU does as it draws.
+/// Impeller does multiply by reading back what is beneath, which on
+/// Windows filled the screen, or a stroke's width of it, with yellow. The
 /// text and formula elements stay real widgets that can be edited and
 /// selected.
 ///
@@ -279,6 +285,7 @@ class InkPainter extends CustomPainter {
 
     final recorder = ui.PictureRecorder();
     Canvas(recorder)
+      ..drawColor(layer.ground, BlendMode.src)
       ..scale(scale)
       ..transform(viewport.toMatrix().storage)
       ..drawPicture(ink);
@@ -387,12 +394,12 @@ class InkPainter extends CustomPainter {
       canvas.drawPath(
         StrokeGeometry.chiselPath(stroke),
         Paint()
-          ..color = Color(stroke.color)
+          ..color = onWhite(stroke.color)
           ..style = PaintingStyle.fill
           ..isAntiAlias = true
-          // Multiply keeps a highlighter from covering what it marks, and lets
-          // overlapping strokes deepen the way a real marker does.
-          ..blendMode = BlendMode.multiply,
+          // Multiplying keeps a highlighter from covering what it marks, and
+          // lets overlapping strokes deepen the way a real marker does.
+          ..blendMode = BlendMode.modulate,
       );
       return;
     }
@@ -417,6 +424,16 @@ class InkPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round
         ..strokeWidth = stroke.width,
     );
+  }
+
+  /// Translucent [argb] laid on white, opaque: multiplied by what is
+  /// beneath, as [BlendMode.modulate] does, it gives what [argb] itself
+  /// gives by [BlendMode.multiply] over anything opaque.
+  static Color onWhite(int argb) {
+    final alpha = (argb >>> 24) / 255;
+    int channel(int shift) =>
+        (255 - (255 - ((argb >> shift) & 0xFF)) * alpha).round();
+    return Color.fromARGB(255, channel(16), channel(8), channel(0));
   }
 
   @override
@@ -638,6 +655,7 @@ class InkTiles {
   ) {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder)
+      ..drawColor(layer.ground, BlendMode.src)
       ..scale(_scale)
       ..translate(-place.left, -place.top);
     for (final element in inked) {
@@ -699,7 +717,7 @@ class _InkTile {
 /// Which strokes an [InkPainter] draws.
 enum InkLayer {
   /// Highlighter, drawn over the element widgets and multiplied with them.
-  marking(BlendMode.multiply),
+  marking(BlendMode.modulate, ground: Color(0xFFFFFFFF)),
 
   /// Pen, pencil and marker, drawn above the highlighter.
   above(BlendMode.srcOver),
@@ -708,11 +726,15 @@ enum InkLayer {
   /// drawn over everything else, since it is the inverse of all of it.
   inverting(BlendMode.difference);
 
-  const InkLayer(this.blendMode);
+  const InkLayer(this.blendMode, {this.ground = const Color(0x00000000)});
 
   /// How the layer is laid over what is beneath it: a white stroke
   /// differenced from what it covers is its inverse.
   final BlendMode blendMode;
+
+  /// What the layer is drawn on, kept as pixels: what, laid over the page
+  /// by [blendMode], leaves it as it is — clear, or white to multiply by.
+  final Color ground;
 
   bool accepts(InkStroke stroke) => switch (this) {
     InkLayer.inverting => stroke.color == NoteColors.inverse,
