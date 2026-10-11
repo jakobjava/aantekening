@@ -14,8 +14,9 @@
 ///
 /// The page is made up — printouts with handwriting over them, and some
 /// text — unless `AANTEKENING_BENCH_NOTES` names a OneNote package
-/// (`.onepkg`), whose heaviest page is used instead, or the page whose title
-/// holds `AANTEKENING_BENCH_PAGE`. Nothing is read from or written to the
+/// (`.onepkg`) or a notes folder, whose heaviest page is used instead, or
+/// the page whose title holds `AANTEKENING_BENCH_PAGE`. A notes folder is
+/// copied first, and the copy opened. Nothing is read from or written to the
 /// notes, the settings or the keychain: the page is kept in memory, its
 /// files in a temporary folder. With `AANTEKENING_BENCH_LAYOUT=pages` the
 /// page is shown as pages, cut into sheets.
@@ -66,18 +67,21 @@ Future<void> main() async {
     debugProfilePaintsEnabled = true;
   }
   final folder = Directory.systemTemp.createTempSync('aantekening_bench_');
-  final store = AantekeningStore.inMemory(
-    assetDirectory: Directory('${folder.path}/assets')..createSync(),
-  );
-  final notes = Platform.environment['AANTEKENING_BENCH_NOTES'];
-  final pageId = notes == null || notes.isEmpty
-      ? await _madeUpPage(store, folder)
-      : await _heaviestPage(
-          store,
-          folder,
-          notes,
-          Platform.environment['AANTEKENING_BENCH_PAGE'],
-        );
+  final notes = Platform.environment['AANTEKENING_BENCH_NOTES'] ?? '';
+  final title = Platform.environment['AANTEKENING_BENCH_PAGE'];
+  final AantekeningStore store;
+  final String pageId;
+  if (notes.isNotEmpty && FileSystemEntity.isDirectorySync(notes)) {
+    store = await _copiedNotes(folder, notes);
+    pageId = await _heaviestOf(store, notes, title);
+  } else {
+    store = AantekeningStore.inMemory(
+      assetDirectory: Directory('${folder.path}/assets')..createSync(),
+    );
+    pageId = notes.isEmpty
+        ? await _madeUpPage(store, folder)
+        : await _heaviestPage(store, folder, notes, title);
+  }
 
   final timings = <FrameTiming>[];
   SchedulerBinding.instance.addTimingsCallback(timings.addAll);
@@ -144,6 +148,18 @@ Future<void> main() async {
       for (var notch = 0; notch < 24; notch++) {
         input.wheel(Offset(0, 100 * direction));
         await _wait(const Duration(milliseconds: 60));
+      }
+    }
+  });
+  // Read down the page and back: a few notches, and a pause to read.
+  await measure('wheel scroll, reading', () async {
+    for (final direction in <double>[1, -1]) {
+      for (var pause = 0; pause < 6; pause++) {
+        for (var notch = 0; notch < 3; notch++) {
+          input.wheel(Offset(0, 100 * direction));
+          await _wait(const Duration(milliseconds: 60));
+        }
+        await _wait(const Duration(milliseconds: 700));
       }
     }
   });
@@ -754,6 +770,36 @@ Future<String> _heaviestPage(
     () => const OneNoteImporter().read(<String>[path], ImportWork(work)),
   );
   await store.drafts.store(draft);
+  return _heaviestOf(store, path, title);
+}
+
+/// A copy of the notes folder at [path], opened with an index of its own:
+/// the notes themselves are neither read by the index nor written to.
+Future<AantekeningStore> _copiedNotes(Directory folder, String path) async {
+  final copy = Directory('${folder.path}/notes');
+  final source = Directory(path);
+  for (final entity in source.listSync(recursive: true)) {
+    final relative = entity.path.substring(source.path.length);
+    if (entity is Directory) {
+      Directory('${copy.path}$relative').createSync(recursive: true);
+    } else if (entity is File) {
+      File('${copy.path}$relative').parent.createSync(recursive: true);
+      entity.copySync('${copy.path}$relative');
+    }
+  }
+  return AantekeningStore.open(
+    notesFolder: copy.path,
+    indexFolder: '${folder.path}/index',
+    automatic: false,
+  );
+}
+
+/// The page of [store] whose title holds [title], or else its heaviest.
+Future<String> _heaviestOf(
+  AantekeningStore store,
+  String path,
+  String? title,
+) async {
   String? heaviest;
   var most = -1;
   for (final page in await store.pages.listAllPages()) {

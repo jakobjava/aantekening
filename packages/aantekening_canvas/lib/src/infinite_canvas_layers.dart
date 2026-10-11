@@ -176,7 +176,10 @@ class _PageContentState extends State<_PageContent> {
             // others are added, removed or scrolled out of view around it.
             key: ValueKey<String>(element.id),
             frame: widget.view.value.frameInView(element.frame),
-            child: content,
+            // Painted once, and kept: the page painted again as what comes
+            // into view is placed paints only that, not every formula of
+            // every box already there, glyph by glyph.
+            child: RepaintBoundary(child: content),
           );
     _placed[element.id] = (element, placed);
     return placed;

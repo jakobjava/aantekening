@@ -117,17 +117,24 @@ class MathView extends StatelessWidget {
       }
     }
     final (tree, error) = _parse(latex);
-    return Math(
-      ast: tree,
-      parseError: error,
-      mathStyle: displayStyle ? MathStyle.display : MathStyle.text,
-      textStyle: style,
-      // A formula that TeX itself rejects still has to show something, or the
-      // page would appear to lose content while it is being edited.
-      onErrorFallback: (error) => _MathError(
-        message: error.messageWithType,
-        source: source,
-        style: textStyle,
+    // One node for a screen reader, its source, rather than one for each
+    // of its glyphs: a page of formulas had thousands, worked out again as
+    // it scrolled.
+    return Semantics(
+      label: source,
+      excludeSemantics: true,
+      child: Math(
+        ast: tree,
+        parseError: error,
+        mathStyle: displayStyle ? MathStyle.display : MathStyle.text,
+        textStyle: style,
+        // A formula that TeX itself rejects still has to show something, or
+        // the page would appear to lose content while it is being edited.
+        onErrorFallback: (error) => _MathError(
+          message: error.messageWithType,
+          source: source,
+          style: textStyle,
+        ),
       ),
     );
   }
