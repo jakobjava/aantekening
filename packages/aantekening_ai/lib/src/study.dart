@@ -19,7 +19,10 @@ enum StudyKind {
     'The essentials on one sheet, each point linked to where it is in your '
         'notes.',
     'A study summary: what a student needs to understand and remember of '
-        'the notes, in the order the notes have it.',
+        'the notes, ordered as the subject is best learnt — what belongs '
+        'together brought together, what is repeated said once, side '
+        'matters left out — rather than copied in the order the notes have '
+        'it.',
   ),
   flashcards(
     'Flashcards',
@@ -75,7 +78,11 @@ enum StudyKind {
           '"sources": ["1.4"]}], '
           '"beyond": ["what the notes leave out that helps to understand '
           'them, if anything"]}\n'
-          'Two to five sections of two to six points. Every point and '
+          'Two to five sections of two to six points. "formulas" holds only '
+          'the key ones a student must know by heart and apply — rarely more '
+          'than five, often fewer, none if there are none — never the steps '
+          'of a derivation, a worked example, a formula with numbers put in '
+          'or one that is a rearrangement of another. Every point and '
           'formula names the passages it comes from. Only "beyond" may hold '
           'what the notes do not say.',
     flashcards =>
