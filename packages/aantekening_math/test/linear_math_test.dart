@@ -29,10 +29,30 @@ void main() {
       expectLatex('a+b/c', r'a + \frac{b}{c}');
     });
 
-    test('binds only the nearest factor of an implicit product', () {
+    test('binds only the nearest term of a spaced product', () {
       // "two and a half", not "(2 times 1) over 2".
       expectLatex('2 1/2', r'2 \frac{1}{2}');
       expectLatex('a b/c', r'a \frac{b}{c}');
+      expectLatex('4 pi^2/2', r'4 \frac{\pi^2}{2}');
+      expectLatex('x * (a*b)/2', r'x \cdot \frac{a \cdot b}{2}');
+      expectLatex('a/2 b', r'\frac{a}{2} b');
+      expectLatex('a b / c d', r'a \frac{b}{c} d');
+    });
+
+    test('takes all of what is typed together on either side', () {
+      expectLatex('4pi^2/2', r'\frac{4 \pi^2}{2}');
+      expectLatex('x*(a*b)/2', r'\frac{x \cdot \left( a \cdot b \right)}{2}');
+      expectLatex('dy/dx', r'\frac{d y}{d x}');
+      expectLatex('a/2b', r'\frac{a}{2 b}');
+      expectLatex('ab / cd', r'\frac{a b}{c d}');
+    });
+
+    test('puts a sign before the fraction, not above its bar', () {
+      expectLatex('-2/2', r'-\frac{2}{2}');
+      expectLatex('-2x/3', r'-\frac{2 x}{3}');
+      expectLatex('x = -b/2a', r'x = -\frac{b}{2 a}');
+      expectLatex('a - 2/3', r'a - \frac{2}{3}');
+      expectLatex('(-2)/2', r'\frac{-2}{2}');
     });
 
     test('nests left to right', () {
@@ -50,8 +70,34 @@ void main() {
       expectLatex('x_i', 'x_i');
     });
 
-    test('applies to one atom, not the rest of the product', () {
-      expectLatex('x^2y', 'x^2 y');
+    test('takes what is typed together, up to a space', () {
+      expectLatex('A_SiB', 'A_{S i B}');
+      expectLatex('x^2y', 'x^{2 y}');
+      expectLatex('e^ix', 'e^{i x}');
+      expectLatex('x^2 y', 'x^2 y');
+      expectLatex('x^2 y^3', 'x^2 y^3');
+    });
+
+    test('ends at an operator or a bracket', () {
+      expectLatex('x_i+1', 'x_i + 1');
+      expectLatex('f_n(x)', r'f_n \left( x \right)');
+      expectLatex('x^2/3', r'\frac{x^2}{3}');
+      expectLatex('4pi^2/2', r'\frac{4 \pi^2}{2}');
+    });
+
+    test('leaves a script of another kind to the base', () {
+      expectLatex('A_SiB^2', 'A_{S i B}^2');
+      expectLatex('x_ij^2', 'x_{i j}^2');
+      // One of the same kind is the last letter's.
+      expectLatex('x^2y^3', 'x^{2 y^3}');
+    });
+
+    test('of a construct written without brackets go on the construct', () {
+      expectLatex('veca_2^3', r'\vec{a}_2^3');
+      expectLatex('vec a_2^3', r'\vec{a}_2^3');
+      expectLatex('hat x_1', r'\hat{x}_1');
+      expectLatex('sqrt x^2', r'\sqrt{x}^2');
+      expectLatex('sqrt(x^2)', r'\sqrt{x^2}');
     });
 
     test('takes a bracketed group as a whole exponent', () {
@@ -75,8 +121,9 @@ void main() {
     });
 
     test('takes a sign alone as a charge', () {
-      expectLatex('H_3O^+', 'H_3 O^+');
-      expectLatex('H_3O^+ + OH^-', 'H_3 O^+ + O H^-');
+      expectLatex('H_3 O^+', 'H_3 O^+');
+      expectLatex('H_3 O^+ + OH^-', 'H_3 O^+ + O H^-');
+      expectLatex('O^- x', 'O^- x');
       expectLatex('(e^-)', r'\left( e^- \right)');
       expectLatex('x^-a b', 'x^{-a} b');
     });

@@ -108,45 +108,137 @@ class MathParser {
     return left;
   }
 
+  /// A product: factors written side by side, joined by an operator such as
+  /// `*`, or divided by `/`.
+  ///
+  /// Spacing groups it. Factors typed together, with no space between them,
+  /// are one term, and a fraction bar takes the whole term on either side of
+  /// it: `4pi^2/2` is four pi squared over two, `x*(a*b)/2` all of it over
+  /// two, `d/dx` one over the whole `dx`. A space parts terms, and a bar takes
+  /// only the term next to it: `4 pi^2/2` is four times pi squared over two,
+  /// `x * (a*b)/2` only `(a*b)` over two, `2 1/2` two and a half, and
+  /// `lim f(x)/g(x)` the limit of a fraction.
   MathNode _parseMultiplicative() {
-    var left = _parseUnary();
+    final factors = <MathNode>[_parseUnary()];
+    final joins = <_Join>[];
     while (true) {
       if (_check(TokenType.slash)) {
-        _advance();
-        final right = _parseUnary();
-        // A fraction bar already groups both sides visually, so parentheses the
-        // user typed around either are dropped: `(a+b)/c` becomes a clean
-        // built-up fraction rather than one with redundant brackets.
-        //
-        // Division binds only the factor immediately before it, so `2 1/2`
-        // reads as two and a half and `lim f(x)/g(x)` puts the fraction inside
-        // the limit rather than the limit inside the fraction.
-        if (left is SequenceNode && left.children.length > 1) {
-          final factors = List<MathNode>.of(left.children);
-          final numerator = factors.removeLast();
-          factors.add(FractionNode(_unwrap(numerator), _unwrap(right)));
-          left = SequenceNode(factors);
-        } else {
-          left = FractionNode(_unwrap(left), _unwrap(right));
-        }
-        continue;
-      }
-      if (_isOperatorIn(_multiplicative)) {
+        final bar = _advance();
+        joins.add((operator: null, tight: !bar.spaced && !_current.spaced));
+      } else if (_isOperatorIn(_multiplicative)) {
         final operator = _advance();
-        left = BinaryNode(operator.latex, left, _parseUnary());
-        continue;
-      }
-      if (_startsPrimary(_current)) {
+        joins.add((
+          operator: operator.latex,
+          tight: !operator.spaced && !_current.spaced,
+        ));
+      } else if (_startsPrimary(_current)) {
         // Juxtaposition is multiplication: `2x`, `sin x`, `a(b+c)`.
-        final right = _parseUnary();
-        left = left is SequenceNode
-            ? SequenceNode(<MathNode>[...left.children, right])
-            : SequenceNode(<MathNode>[left, right]);
+        joins.add((operator: '', tight: !_current.spaced));
+      } else {
+        break;
+      }
+      factors.add(_parseUnary());
+    }
+    if (joins.isEmpty) return factors.single;
+
+    // The terms, each of the factors typed together, and how each is joined
+    // to the one before it: a bar to the term next to it alone.
+    final terms = <MathNode>[];
+    final between = <_Join>[];
+    var start = 0;
+    for (var i = 0; i <= joins.length; i++) {
+      if (i < joins.length && joins[i].tight) continue;
+      final term = _term(
+        factors.sublist(start, i + 1),
+        joins.sublist(start, i),
+      );
+      if (start > 0 && between.last.operator == null) {
+        between.removeLast();
+        terms.add(_fraction(terms.removeLast(), term));
+      } else {
+        terms.add(term);
+      }
+      if (i < joins.length) between.add(joins[i]);
+      start = i + 1;
+    }
+    return _product(terms, between);
+  }
+
+  /// [factors] typed together, joined by [joins]: each bar divides all that
+  /// comes before it by all that comes after it, up to the next bar.
+  MathNode _term(List<MathNode> factors, List<_Join> joins) {
+    MathNode? result;
+    var start = 0;
+    for (var i = 0; i <= joins.length; i++) {
+      if (i < joins.length && joins[i].operator != null) continue;
+      final part = _product(
+        factors.sublist(start, i + 1),
+        joins.sublist(start, i),
+      );
+      result = result == null ? part : _fraction(result, part);
+      start = i + 1;
+    }
+    return result!;
+  }
+
+  /// [factors] multiplied, side by side or by the operators of [joins].
+  static MathNode _product(List<MathNode> factors, List<_Join> joins) {
+    var left = factors.first;
+    for (var i = 0; i < joins.length; i++) {
+      final right = factors[i + 1];
+      final operator = joins[i].operator!;
+      if (operator.isNotEmpty) {
+        left = BinaryNode(operator, left, right);
         continue;
       }
-      return left;
+      left = SequenceNode(<MathNode>[
+        if (left is SequenceNode) ...left.children else left,
+        if (right is SequenceNode) ...right.children else right,
+      ]);
     }
+    return left;
   }
+
+  /// [numerator] over [denominator].
+  ///
+  /// A fraction bar already groups both sides visually, so parentheses the
+  /// user typed around either are dropped: `(a+b)/c` becomes a clean
+  /// built-up fraction rather than one with redundant brackets. A sign before
+  /// the numerator stands before the whole fraction, as it is written by
+  /// hand: `-2/3` is minus two thirds; `(-2)/3` keeps it above the bar.
+  static MathNode _fraction(MathNode numerator, MathNode denominator) {
+    if (_leadingSign(numerator) case (final sign, final rest)) {
+      return UnaryNode(sign, _fraction(rest, denominator));
+    }
+    return FractionNode(_unwrap(numerator), _unwrap(denominator));
+  }
+
+  /// The sign [node] begins with, and the rest of it, or null if it begins
+  /// with none.
+  static (String, MathNode)? _leadingSign(MathNode node) => switch (node) {
+    UnaryNode(:final operatorLatex, :final operand)
+        when _signs.contains(operatorLatex) =>
+      (operatorLatex, operand),
+    SequenceNode(:final children) when children.isNotEmpty =>
+      switch (_leadingSign(children.first)) {
+        (final sign, final rest) => (
+          sign,
+          SequenceNode(<MathNode>[rest, ...children.skip(1)]),
+        ),
+        null => null,
+      },
+    BinaryNode(:final operatorLatex, :final left, :final right) =>
+      switch (_leadingSign(left)) {
+        (final sign, final rest) => (
+          sign,
+          BinaryNode(operatorLatex, rest, right),
+        ),
+        null => null,
+      },
+    _ => null,
+  };
+
+  static const Set<String> _signs = <String>{'+', '-', r'\pm', r'\mp'};
 
   MathNode _parseUnary() {
     if (_check(TokenType.operator) && _prefixes.contains(_current.latex)) {
@@ -163,8 +255,10 @@ class MathParser {
   }
 
   /// Parses a primary and any subscripts or superscripts attached to it.
-  MathNode _parsePostfix() {
-    final base = _parsePrimary();
+  MathNode _parsePostfix() => _parseScripts(_parsePrimary());
+
+  /// [base] with the subscripts and superscripts typed after it.
+  MathNode _parseScripts(MathNode base) {
     if (!_check(TokenType.caret) &&
         !_check(TokenType.underscore) &&
         !_check(TokenType.prime)) {
@@ -194,8 +288,12 @@ class MathParser {
         continue;
       }
       final marker = _advance();
-      final operand = _parseScriptOperand();
-      if (marker.type == TokenType.caret) {
+      final raised = marker.type == TokenType.caret;
+      final operand = _parseScriptOperand(
+        subscript: subscript != null || !raised,
+        superscript: superscript != null || raised,
+      );
+      if (raised) {
         if (superscript != null) {
           diagnostics.add(
             MathDiagnostic(marker.offset, 'Repeated superscript'),
@@ -212,27 +310,64 @@ class MathParser {
     return ScriptNode(base, subscript: subscript, superscript: superscript);
   }
 
-  /// Parses what a `^` or `_` applies to: one atom, not a whole product.
+  /// Parses what a `^` or `_` applies to: all that is typed straight after
+  /// it, up to a space, an operator or a bracket — as a fraction bar takes
+  /// what is typed together. `A_SiB` is A with `SiB` below, `x^2y` x to the
+  /// `2y`, while `x^2 y` is x squared times y, `x_i+1` is x_i plus one and
+  /// `f_n(x)` is f_n of x.
   ///
-  /// This is why `x^2y` is `x²·y` rather than `x^(2y)`, matching how the same
-  /// input behaves in OneNote and in TeX.
-  MathNode _parseScriptOperand() {
+  /// A script of a kind the base has not got yet ends it, and is the
+  /// base's: the `^n` of `sum_(i=1)^n` and `A_SiB^2`. One of a kind it has
+  /// — its own [subscript] or [superscript] — is the last letter's: `x^2y^3`
+  /// is x to the `2y³`.
+  MathNode _parseScriptOperand({
+    required bool subscript,
+    required bool superscript,
+  }) {
     if (_check(TokenType.end)) {
       diagnostics.add(MathDiagnostic(_current.offset, 'Missing script'));
       return const EmptyNode();
     }
     if (_check(TokenType.operator) && _prefixes.contains(_current.latex)) {
       final operator = _advance();
-      // A sign with nothing after it is the script itself: the charge of
-      // `H_3O^+`, `e^-`.
-      return _startsPrimary(_current)
-          ? UnaryNode(operator.latex, _parseScriptOperand())
+      // A sign with nothing straight after it is the script itself: the
+      // charge of `H_3 O^+`, `e^-`.
+      return _startsPrimary(_current) && !_current.spaced
+          ? UnaryNode(
+              operator.latex,
+              _parseScriptOperand(
+                subscript: subscript,
+                superscript: superscript,
+              ),
+            )
           : SymbolNode(operator.latex);
     }
-    // Deliberately a primary rather than a full postfix: consuming further
-    // scripts here would swallow the `^n` of `sum_(i=1)^n` into the subscript.
-    return _unwrap(_parsePrimary());
+    MathNode atom() {
+      final primary = _parsePrimary();
+      final again =
+          !_current.spaced &&
+          (_check(TokenType.caret) && superscript ||
+              _check(TokenType.underscore) && subscript);
+      return again ? _parseScripts(primary) : primary;
+    }
+
+    final parts = <MathNode>[atom()];
+    while (!_current.spaced &&
+        _startsPrimary(_current) &&
+        !_opensBracket(_current)) {
+      parts.add(atom());
+    }
+    return parts.length == 1 ? _unwrap(parts.single) : SequenceNode(parts);
   }
+
+  /// Whether [token] opens a bracket, which ends a script: `f_n(x)`.
+  static bool _opensBracket(Token token) => switch (token.type) {
+    TokenType.leftParen ||
+    TokenType.leftBracket ||
+    TokenType.leftBrace ||
+    TokenType.bar => true,
+    _ => false,
+  };
 
   MathNode _parsePrimary() {
     final token = _current;
@@ -489,7 +624,9 @@ class MathParser {
       );
       return const EmptyNode();
     }
-    return _unwrap(_parsePostfix());
+    // One symbol, and the scripts after it are the construct's: `veca_2^3`
+    // is `vec(a)_2^3`, as `\vec a_2^3` is in LaTeX.
+    return _unwrap(_parsePrimary());
   }
 
   /// Reads the `(a, b)` arguments of a two-argument construct.
@@ -591,3 +728,9 @@ class MathParser {
     }
   }
 }
+
+/// How a factor is joined to the one before it: by the LaTeX of an
+/// [operator], by nothing — side by side — when it is empty, or by a
+/// fraction bar when it is null; and whether it is [tight], typed with no
+/// space either side.
+typedef _Join = ({String? operator, bool tight});

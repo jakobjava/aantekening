@@ -282,7 +282,17 @@ own, typeset in its place behind it all the same; it comes back beneath the
 line once it is 20 shorter and on one line. **Settings → Formulas → Source
 window** sets how long it grows first. In Simple syntax a comma between two
 digits is a decimal comma, as in German — `2,5` — and one with a space after
-it parts a list: `f(1, 2)`. Enter or Esc finishes it,
+it parts a list: `f(1, 2)`. Spaces also decide what a fraction bar takes:
+all that is typed together on either side of it, so `4pi^2/2` and
+`x*(a*b)/2` are each one fraction, while `4 pi^2/2` is four times a fraction
+and `x * (a*b)/2` has only `a*b` above the bar. A sign stands before the
+fraction, `-2/3`; type `(-2)/3` to have it above the bar. A `^` or `_`
+likewise takes what is typed straight after it, up to a space, an operator
+or a bracket: `A_SiB` has all of `SiB` below, `x^2y` is x to the `2y` and
+`x^2 y` x squared times y, while `f_n(x)` and `x_i+1` end the script at the
+bracket and the plus — `H_3 O^+` wants its space. `vec`, `hat`, `sqrt` and
+the like, without brackets, take one symbol, and a script after it is
+theirs: `veca_2^3` is `vec(a)_2^3`. Enter or Esc finishes it,
 in the window too; Shift+Enter there starts a new line. Arrowing into or
 clicking a formula shows its source again. Tab moves to the next place a
 structure left to fill in. A formula alone on its line is typeset large;

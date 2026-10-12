@@ -48,6 +48,7 @@ class Token {
     required this.offset,
     this.latex = '',
     this.symbol,
+    this.spaced = false,
   });
 
   final TokenType type;
@@ -60,6 +61,11 @@ class Token {
   /// The table entry behind a [TokenType.symbol], which tells the parser
   /// whether it takes arguments.
   final MathSymbol? symbol;
+
+  /// Whether whitespace was typed straight before this token. Spacing is how
+  /// a fraction's bar knows how much it takes: `4pi^2/2` is one fraction,
+  /// `4 pi^2/2` four times one.
+  final bool spaced;
 
   @override
   String toString() => '${type.name}("$lexeme")@$offset';
@@ -96,7 +102,19 @@ class MathLexer {
     final tokens = <Token>[];
     while (true) {
       final token = _next();
-      tokens.add(token);
+      final start = token.offset;
+      tokens.add(
+        start > 0 && _isWhitespace(source[start - 1])
+            ? Token(
+                type: token.type,
+                lexeme: token.lexeme,
+                offset: start,
+                latex: token.latex,
+                symbol: token.symbol,
+                spaced: true,
+              )
+            : token,
+      );
       if (token.type == TokenType.end) return tokens;
     }
   }

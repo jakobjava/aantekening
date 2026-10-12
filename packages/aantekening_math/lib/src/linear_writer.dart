@@ -248,18 +248,48 @@ abstract final class LinearWriter {
   // ------------------------------------------------------------- structure
 
   /// A fraction's numerator or denominator: bare if the parser reads it as
-  /// one factor, bracketed otherwise.
+  /// one term — one factor, or factors typed together: `4pi^2` — bracketed
+  /// otherwise.
   static String _fractionPart(MathNode node) {
     if (node is FencedNode && node.isRoundParen) return '(${write(node)})';
-    if (_isAtom(node) || node is ScriptNode || node is PostfixNode) {
-      return write(node);
+    if (_isFactor(node)) return write(node);
+    final children = node is SequenceNode ? node.children : null;
+    if (children != null && children.every(_isFactor)) {
+      final parts = children.map(write).toList();
+      // A script reaches over what is typed straight after it, `x^2y`.
+      final together =
+          parts.every((part) => !part.contains(' ')) &&
+          <int>[for (var i = 1; i < parts.length; i++) i].every(
+            (i) =>
+                !_runTogether(parts[i - 1], parts[i]) &&
+                !_reaches(children[i - 1]),
+          );
+      if (together) return parts.join();
     }
     return '(${write(node)})';
   }
 
+  /// Whether [node] ends in a script that would take in what is typed
+  /// straight after it.
+  static bool _reaches(MathNode node) => switch (node) {
+    ScriptNode(:final subscript, :final superscript) =>
+      subscript != null || superscript != null && !_isPrimes(superscript),
+    PostfixNode() => false,
+    _ => false,
+  };
+
+  static bool _isFactor(MathNode node) =>
+      _isAtom(node) || node is ScriptNode || node is PostfixNode;
+
   /// A script: bare if it is one token, bracketed otherwise.
   static String _scriptPart(MathNode node) {
     if (node is FencedNode && node.isRoundParen) return '(${write(node)})';
+    // A charge, `O^+`, is a sign alone.
+    if (node case SymbolNode(
+      :final latex,
+    ) when const <String>{'+', '-', r'\pm', r'\mp'}.contains(latex)) {
+      return _spelling(latex);
+    }
     if (_isAtom(node)) return write(node);
     return '(${write(node)})';
   }
@@ -381,6 +411,7 @@ abstract final class LinearWriter {
     // What was last written, or empty after a space.
     var previous = '';
     var previousApart = false;
+    var previousPrefix = false;
     for (final piece in pieces) {
       if (piece.text.isEmpty) continue;
       if (piece.isOperator) {
@@ -393,15 +424,16 @@ abstract final class LinearWriter {
         previous = '';
         continue;
       }
+      // A sign stays on what it applies to, as it is typed: `-2/3`.
       if (previous.isNotEmpty &&
-          (piece.apart ||
-              previousApart ||
+          (!previousPrefix && (piece.apart || previousApart) ||
               _runTogether(previous, piece.text))) {
         out.write(' ');
       }
       out.write(piece.text);
       previous = piece.text;
       previousApart = piece.apart;
+      previousPrefix = piece.prefix;
     }
     return out.toString().trim();
   }
