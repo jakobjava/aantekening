@@ -100,6 +100,18 @@ class _PageContentState extends State<_PageContent> {
   Map<String, (NoteElement, Widget?)> _placed =
       <String, (NoteElement, Widget?)>{};
 
+  /// The text boxes kept built though they are out of the part of the page
+  /// laid out, the one out of it longest first: shown again, they are there
+  /// at once. Built anew as it came into view, a box of formulas took tens
+  /// of milliseconds, a stutter in the scroll.
+  final List<String> _kept = <String>[];
+
+  /// How many text boxes are kept built out of view at most.
+  static const int _keptAtMost = 64;
+
+  /// Builds the text boxes about the view ahead of it, once it rests.
+  Timer? _ahead;
+
   /// The ink over the elements, kept as pixels while the view is not being
   /// zoomed.
   final Map<InkLayer, InkTiles> _inkTiles = <InkLayer, InkTiles>{
@@ -118,6 +130,7 @@ class _PageContentState extends State<_PageContent> {
     widget.view.addListener(_onViewChanged);
     widget.zooming?.addListener(_onViewChanged);
     if (!widget.still) widget.controller.showsAt = _showsAt;
+    _buildAheadLater();
   }
 
   /// Whether the element [id] shows something at [page], as it is placed:
@@ -150,12 +163,15 @@ class _PageContentState extends State<_PageContent> {
       if (!widget.still) widget.controller.showsAt = _showsAt;
     }
     // Built again from above, what the page holds, or what builds it, has
-    // changed: every element is built anew.
+    // changed: every element is built anew — those kept out of view too,
+    // which stay kept.
     _placed = <String, (NoteElement, Widget?)>{};
+    _buildAheadLater();
   }
 
   @override
   void dispose() {
+    _ahead?.cancel();
     widget.view.removeListener(_onViewChanged);
     widget.zooming?.removeListener(_onViewChanged);
     if (widget.controller.showsAt == _showsAt) {
@@ -178,37 +194,117 @@ class _PageContentState extends State<_PageContent> {
               viewport.zoom == _zoom &&
               pageRegion(viewport, widget.size) == _region;
     if (!laidOut) setState(() {});
+    _buildAheadLater();
   }
+
+  /// Builds the text boxes about the view ahead of it once it has rested
+  /// [after] — one a frame, the nearest first — so that a box of formulas
+  /// scrolled to is there already rather than built as it comes into view.
+  void _buildAheadLater([Duration after = const Duration(milliseconds: 300)]) {
+    _ahead?.cancel();
+    if (widget.still) return;
+    _ahead = Timer(after, () {
+      if (!mounted || _isZooming) return;
+      final next = _nearestNotBuilt();
+      if (next == null) return;
+      setState(() => _kept.add(next));
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _buildAheadLater(Duration.zero);
+      });
+    });
+  }
+
+  /// The text box nearest the view, within a view or two of it, that is not
+  /// built yet; or null, if there is none or enough are kept.
+  String? _nearestNotBuilt() {
+    if (_kept.length >= _keptAtMost) return null;
+    final view = widget.view.value.visibleBounds(widget.size);
+    final about = Aabb(
+      view.left - view.width,
+      view.top - 2 * view.height,
+      view.right + view.width,
+      view.bottom + 2 * view.height,
+    );
+    String? nearest;
+    var nearestDistance = double.infinity;
+    for (final element in widget.controller.elementsIn(about)) {
+      if (!_keepsBuilt(element) || _placed.containsKey(element.id)) continue;
+      final bounds = element.bounds;
+      final distance =
+          (bounds.centerX - view.centerX).abs() +
+          (bounds.centerY - view.centerY).abs();
+      if (distance < nearestDistance) {
+        nearest = element.id;
+        nearestDistance = distance;
+      }
+    }
+    return nearest;
+  }
+
+  /// Whether [element] is kept built while out of view: a text box, whose
+  /// formulas are slow to build, never a picture or PDF page, which would
+  /// keep what it has drawn.
+  static bool _keepsBuilt(NoteElement element) =>
+      element is TextElement && !element.locked;
 
   /// The widget [element] is shown by, placed at its frame: the one it was
   /// given before, in [before], if it is the same element. Only what is
   /// shown is kept for the next time.
   Widget? _place(
     Map<String, (NoteElement, Widget?)> before,
-    NoteElement element,
-  ) {
+    NoteElement element, {
+    bool shown = true,
+  }) {
     final kept = before[element.id];
+    final Widget? content;
     if (kept != null && identical(kept.$1, element)) {
-      _placed[element.id] = kept;
-      return kept.$2;
+      content = kept.$2;
+    } else {
+      final built = widget.builder?.call(context, element);
+      // Painted once, and kept: the page painted again as what comes into
+      // view is placed paints only that, not every formula of every box
+      // already there, glyph by glyph.
+      content = built == null ? null : RepaintBoundary(child: built);
     }
-    final content = widget.builder?.call(context, element);
-    final placed = content == null
-        ? null
-        : PlacedOnPage(
-            // Keyed by identity so an element keeps its widget state — a
-            // text box its caret, a PDF page its rendered image — while
-            // others are added, removed or scrolled out of view around it.
-            key: ValueKey<String>(element.id),
-            id: element.id,
-            frame: widget.view.value.frameInView(element.frame),
-            // Painted once, and kept: the page painted again as what comes
-            // into view is placed paints only that, not every formula of
-            // every box already there, glyph by glyph.
-            child: RepaintBoundary(child: content),
-          );
-    _placed[element.id] = (element, placed);
-    return placed;
+    _placed[element.id] = (element, content);
+    if (content == null) return null;
+    return PlacedOnPage(
+      // Keyed by identity so an element keeps its widget state — a text box
+      // its caret, a PDF page its rendered image — while others are added,
+      // removed or scrolled out of view around it.
+      key: ValueKey<String>(element.id),
+      id: element.id,
+      frame: widget.view.value.frameInView(element.frame),
+      shown: shown,
+      child: content,
+    );
+  }
+
+  /// The text boxes kept built out of view, as they now are, [shown] being
+  /// the elements in view: those that have just left it among them.
+  List<NoteElement> _keptOutOf(
+    List<NoteElement> shown,
+    Map<String, (NoteElement, Widget?)> before,
+  ) {
+    if (widget.still) return const <NoteElement>[];
+    final inView = <String>{for (final element in shown) element.id};
+    _kept.removeWhere(inView.contains);
+    for (final MapEntry(key: id, value: (element, _)) in before.entries) {
+      if (!inView.contains(id) && _keepsBuilt(element) && !_kept.contains(id)) {
+        _kept.add(id);
+      }
+    }
+    while (_kept.length > _keptAtMost) {
+      _kept.removeAt(0);
+    }
+    final kept = <NoteElement>[];
+    _kept.removeWhere((id) {
+      final element = widget.controller.elementById(id);
+      if (element == null || !_keepsBuilt(element)) return true;
+      kept.add(element);
+      return false;
+    });
+    return kept;
   }
 
   @override
@@ -243,12 +339,15 @@ class _PageContentState extends State<_PageContent> {
     ];
     final before = _placed;
     _placed = <String, (NoteElement, Widget?)>{};
+    final kept = _keptOutOf(shown, before);
     Widget layer(bool locked, {CanvasHeader? header}) => _ElementLayer(
       placement: locked ? null : _placement,
       placed: <Widget>[
         for (final element in shown)
           if (element.locked == locked && element is! InkElement)
             ?_place(before, element),
+        if (!locked)
+          for (final element in kept) ?_place(before, element, shown: false),
       ],
       // The elements are placed where the view lays them out.
       origin: viewport.toView(origin),
@@ -262,6 +361,7 @@ class _PageContentState extends State<_PageContent> {
     );
 
     return CanvasScope(
+      view: widget.view,
       zoom: _zoom,
       region: region,
       zooming: _laidOutZooming,

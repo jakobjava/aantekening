@@ -136,7 +136,7 @@ extension _Elements on _PageEditorState {
       );
     }
     final id = element.id;
-    return TextBoxEditor(
+    final box = TextBoxEditor(
       element: element,
       isEditing: built.isEditing,
       selected: built.selected,
@@ -164,5 +164,12 @@ extension _Elements on _PageEditorState {
       pageId: widget.pageId,
       onOpenLink: (uri) => unawaited(ref.read(noteLinksProvider).open(uri)),
     );
+    // A picture of it while the page zooms, but for text in the inverse of
+    // what is beneath it, which a picture of it alone would not show.
+    return _drawsInverse(element) ? box : ZoomSnapshot(child: box);
   }
+
+  static bool _drawsInverse(TextElement element) => element.blocks.any(
+    (block) => block.runs.any((run) => run.marks.color == NoteColors.inverse),
+  );
 }

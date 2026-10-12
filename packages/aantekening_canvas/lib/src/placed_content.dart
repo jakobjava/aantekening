@@ -40,7 +40,7 @@ class RenderPlacedContent extends RenderProxyBox {
   /// wrapped in, close about it.
   static RenderPlacedContent? of(RenderObject element) {
     RenderObject? object = element;
-    for (var depth = 0; depth < 8 && object != null; depth++) {
+    for (var depth = 0; depth < 12 && object != null; depth++) {
       if (object is RenderPlacedContent) return object;
       object = object is RenderObjectWithChildMixin ? object.child : null;
     }

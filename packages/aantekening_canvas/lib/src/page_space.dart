@@ -246,6 +246,7 @@ class PlacedOnPage extends ParentDataWidget<PlacedData> {
     required this.frame,
     required super.child,
     this.id,
+    this.shown = true,
     super.key,
   });
 
@@ -254,10 +255,21 @@ class PlacedOnPage extends ParentDataWidget<PlacedData> {
   /// The element it shows, if it is one.
   final String? id;
 
+  /// Whether it is shown. One that is not is kept built and laid out, ready
+  /// to be shown again at once, but is not painted or pressed, and a screen
+  /// reader is not told of it.
+  final bool shown;
+
   @override
   void applyParentData(RenderObject renderObject) {
     final data = renderObject.parentData! as PlacedData;
     data.id = id;
+    if (data.shown != shown) {
+      data.shown = shown;
+      final parent = renderObject.parent;
+      parent?.markNeedsPaint();
+      parent?.markNeedsSemanticsUpdate();
+    }
     if (data.frame == frame) return;
     data.frame = frame;
     renderObject.parent?.markNeedsLayout();
@@ -272,6 +284,9 @@ class PlacedData extends ContainerBoxParentData<RenderBox> {
 
   /// The element the child shows, if it is one.
   String? id;
+
+  /// Whether the child is shown: [PlacedOnPage.shown].
+  bool shown = true;
 
   /// The layer a turned child is painted in, where it needs one.
   final LayerHandle<TransformLayer> turned = LayerHandle<TransformLayer>();
@@ -334,7 +349,9 @@ class RenderPagePlacement extends RenderBox
     var child = firstChild;
     while (child != null) {
       final data = child.parentData! as PlacedData;
-      if (data.frame.rotation == 0) {
+      if (!data.shown) {
+        data.turned.layer = null;
+      } else if (data.frame.rotation == 0) {
         data.turned.layer = null;
         context.paintChild(child, offset + data.offset);
       } else {
@@ -358,7 +375,7 @@ class RenderPagePlacement extends RenderBox
     var child = firstChild;
     while (child != null) {
       final data = child.parentData! as PlacedData;
-      if (data.id == id) {
+      if (data.id == id && data.shown) {
         final content = RenderPlacedContent.of(child);
         return content?.showsAt(content.globalToLocal(global));
       }
@@ -378,7 +395,7 @@ class RenderPagePlacement extends RenderBox
     while (child != null) {
       final data = child.parentData! as PlacedData;
       final local = _toChild(data, position);
-      if ((Offset.zero & child.size).contains(local)) {
+      if (data.shown && (Offset.zero & child.size).contains(local)) {
         final content = RenderPlacedContent.of(child);
         if (content == null) break;
         final transform = content.getTransformTo(child)..invert();
@@ -407,6 +424,7 @@ class RenderPagePlacement extends RenderBox
 
   bool _hitChild(BoxHitTestResult result, RenderBox child, Offset position) {
     final data = child.parentData! as PlacedData;
+    if (!data.shown) return false;
     return data.frame.rotation == 0
         ? result.addWithPaintOffset(
             offset: data.offset,
@@ -421,6 +439,19 @@ class RenderPagePlacement extends RenderBox
                 child.hitTest(result, position: position),
           );
   }
+
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    var child = firstChild;
+    while (child != null) {
+      final data = child.parentData! as PlacedData;
+      if (data.shown) visitor(child);
+      child = data.nextSibling;
+    }
+  }
+
+  @override
+  bool paintsChild(RenderBox child) => (child.parentData! as PlacedData).shown;
 
   @override
   void applyPaintTransform(RenderBox child, Matrix4 transform) {

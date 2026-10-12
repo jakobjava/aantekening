@@ -2,7 +2,10 @@
 library;
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+
+import 'canvas_viewport.dart';
 
 /// What of the canvas an element widget depends on.
 enum CanvasScopeAspect { zoom, region, zooming }
@@ -23,6 +26,7 @@ class CanvasScope extends InheritedModel<CanvasScopeAspect> {
     required super.child,
     this.region,
     this.zooming = false,
+    this.view,
     super.key,
   });
 
@@ -37,6 +41,10 @@ class CanvasScope extends InheritedModel<CanvasScopeAspect> {
   /// the page was laid out for: what is drawn in pixels is best left as it
   /// is until the zoom it comes to is known.
   final bool zooming;
+
+  /// The view of the page, which changes as it scrolls and zooms; null
+  /// outside of a canvas.
+  final ValueListenable<CanvasViewport>? view;
 
   /// The zoom of the nearest canvas, or 1 outside of one.
   static double zoomOf(BuildContext context) =>
@@ -61,6 +69,11 @@ class CanvasScope extends InheritedModel<CanvasScopeAspect> {
         aspect: CanvasScopeAspect.zooming,
       )?.zooming ??
       false;
+
+  /// The view of the nearest canvas's page, to follow without being built
+  /// again as it changes; null outside of one.
+  static ValueListenable<CanvasViewport>? viewOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<CanvasScope>()?.view;
 
   @override
   bool updateShouldNotify(CanvasScope old) =>

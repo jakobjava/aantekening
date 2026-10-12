@@ -24,3 +24,4 @@ export 'src/sheet_painter.dart' show SheetThumbnail;
 export 'src/spatial_index.dart';
 export 'src/stroke_geometry.dart';
 export 'src/tools.dart';
+export 'src/zoom_snapshot.dart' show ZoomSnapshot;

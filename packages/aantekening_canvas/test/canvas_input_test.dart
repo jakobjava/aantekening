@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_canvas/src/element_transforms.dart';
 import 'package:aantekening_canvas/src/page_space.dart';
+import 'package:aantekening_canvas/src/zoom_snapshot.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -432,6 +433,121 @@ void main() {
   });
 
   group('InfiniteCanvas laying out', () {
+    /// A page with a text box and a picture at its top, and a picture far
+    /// below them to scroll to; and how many times each element's widget
+    /// was made, by id.
+    (CanvasController, Map<String, int>) farApart() {
+      final controller = CanvasController()
+        ..loadDocument(
+          PageDocument.empty(id: 'p')
+              .withElementAdded(_textBox('box', x: 100, y: 100))
+              .withElementAdded(_image('picture', x: 100, y: 300))
+              .withElementAdded(_image('far', x: 100, y: 8000)),
+        );
+      return (controller, <String, int>{});
+    }
+
+    Widget counted(Map<String, int> made, NoteElement element) =>
+        _Counted(onMade: () => made[element.id] = (made[element.id] ?? 0) + 1);
+
+    /// Whether [id]'s widget is placed on the page, and shown there.
+    (bool, bool) placed(WidgetTester tester, String id) {
+      final found = find.byKey(ValueKey<String>(id));
+      if (found.evaluate().isEmpty) return (false, false);
+      final box = tester.renderObject<RenderBox>(found);
+      return (true, (box.parentData! as PlacedData).shown);
+    }
+
+    testWidgets('a text box scrolled out of view is kept built, unshown, '
+        'and shown again as it was; a picture is let go', (tester) async {
+      final (controller, made) = farApart();
+      await tester.pumpWidget(
+        _host(
+          controller,
+          elementBuilder: (context, element) => counted(made, element),
+        ),
+      );
+      expect(made, <String, int>{'box': 1, 'picture': 1});
+
+      controller.viewport = const CanvasViewport(origin: Offset(0, 7800));
+      await tester.pump();
+      expect(placed(tester, 'box'), (true, false), reason: 'kept, unshown');
+      expect(placed(tester, 'picture'), (false, false), reason: 'let go');
+
+      controller.viewport = const CanvasViewport();
+      await tester.pump();
+      expect(placed(tester, 'box'), (true, true));
+      expect(made['box'], 1, reason: 'the very widget it had');
+      expect(made['picture'], 2);
+    });
+
+    testWidgets('text boxes about the view are built ahead of it once it '
+        'rests', (tester) async {
+      final controller = CanvasController()
+        ..loadDocument(
+          PageDocument.empty(id: 'p')
+              .withElementAdded(_textBox('near', x: 100, y: 100))
+              .withElementAdded(_textBox('below', x: 100, y: 1400))
+              .withElementAdded(_image('far', x: 100, y: 8000)),
+        );
+      final made = <String, int>{};
+      await tester.pumpWidget(
+        _host(
+          controller,
+          elementBuilder: (context, element) => counted(made, element),
+        ),
+      );
+      expect(made.keys, <String>['near']);
+
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(made['below'], 1, reason: 'built ahead');
+      expect(placed(tester, 'below'), (true, false));
+
+      controller.viewport = const CanvasViewport(origin: Offset(0, 1200));
+      await tester.pump();
+      expect(placed(tester, 'below'), (true, true));
+      expect(made['below'], 1, reason: 'there already');
+    });
+
+    testWidgets('a box in a zoom snapshot is drawn as a picture of itself '
+        'while the page zooms, once it has rested, and as itself after', (
+      tester,
+    ) async {
+      final controller = CanvasController()
+        ..addElement(_textBox('box', x: 300, y: 200));
+      await tester.pumpWidget(
+        _host(
+          controller,
+          elementBuilder: (context, element) =>
+              const ZoomSnapshot(child: ColoredBox(color: Colors.blue)),
+        ),
+      );
+      // The picture is taken once nothing has moved for a while.
+      await tester.pump(RenderZoomSnapshot.settle);
+      await tester.pump();
+      final snapshot = tester.renderObject<RenderZoomSnapshot>(
+        find.byType(ZoomSnapshot),
+      );
+      expect(snapshot, isNot(paints..image()));
+
+      final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+      const at = Offset(400, 300);
+      await tester.sendEventToBinding(trackpad.panZoomStart(at));
+      for (var i = 1; i <= 4; i++) {
+        await tester.sendEventToBinding(
+          trackpad.panZoomUpdate(at, scale: 1 + i * 0.1),
+        );
+        await tester.pump();
+      }
+      expect(snapshot, paints..drawImageRect());
+
+      await tester.sendEventToBinding(trackpad.panZoomEnd());
+      await tester.pumpAndSettle();
+      expect(snapshot, isNot(paints..drawImageRect()));
+      expect(snapshot, paints..rect(color: Colors.blue));
+    });
+
     testWidgets('a pinch scales the page as it is laid out, and lays it '
         'out for the zoom it comes to once it is done', (tester) async {
       final controller = CanvasController()
@@ -1995,3 +2111,24 @@ InkStroke _line(double x0, double y0, double x1, double y1) =>
       xs: <double>[x0, (x0 + x1) / 2, x1],
       ys: <double>[y0, (y0 + y1) / 2, y1],
     );
+
+/// A widget that says when it is made, its state with it.
+class _Counted extends StatefulWidget {
+  const _Counted({required this.onMade});
+
+  final VoidCallback onMade;
+
+  @override
+  State<_Counted> createState() => _CountedState();
+}
+
+class _CountedState extends State<_Counted> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onMade();
+  }
+
+  @override
+  Widget build(BuildContext context) => const ColoredBox(color: Colors.blue);
+}

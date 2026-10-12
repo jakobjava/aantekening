@@ -1,6 +1,6 @@
 # 27. The page glides, and zooms as a picture until it stops
 
-**Status:** accepted; revises how ADR 21's page follows a zoom; how its ink and PDF pages follow one revised by ADR 30
+**Status:** accepted; revises how ADR 21's page follows a zoom; how its ink and PDF pages follow one revised by ADR 30; its text boxes kept built out of view, and its text a picture while it zooms, by ADR 42
 
 ## Context
 
