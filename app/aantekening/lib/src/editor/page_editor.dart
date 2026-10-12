@@ -80,6 +80,7 @@ part 'page_editor_media.dart';
 part 'page_editor_modes.dart';
 part 'page_editor_storage.dart';
 part 'page_editor_text.dart';
+part 'page_editor_twin.dart';
 
 /// Edits the page that is open, laid out among whatever [around] puts beside
 /// it, with the keys of the mode it is in and the menu of all it can do.
@@ -351,6 +352,18 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// Whether the box being edited should open straight into a formula.
   bool _editingStartsInFormula = false;
 
+  /// The page editors open, among them this one, and whether one shows
+  /// this one's page too.
+  late final Set<_PageEditorState> _editors;
+
+  /// The page as last shown in the other editor showing it, if one does —
+  /// as changed here, or there.
+  PageDocument? _shared;
+
+  /// Whether the page is being changed to show it as it was changed in the
+  /// other editor showing it, not here.
+  bool _following = false;
+
   /// Whether the open page is being read, and whether it has been: the
   /// canvas shows it, and edits to it are saved, only once it is ready.
   bool _loading = false;
@@ -386,6 +399,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _libraryRevision = ref.read(libraryRevisionProvider.notifier);
     _contentsRevision = ref.read(pageContentsRevisionProvider.notifier);
     _activePage = ref.read(activePageProvider.notifier);
+    _editors = ref.read(_pageEditorsProvider)..add(this);
     if (widget.active) _takeKeys();
     _unregisterSave = ref.read(openSavesProvider).register(_saveOpenPage);
     ref.listenManual<AsyncValue<FolderChanges>>(
@@ -432,9 +446,13 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   void _leaveKeys() {
     _unregisterCommands?.call();
     _unregisterCommands = null;
-    SchedulerBinding.instance.addPostFrameCallback(
-      (_) => _activePage.leave(_handle),
-    );
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _activePage.leave(_handle);
+      // The same page beside it is typed in there, not here.
+      if (!_disposed && !widget.active && _twin != null) {
+        _stopEditing(refocusCanvas: false);
+      }
+    });
   }
 
   void _onSyntaxChosen() => ref
@@ -503,6 +521,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _controller.removeListener(_onCanvasChanged);
     _stopTracingView();
     _disposed = true;
+    _editors.remove(this);
     final pageId = widget.pageId;
     if (pageId != null && _ready && _controller.isDirty) {
       unawaited(_persist(pageId, _controller.document));

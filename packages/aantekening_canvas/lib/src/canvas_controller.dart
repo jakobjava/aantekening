@@ -234,6 +234,28 @@ class CanvasController extends ChangeNotifier {
     _changed();
   }
 
+  /// Shows [document] in place of the page: the same page, as it was just
+  /// changed in [other], another view of it. Undo and redo here go where
+  /// they go there. The view stays where it is, and what is picked stays
+  /// picked while it is still there. The change is [other]'s to save, so it
+  /// leaves nothing unsaved here.
+  void follow(CanvasController other, PageDocument document) {
+    _undoStack
+      ..clear()
+      ..addAll(other._undoStack);
+    _redoStack
+      ..clear()
+      ..addAll(other._redoStack);
+    _activeInkElementId = null;
+    _dirty = false;
+    if (!identical(document, _document)) {
+      _document = document;
+      _reindex();
+      _selection.removeWhere((id) => !_byId.containsKey(id));
+    }
+    _changed();
+  }
+
   /// Tells what listens that the page, the selection or the tools changed.
   void _changed() {
     _contents.signal();

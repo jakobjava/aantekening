@@ -412,25 +412,15 @@ class _Pane extends ConsumerWidget {
     final tabs = ref.watch(tabsProvider);
     final tab = tabs.tabs[index];
     final active = index == tabs.active;
-    // A page is edited in one place at a time: beside itself, it is not
-    // opened a second time.
-    final twice =
-        !active && tab.pageId != null && tab.pageId == tabs.current.pageId;
-    final editor = twice
-        ? Padding(
-            padding: obscured,
-            child: const EmptyMessage(
-              'The same page is open beside this one',
-              detail: 'A page is written on in one place at a time.',
-            ),
-          )
-        : PageEditor(
-            key: ValueKey<_Slot>(slot),
-            pageId: tab.pageId,
-            aiScope: _aiScope(tab),
-            active: active,
-            obscured: obscured,
-          );
+    // The same page may be open in both panes, each looking at a part of
+    // it: what is done to it in one is done in the other.
+    final editor = PageEditor(
+      key: ValueKey<_Slot>(slot),
+      pageId: tab.pageId,
+      aiScope: _aiScope(tab),
+      active: active,
+      obscured: obscured,
+    );
     // Built the same whichever has the keys, so giving them to the other
     // pane keeps both editors as they are, and neither is drawn again.
     return Listener(

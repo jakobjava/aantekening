@@ -22,15 +22,19 @@ extension _Storage on _PageEditorState {
       final stored = await store.pages.loadDocument(pageId);
       // Another page may have been opened while this one was read.
       if (!mounted || pageId != widget.pageId) return;
-      final page = _withoutEmptyTextBoxes(
-        stored ?? PageDocument.empty(id: pageId),
-      );
+      // Open beside itself, the page is as the other pane has it, saved yet
+      // or not.
+      final twin = _twin;
+      final page =
+          twin?._sharedDocument ??
+          _withoutEmptyTextBoxes(stored ?? PageDocument.empty(id: pageId));
       // Formulas are stored as LaTeX; older pages held some in Simple
       // syntax, which are translated once and saved that way — as is content
       // from before pages had a top-left corner, moved onto the page.
       final document = MathStorage.withLatexFormulas(page).withContentOnPage();
       _controller.loadDocument(document);
       if (_views[pageId] case final view?) _controller.viewport = view;
+      if (twin != null) _follow(twin);
       if (!identical(document, page)) unawaited(_persist(pageId, document));
       _update(() {
         _loading = false;
@@ -85,6 +89,7 @@ extension _Storage on _PageEditorState {
   /// scrolling among them — so it rebuilds nothing itself: the canvas and
   /// the status line each listen for what they show.
   void _onCanvasChanged() {
+    _shareWithTwin();
     _syncMode();
     if (_revealed case final revealed?
         when !_controller.selection.contains(revealed.elementId)) {
@@ -194,6 +199,9 @@ extension _Storage on _PageEditorState {
     if (changes == null || pageId == null || !changes.pages.contains(pageId)) {
       return;
     }
+    // Open beside itself with changes not yet saved there, the page is
+    // kept from being changed under them there.
+    if (_twin?._controller.isDirty ?? false) return;
     final store = _store;
     if (!_ready || store == null) {
       // Still being read: read again, to be sure it is their version.

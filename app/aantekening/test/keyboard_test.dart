@@ -24,7 +24,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'editor_harness.dart' show press, typeKeys, typeKeysAtOnce;
+import 'editor_harness.dart' show press, type, typeKeys, typeKeysAtOnce;
 
 /// Moving about the window from the keyboard: every shortcut runs its
 /// command wherever the keyboard is, and can be changed.
@@ -302,6 +302,55 @@ void main() {
     expect(find.byType(PageEditor), findsOneWidget);
     expect(tabs().beside, isNull);
     expect(tabs().tabs, hasLength(2), reason: 'the other still a tab');
+  });
+
+  testWidgets('the same page opens in both panes, what is typed in one '
+      'shown in the other and undone from either', (tester) async {
+    final container = await open(tester);
+    await container.read(libraryActionsProvider).openIdInNewTab(pages[0].id);
+    await tester.pumpAndSettle();
+    container.read(tabsProvider.notifier).split(stacked: false);
+    await tester.pumpAndSettle();
+    final panes = find.byType(PageEditor);
+    expect(panes, findsNWidgets(2));
+    expect(find.text('The same page is open beside this one'), findsNothing);
+
+    /// What the text boxes of the [index]th pane hold.
+    List<String> boxes(int index) => <String>[
+      for (final box in tester.widgetList<TextBoxEditor>(
+        find.descendant(
+          of: panes.at(index),
+          matching: find.byType(TextBoxEditor),
+        ),
+      ))
+        box.element.blocks.map((block) => block.plainText).join('\n'),
+    ];
+
+    await tester.tapAt(tester.getRect(panes.at(0)).center);
+    await tester.pumpAndSettle();
+    await type(tester, 'hello');
+    await tester.pumpAndSettle();
+    expect(boxes(0), contains('hello'));
+    expect(boxes(1), contains('hello'), reason: 'shown beside it as typed');
+
+    await tester.tapAt(
+      tester.getRect(panes.at(1)).bottomCenter - const Offset(0, 80),
+    );
+    await tester.pumpAndSettle();
+    expect(container.read(tabsProvider).active, 1);
+    await press(tester, LogicalKeyboardKey.escape);
+    await press(tester, LogicalKeyboardKey.keyZ, control: true);
+    await tester.pumpAndSettle();
+    expect(boxes(1), isNot(contains('hello')), reason: 'undone beside it');
+    expect(boxes(0), boxes(1));
+
+    await press(tester, LogicalKeyboardKey.keyZ, control: true, shift: true);
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    expect(boxes(0), contains('hello'), reason: 'redone in both');
+    final saved = await tester.runAsync(
+      () => store.pages.loadDocument(pages[0].id),
+    );
+    expect(saved?.extractSearchText(), contains('hello'));
   });
 
   testWidgets('the line between split panes is dragged to share the window '

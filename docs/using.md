@@ -97,8 +97,9 @@ Alt and h, j, k or l, or a click in the other page, gives it the keys. Drag
 the line between them to share the window otherwise, and double-click it for
 half each again; the share is remembered. **Space w q** shows one page
 again, the other staying a tab.
-A page is written on in one place at a time: beside itself, it is not opened
-twice.
+The same page can be open on both sides, to look at two parts of it at
+once: what is written on it in one is written in the other as it is typed,
+and undone from either.
 
 ### Moving and sizing what floats
 
