@@ -77,14 +77,15 @@ enum StudyKind {
           '"meaning": "what it gives, and what each symbol stands for", '
           '"sources": ["1.4"]}], '
           '"beyond": ["what the notes leave out that helps to understand '
-          'them, if anything"]}\n'
+          'them, or get wrong, put right — if anything"]}\n'
           'Two to five sections of two to six points. "formulas" holds only '
           'the key ones a student must know by heart and apply — rarely more '
           'than five, often fewer, none if there are none — never the steps '
           'of a derivation, a worked example, a formula with numbers put in '
           'or one that is a rearrangement of another. Every point and '
-          'formula names the passages it comes from. Only "beyond" may hold '
-          'what the notes do not say.',
+          'formula names the passages it comes from, and says what is right '
+          'where the notes are wrong; what they do not say at all goes in '
+          '"beyond" alone, in words, naming no passages.',
     flashcards =>
       'Answer with JSON alone, in this form:\n'
           '{"cards": [{"front": "a question, answerable in a line", '
@@ -97,8 +98,11 @@ enum StudyKind {
           '"answer": 0, "explanation": "why that option is right, and the '
           'others not", "sources": ["1.2"]}]}\n'
           'Five to ten questions of four options, "answer" the index of the '
-          'right one; wrong options are plausible mistakes. Each question '
-          'names the passages it comes from.',
+          'right one, counted from 0; wrong options are plausible mistakes, '
+          'but plainly wrong to one who understands. Before writing each '
+          'question, work it out: exactly one option is right, and "answer" '
+          'and the explanation name the same one. Each question names the '
+          'passages it comes from.',
     terms =>
       'Answer with JSON alone, in this form:\n'
           r'{"terms": [{"term": "…, or a symbol like $v_0$", "meaning": "in a '
@@ -108,7 +112,8 @@ enum StudyKind {
     text =>
       'Write it about this $scope in Markdown, with headings, lists and '
           'tables where they help, and cite the passages each part draws '
-          'on. Say plainly where it goes beyond what the notes say.',
+          'on. Say plainly where it goes beyond what the notes say, or puts '
+          'them right.',
   };
 
   /// The JSON Schema of what [form] asks for, for a provider that can

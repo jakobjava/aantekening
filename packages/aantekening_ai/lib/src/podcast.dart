@@ -11,6 +11,7 @@ import 'package:meta/meta.dart';
 
 import 'conversation.dart';
 import 'loose_json.dart';
+import 'note_agent.dart' show NoteAgent;
 import 'note_context.dart';
 import 'note_reader.dart';
 import 'provider.dart';
@@ -1038,7 +1039,10 @@ class PodcastMaker {
     return '''
 You write podcasts made from a student's own notes, in aantekening, a note-taking app, for the student to learn from by listening. The notes of the ${scope.kindName} "${scope.title}"$where are given; the pictures show their handwriting and drawings over printouts.
 
-- Teach what the notes teach, correctly: follow the logic of the subject rather than the order of the notes, and reuse the student's own terms and phrases, which are easier for them to remember. Where the notes seem mistaken, say so.
+${NoteAgent.readingTheNotes}
+
+How to write it:
+- Teach what the notes teach, correctly: understand them first, as a teacher of the subject would, and check every fact, formula, unit and number before it is said — the student learns from what they hear. Follow the logic of the subject rather than the order of the notes, and reuse the student's own terms and phrases where they are right, which are easier for them to remember. Where the notes are mistaken, say what is right, and that the notes differ.
 - Everything you write is read aloud by a speech engine. Write only the words spoken: no Markdown, no lists, no headings, no stage directions, no sound effects, no emojis, no LaTeX or symbols. Say formulas and units in words, as a teacher reads them out — "v equals s over t", "nine point eight one metres per second squared".
 - Answer with the JSON asked for and nothing else: no Markdown fence, no words before or after it.${about.trim().isEmpty ? '' : '\n\nWhat the student says about themselves — bear it in mind, as a teacher who knows them would:\n${about.trim()}'}''';
   }

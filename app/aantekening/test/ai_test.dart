@@ -876,7 +876,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SummarySheet), findsOneWidget);
     expect(
-      find.textContaining(RegExp(r'by \S+  ·  ≈ \$0\.000')),
+      find.textContaining(RegExp(r'by \S+  ·  ≈ \$0\.00\d')),
       findsOneWidget,
     );
     expect(find.text('BEYOND YOUR NOTES'), findsOneWidget);

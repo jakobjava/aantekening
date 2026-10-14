@@ -1,6 +1,6 @@
 # 17. AI from any provider, grounded in the notes, and kept apart from them
 
-**Status:** accepted — supersedes ADR 7; what a study set asks for is revised by ADR 25; where the AI shows, by ADR 40; how it answers, by ADR 41; podcasts, added by ADR 43
+**Status:** accepted — supersedes ADR 7; what a study set asks for is revised by ADR 25; where the AI shows, by ADR 40; how it answers, by ADR 41; podcasts, added by ADR 43; how the notes are read and checked, by ADR 44
 
 ## Context
 
