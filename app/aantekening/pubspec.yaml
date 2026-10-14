@@ -29,6 +29,7 @@ dependencies:
   url_launcher: ^6.3.2
   markdown: ^7.3.1
   desktop_drop: ^0.8.4
+  audioplayers: ^6.8.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

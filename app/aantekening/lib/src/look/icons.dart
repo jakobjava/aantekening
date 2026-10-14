@@ -39,6 +39,7 @@ enum AppIcon {
   search,
   graph,
   ai,
+  podcast,
   settings,
   bin,
   appearance,
@@ -380,6 +381,18 @@ class _IconPainter extends CustomPainter {
           (1.5, 8),
           (6.4, 6.4),
         ], closed: true);
+      case AppIcon.podcast:
+        // A microphone on its stand.
+        box(6, 1.5, 10, 9.5);
+        through(<(double, double)>[
+          (3.5, 7.5),
+          (4.2, 10.2),
+          (8, 12.2),
+          (11.8, 10.2),
+          (12.5, 7.5),
+        ]);
+        through(<(double, double)>[(8, 12.2), (8, 14.5)]);
+        through(<(double, double)>[(5.5, 14.5), (10.5, 14.5)]);
       case AppIcon.settings:
         through(<(double, double)>[(2, 5), (8.2, 5)]);
         ring(10, 5, 1.8);

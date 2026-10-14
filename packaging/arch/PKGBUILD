@@ -13,7 +13,8 @@ pkgdesc='A powerful note application'
 arch=('x86_64')
 url='https://github.com/jakobjava/aantekening'
 license=('unknown')
-depends=('gtk3' 'libsecret' 'libepoxy' 'fontconfig' 'glib2' 'gcc-libs' 'glibc')
+depends=('gtk3' 'libsecret' 'libepoxy' 'fontconfig' 'glib2' 'gcc-libs' 'glibc'
+         'gstreamer' 'gst-plugins-base' 'gst-plugins-good')
 # Flutter's engine and the app are built stripped already.
 options=('!strip' '!debug')
 source=("aantekening-$pkgver-linux-x64.tar.gz"

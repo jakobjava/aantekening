@@ -17,6 +17,7 @@ import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 import '../modes/key_guide.dart' show KeyCap;
+import '../settings/podcast_settings.dart';
 import 'ai_session.dart';
 import 'ai_state.dart';
 import 'answer_progress.dart';
@@ -24,6 +25,7 @@ import 'answer_view.dart';
 import 'flashcards_view.dart';
 import 'glossary_view.dart';
 import 'money.dart';
+import 'podcast_view.dart';
 import 'quiz_view.dart';
 import 'study_profile_editor.dart';
 import 'study_style.dart';
@@ -82,7 +84,7 @@ class StudySetPage extends ConsumerWidget {
     return Column(
       children: <Widget>[
         StudyHeader(
-          kind: set.kind,
+          label: set.kind.label,
           title: profile.name,
           subtitle: <String>[
             ?info?.title,
@@ -101,7 +103,7 @@ class StudySetPage extends ConsumerWidget {
               'Make again',
               onPressed: () async {
                 if (cards &&
-                    !await _confirm(
+                    !await confirmStep(
                       context,
                       'Make ${profile.called} again?',
                       'Cards that ask the same keep what you learnt of '
@@ -115,7 +117,7 @@ class StudySetPage extends ConsumerWidget {
             SmallButton(
               'Delete',
               onPressed: () async {
-                if (await _confirm(
+                if (await confirmStep(
                   context,
                   'Delete ${profile.called}?',
                   cards
@@ -165,7 +167,13 @@ class StudySetPage extends ConsumerWidget {
   }
 }
 
-Future<bool> _confirm(BuildContext context, String title, String body) async =>
+/// Asks whether to go on with what [title] asks, [body] saying what
+/// follows.
+Future<bool> confirmStep(
+  BuildContext context,
+  String title,
+  String body,
+) async =>
     await showAppDialog<bool>(
       context: context,
       builder: (context) => GlassDialog(
@@ -284,7 +292,7 @@ class StudyDraftPage extends ConsumerWidget {
     return Column(
       children: <Widget>[
         StudyHeader(
-          kind: profile.form,
+          label: profile.form.label,
           title: 'Making ${profile.called}',
           subtitle: <String>[
             'from “${info?.title ?? ''}”',
@@ -412,6 +420,15 @@ class StudyOverview extends ConsumerWidget {
             onShow: () => session.openProfile(profile.id),
             onMake: () => unawaited(session.make(profile)),
           ),
+        heading(
+          'Listen',
+          action: SmallButton(
+            'Podcast settings…',
+            tooltip: 'Choose the voices, who speaks and which models write it',
+            onPressed: () => openPodcastSettings(context),
+          ),
+        ),
+        PodcastRows(scope: scope),
         heading('Ask'),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),

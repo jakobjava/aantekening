@@ -7,7 +7,9 @@ import 'anthropic_provider.dart';
 import 'note_context.dart';
 import 'ollama_provider.dart';
 import 'openai_compatible_provider.dart';
+import 'podcast.dart';
 import 'provider.dart';
+import 'speech.dart';
 import 'study_profile.dart';
 import 'web_search.dart';
 
@@ -271,7 +273,11 @@ class AiSettings {
     this.searchWeb = true,
     this.about = '',
     this.profiles = const <StudyProfile>[],
-  });
+    this.voices = const <VoiceConfig>[],
+    List<EpisodeProfile>? episodes,
+    List<SpeakerProfile>? casts,
+  }) : _episodes = episodes,
+       _casts = casts;
 
   final List<ProviderConfig> providers;
 
@@ -292,6 +298,97 @@ class AiSettings {
   /// The app's own study profiles the person changed, and those they made,
   /// in the order made; see [studyProfiles].
   final List<StudyProfile> profiles;
+
+  /// The voice providers set up, to speak podcasts with.
+  final List<VoiceConfig> voices;
+
+  /// The episode and speaker profiles, or null for the app's own while
+  /// the person has changed none.
+  final List<EpisodeProfile>? _episodes;
+  final List<SpeakerProfile>? _casts;
+
+  /// The kinds of podcast to make: the app's own until the person changes
+  /// them.
+  List<EpisodeProfile> get episodes => _episodes ?? EpisodeProfile.originals;
+
+  /// Who speaks in podcasts: the app's own until the person changes them.
+  List<SpeakerProfile> get casts => _casts ?? SpeakerProfile.originals;
+
+  /// The speaker profile [id], or the first.
+  SpeakerProfile? castOf(String id) =>
+      casts.where((cast) => cast.id == id).firstOrNull ?? casts.firstOrNull;
+
+  /// The voice provider [id], or the first.
+  VoiceConfig? voiceOf(String id) =>
+      voices.where((voice) => voice.id == id).firstOrNull ?? voices.firstOrNull;
+
+  /// The chat provider [choice] names, or the one in use.
+  ProviderConfig? providerOf(ModelChoice choice) => choice.isInUse
+      ? active
+      : providers.where((p) => p.id == choice.providerId).firstOrNull;
+
+  /// Whether the person changed the episode or speaker profiles.
+  bool get podcastsChanged => _episodes != null || _casts != null;
+
+  /// With the app's own episode and speaker profiles again.
+  AiSettings withPodcastsAsMade() => AiSettings(
+    providers: providers,
+    activeId: activeId,
+    webBackend: webBackend,
+    searxngUrl: searxngUrl,
+    searchWeb: searchWeb,
+    about: about,
+    profiles: profiles,
+    voices: voices,
+  );
+
+  /// With [voice] in place of the voice provider of its id, or added.
+  AiSettings withVoice(VoiceConfig voice) => copyWith(
+    voices: <VoiceConfig>[
+      for (final kept in voices)
+        if (kept.id == voice.id) voice else kept,
+      if (!voices.any((kept) => kept.id == voice.id)) voice,
+    ],
+  );
+
+  AiSettings withoutVoice(String id) => copyWith(
+    voices: <VoiceConfig>[
+      for (final voice in voices)
+        if (voice.id != id) voice,
+    ],
+  );
+
+  /// With [episode] in place of the episode profile of its id, or added.
+  AiSettings withEpisode(EpisodeProfile episode) => copyWith(
+    episodes: <EpisodeProfile>[
+      for (final kept in episodes)
+        if (kept.id == episode.id) episode else kept,
+      if (!episodes.any((kept) => kept.id == episode.id)) episode,
+    ],
+  );
+
+  AiSettings withoutEpisode(String id) => copyWith(
+    episodes: <EpisodeProfile>[
+      for (final episode in episodes)
+        if (episode.id != id) episode,
+    ],
+  );
+
+  /// With [cast] in place of the speaker profile of its id, or added.
+  AiSettings withCast(SpeakerProfile cast) => copyWith(
+    casts: <SpeakerProfile>[
+      for (final kept in casts)
+        if (kept.id == cast.id) cast else kept,
+      if (!casts.any((kept) => kept.id == cast.id)) cast,
+    ],
+  );
+
+  AiSettings withoutCast(String id) => copyWith(
+    casts: <SpeakerProfile>[
+      for (final cast in casts)
+        if (cast.id != id) cast,
+    ],
+  );
 
   /// The study profiles to make sets with: the app's own, as the person
   /// has them, then their own.
@@ -322,6 +419,9 @@ class AiSettings {
     bool? searchWeb,
     String? about,
     List<StudyProfile>? profiles,
+    List<VoiceConfig>? voices,
+    List<EpisodeProfile>? episodes,
+    List<SpeakerProfile>? casts,
   }) => AiSettings(
     providers: providers ?? this.providers,
     activeId: activeId ?? this.activeId,
@@ -330,6 +430,9 @@ class AiSettings {
     searchWeb: searchWeb ?? this.searchWeb,
     about: about ?? this.about,
     profiles: profiles ?? this.profiles,
+    voices: voices ?? this.voices,
+    episodes: episodes ?? _episodes,
+    casts: casts ?? _casts,
   );
 
   /// With [config] in place of the provider of its id, or added.
@@ -352,6 +455,9 @@ class AiSettings {
     searchWeb: searchWeb,
     about: about,
     profiles: profiles,
+    voices: voices,
+    episodes: _episodes,
+    casts: _casts,
   );
 
   /// With [profile] in place of the profile of its id, or added — and one
@@ -385,6 +491,12 @@ class AiSettings {
     if (about.isNotEmpty) 'about': about,
     if (profiles.isNotEmpty)
       'profiles': <Object?>[for (final p in profiles) p.toJson()],
+    if (voices.isNotEmpty)
+      'voices': <Object?>[for (final v in voices) v.toJson()],
+    if (_episodes case final episodes?)
+      'episodes': <Object?>[for (final e in episodes) e.toJson()],
+    if (_casts case final casts?)
+      'casts': <Object?>[for (final c in casts) c.toJson()],
   };
 
   static AiSettings fromJson(Object? json) {
@@ -405,6 +517,22 @@ class AiSettings {
         for (final entry in (json['profiles'] as List<Object?>?) ?? const [])
           if (entry is Map) ?StudyProfile.fromJson(entry.cast()),
       ],
+      voices: <VoiceConfig>[
+        for (final entry in (json['voices'] as List<Object?>?) ?? const [])
+          if (entry is Map) ?VoiceConfig.fromJson(entry.cast()),
+      ],
+      episodes: switch (json['episodes']) {
+        final List<Object?> list => <EpisodeProfile>[
+          for (final entry in list) ?EpisodeProfile.fromJson(entry),
+        ],
+        _ => null,
+      },
+      casts: switch (json['casts']) {
+        final List<Object?> list => <SpeakerProfile>[
+          for (final entry in list) ?SpeakerProfile.fromJson(entry),
+        ],
+        _ => null,
+      },
     );
   }
 }

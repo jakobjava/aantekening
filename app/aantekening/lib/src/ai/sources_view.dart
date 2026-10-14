@@ -139,8 +139,8 @@ class FootnoteMark extends StatelessWidget {
 
   static TextSpan _preview(Citation citation, Tones tones) {
     final quote = _quoteOf(citation);
-    // A tooltip is the text's colour, with the base's on it.
-    final on = tones.base;
+    // A tooltip is a raised panel, written on in the text's colour.
+    final on = tones.text;
     return TextSpan(
       children: <InlineSpan>[
         TextSpan(
@@ -252,15 +252,30 @@ class SourceLine extends StatelessWidget {
 }
 
 /// The places [footnotes] numbers, listed: the person's notes by page,
-/// each sentence quoted after its number, and the web after.
-class SourceList extends StatelessWidget {
+/// each sentence quoted after its number, and the web after — each folded
+/// to its heading and how many it holds, until it is opened.
+class SourceList extends StatefulWidget {
   const SourceList({required this.footnotes, required this.onOpen, super.key});
 
   final Footnotes footnotes;
   final void Function(Citation citation) onOpen;
 
   @override
+  State<SourceList> createState() => _SourceListState();
+}
+
+class _SourceListState extends State<SourceList> {
+  /// The origins whose sources are shown, not only counted.
+  final Set<SourceOrigin> _open = <SourceOrigin>{};
+
+  void _toggle(SourceOrigin origin) => setState(() {
+    if (!_open.remove(origin)) _open.add(origin);
+  });
+
+  @override
   Widget build(BuildContext context) {
+    final footnotes = widget.footnotes;
+    final onOpen = widget.onOpen;
     final tones = context.tones;
     final cited = footnotes.cited;
     if (cited.isEmpty) return const SizedBox.shrink();
@@ -277,10 +292,37 @@ class SourceList extends StatelessWidget {
       }
     }
 
-    Widget heading(String label, SourceOrigin origin) => Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 4),
-      child: SmallCaps(label, color: Origins.colourOf(origin, tones)),
-    );
+    Widget heading(String label, SourceOrigin origin, int count) {
+      final open = _open.contains(origin);
+      final color = Origins.colourOf(origin, tones);
+      return Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Semantics(
+          button: true,
+          expanded: open,
+          child: InkWell(
+            onTap: () => _toggle(origin),
+            borderRadius: Corners.smallRadius,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(2, 4, 4, 4),
+              child: Row(
+                children: <Widget>[
+                  Mark(
+                    open ? MarkShape.chevronDown : MarkShape.chevronRight,
+                    size: 10,
+                    color: color,
+                  ),
+                  const SizedBox(width: 8),
+                  SmallCaps(label, color: color),
+                  const SizedBox(width: 8),
+                  KeyHint('$count'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     Widget entry(int number, Citation citation, {String? text}) {
       final color = Origins.colourOf(citation.origin, tones);
@@ -328,29 +370,37 @@ class SourceList extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (pages.isNotEmpty) heading('From your notes', SourceOrigin.notes),
-          for (final entries in pages.values) ...<Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 4, 4, 2),
-              child: Text(
-                entries.first.$2.title,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
+          if (pages.isNotEmpty)
+            heading(
+              'From your notes',
+              SourceOrigin.notes,
+              cited.length - web.length,
+            ),
+          if (_open.contains(SourceOrigin.notes))
+            for (final entries in pages.values) ...<Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 4, 4, 2),
+                child: Text(
+                  entries.first.$2.title,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-            for (final (n, citation) in entries)
-              if (_quoteOf(citation).isNotEmpty) entry(n, citation),
-          ],
-          if (web.isNotEmpty) heading('From the web', SourceOrigin.web),
-          for (final (n, citation) in web)
-            entry(
-              n,
-              citation,
-              text:
-                  '${citation.title} — ${Uri.tryParse(citation.uri)?.host ?? citation.uri}',
-            ),
+              for (final (n, citation) in entries)
+                if (_quoteOf(citation).isNotEmpty) entry(n, citation),
+            ],
+          if (web.isNotEmpty)
+            heading('From the web', SourceOrigin.web, web.length),
+          if (_open.contains(SourceOrigin.web))
+            for (final (n, citation) in web)
+              entry(
+                n,
+                citation,
+                text:
+                    '${citation.title} — ${Uri.tryParse(citation.uri)?.host ?? citation.uri}',
+              ),
         ],
       ),
     );

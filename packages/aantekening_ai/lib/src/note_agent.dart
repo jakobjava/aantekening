@@ -121,35 +121,6 @@ class NoteAgent {
   /// what it has.
   static const int maxRounds = 10;
 
-  /// The progress of [answer], which ends the moment it is no longer
-  /// listened to: [answer] is handed what says so, for each request it
-  /// makes, and the model is stopped then — not once it next sends
-  /// something, which a model reading a long prompt may not for minutes.
-  static Stream<AgentProgress> _stoppable(
-    Stream<AgentProgress> Function(Future<void> stop) answer,
-  ) {
-    final stop = Completer<void>();
-    StreamSubscription<AgentProgress>? answering;
-    late final StreamController<AgentProgress> progress;
-    progress = StreamController<AgentProgress>(
-      sync: true,
-      onListen: () => answering = answer(stop.future).listen(
-        progress.add,
-        onError: progress.addError,
-        onDone: progress.close,
-      ),
-      onPause: () => answering?.pause(),
-      onResume: () => answering?.resume(),
-      onCancel: () {
-        if (!stop.isCompleted) stop.complete();
-        // Not waited for: the answer ends at its next step, which the
-        // request broken off brings at once.
-        answering?.cancel().ignore();
-      },
-    );
-    return progress.stream;
-  }
-
   /// Answers [question] about [scope], after [history] — the conversation
   /// so far, empty for its first question. With [searchWeb], the web may be
   /// searched.
@@ -158,7 +129,7 @@ class NoteAgent {
     required List<ChatMessage> history,
     required String question,
     bool searchWeb = false,
-  }) => _stoppable(
+  }) => stoppable(
     (stop) => _ask(
       scope: scope,
       history: history,
@@ -306,7 +277,7 @@ class NoteAgent {
   Stream<AgentProgress> make(
     StudyProfile profile, {
     required ScopeInfo scope,
-  }) => _stoppable((stop) => _make(profile, scope: scope, stop: stop));
+  }) => stoppable((stop) => _make(profile, scope: scope, stop: stop));
 
   Stream<AgentProgress> _make(
     StudyProfile profile, {

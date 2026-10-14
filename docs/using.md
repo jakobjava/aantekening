@@ -417,6 +417,10 @@ The line to ask in is at its foot: **i** or Enter goes to it, Enter asks,
 **Web** lets the answer search the web, and the model's name opens the
 settings to choose another.
 
+Beneath an answer, what it cites is folded to a line for your notes and one
+for the web, each saying how many; a click opens it to the sentences quoted.
+Hovering over a small number shows the sentence it cites.
+
 To have part of an answer written again, select it and choose **Write this
 again…** from the menu of what is selected (a right-click, or a long press).
 The paragraphs, list items or formulas the selection touches are written
@@ -459,6 +463,33 @@ original** brings one of the app's own back. **New study profile…** describes
 something else to make, in the form of one of the app's own sets or as free
 text: exam tasks with worked solutions, a cheat sheet, a timeline. Free text
 cites your notes as answers do.
+
+### Podcasts
+
+Under **Listen**, the overview makes a podcast of the page, section or
+notebook to learn from by ear, as [Open Notebook](https://github.com/lfnovo/open-notebook)
+does: one model plans the episode in parts, a model writes what is said in
+each, and a voice provider speaks it, each speaker in their own voice. It
+appears as it is made; once spoken, it plays with its transcript beside it,
+the line being said marked — click a line to hear it from there — at up to
+twice the speed, and **Save audio…** saves it as a WAV file.
+
+Set it up under **Settings › Podcasts**:
+
+- **Voices** — what speaks: OpenAI or Requesty (`gpt-4o-mini-tts` speaks each speaker in
+  their manner), Google Gemini, ElevenLabs, or a speech server on this
+  computer, which keeps it all here: [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI)
+  (`docker run -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu`), or any other
+  that speaks OpenAI's `/audio/speech`. **Try it** says a sentence.
+- **Kinds of podcast** — each with what it is to be (the briefing), how many
+  parts, its language (the notes' own unless set), who speaks, and the model
+  that plans it and the one that writes it: the model in use, or any model of
+  any provider set up under AI.
+- **Who speaks** — one to four speakers, each with a name, a voice (the voice
+  provider's own, unless chosen), who they are and how they speak.
+
+The transcript is kept with the notes' AI, the sound on this computer only:
+on another computer, **Speak it** speaks the transcript again.
 
 ## Where notes live
 

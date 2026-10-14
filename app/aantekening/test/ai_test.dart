@@ -6,6 +6,7 @@ import 'package:aantekening/src/ai/ai_state.dart';
 import 'package:aantekening/src/ai/ai_view.dart';
 import 'package:aantekening/src/ai/answer_view.dart';
 import 'package:aantekening/src/ai/flashcards_view.dart';
+import 'package:aantekening/src/ai/podcast_view.dart';
 import 'package:aantekening/src/ai/sources_view.dart';
 import 'package:aantekening/src/ai/study_pages.dart';
 import 'package:aantekening/src/ai/summary_sheet.dart';
@@ -15,6 +16,7 @@ import 'package:aantekening/src/look/chooser.dart';
 import 'package:aantekening/src/look/controls.dart';
 import 'package:aantekening/src/look/glass.dart';
 import 'package:aantekening/src/look/theme.dart';
+import 'package:aantekening/src/look/tones.dart';
 import 'package:aantekening/src/modes/editor_mode.dart';
 import 'package:aantekening/src/modes/key_guide.dart';
 import 'package:aantekening/src/preferences.dart';
@@ -30,6 +32,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'app_test.dart' show showPanes;
@@ -65,6 +68,23 @@ class FakeProvider implements ChatProvider {
       ChatMessage(ChatRole.assistant, <ChatPart>[]),
       stop: StopReason.done,
     );
+    // A podcast: planned in two parts, each a line from each speaker.
+    if (request.system.contains('You write podcasts')) {
+      yield TextDelta(
+        identical(request.answerSchema, PodcastMaker.outlineSchema)
+            ? '{"segments": [{"name": "What force is", "description": "F = '
+                  'ma", "size": "short"}, {"name": "Newtons", "description": '
+                  '"the unit", "size": "short"}]}'
+            : question.contains('Write segment 1 alone')
+            ? '{"transcript": [{"speaker": "Anna", "dialogue": "Welcome! '
+                  'Force is mass times acceleration."}, {"speaker": "Ben", '
+                  '"dialogue": "So F equals m a?"}]}'
+            : '{"transcript": [{"speaker": "Anna", "dialogue": "Measured in '
+                  'newtons. Goodbye!"}]}',
+      );
+      yield done;
+      return;
+    }
     // A study set, written as JSON, citing the first sentence; free text
     // is written as an answer is.
     if (request.system.contains('study material') &&
@@ -126,6 +146,31 @@ class FakeProvider implements ChatProvider {
   void close() {}
 }
 
+/// Speaks every line as a tenth of a second of sound, and keeps what it
+/// was asked to say in which voice.
+class FakeSpeech implements SpeechProvider {
+  final List<(String, String)> spoken = <(String, String)>[];
+
+  @override
+  int get maxCharacters => 1000;
+
+  @override
+  Future<List<VoiceInfo>> listVoices() async => const <VoiceInfo>[];
+
+  @override
+  Future<Sound> speak(
+    String text, {
+    required String voice,
+    String instructions = '',
+  }) async {
+    spoken.add((voice, text));
+    return Sound.silence(const Duration(milliseconds: 100));
+  }
+
+  @override
+  void close() {}
+}
+
 void main() {
   late AantekeningStore store;
   late Directory assets;
@@ -171,6 +216,7 @@ void main() {
     WidgetTester tester, {
     bool withModel = true,
     Preferences? preferences,
+    List<Override> overrides = const <Override>[],
   }) async {
     tester.view.physicalSize = const Size(1500, 950);
     tester.view.devicePixelRatio = 1;
@@ -193,6 +239,7 @@ void main() {
                 ).copyWith(model: 'test-model'),
               ),
             ),
+          ...overrides,
         ],
         child: MaterialApp(theme: AppTheme.light(), home: const HomeShell()),
       ),
@@ -545,6 +592,155 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Thinking…'), findsNothing);
     expect(find.textContaining('Ollama · test-model · '), findsOneWidget);
+  });
+
+  testWidgets('the sources beneath an answer are folded to how many there '
+      'are, until opened', (tester) async {
+    await openShell(tester);
+    await pressControl(tester, LogicalKeyboardKey.keyJ);
+    await ask(tester, 'What is force?');
+
+    final list = find.byType(SourceList);
+    Finder quoted() => find.descendant(
+      of: list,
+      matching: find.textContaining('Force is mass', findRichText: true),
+    );
+    expect(find.text('FROM YOUR NOTES'), findsOneWidget);
+    expect(quoted(), findsNothing);
+
+    await tester.tap(find.text('FROM YOUR NOTES'));
+    await tester.pumpAndSettle();
+    expect(quoted(), findsOneWidget);
+
+    await tester.tap(find.text('FROM YOUR NOTES'));
+    await tester.pumpAndSettle();
+    expect(quoted(), findsNothing);
+  });
+
+  testWidgets('what a citation quotes on hover is readable in the dark', (
+    tester,
+  ) async {
+    for (final theme in <ThemeData>[AppTheme.dark(), AppTheme.light()]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: FootnoteMark(
+              citation: const Citation(
+                uri: 'aantekening://page/p#element=law',
+                title: 'Forces',
+                origin: SourceOrigin.notes,
+                quote: 'Force is mass times acceleration.',
+              ),
+              number: 1,
+              onOpen: (_) {},
+            ),
+          ),
+        ),
+      );
+      // The theme goes over from the one before.
+      await tester.pumpAndSettle();
+      final tones = theme.extension<Tones>()!;
+      final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+      final colours = <Color>[];
+      tooltip.richMessage!.visitChildren((span) {
+        if (span.style?.color case final colour?) colours.add(colour);
+        return true;
+      });
+      expect(colours, isNotEmpty);
+      // Written on the tooltip's panel, in the text's colour.
+      final panel = (theme.tooltipTheme.decoration! as BoxDecoration).color!;
+      expect(panel, tones.raised);
+      for (final colour in colours) {
+        final ink = Color.alphaBlend(colour, panel);
+        final (light, dark) = ink.computeLuminance() > panel.computeLuminance()
+            ? (ink, panel)
+            : (panel, ink);
+        final contrast =
+            (light.computeLuminance() + 0.05) /
+            (dark.computeLuminance() + 0.05);
+        expect(contrast, greaterThan(3), reason: '$colour on $panel');
+      }
+    }
+  });
+
+  testWidgets('a podcast is planned, written and spoken from the notes, and '
+      'kept with its transcript and sound', (tester) async {
+    final folder = Directory.systemTemp.createTempSync('aantekening_pod_');
+    addTearDown(() => folder.deleteSync(recursive: true));
+    final speech = FakeSpeech();
+    final container = await openShell(
+      tester,
+      overrides: <Override>[
+        podcastFolderProvider.overrideWith((ref) async => folder.path),
+        speechMakerProvider.overrideWithValue((voice, key, model) => speech),
+      ],
+    );
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+
+    // Without a voice, the overview says where to add one.
+    expect(find.textContaining('Add a voice provider'), findsOneWidget);
+    final settings = container.read(aiSettingsProvider.notifier);
+    settings.update(
+      container
+          .read(aiSettingsProvider)
+          .withVoice(VoiceConfig.of(SpeechPreset.openAi, id: 'voice')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Add a voice provider'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('podcast study-conversation')),
+        matching: find.text('Make'),
+      ),
+      findsOneWidget,
+    );
+
+    final link = NoteLink.page(page.id);
+    final session = container.read(aiSessionProvider(link).notifier);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('podcast study-conversation')),
+        matching: find.text('Make'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Planned by the model in use, the notes with it, then written part by
+    // part, each in its turn.
+    final podcastRequests = <ChatRequest>[
+      for (final request in model.asked)
+        if (request.system.contains('You write podcasts')) request,
+    ];
+    expect(podcastRequests, hasLength(3));
+    expect(
+      podcastRequests.first.messages.single.text,
+      contains('Force is mass times acceleration.'),
+    );
+    // Each speaker in their own voice.
+    expect(speech.spoken.map((s) => s.$1), <String>['alloy', 'ash', 'alloy']);
+
+    final items = await tester.runAsync(() => store.ai.itemsAbout(link));
+    final kept = items!.single;
+    expect(kept.kind, PodcastEpisode.kindKey);
+    final episode = PodcastEpisode.fromJson(kept.body)!;
+    expect(episode.lines, hasLength(3));
+    expect(episode.starts, hasLength(3));
+    expect(File('${folder.path}/${episode.audio}').existsSync(), isTrue);
+
+    // It shows, with its transcript, and a player to hear it.
+    expect(find.byType(PodcastPage), findsOneWidget);
+    expect(find.text('Play'), findsOneWidget);
+    expect(find.text('What force is'), findsOneWidget);
+    expect(find.text('So F equals m a?'), findsOneWidget);
+    // Kept apart from the answers.
+    expect(container.read(aiSessionProvider(link)).savedAnswers, isEmpty);
+
+    // Deleted, its sound goes with it.
+    await session.deleteItem(kept.id);
+    await tester.pumpAndSettle();
+    expect(File('${folder.path}/${episode.audio}').existsSync(), isFalse);
   });
 
   testWidgets('a cited source opens where it is, in a tab of its own', (

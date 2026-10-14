@@ -1,24 +1,23 @@
 /// How a study set's page begins, the same for every kind.
 library;
 
-import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:flutter/material.dart';
 
 import '../look/controls.dart';
 import '../look/tones.dart';
 
-/// The head of a study set's page: what kind it is, what it is about, and
-/// what can be done with it.
+/// The head of a study set's or a podcast's page: what kind it is — its
+/// [label] — what it is about, and what can be done with it.
 class StudyHeader extends StatelessWidget {
   const StudyHeader({
-    required this.kind,
+    required this.label,
     required this.title,
     this.subtitle,
     this.actions = const <Widget>[],
     super.key,
   });
 
-  final StudyKind kind;
+  final String label;
   final String title;
   final String? subtitle;
   final List<Widget> actions;
@@ -35,7 +34,7 @@ class StudyHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                SmallCaps(kind.label, color: tones.emphasis),
+                SmallCaps(label, color: tones.emphasis),
                 const SizedBox(height: 2),
                 Text(
                   title,

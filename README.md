@@ -44,7 +44,8 @@ thousands of pages instant.
   the page. Ctrl+P jumps anywhere; Ctrl+Shift+P runs any command.
 - **An AI of your own.** Summaries, flashcards with spaced repetition,
   quizzes and answers from your notes, each linked to the sentence it came
-  from. It runs on your computer (Ollama, LM Studio) or with a provider you
+  from — and podcasts of them, two hosts talking your notes through, with
+  the models and voices you choose. It runs on your computer (Ollama, LM Studio) or with a provider you
   choose, and nothing is sent until you ask.
 - **Safe with your notes.** Files are written whole or not at all. A clash
   between two computers keeps both versions. Daily backups can be restored.

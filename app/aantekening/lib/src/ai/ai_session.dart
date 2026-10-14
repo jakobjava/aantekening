@@ -199,6 +199,8 @@ class AiSessionState {
     this.pending,
     this.making = const <String, PendingTurn>{},
     this.shownProfile,
+    this.podcasts = const <String, PodcastProgress>{},
+    this.shownPodcast,
     this.error,
   });
 
@@ -231,6 +233,13 @@ class AiSessionState {
   /// or not made yet; once made, its kept set shows as [itemId].
   final String? shownProfile;
 
+  /// The podcasts being made, by the id of their episode profile, and
+  /// those kept being spoken again, by the id of what keeps them.
+  final Map<String, PodcastProgress> podcasts;
+
+  /// The id of the episode profile whose podcast shows being made.
+  final String? shownPodcast;
+
   /// Why the last question went unanswered.
   final String? error;
 
@@ -241,6 +250,7 @@ class AiSessionState {
       itemId == null &&
       threadId == null &&
       shownProfile == null &&
+      shownPodcast == null &&
       pending == null;
 
   /// The kept set of profile [id], if one was made.
@@ -269,8 +279,16 @@ class AiSessionState {
   /// The answers kept from conversations.
   List<AiItem> get savedAnswers => <AiItem>[
     for (final item in items)
-      if (StudySet.fromJson(item.body) == null) item,
+      if (StudySet.fromJson(item.body) == null &&
+          PodcastEpisode.fromJson(item.body) == null)
+        item,
   ];
+
+  /// The podcasts kept, the latest first.
+  List<AiItem> get episodes => <AiItem>[
+    for (final item in items)
+      if (PodcastEpisode.fromJson(item.body) != null) item,
+  ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   AiSessionState copyWith({
     bool? loaded,
@@ -282,6 +300,8 @@ class AiSessionState {
     PendingTurn? Function()? pending,
     Map<String, PendingTurn>? making,
     String? Function()? shownProfile,
+    Map<String, PodcastProgress>? podcasts,
+    String? Function()? shownPodcast,
     String? Function()? error,
   }) => AiSessionState(
     loaded: loaded ?? this.loaded,
@@ -293,6 +313,8 @@ class AiSessionState {
     pending: pending == null ? this.pending : pending(),
     making: making ?? this.making,
     shownProfile: shownProfile == null ? this.shownProfile : shownProfile(),
+    podcasts: podcasts ?? this.podcasts,
+    shownPodcast: shownPodcast == null ? this.shownPodcast : shownPodcast(),
     error: error == null ? this.error : error(),
   );
 }
@@ -311,13 +333,21 @@ class AiSession extends Notifier<AiSessionState> {
   final Map<String, StreamSubscription<AgentProgress>> _makers =
       <String, StreamSubscription<AgentProgress>>{};
 
+  /// What makes or speaks each podcast under way, by the key of
+  /// [AiSessionState.podcasts].
+  final Map<String, StreamSubscription<PodcastProgress>> _podcasters =
+      <String, StreamSubscription<PodcastProgress>>{};
+
   Future<AantekeningStore> get _store => ref.read(storeProvider.future);
 
   @override
   AiSessionState build() {
     ref.onDispose(() {
       unawaited(_answering?.cancel());
-      for (final maker in _makers.values) {
+      for (final maker in <StreamSubscription<Object?>>[
+        ..._makers.values,
+        ..._podcasters.values,
+      ]) {
         unawaited(maker.cancel());
       }
     });
@@ -346,6 +376,7 @@ class AiSession extends Notifier<AiSessionState> {
       threadId: () => id,
       itemId: () => null,
       shownProfile: () => null,
+      shownPodcast: () => null,
       turns: await store.ai.turnsOf(id),
       error: () => null,
     );
@@ -356,13 +387,17 @@ class AiSession extends Notifier<AiSessionState> {
     threadId: () => null,
     itemId: () => null,
     shownProfile: () => null,
+    shownPodcast: () => null,
     turns: const <AiTurn>[],
     error: () => null,
   );
 
   /// Shows kept thing [id].
-  void openItem(String id) =>
-      state = state.copyWith(itemId: () => id, shownProfile: () => null);
+  void openItem(String id) => state = state.copyWith(
+    itemId: () => id,
+    shownProfile: () => null,
+    shownPodcast: () => null,
+  );
 
   /// Shows the study set of profile [id]: as it is being made, as it was
   /// kept, or, not made yet, what it would be and a way to make it.
@@ -376,6 +411,7 @@ class AiSession extends Notifier<AiSessionState> {
       itemId: () => null,
       threadId: () => null,
       shownProfile: () => id,
+      shownPodcast: () => null,
     );
   }
 
@@ -597,6 +633,7 @@ class AiSession extends Notifier<AiSessionState> {
       itemId: () => null,
       threadId: () => null,
       shownProfile: () => id,
+      shownPodcast: () => null,
       error: () => null,
     );
     StreamSubscription<AgentProgress>? making;
@@ -888,12 +925,329 @@ class AiSession extends Notifier<AiSessionState> {
   /// Where a turn's answer says which [AiAction] asked it.
   static const String _actionKey = 'action';
 
+  // ------------------------------------------------------------- podcasts
+
+  /// Shows the podcast of episode profile [id] being made, or the latest
+  /// made by it.
+  void showPodcast(String id) => state = state.copyWith(
+    itemId: () => null,
+    threadId: () => null,
+    shownProfile: () => null,
+    shownPodcast: () => id,
+  );
+
+  /// A model to write a podcast with, as [choice] names it, with its key,
+  /// and whether it is the podcast's own to close once written — or null
+  /// where it names none that is set up.
+  Future<({PodcastWriter writer, bool own})?> _writerOf(
+    ModelChoice choice,
+  ) async {
+    if (choice.isInUse) {
+      final model = await ref.read(aiModelProvider.future);
+      if (model == null) return null;
+      return (
+        writer: (provider: model.provider, model: model.config.model),
+        own: false,
+      );
+    }
+    final config = ref.read(aiSettingsProvider).providerOf(choice);
+    if (config == null) return null;
+    final model = choice.model.isEmpty ? config.model : choice.model;
+    if (model.isEmpty) return null;
+    final key = await ref
+        .read(aiSecretsProvider)
+        .read(providerKeyName(config.id));
+    return (
+      writer: (provider: config.create(apiKey: key), model: model),
+      own: true,
+    );
+  }
+
+  /// What speaks podcasts through [voice], in [model] or its own.
+  Future<SpeechProvider> _speechOf(VoiceConfig voice, String model) async =>
+      ref.read(speechMakerProvider)(
+        voice,
+        await ref.read(aiSecretsProvider).read(voiceKeyName(voice.id)),
+        model,
+      );
+
+  void _setPodcast(String key, PodcastProgress? progress) =>
+      state = state.copyWith(
+        podcasts: <String, PodcastProgress>{
+          for (final entry in state.podcasts.entries)
+            if (entry.key != key) entry.key: entry.value,
+          key: ?progress,
+        },
+      );
+
+  /// Follows [run] into [AiSessionState.podcasts] under [key], saying
+  /// what went wrong as [failed] puts it.
+  Future<void> _followPodcast(
+    String key,
+    Stream<PodcastProgress> run, {
+    required String Function(String why) failed,
+  }) {
+    final done = Completer<void>();
+    final subscription = run.listen(
+      (progress) => _setPodcast(key, progress),
+      onError: (Object error) {
+        _setPodcast(key, null);
+        final why = error is AiException ? error.message : '$error';
+        state = state.copyWith(error: () => failed(why));
+        if (!done.isCompleted) done.complete();
+      },
+      onDone: () {
+        _setPodcast(key, null);
+        if (!done.isCompleted) done.complete();
+      },
+      cancelOnError: true,
+    );
+    _podcasters[key] = subscription;
+    return done.future.whenComplete(() {
+      if (identical(_podcasters[key], subscription)) _podcasters.remove(key);
+    });
+  }
+
+  /// Makes a podcast of the scope as episode profile [profile] says: plans
+  /// it and writes what is said with the models it names, keeps the
+  /// transcript, then speaks it with the voices of its speaker profile.
+  /// Made alongside anything else; its page shows it coming.
+  Future<void> makePodcast(EpisodeProfile profile) async {
+    final id = profile.id;
+    if (state.podcasts.containsKey(id)) {
+      showPodcast(id);
+      return;
+    }
+    final settings = ref.read(aiSettingsProvider);
+    final cast = settings.castOf(profile.speakersId);
+    final voice = settings.voiceOf(cast?.voiceId ?? '');
+    String? missing;
+    if (cast == null) {
+      missing = 'Set up who speaks in the AI settings first.';
+    } else if (voice == null) {
+      missing =
+          'Add a voice provider in the AI settings first: it speaks the '
+          'podcast.';
+    }
+    final outlining = await _writerOf(profile.outline);
+    final writing = await _writerOf(profile.transcript);
+    void close() {
+      for (final used in <({PodcastWriter writer, bool own})?>[
+        outlining,
+        writing,
+      ]) {
+        if (used != null && used.own) used.writer.provider.close();
+      }
+    }
+
+    if (outlining == null || writing == null) {
+      missing ??=
+          'Choose the models that write “${profile.name}” in the podcast '
+          'settings first.';
+    }
+    if (missing != null) {
+      close();
+      state = state.copyWith(error: () => missing);
+      return;
+    }
+    final outliner = outlining!.writer;
+    final writer = writing!.writer;
+    final reader = await ref.read(workspaceReaderProvider.future);
+    final info = await reader.scope(scope);
+    if (info == null) return;
+    final speakers = cast!.voiced(voice!.voiceFor);
+    _setPodcast(
+      id,
+      const PodcastProgress(
+        stage: PodcastStage.gathering,
+        activity: 'Gathering your notes',
+      ),
+    );
+    showPodcast(id);
+    state = state.copyWith(error: () => null);
+    final maker = PodcastMaker(
+      reader: reader,
+      outliner: outliner,
+      writer: writer,
+      notesTokens:
+          settings.active?.notesTokens ?? ContextBudget.defaultNotesTokens,
+      about: settings.about,
+    );
+    final models = <String>{outliner.model, writer.model}.toList();
+    Stream<PodcastProgress> run() async* {
+      PodcastProgress? written;
+      try {
+        await for (final progress in maker.write(
+          profile,
+          speakers: speakers,
+          scope: info,
+        )) {
+          written = progress;
+          yield progress;
+        }
+      } finally {
+        close();
+      }
+      if (written == null || !written.done) return;
+      // The transcript is kept first: if speaking fails, it stays.
+      final episode = PodcastEpisode(
+        title: profile.name,
+        profile: profile.name,
+        outline: written.outline,
+        lines: written.lines,
+        speakers: speakers,
+        models: models,
+      );
+      final store = await _store;
+      final item = await store.ai.addItem(
+        scope,
+        kind: PodcastEpisode.kindKey,
+        title: '${profile.name} · ${info.title}',
+        body: episode.toJson(),
+        provider: profile.transcript.isInUse
+            ? (await ref.read(aiModelProvider.future))?.config.name ?? ''
+            : settings.providerOf(profile.transcript)?.name ?? '',
+        model: writer.model,
+        usage: <String, Object?>{
+          'input': written.usage.input,
+          'output': written.usage.output,
+          _costKey: ?written.cost,
+        },
+      );
+      await _load();
+      yield* _spoken(
+        item.id,
+        episode,
+        voice: voice,
+        model: cast.voiceModel,
+        written: written,
+      );
+    }
+
+    await _followPodcast(
+      id,
+      run(),
+      failed: (why) => 'The podcast could not be made: $why',
+    );
+    if (state.shownPodcast == id) {
+      final made = state.episodes.firstOrNull;
+      state = state.copyWith(shownPodcast: () => null, itemId: () => made?.id);
+    }
+  }
+
+  /// [episode], kept as item [itemId], spoken through [voice] — its sound
+  /// saved and the item told where — showing [written] while it is.
+  Stream<PodcastProgress> _spoken(
+    String itemId,
+    PodcastEpisode episode, {
+    required VoiceConfig voice,
+    required String model,
+    PodcastProgress? written,
+  }) async* {
+    final speech = await _speechOf(voice, model);
+    try {
+      await for (final progress in PodcastMaker.speak(
+        episode.lines,
+        speakers: episode.speakers,
+        speech: speech,
+        parallel: voice.local ? 1 : 4,
+      )) {
+        if (progress.sound case final sound?) {
+          final audio = await savePodcastAudio(ref, sound);
+          final store = await _store;
+          await store.ai.updateItem(
+            itemId,
+            body: episode
+                .copyWith(
+                  audio: audio,
+                  duration: sound.duration,
+                  starts: progress.starts,
+                  voice:
+                      '${voice.name} · '
+                      '${model.trim().isEmpty ? voice.model : model.trim()}',
+                  voiceId: voice.id,
+                )
+                .toJson(),
+          );
+          await _load();
+        }
+        yield written == null
+            ? progress
+            : progress.copyWith(outline: written.outline);
+      }
+    } on AiException catch (error) {
+      throw AiException(
+        'it was written, but could not be spoken: ${error.message} Its '
+        'transcript is kept; speak it again from its page.',
+      );
+    } finally {
+      speech.close();
+    }
+  }
+
+  /// Speaks kept podcast [itemId] again: one made on another computer, or
+  /// one whose speaking failed — with the voices it was made with where
+  /// their provider is still set up, else with the first voice provider's.
+  Future<void> speakPodcast(String itemId) async {
+    if (state.podcasts.containsKey(itemId)) return;
+    final item = state.items.where((item) => item.id == itemId).firstOrNull;
+    final episode = PodcastEpisode.fromJson(item?.body);
+    if (episode == null) return;
+    final settings = ref.read(aiSettingsProvider);
+    final voice = settings.voiceOf(episode.voiceId);
+    if (voice == null) {
+      state = state.copyWith(
+        error: () =>
+            'Add a voice provider in the AI settings first: it speaks the '
+            'podcast.',
+      );
+      return;
+    }
+    final same = voice.id == episode.voiceId;
+    final speakers = same
+        ? episode.speakers
+        : <PodcastSpeaker>[
+            for (final (i, speaker) in episode.speakers.indexed)
+              speaker.copyWith(voice: voice.voiceFor(i)),
+          ];
+    _setPodcast(
+      itemId,
+      PodcastProgress(stage: PodcastStage.speaking, lines: episode.lines),
+    );
+    state = state.copyWith(error: () => null);
+    await _followPodcast(
+      itemId,
+      _spoken(
+        itemId,
+        episode.copyWith(speakers: speakers),
+        voice: voice,
+        model: '',
+      ),
+      failed: (why) => 'The podcast could not be spoken: $why',
+    );
+  }
+
+  /// Stops making or speaking the podcast under [key].
+  Future<void> stopPodcast(String key) async {
+    _setPodcast(key, null);
+    await _podcasters.remove(key)?.cancel();
+    if (state.shownPodcast == key) {
+      state = state.copyWith(shownPodcast: () => null);
+    }
+  }
+
   Future<void> renameItem(String id, String title) async {
     await (await _store).ai.renameItem(id, title);
     await _load();
   }
 
   Future<void> deleteItem(String id) async {
+    final item = state.items.where((item) => item.id == id).firstOrNull;
+    if (PodcastEpisode.fromJson(item?.body) case final episode?
+        when episode.spoken) {
+      await stopPodcast(id);
+      await deletePodcastAudio(ref, episode.audio);
+    }
     await (await _store).ai.deleteItem(id);
     if (state.itemId == id) state = state.copyWith(itemId: () => null);
     await _load();

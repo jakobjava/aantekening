@@ -1,6 +1,7 @@
 /// What every model provider offers, whoever runs the model.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'conversation.dart';
@@ -377,3 +378,28 @@ List<Source> sourcesIn(List<ChatMessage> messages) => <Source>[
         _ => const <Source>[],
       }.where((source) => source.passages.isNotEmpty),
 ];
+
+/// The progress of [work], which ends the moment it is no longer listened
+/// to: [work] is handed what says so, for each request it makes, and the
+/// model is stopped then — not once it next sends something, which a model
+/// reading a long prompt may not for minutes.
+Stream<T> stoppable<T>(Stream<T> Function(Future<void> stop) work) {
+  final stop = Completer<void>();
+  StreamSubscription<T>? working;
+  late final StreamController<T> progress;
+  progress = StreamController<T>(
+    sync: true,
+    onListen: () => working = work(
+      stop.future,
+    ).listen(progress.add, onError: progress.addError, onDone: progress.close),
+    onPause: () => working?.pause(),
+    onResume: () => working?.resume(),
+    onCancel: () {
+      if (!stop.isCompleted) stop.complete();
+      // Not waited for: the work ends at its next step, which the request
+      // broken off brings at once.
+      working?.cancel().ignore();
+    },
+  );
+  return progress.stream;
+}

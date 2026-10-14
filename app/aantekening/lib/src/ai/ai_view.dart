@@ -30,6 +30,7 @@ import 'ai_state.dart';
 import 'answer_progress.dart';
 import 'answer_view.dart';
 import 'money.dart';
+import 'podcast_view.dart';
 import 'study_pages.dart';
 
 /// The AI of [scope] floating over the notes, below what covers them
@@ -549,9 +550,28 @@ class _MainState extends ConsumerState<_Main> {
         profiles.where((profile) => profile.id == id).firstOrNull;
     final shown = profileOf(state.shownProfile);
     final set = item == null ? null : StudySet.fromJson(item.body);
+    final podcast = item == null ? null : PodcastEpisode.fromJson(item.body);
+    final episodeProfile = ref
+        .watch(aiSettingsProvider)
+        .episodes
+        .where((profile) => profile.id == state.shownPodcast)
+        .firstOrNull;
     final Widget page;
     if (!state.loaded || model.isLoading) {
       page = const Loading();
+    } else if (item != null && podcast != null) {
+      page = PodcastPage(
+        key: ValueKey<String>(item.id),
+        scope: scope,
+        item: item,
+      );
+    } else if (episodeProfile != null &&
+        state.podcasts[episodeProfile.id] != null) {
+      page = PodcastDraftPage(
+        scope: scope,
+        profile: episodeProfile,
+        progress: state.podcasts[episodeProfile.id]!,
+      );
     } else if (item != null && set != null) {
       page = StudySetPage(
         scope: scope,
@@ -573,7 +593,9 @@ class _MainState extends ConsumerState<_Main> {
       };
     } else if (model.value == null) {
       page = const _ChooseModel();
-    } else if (state.atOverview || state.shownProfile != null) {
+    } else if (state.atOverview ||
+        state.shownProfile != null ||
+        state.shownPodcast != null) {
       // The overview, too, where the profile shown was deleted.
       page = StudyOverview(scope: scope);
     } else {

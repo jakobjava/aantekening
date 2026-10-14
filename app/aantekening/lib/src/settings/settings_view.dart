@@ -23,6 +23,7 @@ import 'formula_settings.dart';
 import 'keyboard_settings.dart';
 import 'layout_settings.dart';
 import 'pen_settings.dart';
+import 'podcast_settings.dart';
 import 'spelling_settings.dart';
 
 /// A page of the settings.
@@ -49,6 +50,11 @@ enum SettingsPage {
     'AI',
     'Models, what they know of you, study profiles, the web',
     AppIcon.ai,
+  ),
+  podcasts(
+    'Podcasts',
+    'Voices, who speaks, and the models that write them',
+    AppIcon.podcast,
   ),
   files(
     'Files',
@@ -273,6 +279,7 @@ class _PageBody extends StatelessWidget {
         SettingsPage.formulas => const FormulaSettings(),
         SettingsPage.spelling => const SpellingSettingsPage(),
         SettingsPage.ai => const AiSettingsPage(),
+        SettingsPage.podcasts => const PodcastSettingsPage(),
         SettingsPage.files => const FilesSettings(),
         SettingsPage.about => const AboutSettings(),
       },
