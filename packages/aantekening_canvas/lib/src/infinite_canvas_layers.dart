@@ -194,23 +194,45 @@ class _PageContentState extends State<_PageContent> {
               viewport.zoom == _zoom &&
               pageRegion(viewport, widget.size) == _region;
     if (!laidOut) setState(() {});
-    _buildAheadLater();
+    // One timer waits for the view to rest, rather than one set and called
+    // off at every step of a scroll.
+    _movedMeanwhile = true;
+    if (_ahead == null) _buildAheadLater();
   }
 
+  /// How long the view rests before the text boxes about it are built.
+  static const Duration _aheadRest = Duration(milliseconds: 300);
+
+  /// Whether the view has moved since the wait for it to rest began.
+  bool _movedMeanwhile = false;
+
   /// Builds the text boxes about the view ahead of it once it has rested
-  /// [after] — one a frame, the nearest first — so that a box of formulas
-  /// scrolled to is there already rather than built as it comes into view.
-  void _buildAheadLater([Duration after = const Duration(milliseconds: 300)]) {
+  /// [after], and [_aheadRest] since it last moved — one a frame, the
+  /// nearest first — so that a box of formulas scrolled to is there already
+  /// rather than built as it comes into view.
+  void _buildAheadLater([Duration after = _aheadRest]) {
     _ahead?.cancel();
+    _ahead = null;
+    _movedMeanwhile = false;
     if (widget.still) return;
-    _ahead = Timer(after, () {
-      if (!mounted || _isZooming) return;
-      final next = _nearestNotBuilt();
-      if (next == null) return;
-      setState(() => _kept.add(next));
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _buildAheadLater(Duration.zero);
-      });
+    _ahead = Timer(after, _buildAhead);
+  }
+
+  void _buildAhead() {
+    _ahead = null;
+    if (!mounted) return;
+    // Moved while it waited: it waits as long again from now, which is at
+    // least as long as the view has rested since.
+    if (_movedMeanwhile) {
+      _buildAheadLater();
+      return;
+    }
+    if (_isZooming) return;
+    final next = _nearestNotBuilt();
+    if (next == null) return;
+    setState(() => _kept.add(next));
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _buildAheadLater(Duration.zero);
     });
   }
 

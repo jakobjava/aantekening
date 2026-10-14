@@ -85,6 +85,7 @@ Future<void> main() async {
 
   final timings = <FrameTiming>[];
   SchedulerBinding.instance.addTimingsCallback(timings.addAll);
+  _Battery.start();
   // The whole window, as it is used: sidebar, tabs and ribbon about the
   // page. Settings are kept in memory, this computer's folder for the app
   // is the temporary one, and no keychain is read.
@@ -170,6 +171,19 @@ Future<void> main() async {
     );
     await input.swipe(const Offset(0, 1800), const Duration(milliseconds: 700));
     await input.swipe(const Offset(0, -600), const Duration(milliseconds: 500));
+  });
+  // Reading on for a while: what scrolling costs the battery.
+  await measure('touchpad scroll, sustained', () async {
+    final end = DateTime.now().add(const Duration(seconds: 20));
+    var direction = 1.0;
+    while (DateTime.now().isBefore(end)) {
+      await input.swipe(
+        Offset(0, -500 * direction),
+        const Duration(milliseconds: 600),
+      );
+      await _wait(const Duration(milliseconds: 250));
+      direction = -direction;
+    }
   });
   await measure('touchpad pinch', () async {
     await input.pinch(const <double>[
@@ -295,20 +309,26 @@ Element _find<T extends Widget>() {
   return found!;
 }
 
-/// One thing measured: the frames drawn and the processor time spent
-/// between its [begin] and [end].
+/// One thing measured: the frames drawn, the processor time spent and,
+/// on battery, the power the computer drew between its [begin] and [end].
 class _Run {
-  _Run.begin(this.name) : _start = _now(), _cpuBefore = _threadTimes();
+  _Run.begin(this.name)
+    : _start = _now(),
+      _cpuBefore = _threadTimes(),
+      _drawnBefore = _Battery.readings.length;
 
   final String name;
   final int _start;
   final Map<String, int> _cpuBefore;
+  final int _drawnBefore;
   late final int _end;
   late final Map<String, int> _cpuAfter;
+  late final List<double> _drawn;
 
   void end() {
     _end = _now();
     _cpuAfter = _threadTimes();
+    _drawn = _Battery.readings.sublist(_drawnBefore);
   }
 
   /// Microseconds, on the clock frame timings are stamped by.
@@ -357,6 +377,7 @@ class _Run {
       for (final entry in _cpuAfter.entries)
         entry.key: entry.value - (_cpuBefore[entry.key] ?? 0),
     }..removeWhere((_, ticks) => ticks <= 0);
+    final compositor = spent.remove('compositor') ?? 0;
     final total = spent.values.fold(0, (sum, ticks) => sum + ticks);
     final perSecond = total * 10 / seconds;
     final threads =
@@ -366,11 +387,30 @@ class _Run {
               (entry) => '${entry.key} ${(entry.value * 10 / seconds).round()}',
             )
             .join(', ');
-    out.writeln('  processor: ${perSecond.round()} ms a second ($threads)');
+    out
+      ..writeln('  processor: ${perSecond.round()} ms a second ($threads)')
+      ..writeln(
+        '  compositor: ${(compositor * 10 / seconds).round()} ms a second',
+      );
+    if (_drawn.isNotEmpty) {
+      final watts = _drawn.reduce((a, b) => a + b) / _drawn.length;
+      out.writeln(
+        '  power: ${watts.toStringAsFixed(2)} W, all of the computer',
+      );
+    }
   }
 
+  /// The names of the desktops' compositors.
+  static const Set<String> _compositors = <String>{
+    'kwin_wayland',
+    'gnome-shell',
+    'sway',
+    'Hyprland',
+    'weston',
+  };
+
   /// Processor time each kind of thread of this process has spent, in
-  /// clock ticks of 10 ms, by thread name.
+  /// clock ticks of 10 ms, by thread name, and the compositor's.
   static Map<String, int> _threadTimes() {
     final times = <String, int>{};
     for (final task in Directory('/proc/self/task').listSync()) {
@@ -388,7 +428,57 @@ class _Run {
         // A thread that ended meanwhile.
       }
     }
+    // And the desktop's compositor, which puts each frame on the screen.
+    for (final process in Directory('/proc').listSync()) {
+      final pid = process.path.split('/').last;
+      if (int.tryParse(pid) == null) continue;
+      try {
+        final stat = File('${process.path}/stat').readAsStringSync();
+        final open = stat.indexOf('(');
+        final close = stat.lastIndexOf(')');
+        final name = stat.substring(open + 1, close);
+        if (!_compositors.contains(name)) continue;
+        final fields = stat.substring(close + 2).split(' ');
+        times['compositor'] =
+            (times['compositor'] ?? 0) +
+            int.parse(fields[11]) +
+            int.parse(fields[12]);
+      } on FileSystemException {
+        // A process that ended meanwhile.
+      }
+    }
     return times;
+  }
+}
+
+/// The power the computer draws from its battery, read every half second
+/// while it runs on it: the screen and all else with the app, so only a
+/// long measure, set beside the same measure of other code, says much.
+abstract final class _Battery {
+  /// Watts, a reading each half second.
+  static final List<double> readings = <double>[];
+
+  static void start() {
+    final batteries = Directory('/sys/class/power_supply').existsSync()
+        ? Directory('/sys/class/power_supply')
+              .listSync()
+              .where((entry) => entry.path.split('/').last.startsWith('BAT'))
+              .toList()
+        : const <FileSystemEntity>[];
+    if (batteries.isEmpty) return;
+    final battery = batteries.first.path;
+    Timer.periodic(const Duration(milliseconds: 500), (_) {
+      try {
+        final status = File('$battery/status').readAsStringSync().trim();
+        if (status != 'Discharging') return;
+        final microwatts = int.parse(
+          File('$battery/power_now').readAsStringSync().trim(),
+        );
+        readings.add(microwatts / 1e6);
+      } on Exception {
+        // A battery that says nothing of its power.
+      }
+    });
   }
 }
 

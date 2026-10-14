@@ -9,6 +9,7 @@ project(runner LANGUAGES C CXX)
 add_executable(${BINARY_NAME}
   "main.cc"
   "my_application.cc"
+  "opaque_underlay.cc"
   "touchpad_hold.cc"
   # Made by wayland-scanner from wayland-protocols' pointer-gestures
   # protocol: `wayland-scanner client-header` and `private-code`.
@@ -28,5 +29,7 @@ target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
 pkg_check_modules(WAYLAND REQUIRED IMPORTED_TARGET wayland-client)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::WAYLAND)
+pkg_check_modules(EPOXY REQUIRED IMPORTED_TARGET epoxy)
+target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::EPOXY)
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")

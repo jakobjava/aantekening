@@ -132,16 +132,33 @@ class RenderPageSpace extends RenderBox
 
   Timer? _semanticsDue;
 
+  /// Whether the view has moved since the wait for it to rest began.
+  bool _movedMeanwhile = false;
+
   void _onViewChanged() {
     markNeedsCompositedLayerUpdate();
     // Not at every frame of a scroll: working out where every part of the
     // page is took a quarter of each frame's work, and a screen reader
-    // needs to know only where the view comes to rest.
-    _semanticsDue?.cancel();
-    _semanticsDue = Timer(_semanticsRest, () {
-      _semanticsDue = null;
-      if (attached) markNeedsSemanticsUpdate();
-    });
+    // needs to know only where the view comes to rest. One timer waits for
+    // that, rather than one set and called off at every step of a scroll.
+    if (_semanticsDue == null) {
+      _semanticsDue = Timer(_semanticsRest, _tellIfRested);
+    } else {
+      _movedMeanwhile = true;
+    }
+  }
+
+  /// Tells a screen reader where the page's parts are, if the view has not
+  /// moved since the wait began; or else waits as long again, which is at
+  /// least as long as it has rested since.
+  void _tellIfRested() {
+    if (_movedMeanwhile) {
+      _movedMeanwhile = false;
+      _semanticsDue = Timer(_semanticsRest, _tellIfRested);
+      return;
+    }
+    _semanticsDue = null;
+    if (attached) markNeedsSemanticsUpdate();
   }
 
   /// From the child's coordinates to this box's: page units from the
@@ -172,6 +189,7 @@ class RenderPageSpace extends RenderBox
     _view.removeListener(_onViewChanged);
     _semanticsDue?.cancel();
     _semanticsDue = null;
+    _movedMeanwhile = false;
     super.detach();
   }
 
