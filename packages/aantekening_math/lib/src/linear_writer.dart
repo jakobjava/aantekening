@@ -65,6 +65,8 @@ abstract final class LinearWriter {
     r'\cdot': '*',
     r'\ldots': '...',
     r'\colon': '::',
+    // A bar with no partner divides: `S(1 | 2)`, `P(A | B)`.
+    r'\mid': '|',
   };
 
   /// Accents and styles with a word of their own.
@@ -156,7 +158,14 @@ abstract final class LinearWriter {
     FencedNode() => <_Piece>[_Piece(_fenced(node))],
     GroupNode(:final child) => <_Piece>[_Piece('{${write(child)}}')],
     EmptyNode() => const <_Piece>[],
-    ListNode(:final items) => <_Piece>[_Piece(items.map(write).join(', '))],
+    ListNode(:final items) => <_Piece>[
+      _Piece(
+        <String>[
+          for (var i = 0; i < items.length; i++)
+            '${i == 0 ? '' : '${node.separatorBefore(i)} '}${write(items[i])}',
+        ].join(),
+      ),
+    ],
     ApplicationNode(:final function, :final argument) => <_Piece>[
       _Piece('${write(function)}${write(argument)}'),
     ],
@@ -182,8 +191,8 @@ abstract final class LinearWriter {
   static List<_Piece> _sequence(List<MathNode> children) {
     final pieces = <_Piece>[];
     for (final child in children) {
-      if (child is SymbolNode && child.latex == ',') {
-        pieces.add(const _Piece(',', comma: true));
+      if (child is SymbolNode && (child.latex == ',' || child.latex == ';')) {
+        pieces.add(_Piece(child.latex, comma: true));
         continue;
       }
       if (child is SymbolNode && child.latex == '!' && pieces.isNotEmpty) {

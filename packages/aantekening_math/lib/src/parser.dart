@@ -19,8 +19,9 @@ class MathParser {
 
   int _index = 0;
 
-  /// How many `|` fences are currently open, so that a closing bar is not
-  /// mistaken for the start of another absolute value.
+  /// How many `|` fences are currently open within the innermost bracket,
+  /// so that a closing bar is not mistaken for the start of another
+  /// absolute value.
   int _openBars = 0;
 
   static const Set<String> _relations = relationOperators;
@@ -69,13 +70,26 @@ class MathParser {
     return parts.length == 1 ? parts.single : SequenceNode(parts);
   }
 
-  /// Expressions separated by commas, as in `x = 1, 2, 3`.
+  /// Expressions separated by commas or semicolons, as in `x = 1, 2, 3`.
   MathNode _parseTopLevelList() {
     final items = <MathNode>[_parseExpression()];
-    while (_matched(TokenType.comma)) {
+    final separators = <String>[];
+    for (
+      var separator = _separator();
+      separator != null;
+      separator = _separator()
+    ) {
+      separators.add(separator);
       items.add(_check(TokenType.end) ? const EmptyNode() : _parseExpression());
     }
-    return items.length == 1 ? items.single : ListNode(items);
+    return items.length == 1 ? items.single : ListNode(items, separators);
+  }
+
+  /// The comma or semicolon at hand, taken; or null if there is none.
+  String? _separator() {
+    if (_matched(TokenType.comma)) return ',';
+    if (_matched(TokenType.semicolon)) return ';';
+    return null;
   }
 
   /// A token's LaTeX, for showing it where it does not belong.
@@ -90,12 +104,59 @@ class MathParser {
 
   MathNode _parseRelation() {
     var left = _parseAdditive();
-    while (_isOperatorIn(_relations)) {
+    while (_isOperatorIn(_relations) || _atLoneBar) {
       final operator = _advance();
       final right = _parseAdditive();
-      left = BinaryNode(operator.latex, left, right);
+      left = BinaryNode(
+        operator.type == TokenType.bar ? r'\mid' : operator.latex,
+        left,
+        right,
+      );
     }
     return left;
+  }
+
+  /// Whether the token at hand is a bar that neither closes an absolute
+  /// value nor has another to close one it would open before its bracket
+  /// or list item ends: the bar of a point, `S(1|2)`, of a condition,
+  /// `P(A|B)`, or of what divides, `3|12`.
+  bool get _atLoneBar {
+    if (!_check(TokenType.bar) || _openBars > 0) return false;
+    var depth = 0;
+    for (var i = _index + 1; i < _tokens.length; i++) {
+      switch (_tokens[i].type) {
+        case TokenType.leftParen:
+        case TokenType.leftBracket:
+        case TokenType.leftBrace:
+          depth++;
+        case TokenType.rightParen:
+        case TokenType.rightBracket:
+        case TokenType.rightBrace:
+          if (depth == 0) return true;
+          depth--;
+        case TokenType.bar when depth == 0:
+          return false;
+        case TokenType.comma || TokenType.semicolon when depth == 0:
+          return true;
+        case TokenType.end:
+          return true;
+        default:
+      }
+    }
+    return true;
+  }
+
+  /// [parse] run within a bracket, where the bars of absolute values
+  /// outside it are not to be closed: in `|P(A|B)|` the middle bar is
+  /// not the last one's partner.
+  T _withinBracket<T>(T Function() parse) {
+    final outside = _openBars;
+    _openBars = 0;
+    try {
+      return parse();
+    } finally {
+      _openBars = outside;
+    }
   }
 
   MathNode _parseAdditive() {
@@ -570,7 +631,10 @@ class MathParser {
 
   /// Reads the `(a, b; c, d)` of a grid: cells separated by commas, rows by
   /// semicolons.
-  List<List<MathNode>> _parseGrid(Token construct) {
+  List<List<MathNode>> _parseGrid(Token construct) =>
+      _withinBracket(() => _parseGridRows(construct));
+
+  List<List<MathNode>> _parseGridRows(Token construct) {
     if (!_matched(TokenType.leftParen)) {
       diagnostics.add(
         MathDiagnostic(
@@ -630,7 +694,10 @@ class MathParser {
   }
 
   /// Reads the `(a, b)` arguments of a two-argument construct.
-  List<MathNode> _parseArgumentPair(Token construct) {
+  List<MathNode> _parseArgumentPair(Token construct) =>
+      _withinBracket(() => _parseArguments(construct));
+
+  List<MathNode> _parseArguments(Token construct) {
     // LaTeX's own form, `\frac{a}{b}`, is read too.
     if (_check(TokenType.leftBrace)) {
       final first = _parsePrimary();
@@ -668,19 +735,27 @@ class MathParser {
     return <MathNode>[_unwrap(first), _unwrap(second)];
   }
 
-  /// Parses comma-separated expressions up to [closer].
-  MathNode _parseListUntil(TokenType closer, String symbol) {
-    if (_matched(closer)) return const EmptyNode();
+  /// Parses expressions separated by commas or semicolons up to [closer]:
+  /// the coordinates of a point, `S(1;2)`, among them.
+  MathNode _parseListUntil(TokenType closer, String symbol) =>
+      _withinBracket(() {
+        if (_matched(closer)) return const EmptyNode();
 
-    final items = <MathNode>[_parseExpression()];
-    while (_matched(TokenType.comma)) {
-      items.add(_parseExpression());
-    }
-    if (!_matched(closer)) {
-      diagnostics.add(MathDiagnostic(_current.offset, 'Missing "$symbol"'));
-    }
-    return items.length == 1 ? items.single : ListNode(items);
-  }
+        final items = <MathNode>[_parseExpression()];
+        final separators = <String>[];
+        for (
+          var separator = _separator();
+          separator != null;
+          separator = _separator()
+        ) {
+          separators.add(separator);
+          items.add(_parseExpression());
+        }
+        if (!_matched(closer)) {
+          diagnostics.add(MathDiagnostic(_current.offset, 'Missing "$symbol"'));
+        }
+        return items.length == 1 ? items.single : ListNode(items, separators);
+      });
 
   /// Drops a redundant layer of round brackets or braces.
   static MathNode _unwrap(MathNode node) => switch (node) {
@@ -716,8 +791,9 @@ class MathParser {
       case TokenType.raw:
         return true;
       case TokenType.bar:
-        // Inside `|...|` the next bar closes the fence rather than opening one.
-        return _openBars == 0;
+        // Inside `|...|` the next bar closes the fence rather than opening
+        // one, and a bar with none to close it divides rather than opens.
+        return _openBars == 0 && !(identical(token, _current) && _atLoneBar);
       case TokenType.symbol:
         // Operator words are not operands, so `a cup b` stays an operation.
         return !_isOperatorIn(_relations) &&

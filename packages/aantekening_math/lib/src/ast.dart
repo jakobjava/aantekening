@@ -307,14 +307,22 @@ final class EmptyNode extends MathNode {
 
 /// A comma-separated list, such as the arguments of `f(x, y)`.
 final class ListNode extends MathNode {
-  const ListNode(this.items);
+  const ListNode(this.items, [this.separators = const <String>[]]);
 
   final List<MathNode> items;
+
+  /// What comes between each item and the next: a comma, or a semicolon
+  /// as in `(1;2)`. A comma where none is given.
+  final List<String> separators;
+
+  /// What comes before the item at [index], which is not the first.
+  String separatorBefore(int index) =>
+      index - 1 < separators.length ? separators[index - 1] : ',';
 
   @override
   void writeLatex(StringBuffer out) {
     for (var i = 0; i < items.length; i++) {
-      if (i > 0) out.write(', ');
+      if (i > 0) out.write('${separatorBefore(i)} ');
       items[i].writeLatex(out);
     }
   }

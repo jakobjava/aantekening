@@ -523,6 +523,45 @@ void main() {
     });
   });
 
+  group('points and bars', () {
+    test('parts the coordinates of a point by a semicolon', () {
+      expectLatex('S(1;2)', r'S \left( 1; 2 \right)');
+      expectLatex('x = 1; y = 2', 'x = 1; y = 2');
+    });
+
+    test('divides by a bar that has no partner', () {
+      expectLatex('S(1|2)', r'S \left( 1 \mid 2 \right)');
+      expectLatex('S(-1|2^2)', r'S \left( -1 \mid 2^2 \right)');
+      expectLatex('P(A|B) = 0.5', r'P \left( A \mid B \right) = 0.5');
+      expectLatex('3|12', r'3 \mid 12');
+    });
+
+    test('still fences an absolute value between two bars', () {
+      expectLatex('|x|', r'\left\lvert x \right\rvert');
+      expectLatex(
+        '|v||w|',
+        r'\left\lvert v \right\rvert \left\lvert w \right\rvert',
+      );
+      expectLatex(
+        '|P(A|B)|',
+        r'\left\lvert P \left( A \mid B \right) \right\rvert',
+      );
+      expectLatex('f(|x|)', r'f \left( \left\lvert x \right\rvert \right)');
+    });
+
+    test('writes a point back as it is typed', () {
+      for (final (typed, written) in const <(String, String)>[
+        ('S(1;2)', 'S(1; 2)'),
+        ('S(1|2)', 'S(1 | 2)'),
+        ('P(A|B)', 'P(A | B)'),
+      ]) {
+        final latex = LinearMath.toLatex(typed);
+        expect(LinearMath.fromLatex(latex), written);
+        expect(LinearMath.toLatex(written), latex);
+      }
+    });
+  });
+
   group('mode handling', () {
     test('passes LaTeX sources through untouched', () {
       const source = r'\oint_C \vec{F} \cdot d\vec{r}';
