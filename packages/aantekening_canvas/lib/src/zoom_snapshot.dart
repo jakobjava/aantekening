@@ -27,15 +27,22 @@ import 'canvas_viewport.dart';
 ///
 /// For what is drawn on its own, not in a way that depends on what lies
 /// beneath it — text in the inverse of what is beneath would be drawn as
-/// though nothing were.
+/// though nothing were — and not what something else on the page follows
+/// ([CompositedTransformTarget]): drawn as a picture, it is not there to be
+/// followed. For those, [enabled] is false; it is switched rather than the
+/// widget left out, which would build the child anew.
 class ZoomSnapshot extends StatelessWidget {
-  const ZoomSnapshot({required this.child, super.key});
+  const ZoomSnapshot({required this.child, this.enabled = true, super.key});
 
   final Widget child;
+
+  /// Whether it is drawn as a picture while the view zooms.
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) => _ZoomSnapshot(
     view: CanvasScope.viewOf(context),
+    enabled: enabled,
     zooming: CanvasScope.zoomingOf(context),
     pixelsPerUnit:
         CanvasScope.zoomOf(context) *
@@ -47,12 +54,14 @@ class ZoomSnapshot extends StatelessWidget {
 class _ZoomSnapshot extends SingleChildRenderObjectWidget {
   const _ZoomSnapshot({
     required this.view,
+    required this.enabled,
     required this.zooming,
     required this.pixelsPerUnit,
     required super.child,
   });
 
   final ValueListenable<CanvasViewport>? view;
+  final bool enabled;
   final bool zooming;
 
   /// Device pixels a unit of the child is drawn across, as the view rests.
@@ -63,6 +72,7 @@ class _ZoomSnapshot extends SingleChildRenderObjectWidget {
       RenderZoomSnapshot(
         pixelsPerUnit: pixelsPerUnit,
         zooming: zooming,
+        enabled: enabled,
         view: view,
       );
 
@@ -73,6 +83,7 @@ class _ZoomSnapshot extends SingleChildRenderObjectWidget {
   ) {
     renderObject
       ..view = view
+      ..enabled = enabled
       ..pixelsPerUnit = pixelsPerUnit
       ..zooming = zooming;
   }
@@ -83,9 +94,11 @@ class RenderZoomSnapshot extends RenderProxyBox {
   RenderZoomSnapshot({
     required double pixelsPerUnit,
     required bool zooming,
+    bool enabled = true,
     ValueListenable<CanvasViewport>? view,
   }) : _pixelsPerUnit = pixelsPerUnit,
        _zooming = zooming,
+       _enabled = enabled,
        _view = view;
 
   /// The view of the page it is on, which taking pictures waits on to rest.
@@ -121,6 +134,24 @@ class RenderZoomSnapshot extends RenderProxyBox {
     _due(this);
   }
 
+  /// Whether it is drawn as a picture while the view zooms, or always as
+  /// itself.
+  bool _enabled;
+  set enabled(bool value) {
+    if (value == _enabled) return;
+    _enabled = value;
+    if (value) {
+      _due(this);
+    } else {
+      _notDue(this);
+      if (_snapshot != null) {
+        _letGo();
+        _ownRepaint = true;
+        markNeedsPaint();
+      }
+    }
+  }
+
   bool _zooming;
   set zooming(bool value) {
     if (value == _zooming) return;
@@ -136,6 +167,11 @@ class RenderZoomSnapshot extends RenderProxyBox {
 
   /// The pixels per unit [_snapshot] was taken at.
   double _snapshotPixelsPerUnit = 0;
+
+  /// The size it was laid out at as [_snapshot] was taken. Laid out anew
+  /// since — a formula opened or typed in — the picture would be stretched
+  /// over what it has become.
+  Size _snapshotSize = Size.zero;
 
   /// Whether [_snapshot] shows the child as it is painted now.
   bool _current = false;
@@ -163,7 +199,9 @@ class RenderZoomSnapshot extends RenderProxyBox {
     _ownRepaint = false;
     _shown = ++_clock;
     final snapshot = _snapshot;
-    if (_zooming && snapshot != null) {
+    // Only a picture of it as it is: one of what it was, changed since, is
+    // drawn stretched over it, or shows what is no longer there.
+    if (_zooming && snapshot != null && _current && size == _snapshotSize) {
       context.canvas.drawImageRect(
         snapshot,
         Offset.zero &
@@ -174,6 +212,7 @@ class RenderZoomSnapshot extends RenderProxyBox {
       return;
     }
     super.paint(context, offset);
+    if (!_enabled) return;
     if (!_current || _snapshotPixelsPerUnit != _pixelsPerUnit) _due(this);
   }
 
@@ -181,6 +220,7 @@ class RenderZoomSnapshot extends RenderProxyBox {
   bool get _ready {
     final layer = this.layer;
     return attached &&
+        _enabled &&
         !_zooming &&
         hasSize &&
         !size.isEmpty &&
@@ -205,6 +245,7 @@ class RenderZoomSnapshot extends RenderProxyBox {
     _letGo();
     _snapshot = image;
     _snapshotPixelsPerUnit = _pixelsPerUnit;
+    _snapshotSize = size;
     _current = true;
     _kept.add(this);
     _keepWithinBudget();
@@ -226,11 +267,7 @@ class RenderZoomSnapshot extends RenderProxyBox {
   @override
   void detach() {
     _view?.removeListener(_moved);
-    _unseen.remove(this);
-    if (_waiting.remove(this) && _waiting.isEmpty) {
-      _timer?.cancel();
-      _timer = null;
-    }
+    _notDue(this);
     _letGo();
     super.detach();
   }
@@ -272,9 +309,19 @@ class RenderZoomSnapshot extends RenderProxyBox {
   }
 
   static void _due(RenderZoomSnapshot box) {
+    if (!box._enabled) return;
     _waiting.add(box);
     _timer?.cancel();
     _timer = Timer(settle, _takeNext);
+  }
+
+  /// No longer takes a picture of [box], nor waits to.
+  static void _notDue(RenderZoomSnapshot box) {
+    _unseen.remove(box);
+    if (_waiting.remove(box) && _waiting.isEmpty) {
+      _timer?.cancel();
+      _timer = null;
+    }
   }
 
   /// Takes the picture of the one painted most recently of those waiting —

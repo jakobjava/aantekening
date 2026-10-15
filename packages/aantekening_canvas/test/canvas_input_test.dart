@@ -548,6 +548,90 @@ void main() {
       expect(snapshot, paints..rect(color: Colors.blue));
     });
 
+    testWidgets('a box laid out anew since its picture was taken is drawn '
+        'as itself while the page zooms, not its picture stretched', (
+      tester,
+    ) async {
+      final controller = CanvasController()
+        ..addElement(_textBox('box', x: 300, y: 200));
+      final height = ValueNotifier<double>(40);
+      addTearDown(height.dispose);
+      await tester.pumpWidget(
+        _host(
+          controller,
+          elementBuilder: (context, element) => ZoomSnapshot(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: ValueListenableBuilder<double>(
+                valueListenable: height,
+                builder: (context, value, _) => SizedBox(
+                  width: 80,
+                  height: value,
+                  child: const ColoredBox(color: Colors.blue),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(RenderZoomSnapshot.settle);
+      await tester.pump();
+      final snapshot = tester.renderObject<RenderZoomSnapshot>(
+        find.byType(ZoomSnapshot),
+      );
+
+      // A formula opened in it, say, just before the pinch.
+      height.value = 60;
+      await tester.pump();
+      final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+      const at = Offset(400, 300);
+      await tester.sendEventToBinding(trackpad.panZoomStart(at));
+      for (var i = 1; i <= 4; i++) {
+        await tester.sendEventToBinding(
+          trackpad.panZoomUpdate(at, scale: 1 + i * 0.1),
+        );
+        await tester.pump();
+      }
+      expect(snapshot, isNot(paints..drawImageRect()));
+      expect(snapshot, paints..rect(color: Colors.blue));
+      await tester.sendEventToBinding(trackpad.panZoomEnd());
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a zoom snapshot not enabled is drawn as itself while the '
+        'page zooms', (tester) async {
+      final controller = CanvasController()
+        ..addElement(_textBox('box', x: 300, y: 200));
+      await tester.pumpWidget(
+        _host(
+          controller,
+          elementBuilder: (context, element) => const ZoomSnapshot(
+            enabled: false,
+            child: ColoredBox(color: Colors.blue),
+          ),
+        ),
+      );
+      await tester.pump(RenderZoomSnapshot.settle);
+      await tester.pump();
+      final snapshot = tester.renderObject<RenderZoomSnapshot>(
+        find.byType(ZoomSnapshot),
+      );
+
+      final trackpad = TestPointer(1, PointerDeviceKind.trackpad);
+      const at = Offset(400, 300);
+      await tester.sendEventToBinding(trackpad.panZoomStart(at));
+      for (var i = 1; i <= 4; i++) {
+        await tester.sendEventToBinding(
+          trackpad.panZoomUpdate(at, scale: 1 + i * 0.1),
+        );
+        await tester.pump();
+      }
+      expect(snapshot, isNot(paints..drawImageRect()));
+      expect(snapshot, paints..rect(color: Colors.blue));
+      await tester.sendEventToBinding(trackpad.panZoomEnd());
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('a pinch scales the page as it is laid out, and lays it '
         'out for the zoom it comes to once it is done', (tester) async {
       final controller = CanvasController()

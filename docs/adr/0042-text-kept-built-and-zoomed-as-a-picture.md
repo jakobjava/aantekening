@@ -47,7 +47,11 @@ zoom began, the pictures of the page of formulas held its first frame up
 by 50 ms. A box not yet pictured is drawn as itself. The pictures together
 hold at most 24 million pixels, those painted least recently let go first.
 A box with text in the inverse of what is beneath it (ADR 23) is never a
-picture: drawn alone, it would show what is beneath as nothing.
+picture: drawn alone, it would show what is beneath as nothing. Nor is the
+box being typed in: the field a formula's source is typed in follows where
+the box draws it, and drawn as a picture the box is not there to follow.
+A picture taken before the box was last laid out or painted anew is not
+shown: it would be stretched over the box's new size.
 
 ## Consequences
 

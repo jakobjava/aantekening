@@ -165,8 +165,13 @@ extension _Elements on _PageEditorState {
       onOpenLink: (uri) => unawaited(ref.read(noteLinksProvider).open(uri)),
     );
     // A picture of it while the page zooms, but for text in the inverse of
-    // what is beneath it, which a picture of it alone would not show.
-    return _drawsInverse(element) ? box : ZoomSnapshot(child: box);
+    // what is beneath it, which a picture of it alone would not show, and
+    // the box being typed in: the field a formula's source is typed in
+    // follows where the box draws it, and its caret blinks.
+    return ZoomSnapshot(
+      enabled: !built.isEditing && !_drawsInverse(element),
+      child: box,
+    );
   }
 
   static bool _drawsInverse(TextElement element) => element.blocks.any(
