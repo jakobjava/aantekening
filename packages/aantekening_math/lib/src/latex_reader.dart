@@ -2,7 +2,10 @@
 /// stored as LaTeX can be shown and edited in Simple syntax.
 library;
 
+import 'package:aantekening_core/aantekening_core.dart' show LatexSource;
+
 import 'ast.dart';
+import 'units.dart';
 
 /// Reads the subset of LaTeX that notes use — fractions, roots, scripts,
 /// accents, fences, matrices, cases — into [MathNode]s.
@@ -104,6 +107,13 @@ class LatexReader {
     while (true) {
       _skipSpace();
       if (_atEnd || _stopsHere(stops)) return items;
+      // A number's units, as a quantity is written: `5\,\mathrm{m/s}`.
+      if (items.isNotEmpty && _takesUnits(items.last)) {
+        if (_units() case final unit?) {
+          items.add(unit);
+          continue;
+        }
+      }
       final atom = _atom(stops);
       if (atom != null) items.add(_scripts(atom));
     }
@@ -310,6 +320,12 @@ class LatexReader {
     switch (name) {
       case '':
         return const RawNode(r'\');
+      // An equilibrium's arrows with nothing above them, as `<=>>` and
+      // `<<=>` are written.
+      case 'xrightequilibrium' || 'xleftequilibrium'
+          when RegExp(r'\s*\{\s*\}').matchAsPrefix(source, _i) != null:
+        _i = RegExp(r'\s*\{\s*\}').matchAsPrefix(source, _i)!.end;
+        return SymbolNode('$command{}');
       case 'frac':
         return FractionNode(_argument(), _argument());
       // A fraction set larger or smaller than its place would set it keeps
@@ -393,7 +409,32 @@ class LatexReader {
         stops,
       );
     }
+    // mhchem's, kept as they are, to be written as `ce(…)` and `pu(…)`.
+    if (name == 'ce' || name == 'pu') {
+      return RawNode('$command{${_bracedText()}}');
+    }
     return SymbolNode(command);
+  }
+
+  /// Whether units may follow [node]: a number, or a power of ten.
+  static bool _takesUnits(MathNode node) => switch (node) {
+    NumberNode() => true,
+    ScriptNode(base: NumberNode(text: '10'), subscript: null) => true,
+    _ => false,
+  };
+
+  /// The units at hand, `\,\mathrm{m/s}`, moving past them; null, and
+  /// moving nowhere, if there are none.
+  UnitNode? _units() {
+    final start = RegExp(r'\\,\s*\\mathrm\s*\{').matchAsPrefix(source, _i);
+    if (start == null) return null;
+    final close = LatexSource.closingBrace(source, start.end - 1);
+    final unit = Units.fromLatex(
+      LatexSource.inside(source, start.end - 1, close),
+    );
+    if (unit == null) return null;
+    _i = close;
+    return UnitNode(unit);
   }
 
   /// `\colorbox{#FFEF9D}{$…$}`, the way a highlight is stored, read as one;

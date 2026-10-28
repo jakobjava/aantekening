@@ -53,6 +53,21 @@ abstract final class LatexSource {
     return source.length;
   }
 
+  /// What is inside the group or options opening at [open] in [source],
+  /// [close] just past their end as [closingBrace] or [closingBracket] found
+  /// it: all that follows the opening, if it never closes — as it does not
+  /// while it is being typed.
+  static String inside(String source, int open, int close) {
+    final closer = source[open] == '[' ? ']' : '}';
+    // Closed, a closing added after it changes nothing.
+    final closed =
+        (closer == ']'
+            ? closingBracket('$source]', open)
+            : closingBrace('$source}', open)) ==
+        close;
+    return source.substring(open + 1, closed ? close - 1 : source.length);
+  }
+
   static bool isSpace(int unit) =>
       unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x0D;
 

@@ -29,8 +29,14 @@ abstract final class LatexPackages {
   /// terms of itself cannot go on for ever.
   static const int _maxSteps = 4000;
 
-  /// [latex] with the packages' commands written out.
-  static String expand(String latex) {
+  /// [latex] with the packages' commands written out: only mhchem's, its
+  /// `\ce` and `\pu`, with [chemistryOnly] — which clash with nothing, and
+  /// are read in every formula.
+  static String expand(String latex, {bool chemistryOnly = false}) {
+    if (chemistryOnly && !latex.contains(r'\ce') && !latex.contains(r'\pu')) {
+      return latex;
+    }
+    final commands = chemistryOnly ? _mhchem : _commands;
     var text = latex;
     var at = 0;
     var steps = 0;
@@ -46,7 +52,7 @@ abstract final class LatexPackages {
         at = slash + 2;
         continue;
       }
-      final command = _commands[text.substring(slash + 1, end)];
+      final command = commands[text.substring(slash + 1, end)];
       final arguments = _Arguments(text, end);
       final written = command?.call(arguments);
       if (written == null || ++steps > _maxSteps) {
@@ -84,7 +90,7 @@ class _Arguments {
     _skipSpaces();
     if (_next != '[') return null;
     final close = LatexSource.closingBracket(source, at);
-    final inner = source.substring(at + 1, close - 1);
+    final inner = LatexSource.inside(source, at, close);
     at = close;
     return inner;
   }
@@ -103,7 +109,7 @@ class _Arguments {
     if (next == null) return '';
     if (next == '{') {
       final close = LatexSource.closingBrace(source, at);
-      final inner = source.substring(at + 1, close - 1);
+      final inner = LatexSource.inside(source, at, close);
       at = close;
       return inner;
     }

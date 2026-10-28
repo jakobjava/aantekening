@@ -3,6 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Simple input covering the linear syntax, for round trips.
 const List<String> _simpleExamples = <String>[
+  'ce(N2 + 3H2 <=> 2NH3)',
+  'v = 9,81 m/s^2',
+  'A <=>> B',
+  'SO_4^2- + Ba^2+ -> BaSO_4',
+  '[a; +infty[',
+  ']0; 1] cup ]2; 3[',
   'x^2 + y^2 = r^2',
   '(a + b)/c',
   'x^2/3',
@@ -136,6 +142,7 @@ void main() {
       r'\overline{z} \cdot z = |z|^2',
       r'\forall \epsilon > 0 \; \exists \delta > 0',
       r'{}^{14}_{6}\mathrm{C}',
+      r'x \in \left] -\infty ; 0 \right[',
     ]) {
       test('LaTeX: $latex', () {
         final simple = LinearMath.fromLatex(latex);

@@ -183,9 +183,12 @@ void main() {
     });
   });
 
-  test('only formulas brought in read the packages', () {
-    expect(MathView.problemIn(r'\ce{H2O}'), isNotNull);
-    expect(MathView.problemIn(r'\ce{H2O}', packages: true), isNull);
+  test('only formulas brought in read physics and siunitx, and every '
+      'formula mhchem, which clashes with nothing', () {
+    expect(MathView.problemIn(r'\SI{5}{\metre}'), isNotNull);
+    expect(MathView.problemIn(r'\SI{5}{\metre}', packages: true), isNull);
+    expect(MathView.problemIn(r'\ce{H2O}'), isNull);
+    expect(MathView.problemIn(r'\pu{5 m/s}'), isNull);
   });
 
   test('a preamble is written into every formula', () {
@@ -203,5 +206,42 @@ void main() {
       r'\begin{tikzpicture}[dot/.style={fill}]\fill[dot] (0,0) circle (1);'
       r'\end{tikzpicture}',
     );
+  });
+
+  test('a formula halfway typed is read without failing, at every point', () {
+    for (final whole in <String>[
+      r'\ce{Fe^{3+} + 3OH- ->[\Delta] Fe(OH)3 v}',
+      r'\pu{9,81 m/s^{2}}',
+      r'x = 5\,\mathrm{m/s^{2}} + \ce{H2O}',
+      r'\SI{5}{\metre\per\second}',
+    ]) {
+      for (var end = 0; end <= whole.length; end++) {
+        final typed = whole.substring(0, end);
+        expect(
+          () => MathView.prepared(typed, packages: true),
+          returnsNormally,
+          reason: typed,
+        );
+        expect(
+          () => LinearMath.fromLatex(typed),
+          returnsNormally,
+          reason: typed,
+        );
+      }
+    }
+    for (final whole in <String>[
+      'ce(2H2 + O2 <=>> 2H2O)',
+      'v = 9,81 m/s^2 + 3 * 10^(-3) J/(mol K)',
+      'pu(25 °C)',
+    ]) {
+      for (var end = 0; end <= whole.length; end++) {
+        final typed = whole.substring(0, end);
+        expect(
+          () => MathView.prepared(LinearMath.toLatex(typed)),
+          returnsNormally,
+          reason: typed,
+        );
+      }
+    }
   });
 }

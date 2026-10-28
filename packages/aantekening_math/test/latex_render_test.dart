@@ -41,6 +41,16 @@ void main() {
     'x_1 + x_2 + ldots + x_n',
     'lim_(n->oo) (1+1/n)^n',
     'highlight(x^2) + highlight(#A8E6B0, 1/2)',
+    '[a;+infty[',
+    'SO_4^2- + Ba^2+ -> BaSO_4',
+    'ce(N2 + 3H2 <=> 2NH3)',
+    'ce(A <=>> B) + ce(A <<=> B)',
+    'A <=>> B <<=> C',
+    'v = 9,81 m/s^2',
+    'R = 8,31 J/(mol K)',
+    'T = 25 °C',
+    'pu(1,5 kJ/mol)',
+    'x in ]-oo; 0[ cup ]0; 1]',
   ];
 
   group('every example the cheat sheet shows parses', () {
@@ -49,9 +59,10 @@ void main() {
         test('${topic.title}: "${example.typed}"', () {
           final translation = LinearMath.translate(example.typed);
           expect(translation.diagnostics, isEmpty);
+          // As it is shown: mhchem's formulas written out.
           expect(
             () => TexParser(
-              RendererLatex.of(example.latex),
+              RendererLatex.of(MathView.prepared(example.latex)),
               const TexParserSettings(),
             ).parse(),
             returnsNormally,
@@ -65,7 +76,7 @@ void main() {
   group('generated LaTeX parses', () {
     for (final expression in expressions) {
       test('"$expression"', () {
-        final latex = LinearMath.toLatex(expression);
+        final latex = MathView.prepared(LinearMath.toLatex(expression));
         expect(
           () => TexParser(latex, const TexParserSettings()).parse(),
           returnsNormally,

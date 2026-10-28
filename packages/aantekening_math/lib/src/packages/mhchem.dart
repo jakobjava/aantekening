@@ -47,7 +47,7 @@ String _chemistry(String source) {
     if (at < source.length && source[at] == '{') {
       final close = LatexSource.closingBrace(source, at);
       i = close;
-      return source.substring(at + 1, close - 1);
+      return LatexSource.inside(source, at, close);
     }
     final match = RegExp(r'\d*[+\-]*|[IVX]+').matchAsPrefix(source, at);
     final end = match == null || match.end == at ? at + 1 : match.end;
@@ -112,7 +112,7 @@ String _chemistry(String source) {
 
     if (char == '{') {
       final close = LatexSource.closingBrace(source, i);
-      out.write('{${_chemistry(source.substring(i + 1, close - 1))}}');
+      out.write('{${_chemistry(LatexSource.inside(source, i, close))}}');
       i = close;
       termStart = false;
       inFormula = true;
@@ -198,7 +198,8 @@ String _chemistry(String source) {
       out.write(
         fraction.length == 2
             ? '\\tfrac{${fraction[0]}}{${fraction[1]}}'
-            : number,
+            // A decimal comma, `0,5 O2`, is no list's.
+            : number.replaceAll(',', '{,}'),
       );
       termStart = false;
       continue;
@@ -244,8 +245,8 @@ String _physicalUnits(String source) {
     final value = RegExp(r'^(.*?)[eE]([-+]?\d+)$').firstMatch(words.first);
     out.write(
       value == null
-          ? _digits(words.first)
-          : '${_digits(value.group(1)!)}\\cdot 10^{'
+          ? _asTyped(words.first)
+          : '${_asTyped(value.group(1)!)}\\cdot 10^{'
                 '${value.group(2)!.replaceFirst('+', '')}}',
     );
     start = 1;
@@ -261,6 +262,13 @@ String _physicalUnits(String source) {
       ..write(unit);
   }
   return out.toString();
+}
+
+/// [number] with its digits grouped, as siunitx groups them, and its
+/// decimal mark as it was typed: a comma, as in Dutch and German, kept.
+String _asTyped(String number) {
+  final written = _digits(number);
+  return number.contains(',') ? written.replaceFirst('.', '{,}') : written;
 }
 
 /// One word of mhchem's units: `kJ/mol`, `K^-1`, `mol-1`, `m2`, `°C`.

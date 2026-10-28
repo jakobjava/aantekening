@@ -291,9 +291,31 @@ fraction, `-2/3`; type `(-2)/3` to have it above the bar. A `^` or `_`
 likewise takes what is typed straight after it, up to a space, an operator
 or a bracket: `A_SiB` has all of `SiB` below, `x^2y` is x to the `2y` and
 `x^2 y` x squared times y, while `f_n(x)` and `x_i+1` end the script at the
-bracket and the plus — `H_3 O^+` wants its space. `vec`, `hat`, `sqrt` and
+bracket and the plus — `H_3 O^+` wants its space. A number or a letter
+raised with a sign straight after it is a charge, as chemistry writes one:
+`O^2-`, `SO_4^2- + Fe^3+`, while `x^2-1` is x squared less one.
+
+**Chemistry** goes in `ce(…)`, written as mhchem writes it: the elements
+upright, numbers after them as counts, signs as charges —
+`ce(2H2 + O2 -> 2H2O)`, `ce(SO4^2- + Ba^2+ -> BaSO4 v)`, states as
+`(aq)`, `^` and `v` for a gas given off and a precipitate. Its arrows:
+`->` and `<-`, `<->` for resonance, `<=>` for an equilibrium, and `<=>>`
+and `<<=>` for one lying to the right or the left, its arrow that way the
+longer; `<=>>` and `<<=>` work outside `ce(…)` too.
+
+**Units** after a number and a space are set upright, a thin space
+before them: `v = 9,81 m/s^2`, `m = 20 kg`, `T = 25 °C`,
+`R = 8,31 J/(mol K)`, `c = 3,0 * 10^8 m/s`. Typed against the number,
+`2m` is two times m. A unit of one letter by itself is a unit only where
+nothing it would multiply follows it — `l = 2 m`, but `F = 2 m a` — and
+`t`, `h`, `d`, `l`, `a`, `F`, `H` and `S` are variables by themselves,
+units only with a prefix or among others, `km/h`. After a fraction bar
+there are no units: `1/2 m v^2` is half m v². To have units whatever
+follows them, write the quantity in `pu(…)`: `pu(3 h)`. `vec`, `hat`, `sqrt` and
 the like, without brackets, take one symbol, and a script after it is
-theirs: `veca_2^3` is `vec(a)_2^3`. Enter or Esc finishes it,
+theirs: `veca_2^3` is `vec(a)_2^3`. An interval's bracket is turned
+outward at an end left open, as in Dutch and French schools: `[a;+infty[`,
+`]0;1]`, `]-oo;3[`. Enter or Esc finishes it,
 in the window too; Shift+Enter there starts a new line. Arrowing into or
 clicking a formula shows its source again. Tab moves to the next place a
 structure left to fill in. A formula alone on its line is typeset large;

@@ -58,7 +58,7 @@ class MathView extends StatelessWidget {
     final own = LatexPreamble();
     final written = own.apply(own.takeFrom(latex));
     final applied = preamble == null ? written : preamble.apply(written);
-    return packages ? LatexPackages.expand(applied) : applied;
+    return LatexPackages.expand(applied, chemistryOnly: !packages);
   }
 
   /// What keeps [latex] from being typeset, or null where nothing does;

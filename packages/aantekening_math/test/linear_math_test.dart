@@ -127,6 +127,30 @@ void main() {
       expectLatex('(e^-)', r'\left( e^- \right)');
       expectLatex('x^-a b', 'x^{-a} b');
     });
+
+    test('takes a number or a letter with a sign straight after it as a '
+        'charge', () {
+      expectLatex('O^2-', 'O^{2 -}');
+      expectLatex('SO_4^2- + Ba^2+', 'S O_4^{2 -} + B a^{2 +}');
+      expectLatex('M^n+', 'M^{n +}');
+      expectLatex('(O^2-)', r'\left( O^{2 -} \right)');
+      expectLatex('Cu^2+, Zn^2+', 'C u^{2 +}, Z n^{2 +}');
+    });
+
+    test('still takes a sign with something straight after it as an '
+        'operator', () {
+      expectLatex('x^2-1', 'x^2 - 1');
+      expectLatex('x^n-1', 'x^n - 1');
+      expectLatex('e^2x-1', 'e^{2 x} - 1');
+      expectLatex('x^2 - 1', 'x^2 - 1');
+    });
+
+    test('writes a charge back as it is typed', () {
+      for (final typed in const <String>['O^2-', 'M^n+']) {
+        final latex = LinearMath.toLatex(typed);
+        expect(LinearMath.fromLatex(latex), typed);
+      }
+    });
   });
 
   group('roots', () {
@@ -558,6 +582,158 @@ void main() {
         final latex = LinearMath.toLatex(typed);
         expect(LinearMath.fromLatex(latex), written);
         expect(LinearMath.toLatex(written), latex);
+      }
+    });
+  });
+
+  group('intervals', () {
+    test('turn a bracket outward at an end left open', () {
+      expectLatex('[a;+infty[', r'\left[ a; +\infty \right[');
+      expectLatex(']0;1]', r'\left] 0; 1 \right]');
+      expectLatex(']-oo; 3[', r'\left] -\infty; 3 \right[');
+      expectLatex(']a,b[', r'\left] a, b \right[');
+    });
+
+    test('hold what is typed at their ends, decimals and scripts too', () {
+      expectLatex('[0,5; 1[', r'\left[ 0{,}5; 1 \right[');
+      expectLatex('[x^2; y_1[', r'\left[ x^2; y_1 \right[');
+      expectLatex('[f(a); b[', r'\left[ f \left( a \right); b \right[');
+    });
+
+    test('are joined and taken as any operand is', () {
+      expectLatex(
+        'x in ]0;1[ cup ]2;3[',
+        r'x \in \left] 0; 1 \right[ \cup \left] 2; 3 \right[',
+      );
+      expectLatex('f([0;1[)', r'f \left( \left[ 0; 1 \right[ \right)');
+      expectLatex('[a;b[ + 1', r'\left[ a; b \right[ + 1');
+    });
+
+    test('leave brackets closed as they open, and lists, as they were', () {
+      expectLatex('[a;b]', r'\left[ a; b \right]');
+      expectLatex('[1;2;3]', r'\left[ 1; 2; 3 \right]');
+      expectLatex('[a+b]c', r'\left[ a + b \right] c');
+    });
+
+    test('with an end not yet typed, show where it goes', () {
+      final translation = LinearMath.translate('[a;[');
+      expect(translation.latex, r'\left[ a; \square \right[');
+      expect(translation.diagnostics, isNotEmpty);
+    });
+
+    test('are written back as they are typed', () {
+      for (final (typed, written) in const <(String, String)>[
+        ('[a;+infty[', '[a; +infty['),
+        (']0;1]', ']0; 1]'),
+        (']-oo;3[', ']-infty; 3['),
+      ]) {
+        final latex = LinearMath.toLatex(typed);
+        expect(LinearMath.fromLatex(latex), written);
+        expect(LinearMath.toLatex(written), latex);
+      }
+    });
+  });
+
+  group('chemistry', () {
+    test('keeps a formula in ce() as mhchem writes it', () {
+      expectLatex(
+        'ce(Fe^3+ + 3OH- -> Fe(OH)3)',
+        r'\ce{Fe^3+ + 3OH- -> Fe(OH)3}',
+      );
+      expectLatex('x = ce(H2O)', r'x = \ce{H2O}');
+      expectLatex('pu(9,81 m/s^2)', r'\pu{9,81 m/s^2}');
+    });
+
+    test('sets its elements upright, its arrows as mhchem sets them', () {
+      String shown(String typed) =>
+          MathView.prepared(LinearMath.toLatex(typed));
+      expect(shown('ce(H2O)'), r'\mathrm{H}_{2}\mathrm{O}');
+      expect(shown('ce(A <=> B)'), contains(r'\xrightleftharpoons'));
+      expect(shown('ce(A <=>> B)'), contains(r'\xrightequilibrium'));
+      expect(shown('ce(A <<=> B)'), contains(r'\xleftequilibrium'));
+      expect(shown('pu(9,81 m/s^2)'), startsWith('9{,}81'));
+    });
+
+    test('has the equilibria lying one way outside it too', () {
+      expectLatex('A <=>> B', r'A \xrightequilibrium{} B');
+      expectLatex('A <<=> B', r'A \xleftequilibrium{} B');
+      expectLatex('A <=> B', r'A \iff B');
+    });
+
+    test('is not read in a word that holds ce', () {
+      expectLatex('space(x)', r's p a c e \left( x \right)');
+    });
+
+    test('is written back as it is typed', () {
+      for (final typed in const <String>[
+        'ce(N2 + 3H2 <=> 2NH3)',
+        'ce(CH3COOH + H2O <=> CH3COO- + H3O+)',
+        'pu(1,5 kJ/mol)',
+        'A <=>> B',
+        'A <<=> B',
+      ]) {
+        final latex = LinearMath.toLatex(typed);
+        expect(LinearMath.fromLatex(latex), typed);
+      }
+    });
+  });
+
+  group('units', () {
+    test('after a number and a space are set upright, a thin space before '
+        'them', () {
+      expectLatex('5 m/s', r'5 \,\mathrm{m/s}');
+      expectLatex('v = 9,81 m/s^2', r'v = 9{,}81 \,\mathrm{m/s^{2}}');
+      expectLatex('m = 20 kg', r'm = 20 \,\mathrm{kg}');
+      expectLatex('T = 25 °C', r'T = 25 \,\mathrm{{}^{\circ}C}');
+      expectLatex('R = 8,31 J/(mol K)', r'R = 8{,}31 \,\mathrm{J/(mol\,K)}');
+      expectLatex('F = 20 N m', r'F = 20 \,\mathrm{N\,m}');
+      expectLatex('y = 2 s^-1', r'y = 2 \,\mathrm{s^{-1}}');
+      expectLatex('50 %', r'50 \,\mathrm{\%}');
+      expectLatex('c = 0,1 M', r'c = 0{,}1 \,\mathrm{M}');
+      expectLatex('v = 100 km/h', r'v = 100 \,\mathrm{km/h}');
+    });
+
+    test('follow a power of ten', () {
+      expectLatex('c = 3,0 * 10^8 m/s', r'c = 3{,}0 \cdot 10^8 \,\mathrm{m/s}');
+      expectLatex(
+        'h = 6,63 * 10^(-34) J s',
+        r'h = 6{,}63 \cdot 10^{-34} \,\mathrm{J\,s}',
+      );
+    });
+
+    test('are a letter alone only where nothing follows it to multiply', () {
+      expectLatex('l = 2 m', r'l = 2 \,\mathrm{m}');
+      expectLatex('5 m + 3 m', r'5 \,\mathrm{m} + 3 \,\mathrm{m}');
+      expectLatex('F = 2 m a', 'F = 2 m a');
+    });
+
+    test('are not letters often meant as variables, alone', () {
+      expectLatex('x = 3 t + 2', 'x = 3 t + 2');
+      expectLatex('2 h', '2 h');
+    });
+
+    test('are not read against the number, after a fraction bar, or '
+        'where the word is no unit', () {
+      expectLatex('2m', '2 m');
+      expectLatex('E = 1/2 m v^2', r'E = \frac{1}{2} m v^2');
+      expectLatex('4 pi r^2', r'4 \pi r^2');
+      expectLatex('x = 3 min(a, b)', r'x = 3 \min \left( a, b \right)');
+      expectLatex('3 x', '3 x');
+    });
+
+    test('are written back as they are typed', () {
+      for (final typed in const <String>[
+        '5 m/s',
+        'v = 9,81 m/s^2',
+        'T = 25 °C',
+        'R = 8,31 J/(mol K)',
+        'c = 3,0 * 10^8 m/s',
+        'h = 6,63 * 10^(-34) J s',
+        '50 %',
+      ]) {
+        final latex = LinearMath.toLatex(typed);
+        expect(LinearMath.fromLatex(latex), typed);
+        expect(LinearMath.toLatex(typed), latex);
       }
     });
   });

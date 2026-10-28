@@ -1626,7 +1626,8 @@ void main() {
       const TextRun.imported(r'\frac{a}{b}'),
     );
 
-    // mhchem is read in what was brought in, and not in a formula typed.
+    // mhchem is read in what was brought in, and in a formula typed too;
+    // siunitx only in what was brought in.
     await tester.tapAt(
       tester.getCenter(find.byType(MathView).first),
       kind: PointerDeviceKind.mouse,
@@ -1640,9 +1641,9 @@ void main() {
     await press(tester, LogicalKeyboardKey.equal, alt: true);
     await press(tester, LogicalKeyboardKey.keyM, control: true, shift: true);
     await tester.pumpAndSettle();
-    await type(tester, r'\ce{H2O}');
+    await type(tester, r'\ce{H2O} \SI{5}{\metre}');
     await tester.pumpAndSettle();
-    expect(overlayOf(tester).problem, isNotNull);
+    expect(overlayOf(tester).problem, isNotNull, reason: 'siunitx');
     expect(blocksOf(tester).single.runs.last.imported, isFalse);
   });
 

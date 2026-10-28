@@ -62,6 +62,7 @@ abstract final class SimpleSyntaxGuide {
         SyntaxExample("f'(x) + f''(x)", 'Primes'),
         SyntaxExample('A^dagger', 'Dagger, the adjoint'),
         SyntaxExample('{}^14 C', 'Script before a symbol'),
+        SyntaxExample('SO_4^2- + Fe^3+', 'Charges: a sign after the number'),
       ]),
       const SyntaxTopic('Roots and functions', <SyntaxExample>[
         SyntaxExample('sqrt(x)', 'Square root'),
@@ -123,12 +124,31 @@ abstract final class SimpleSyntaxGuide {
         SyntaxExample('forall x exists y', 'For all, there exists'),
         SyntaxExample('neg p wedge q vee r', 'Not, and, or'),
       ]),
+      const SyntaxTopic('Chemistry and units', <SyntaxExample>[
+        SyntaxExample(
+          'ce(2H2 + O2 -> 2H2O)',
+          'A reaction, its elements upright',
+        ),
+        SyntaxExample('ce(N2 + 3H2 <=> 2NH3)', 'An equilibrium'),
+        SyntaxExample(
+          'ce(A <=>> B) + ce(A <<=> B)',
+          'An equilibrium lying right, left',
+        ),
+        SyntaxExample('ce(SO4^2- + Ba^2+ -> BaSO4 v)', 'Ions, a precipitate'),
+        SyntaxExample('v = 9,81 m/s^2', 'A number, a space, its units'),
+        SyntaxExample('F = 2 m a', 'A letter that multiplies: a variable'),
+        SyntaxExample('pu(25 °C)', 'Units, whatever comes after'),
+      ]),
       const SyntaxTopic('Sets', <SyntaxExample>[
         SyntaxExample('x in A', 'Element of'),
         SyntaxExample('x notin A', 'Not an element of'),
         SyntaxExample('A subset B subseteq C', 'Subsets'),
         SyntaxExample('A cup B cap C', 'Union, intersection'),
         SyntaxExample('A setminus B', 'Difference'),
+        SyntaxExample(
+          ']0;1] cup [2;+infty[',
+          'Intervals, the bracket turned away at an open end',
+        ),
         SyntaxExample('emptyset', 'Empty set'),
         SyntaxExample('NN ZZ QQ RR CC', 'Number sets'),
       ]),

@@ -24,6 +24,11 @@ class MathParser {
   /// absolute value.
   int _openBars = 0;
 
+  /// Where the intervals being read end: the brackets that close them,
+  /// innermost last, which end what is read before them rather than open
+  /// a bracket of their own.
+  final List<int> _intervalEnds = <int>[];
+
   static const Set<String> _relations = relationOperators;
   static const Set<String> _additive = additiveOperators;
   static const Set<String> _multiplicative = multiplicativeOperators;
@@ -353,6 +358,7 @@ class MathParser {
       final operand = _parseScriptOperand(
         subscript: subscript != null || !raised,
         superscript: superscript != null || raised,
+        raised: raised,
       );
       if (raised) {
         if (superscript != null) {
@@ -381,9 +387,14 @@ class MathParser {
   /// base's: the `^n` of `sum_(i=1)^n` and `A_SiB^2`. One of a kind it has
   /// — its own [subscript] or [superscript] — is the last letter's: `x^2y^3`
   /// is x to the `2y³`.
+  ///
+  /// Raised, as a superscript, a number or a letter with a sign straight
+  /// after it and nothing straight after that is a charge, as chemistry
+  /// writes one: `O^2-`, `Fe^3+`, `M^n+`; `x^2-1` is x squared less one.
   MathNode _parseScriptOperand({
     required bool subscript,
     required bool superscript,
+    bool raised = false,
   }) {
     if (_check(TokenType.end)) {
       diagnostics.add(MathDiagnostic(_current.offset, 'Missing script'));
@@ -399,6 +410,7 @@ class MathParser {
               _parseScriptOperand(
                 subscript: subscript,
                 superscript: superscript,
+                raised: raised,
               ),
             )
           : SymbolNode(operator.latex);
@@ -418,7 +430,41 @@ class MathParser {
         !_opensBracket(_current)) {
       parts.add(atom());
     }
+    if (raised && _atCharge(parts)) {
+      return SequenceNode(<MathNode>[
+        parts.single,
+        SymbolNode(_advance().latex),
+      ]);
+    }
     return parts.length == 1 ? _unwrap(parts.single) : SequenceNode(parts);
+  }
+
+  /// Whether the sign at hand ends the charge [parts] begin: a `+` or `-`
+  /// typed straight after a number or a letter, with nothing typed straight
+  /// after it that it would take — the end, a space, a closing bracket or a
+  /// separator.
+  bool _atCharge(List<MathNode> parts) {
+    final charged = switch (parts) {
+      [NumberNode()] || [VariableNode(name: String(length: 1))] => true,
+      _ => false,
+    };
+    if (!charged ||
+        _current.spaced ||
+        !_check(TokenType.operator) ||
+        (_current.latex != '+' && _current.latex != '-')) {
+      return false;
+    }
+    final next = _tokens[_index + 1];
+    return next.spaced ||
+        switch (next.type) {
+          TokenType.end ||
+          TokenType.rightParen ||
+          TokenType.rightBracket ||
+          TokenType.rightBrace ||
+          TokenType.comma ||
+          TokenType.semicolon => true,
+          _ => false,
+        };
   }
 
   /// Whether [token] opens a bracket, which ends a script: `f_n(x)`.
@@ -432,6 +478,22 @@ class MathParser {
 
   MathNode _parsePrimary() {
     final token = _current;
+    // An end of an interval left out, `[a;[`: the bracket closes it.
+    if (_atIntervalEnd(token)) {
+      diagnostics.add(MathDiagnostic(token.offset, 'Expression is incomplete'));
+      return const EmptyNode();
+    }
+    // An interval open at an end, its bracket turned outward there, as it
+    // is written in the Netherlands and France: `[a;+infty[`, `]0;1]`.
+    if (token.type == TokenType.leftBracket ||
+        token.type == TokenType.rightBracket) {
+      final end = _intervalEnd();
+      if (end != null &&
+          (token.type == TokenType.rightBracket ||
+              _tokens[end].type == TokenType.leftBracket)) {
+        return _parseInterval(end);
+      }
+    }
 
     switch (token.type) {
       case TokenType.number:
@@ -475,6 +537,10 @@ class MathParser {
       case TokenType.raw:
         _advance();
         return RawNode(token.latex);
+
+      case TokenType.unit:
+        _advance();
+        return UnitNode(token.lexeme);
 
       case TokenType.bar:
         _advance();
@@ -757,6 +823,72 @@ class MathParser {
         return items.length == 1 ? items.single : ListNode(items, separators);
       });
 
+  /// Where the interval the bracket at hand opens ends, if it opens one:
+  /// the bracket, turned either way, that follows its two ends and the `;`
+  /// or `,` between them — `[a;b[`, `]a;b]`, `]a;b[` — outside any round
+  /// bracket or brace; null if there is none, or a bracket comes before
+  /// the separator, or more than one separator: a list, `[1;2;3]`.
+  int? _intervalEnd() {
+    var depth = 0;
+    var separators = 0;
+    for (var i = _index + 1; i < _tokens.length; i++) {
+      switch (_tokens[i].type) {
+        case TokenType.leftParen || TokenType.leftBrace:
+          depth++;
+        case TokenType.rightParen || TokenType.rightBrace:
+          if (depth == 0) return null;
+          depth--;
+        case TokenType.comma || TokenType.semicolon when depth == 0:
+          if (++separators > 1) return null;
+        case TokenType.leftBracket || TokenType.rightBracket when depth == 0:
+          return separators == 1 ? i : null;
+        case TokenType.end:
+          return null;
+        default:
+      }
+    }
+    return null;
+  }
+
+  /// Whether [token] closes the interval being read.
+  bool _atIntervalEnd(Token token) =>
+      _intervalEnds.isNotEmpty && identical(token, _tokens[_intervalEnds.last]);
+
+  /// The interval from the bracket at hand to the one at [end]: its two
+  /// ends, each brackets as it was typed.
+  MathNode _parseInterval(int end) {
+    final open = _advance();
+    _intervalEnds.add(end);
+    try {
+      return _withinBracket(() {
+        // What does not belong in it, before the separator or the end, is
+        // said and left out.
+        void skipTo(bool Function() there) {
+          while (_index < end && !there()) {
+            final stray = _advance();
+            diagnostics.add(
+              MathDiagnostic(stray.offset, 'Unexpected "${stray.lexeme}"'),
+            );
+          }
+        }
+
+        final from = _parseExpression();
+        skipTo(() => _check(TokenType.comma) || _check(TokenType.semicolon));
+        final separator = _separator() ?? ';';
+        final to = _parseExpression();
+        skipTo(() => false);
+        final close = _advance();
+        return FencedNode(
+          open.lexeme,
+          close.lexeme,
+          ListNode(<MathNode>[from, to], <String>[separator]),
+        );
+      });
+    } finally {
+      _intervalEnds.removeLast();
+    }
+  }
+
   /// Drops a redundant layer of round brackets or braces.
   static MathNode _unwrap(MathNode node) => switch (node) {
     FencedNode(isRoundParen: true, child: final child) => child,
@@ -780,6 +912,7 @@ class MathParser {
   /// Whether [token] could begin a new operand, which is what makes implicit
   /// multiplication work.
   bool _startsPrimary(Token token) {
+    if (_atIntervalEnd(token)) return false;
     switch (token.type) {
       case TokenType.number:
       case TokenType.variable:
@@ -789,6 +922,7 @@ class MathParser {
       case TokenType.leftBrace:
       case TokenType.command:
       case TokenType.raw:
+      case TokenType.unit:
         return true;
       case TokenType.bar:
         // Inside `|...|` the next bar closes the fence rather than opening

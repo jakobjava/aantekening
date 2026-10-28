@@ -2,6 +2,7 @@
 library;
 
 import 'symbols.dart';
+import 'units.dart';
 
 /// The kind of a lexed token.
 enum TokenType {
@@ -36,6 +37,9 @@ enum TokenType {
 
   /// A colour, `#` and six hexadecimal digits: `#A8E6B0`.
   color,
+
+  /// A quantity's units, after its number and a space: `m/s` of `5 m/s`.
+  unit,
   end,
 }
 
@@ -97,6 +101,11 @@ class MathLexer {
   final List<MathDiagnostic> diagnostics = <MathDiagnostic>[];
   int _offset = 0;
 
+  /// Whether the number just read may have units after it: one standing by
+  /// itself, not a fraction's denominator or an exponent but a power of
+  /// ten's, `3 * 10^8 m/s`.
+  bool _unitsMayFollow = false;
+
   /// Scans the whole input, always ending with a [TokenType.end] token.
   List<Token> tokenize() {
     final tokens = <Token>[];
@@ -120,6 +129,8 @@ class MathLexer {
   }
 
   Token _next() {
+    final unitsMayFollow = _unitsMayFollow;
+    _unitsMayFollow = false;
     // Loops rather than recurses so that a run of unrecognised characters
     // costs nothing on the stack.
     while (true) {
@@ -130,6 +141,20 @@ class MathLexer {
 
       final start = _offset;
       final char = source[start];
+
+      // A number's units, after a space.
+      if (unitsMayFollow && start > 0 && _isWhitespace(source[start - 1])) {
+        if (Units.read(source, start) case final end?) {
+          _offset = end;
+          final unit = source.substring(start, end);
+          return Token(
+            type: TokenType.unit,
+            lexeme: unit,
+            offset: start,
+            latex: '\\,${Units.latexOf(unit)}',
+          );
+        }
+      }
 
       if (_isDigit(char) || (char == '.' && _isDigit(_peek(1)))) {
         return _number();
@@ -146,12 +171,17 @@ class MathLexer {
         continue;
       }
       if (char == r'\') return _command();
-      if (_isLetter(char)) return _word();
+      if (_isLetter(char)) return _package(start) ?? _word();
       if (char.codeUnitAt(0) > 0x7F) return _unicode();
 
       final structural = _structural(char, start);
       if (structural != null) {
         _offset++;
+        // A power of ten in brackets may have units after it, as a number
+        // does: `6,63 * 10^(-34) J s`.
+        _unitsMayFollow =
+            char == ')' &&
+            RegExp(r'10\^\(-?\d+\)$').hasMatch(source.substring(0, _offset));
         return structural;
       }
 
@@ -187,6 +217,11 @@ class MathLexer {
         _offset++;
       }
     }
+    final before = source.substring(0, start);
+    _unitsMayFollow =
+        before.isEmpty ||
+        RegExp(r'[\s(\[{,;=<>+\-*:|~]$').hasMatch(before) ||
+        RegExp(r'10\^-?$').hasMatch(before);
     return Token(
       type: TokenType.number,
       lexeme: source.substring(start, _offset),
@@ -302,6 +337,8 @@ class MathLexer {
   /// with its arguments as it was typed.
   static const Map<String, int> _verbatimCommands = <String, int>{
     r'\text': 1,
+    r'\ce': 1,
+    r'\pu': 1,
     r'\textbf': 1,
     r'\textit': 1,
     r'\textrm': 1,
@@ -491,6 +528,41 @@ class MathLexer {
       offset: start,
     );
   }
+
+  /// `ce(…)` or `pu(…)` at [start], if either begins there: what is in
+  /// the brackets, in mhchem's own syntax, as `\ce{…}` or `\pu{…}` — a
+  /// chemical formula or equation, a quantity and its units.
+  Token? _package(int start) {
+    if (start > 0 && _isLetter(source[start - 1])) return null;
+    final name = _packageCalls
+        .where((name) => source.startsWith('$name(', start))
+        .firstOrNull;
+    if (name == null) return null;
+    var depth = 0;
+    var end = start + name.length;
+    for (; end < source.length; end++) {
+      if (source[end] == '(') depth++;
+      if (source[end] == ')' && --depth == 0) break;
+    }
+    final String inner;
+    if (end >= source.length) {
+      diagnostics.add(MathDiagnostic(start, 'Missing ")"'));
+      inner = source.substring(start + name.length + 1);
+      _offset = source.length;
+    } else {
+      inner = source.substring(start + name.length + 1, end);
+      _offset = end + 1;
+    }
+    return Token(
+      type: TokenType.raw,
+      lexeme: source.substring(start, _offset),
+      offset: start,
+      latex: '\\$name{${inner.trim()}}',
+    );
+  }
+
+  /// mhchem's commands, written as functions: `ce(2H2 + O2 -> 2H2O)`.
+  static const List<String> _packageCalls = <String>['ce', 'pu'];
 
   Token _word() {
     final start = _offset;

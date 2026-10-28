@@ -57,6 +57,8 @@ abstract final class LinearWriter {
     r'\iff': '<=>',
     r'\Leftrightarrow': '<=>',
     r'\leftrightarrow': '<->',
+    r'\xrightequilibrium{}': '<=>>',
+    r'\xleftequilibrium{}': '<<=>',
     r'\implies': '==>',
     r'\impliedby': '<==',
     r'\approx': '~~',
@@ -171,6 +173,7 @@ abstract final class LinearWriter {
     ],
     MatrixNode() => <_Piece>[_Piece(_matrix(node))],
     RawNode(:final latex) => <_Piece>[_raw(latex)],
+    UnitNode(:final unit) => <_Piece>[_Piece(unit, apart: true)],
     CommandNode(:final command, :final arguments) => <_Piece>[
       _Piece(
         <String>[
@@ -202,9 +205,10 @@ abstract final class LinearWriter {
         continue;
       }
       if (child is SymbolNode && _isOperator(child.latex)) {
-        // A sign at the start, or after another operator, is a prefix.
+        // A sign at the start, after another operator, or after a comma or
+        // semicolon, `[a; +infty[`, is a prefix.
         final prefix =
-            (pieces.isEmpty || pieces.last.isOperator) &&
+            (pieces.isEmpty || pieces.last.isOperator || pieces.last.comma) &&
             (child.latex == '-' ||
                 child.latex == '+' ||
                 child.latex == r'\pm' ||
@@ -246,6 +250,20 @@ abstract final class LinearWriter {
   /// [latex] as it is, where the linear syntax reads it as LaTeX by itself —
   /// an environment, text, a font — or else quoted in backticks.
   static _Piece _raw(String latex) {
+    // mhchem's formulas and quantities, as they are typed: `ce(H2O)`.
+    final package = RegExp(r'^\\(ce|pu)\{(.*)\}$').firstMatch(latex);
+    if (package != null) {
+      final inner = package.group(2)!;
+      var depth = 0;
+      var balanced = true;
+      for (final char in inner.split('')) {
+        if (char == '(') depth++;
+        if (char == ')' && --depth < 0) balanced = false;
+      }
+      if (balanced && depth == 0) {
+        return _Piece('${package.group(1)}($inner)', apart: true);
+      }
+    }
     final tokens = MathLexer(latex).tokenize();
     final bare =
         tokens.length == 2 &&
@@ -298,6 +316,16 @@ abstract final class LinearWriter {
       :final latex,
     ) when const <String>{'+', '-', r'\pm', r'\mp'}.contains(latex)) {
       return _spelling(latex);
+    }
+    // A charge of a number or a letter and a sign, `O^2-`, as it is typed.
+    if (node case SequenceNode(
+      children: [
+        NumberNode() || VariableNode(name: String(length: 1)),
+        SymbolNode(latex: '+' || '-'),
+      ],
+    )) {
+      return '${write(node.children.first)}'
+          '${(node.children.last as SymbolNode).latex}';
     }
     if (_isAtom(node)) return write(node);
     return '(${write(node)})';
@@ -383,6 +411,27 @@ abstract final class LinearWriter {
     bool isOneOf(String delimiter, Set<String> set) => set.contains(delimiter);
     if (left == '(' && right == ')') return '($inner)';
     if (left == '[' && right == ']') return '[$inner]';
+    // An interval, a bracket turned outward at an end open: `[a; +infty[`.
+    const brackets = <String>{'[', ']'};
+    final child = node.child;
+    final separators = switch (child) {
+      ListNode(:final items) => items.length - 1,
+      // As LaTeX is read: the separator one of what is in it.
+      SequenceNode(:final children) =>
+        children
+            .where(
+              (part) =>
+                  part is SymbolNode &&
+                  (part.latex == ';' || part.latex == ','),
+            )
+            .length,
+      _ => 0,
+    };
+    if (brackets.contains(left) &&
+        brackets.contains(right) &&
+        separators == 1) {
+      return '$left$inner$right';
+    }
     if (isOneOf(left, const <String>{'|', r'\vert', r'\lvert'}) &&
         isOneOf(right, const <String>{'|', r'\vert', r'\rvert'})) {
       return inner.contains('|') ? 'abs($inner)' : '|$inner|';

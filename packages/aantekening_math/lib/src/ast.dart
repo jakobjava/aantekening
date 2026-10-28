@@ -1,6 +1,8 @@
 /// The syntax tree the linear math parser produces, and its LaTeX emission.
 library;
 
+import 'units.dart';
+
 /// A node in a parsed math expression.
 ///
 /// The tree is the intermediate form between what the user types and the LaTeX
@@ -403,6 +405,18 @@ final class RawNode extends MathNode {
 
   @override
   void writeLatex(StringBuffer out) => out.write(latex);
+}
+
+/// A quantity's units, after its number: `m/s` of `5 m/s`, set upright
+/// after a thin space.
+final class UnitNode extends MathNode {
+  const UnitNode(this.unit);
+
+  /// The units as they are typed.
+  final String unit;
+
+  @override
+  void writeLatex(StringBuffer out) => out.write('\\,${Units.latexOf(unit)}');
 }
 
 /// A postfix operator on its operand: a factorial, `n!`.

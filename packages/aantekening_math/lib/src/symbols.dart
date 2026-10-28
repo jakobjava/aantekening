@@ -232,6 +232,8 @@ const Set<String> relationOperators = <String>{
   r'\impliedby',
   r'\Rightarrow',
   r'\leftarrow',
+  r'\xrightequilibrium{}',
+  r'\xleftequilibrium{}',
   r'\in',
   r'\notin',
   r'\ni',
@@ -356,6 +358,10 @@ const Map<String, String> wordSymbols = <String, String>{
 ///
 /// Longest match wins, so `<=>` is tried before `<=` and `<`.
 const Map<String, String> operatorSequences = <String, String>{
+  // An equilibrium lying to the right, and to the left: the arrow its way
+  // the longer, as mhchem's are typed.
+  '<=>>': r'\xrightequilibrium{}',
+  '<<=>': r'\xleftequilibrium{}',
   '<=>': r'\iff',
   '<->': r'\leftrightarrow',
   '==>': r'\implies',
