@@ -222,6 +222,32 @@ void main() {
     expect(await textOf(first, pageId), 'theirs');
   });
 
+  test('a file written within a tick of its time is read again, not taken '
+      'for unchanged by its time and size', () async {
+    // Another computer's write in the same tick of the file system's clock
+    // bears the same time, and may be as large: by those alone it would
+    // seem to be this one's write, and be passed over for good. The
+    // sync simulation tries it many ways; this is how it is guarded.
+    final first = await computer('a');
+    addTearDown(first.close);
+    final (_, pageId) = await seed(first);
+    await first.mirror!.flush();
+    final remembered = first.database.select(
+      'SELECT modified FROM mirror_files WHERE id = ?',
+      <Object?>[pageId],
+    );
+    expect(
+      remembered.single['modified'],
+      -1,
+      reason: 'remembered as a file to read again',
+    );
+
+    // Read again and found as it was, it is no change.
+    final changes = await first.mirror!.scan();
+    expect(changes.pages, isEmpty);
+    expect(await textOf(first, pageId), 'F = ma');
+  });
+
   test("a sync service's conflicting copy becomes a page of its own", () async {
     final store = await computer('a');
     addTearDown(store.close);

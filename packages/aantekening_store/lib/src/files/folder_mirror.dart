@@ -796,6 +796,22 @@ final class FolderMirror {
       record.size == stat.size &&
       record.modified == stat.modified.millisecondsSinceEpoch;
 
+  /// How long after a file is written another write to it may still bear
+  /// the same time: a file system stamps files from a clock that moves on
+  /// only every few milliseconds, and FAT's every two seconds.
+  static const Duration _sameTime = Duration(seconds: 3);
+
+  /// What a file's time is remembered as where it cannot be told apart
+  /// from a write made just after it: never what a file bears, so the file
+  /// is read and its contents compared the next time it is looked at.
+  static const int _unsure = -1;
+
+  /// Remembers [path] as it is now: its size, time and [digest]. A file
+  /// written so lately that another write could bear the same time and
+  /// size — two computers writing a page within a tick of each other — is
+  /// remembered as one to read again, as git treats an entry racily clean:
+  /// else the later write would seem to be the earlier, and be passed over
+  /// for good.
   void _remember(
     String path,
     EntityKind kind,
@@ -813,7 +829,9 @@ final class FolderMirror {
       kind.name,
       id,
       stat.size,
-      stat.modified.millisecondsSinceEpoch,
+      _clock().difference(stat.modified) < _sameTime
+          ? _unsure
+          : stat.modified.millisecondsSinceEpoch,
       digest,
     ],
   );
