@@ -13,6 +13,7 @@ import '../commands/shortcuts.dart';
 import '../editor/page_minimap.dart';
 import '../files/backup_settings.dart';
 import '../files/bin_view.dart';
+import '../files/pdf_export.dart';
 import '../look/appearance.dart';
 import '../providers.dart';
 import '../search/search_line.dart';
@@ -54,6 +55,12 @@ Map<AppCommand, CommandAction> windowCommands(
     if (tab().pageId == null && context.mounted) {
       await showPicker(context, ref, PickerView.library);
     }
+  }
+
+  Future<void> savePdf() async {
+    final store = await ref.read(storeProvider.future);
+    final page = await store.pages.findPage(tab().pageId!);
+    if (page != null && context.mounted) await exportPdf(context, page);
   }
 
   Future<void> deletePage() async {
@@ -184,6 +191,10 @@ Map<AppCommand, CommandAction> windowCommands(
     AppCommand.dictionaries: settings(SettingsPage.spelling),
     AppCommand.files: settings(SettingsPage.files),
     AppCommand.importNotes: settings(SettingsPage.files),
+    AppCommand.savePdf: CommandAction(
+      () => unawaited(savePdf()),
+      enabled: () => tab().pageId != null,
+    ),
     AppCommand.bin: CommandAction(() => unawaited(showBin(context))),
     AppCommand.backUpNow: CommandAction(
       () => unawaited(ref.read(backupsProvider.notifier).backUpNow()),

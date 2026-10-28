@@ -399,3 +399,55 @@ class _MatchingController extends TextEditingController {
     return TextSpan(style: style, children: spans);
   }
 }
+
+/// A page's title and when it was made, as [PageTitle] shows them on the
+/// paper, for the page printed: [date] the day and time, written out as
+/// the title shows them.
+class PrintedTitle extends StatelessWidget {
+  const PrintedTitle({required this.title, required this.date, super.key});
+
+  final String title;
+  final List<String> date;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      Container(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: context.tones.paperEmphasis),
+          ),
+        ),
+        child: Text(
+          title,
+          style: RichTextStyles.paperType.copyWith(
+            fontSize: PageTitle.titleSize,
+            fontWeight: FontWeight.w300,
+            color: RichTextStyles.ink,
+            height: 1.3,
+          ),
+        ),
+      ),
+      const SizedBox(height: 6),
+      Wrap(
+        spacing: 12,
+        children: <Widget>[
+          for (final part in date)
+            Padding(
+              // As much room round it as round the button it is on the page.
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+              child: Text(
+                part,
+                style: RichTextStyles.paperType.copyWith(
+                  fontSize: 12.5,
+                  color: RichTextStyles.inkMuted,
+                ),
+              ),
+            ),
+        ],
+      ),
+    ],
+  );
+}

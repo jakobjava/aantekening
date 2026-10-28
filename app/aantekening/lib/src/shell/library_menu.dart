@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../command_menu.dart';
 import '../files/export_flow.dart';
+import '../files/pdf_export.dart';
 import '../look/glass.dart';
 import '../look/icons.dart';
 import '../look/motion.dart';
@@ -143,6 +144,11 @@ Future<void> showLibraryMenu(
       MenuCommand(
         'Export…',
         () => unawaited(exportNotes(context, ref, node)),
+        icon: AppIcon.export,
+      ),
+      MenuCommand(
+        'Save as PDF…',
+        () => unawaited(exportPdf(context, node)),
         icon: AppIcon.export,
       ),
     ],

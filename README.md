@@ -49,6 +49,10 @@ thousands of pages instant.
   choose, and nothing is sent until you ask.
 - **Safe with your notes.** Files are written whole or not at all. A clash
   between two computers keeps both versions. Daily backups can be restored.
+- **PDFs of the notes.** Save a page, section or notebook as a PDF, with
+  its sections and pages as bookmarks: sheets a page each, and an endless
+  page cut onto paper between lines and drawings, never through them,
+  each sheet turned or made smaller as what is on it needs.
 - **Import.** OneNote notebooks (`.onepkg`, `.one`) and Xournal++ documents
   (`.xopp`), with their layout, formatting, handwriting and equations; LaTeX
   documents (`.tex`), or LaTeX pasted in, as text and typeset formulas, with
@@ -101,7 +105,7 @@ On Windows you also need [Visual Studio](https://visualstudio.microsoft.com/down
 ```
 packages/aantekening_core          the model and page format (pure Dart)
 packages/aantekening_store         the notes folder, SQLite index, search, backups
-packages/aantekening_interchange   importing from OneNote, Xournal++ and LaTeX
+packages/aantekening_interchange   importing from OneNote, Xournal++ and LaTeX; writing PDFs
 packages/aantekening_canvas        the canvas engine
 packages/aantekening_math          Simple syntax ⇄ LaTeX, typesetting
 packages/aantekening_ai            AI providers, citations, the note agent

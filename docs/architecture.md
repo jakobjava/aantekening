@@ -20,7 +20,8 @@ packages. Dependencies point in one direction only.
 
 * **`aantekening_core`** — pure Dart, no Flutter. The page document, the element
   hierarchy, ink, rich text, the organisational tree, geometry and identifiers,
-  links to notes, and pages taken apart for machines to read (`PageDigest`).
+  links to notes, pages taken apart for machines to read (`PageDigest`), and
+  pages laid out on paper to be printed (`PrintLayout`, ADR 46).
   It runs anywhere: in the UI, in the store, in a background isolate, in tests,
   and in any future command-line importer.
 * **`aantekening_store`** — the notes folder (a file for each notebook,
@@ -31,7 +32,8 @@ packages. Dependencies point in one direction only.
 * **`aantekening_interchange`** — pure Dart: reading notes kept by other
   programs into drafts the store keeps whole (ADR 20). OneNote's `.onepkg`
   cabinets (LZX), its revision store and object model, OfficeMath as LaTeX;
-  Xournal++ documents; this app's own exports.
+  Xournal++ documents; this app's own exports. And writing PDFs
+  (`PdfWriter`).
 * **`aantekening_canvas`** — the infinite canvas, running right and down from
   a page's top-left corner: viewport, spatial index, ink capture and the
   painted layers; and the same page folded into sheets on a desk, as pages

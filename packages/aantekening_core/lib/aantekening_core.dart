@@ -22,6 +22,7 @@ export 'src/interchange/drafts.dart';
 export 'src/latex/latex_preamble.dart';
 export 'src/latex/latex_source.dart';
 export 'src/link/note_link.dart';
+export 'src/print/print_layout.dart';
 export 'src/search/search_terms.dart';
 export 'src/tree/hierarchy.dart';
 export 'src/tree/tree.dart';

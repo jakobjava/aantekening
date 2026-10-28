@@ -9,4 +9,5 @@ export 'src/importer.dart';
 export 'src/latex/latex_import.dart';
 export 'src/latex/latex_text.dart';
 export 'src/onenote/onenote_import.dart' show OneNoteImporter;
+export 'src/pdf/pdf_writer.dart';
 export 'src/xournal/xournal_import.dart';

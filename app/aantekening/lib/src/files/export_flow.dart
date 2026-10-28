@@ -22,7 +22,7 @@ Future<void> exportNotes(
   TreeNode node,
 ) async {
   final location = await getSaveLocation(
-    suggestedName: '${_fileName(displayTitle(node))}.$exportExtension',
+    suggestedName: '${fileName(displayTitle(node))}.$exportExtension',
     acceptedTypeGroups: const <XTypeGroup>[
       XTypeGroup(label: 'aantekening', extensions: <String>[exportExtension]),
     ],
@@ -44,7 +44,7 @@ Future<void> exportNotes(
 }
 
 /// [title] with what a file name may not hold replaced.
-String _fileName(String title) {
+String fileName(String title) {
   final safe = title.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_').trim();
   return safe.isEmpty ? 'Notes' : safe;
 }

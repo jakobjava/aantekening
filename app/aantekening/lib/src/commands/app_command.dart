@@ -340,6 +340,13 @@ enum AppCommand {
     'Where the notes are kept, backups, importing and exporting',
     <KeyChord>[],
   ),
+  savePdf(
+    'Save page as PDF…',
+    CommandGroup.page,
+    'The page open, on paper as it looks: its sheets, or cut onto sheets '
+        'between lines and drawings',
+    <KeyChord>[],
+  ),
   importNotes(
     'Import notes…',
     CommandGroup.app,

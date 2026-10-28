@@ -67,6 +67,28 @@ void paintSheets(
   }
 }
 
+/// A sheet [width] by [height] page units, printed with [template] on
+/// [paper], drawn over [rect], [zoom] pixels to a page unit: as it comes
+/// off a printer, rather than as it lies on the desk — no shadow or edge,
+/// and the template as strong as it is.
+void paintSheet(
+  Canvas canvas,
+  Rect rect,
+  double zoom,
+  SheetTemplate template, {
+  required double width,
+  required double height,
+  required Color paper,
+}) {
+  canvas.drawRect(rect, Paint()..color = paper);
+  if (template == SheetTemplate.blank) return;
+  _Printed.of(
+    template,
+    width,
+    height,
+  ).paint(canvas, rect, zoom, dark: paper.computeLuminance() < 0.4);
+}
+
 /// What a template prints on a sheet of one size: lines, from end to end,
 /// and dots, in page units from the sheet's corner.
 class _Printed {

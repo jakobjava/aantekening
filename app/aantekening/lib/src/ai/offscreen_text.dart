@@ -3,10 +3,12 @@ library;
 
 import 'dart:ui' as ui;
 
+import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../editor/element_views.dart';
 import '../editor/text/block_widgets.dart';
 import '../editor/text/text_box_editor.dart';
 import '../look/theme.dart';
@@ -17,15 +19,18 @@ typedef TextLayer = ({ui.Image image, List<(BlockEmbed, Rect)> objects});
 
 /// Draws [boxes] as they lie in [region] of their page, [scale] pixels to a
 /// page unit, on nothing, with the page's own text box — so formulas,
-/// lists and tables look as they do on the page. The pictures and PDF pages
-/// in them are left out, and where each was laid out is told instead, in
-/// page units from the region's corner.
+/// lists and tables look as they do on the page — and any TikZ pictures
+/// among them as the page draws those. The pictures and PDF pages in the
+/// boxes are left out, and where each was laid out is told instead, in
+/// page units from the region's corner. A [header], if given, is drawn
+/// beneath them, as the page draws its title.
 ///
 /// Laid out and painted in a tree of its own, apart from the window's.
 Future<TextLayer> drawTextBoxes(
-  List<TextElement> boxes, {
+  List<NoteElement> boxes, {
   required Rect region,
   required double scale,
+  CanvasHeader? header,
 }) async {
   final boundary = RenderRepaintBoundary();
   final dispatcher = WidgetsBinding.instance.platformDispatcher;
@@ -54,6 +59,13 @@ Future<TextLayer> drawTextBoxes(
             child: Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
+                if (header != null)
+                  Positioned(
+                    left: header.frame.x - region.left,
+                    top: header.frame.y - region.top,
+                    width: header.frame.width,
+                    child: header.child,
+                  ),
                 for (final box in boxes)
                   Positioned(
                     left: box.frame.x - region.left,
@@ -62,11 +74,14 @@ Future<TextLayer> drawTextBoxes(
                     height: box.frame.height,
                     child: Transform.rotate(
                       angle: box.frame.rotation,
-                      child: TextBoxEditor(
-                        element: box,
-                        isEditing: false,
-                        interactive: false,
-                      ),
+                      child: switch (box) {
+                        TextElement() => TextBoxEditor(
+                          element: box,
+                          isEditing: false,
+                          interactive: false,
+                        ),
+                        _ => CanvasElementView(element: box),
+                      },
                     ),
                   ),
               ],

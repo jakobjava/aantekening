@@ -531,6 +531,27 @@ A page that cannot be saved — the disk full, say — is kept in the app's
 data folder, under `index/rescued`, and put back when the app next opens,
 as the page itself or beside it, marked "(rescued)".
 
+## Saving as a PDF
+
+**Save as PDF…**, in the menu of a notebook, section or page, saves it as
+one PDF, to read, print or hand in. It is also in **Settings → Files**, and
+in the command palette for the page that is open. Its pages come in the order
+the panes list them, each with its title and date at the top, and a
+notebook's or section's sections and pages are the PDF's bookmarks.
+
+A page shown as sheets is saved a sheet to a page, as it looks. A page
+without sheets is cut onto A4 where nothing is cut through:
+between paragraphs, lines and drawings. A picture that does not fit what is
+left of a sheet goes whole onto the next, and long empty stretches are left
+out. A sheet is turned on its side where what is on it is wide, and made
+smaller only where it is too wide for that too. Choose **One long page**
+instead to have the whole page on a single page, as it looks on the screen.
+**Sharpness** sets how fine the pages are drawn: **Sharp** for printing,
+**Small** for a smaller file.
+
+The pages are pictures: their text cannot be selected or searched in the
+PDF.
+
 ## If something goes wrong
 
 What went wrong is noted, with when, in `logs/errors.log` in the app's data

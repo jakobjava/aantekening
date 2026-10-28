@@ -20,7 +20,7 @@ export 'src/lasso.dart';
 export 'src/page_scrollbar.dart';
 export 'src/placed_content.dart';
 export 'src/selection_handles.dart';
-export 'src/sheet_painter.dart' show SheetThumbnail;
+export 'src/sheet_painter.dart' show SheetThumbnail, paintSheet;
 export 'src/spatial_index.dart';
 export 'src/stroke_geometry.dart';
 export 'src/tools.dart';

@@ -19,6 +19,7 @@ import '../files/export_flow.dart';
 import '../files/import_flow.dart';
 import '../files/notes_keeper.dart';
 import '../files/notes_location.dart';
+import '../files/pdf_export.dart';
 import '../look/controls.dart';
 import '../look/glass.dart';
 import '../look/motion.dart';
@@ -437,8 +438,9 @@ class _ExportSection extends ConsumerWidget {
       description:
           'Save a notebook, section or page with everything in it as a '
           '.$exportExtension file: to keep, or to import on another computer '
-          'exactly as it is. A notebook, section or page’s own menu has '
-          'Export… too.',
+          'exactly as it is — or as a PDF, to read, print or hand in, each '
+          'page on paper as it looks. A notebook, section or page’s own menu '
+          'has Export… and Save as PDF… too.',
       children: <Widget>[
         Wrap(
           spacing: 8,
@@ -453,6 +455,24 @@ class _ExportSection extends ConsumerWidget {
                 onPressed: node == null
                     ? null
                     : () => unawaited(exportNotes(context, ref, node)),
+                child: Text(label),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final (label, node) in <(String, TreeNode?)>[
+              ('Notebook as a PDF…', notebook),
+              ('Section as a PDF…', section),
+              ('Page as a PDF…', page),
+            ])
+              OutlinedButton(
+                onPressed: node == null
+                    ? null
+                    : () => unawaited(exportPdf(context, node)),
                 child: Text(label),
               ),
           ],
