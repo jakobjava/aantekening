@@ -53,16 +53,20 @@ class _RenderLayoutBuilderPreserveBaseline extends RenderBox
     return 0.0;
   }
 
+  // aantekening: the constraints are what the child is built for — a
+  // delimiter as tall as what it encloses — not what it must meet. The
+  // largest of a delimiter that cannot be stacked may still be shorter, so
+  // the child is laid out loosely, at its own size, within this box.
   @override
-  Size computeDryLayout(BoxConstraints constraints) =>
-      child?.getDryLayout(constraints) ?? Size.zero;
+  Size computeDryLayout(BoxConstraints constraints) => constraints.constrain(
+      child?.getDryLayout(constraints.loosen()) ?? Size.zero);
 
   @override
   void performLayout() {
     final constraints = this.constraints;
     runLayoutCallback();
     if (child != null) {
-      child!.layout(constraints, parentUsesSize: true);
+      child!.layout(constraints.loosen(), parentUsesSize: true);
       size = constraints.constrain(child!.size);
     } else {
       size = constraints.biggest;

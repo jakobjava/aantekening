@@ -13,6 +13,7 @@ import '../../render/symbols/make_symbol.dart';
 import '../options.dart';
 import '../size.dart';
 import '../spacing.dart';
+import '../style.dart';
 import '../syntax_tree.dart';
 import '../types.dart';
 
@@ -192,7 +193,11 @@ Widget buildCustomSizedDelimWidget(
     sequence = stackAlwaysDelimiterSequence;
   }
 
-  var delimConf = sequence.firstWhereOrNull((element) =>
+  // aantekening: from the style the delimiter is in on, as KaTeX chooses
+  // it: a bracket in text is never as small as a script's. Drawn as large
+  // as it was measured (below), one chosen from the start was.
+  final start = math.min(2, 3 - options.style.size);
+  var delimConf = sequence.skip(start).firstWhereOrNull((element) =>
       getHeightForDelim(
         delim: delim,
         fontName: element.font.fontName,
@@ -206,11 +211,15 @@ Widget buildCustomSizedDelimWidget(
 
   if (delimConf != null) {
     final axisHeight = options.fontMetrics.axisHeight.cssEm.toLpUnder(options);
+    // aantekening: drawn at the size of the style it was measured in, as
+    // KaTeX draws it. Drawn at the formula's own, a bracket in a script was
+    // smaller than the height it was chosen for.
+    final delimOptions = options.havingStyle(delimConf.style);
     return ShiftBaseline(
       relativePos: 0.5,
       offset: axisHeight,
       child: makeChar(delim, delimConf.font,
-          lookupChar(delim, delimConf.font, Mode.math), options),
+          lookupChar(delim, delimConf.font, Mode.math), delimOptions),
     );
   } else {
     return makeStackedDelim(delim, minDelimiterHeight, Mode.math, options);
