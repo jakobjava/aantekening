@@ -163,11 +163,24 @@ their own, its pages are set as the sheets' background, to write over
 without picking them up; **Set picture as background**, in the menu on a
 right-click, takes one out of the background again.
 
-## Dropping things on a page
+A PDF page's text is selected as in a PDF reader: drag across it with the
+type-and-select tool, where the pointer shows a text cursor, or
+double-click a word, and copy it with Ctrl+C or the menu's **Copy**. A
+click on it still does what it did — places the caret to type an answer on
+a worksheet, picks up a page of its own — and a page of its own is moved by
+dragging it where it has no text, or by its handles. **Ctrl+click** a link
+in it to follow it: a web page opens in the browser, and a link to another
+page of the same PDF brings that page into view, if it is on the page. The
+pointer shows a hand over a link while Ctrl is held.
+
+## Dropping and pasting things on a page
 
 Anything dragged onto a page from outside — a file manager, a browser,
 another program — goes where it is let go, a label beside the pointer
-saying so while it is held there:
+saying so while it is held there. Pasted with **Ctrl+V**, it goes in the
+middle of the view, or where the menu was opened for **Paste**: a
+screenshot, a picture copied in a browser, or files copied in a file
+manager, each as it would be dropped:
 
 * a picture (PNG, JPEG, WebP, BMP) as a picture, and a GIF as a picture
   that plays, even with the desktop's animations turned off; one dragged
@@ -181,8 +194,12 @@ saying so while it is held there:
 * any other file attached, shown as its name and opened with whatever
   opens it.
 
-Several dropped together lie one under another. Let go on the text box
-being typed in, they go into it at the caret.
+Several dropped or pasted together lie one under another. Let go on the
+text box being typed in, or pasted while typing in one, they go into it at
+the caret; pasted at a bare caret, on the paper there. A picture copied
+with text beside it — a spreadsheet's cells, which are copied with a
+picture of them — pastes as its text. On Android, what other apps copy
+pastes as text only, for now.
 
 ## Drawing and shapes
 

@@ -10,14 +10,11 @@ desktop, but the touch conventions are not all there yet: no selection handles
 or long-press menu, and a finger dragged across a text box selects text rather
 than scrolling the page. Two fingers pan and zoom anywhere.
 
-### Pasting and dropping files
-Pictures and PDFs come in through the insert buttons, and anything on a page —
-pictures and PDF pages included — is copied and pasted within the app (ADR
-14). Pasting a screenshot copied in another application, and dropping files
-onto the page, both need a clipboard or drag-and-drop plugin, since Flutter's
-own clipboard carries only text; the importer they would call
-(`MediaImport.importFile`) already exists. On a touch screen the right-click
-menu is not yet opened by a long press.
+### Pasting from other apps on Android
+Screenshots and files copied in other programs are pasted on Linux and
+Windows, read by the runner (ADR 48); on Android only text is, until its
+runner reads the clipboard's content URIs too. On a touch screen the
+right-click menu is not yet opened by a long press.
 
 ### Formulas edited as typeset maths
 A formula being edited shows its source, with the typeset result previewed
@@ -91,12 +88,13 @@ what the AI is given with a question, which today is chosen by full-text search.
    `Future`-returning for exactly this, so it is an internal change. Worth doing
    before workspaces get large, not before.
 2. **Touch editing and the Android build.**
-3. **Paste and drop** for pictures and PDFs.
-4. **More importers and exporters.** OneNote, Xournal++ and this app's own
-   exports are read (ADR 20); Evernote's `.enex`, OneNote's online format,
-   and Markdown and PDF export sit on the same `NotesImporter` and drafts.
-5. **Embedding indexer** running in the background, then hybrid search.
-6. **Merging edits.** The notes folder already keeps every computer's notes
+3. **More importers and exporters.** OneNote, Xournal++ and this app's own
+   exports are read (ADR 20), and pages are saved as PDFs (ADR 46);
+   Evernote's `.enex`, OneNote's online format, and Markdown export sit on
+   the same `NotesImporter` and drafts. A PDF's text could be made
+   searchable, and its printouts kept as they were.
+4. **Embedding indexer** running in the background, then hybrid search.
+5. **Merging edits.** The notes folder already keeps every computer's notes
    in step through a sync service, keeping both versions of a page changed
    on two at once (ADR 19). Merging such edits element by element is what is
    left; pages are revision-numbered documents with ULID identifiers, the

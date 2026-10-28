@@ -43,6 +43,11 @@ extension _Clipboard on TextBoxEditorState {
         ? await NoteClipboard.readText()
         : await NoteClipboard.read();
     if (clip == null || !mounted) return;
+    if (clip is CopiedClip) {
+      // Nothing of it goes into a formula's source.
+      if (_formula == null) widget.onPasteCopied?.call(clip.copied);
+      return;
+    }
     if (_formula != null) {
       _undoSteps.breakStep();
       _replaceInFormula(clip.plain.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' '));
@@ -54,7 +59,7 @@ extension _Clipboard on TextBoxEditorState {
         ? switch (clip) {
             ElementsClip(:final elements) => elements,
             TextClip(:final asElements) => asElements,
-            PlainClip() => null,
+            PlainClip() || CopiedClip() => null,
           }
         : null;
     if (objects != null) {
@@ -62,7 +67,7 @@ extension _Clipboard on TextBoxEditorState {
       return;
     }
     final blocks = switch (clip) {
-      PlainClip() => null,
+      PlainClip() || CopiedClip() => null,
       TextClip(:final blocks) => blocks,
       ElementsClip(:final asBlocks) => asBlocks,
     };

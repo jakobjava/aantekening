@@ -2,6 +2,7 @@
 
 #include <flutter_linux/flutter_linux.h>
 
+#include "clipboard_reader.h"
 #include "flutter/generated_plugin_registrant.h"
 #include "opaque_underlay.h"
 #include "touchpad_hold.h"
@@ -98,6 +99,7 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
   touchpad_hold_listen(view);
+  clipboard_reader_listen(view);
   opaque_underlay_lay(view);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));

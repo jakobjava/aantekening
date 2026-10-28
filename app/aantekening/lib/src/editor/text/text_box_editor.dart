@@ -21,6 +21,7 @@ import '../../look/icons.dart';
 import '../../look/tones.dart';
 import '../../spelling/proofreader.dart';
 import '../note_clipboard.dart';
+import '../system_clipboard.dart';
 import 'aligned_column.dart';
 import 'block_paragraph.dart';
 import 'block_view.dart';
@@ -89,6 +90,7 @@ class TextBoxEditor extends StatefulWidget {
     this.proofreader,
     this.onMatchPlaced,
     this.onPasteElements,
+    this.onPasteCopied,
     this.onEmbedToBackground,
     this.pageId,
     this.onOpenLink,
@@ -158,6 +160,11 @@ class TextBoxEditor extends StatefulWidget {
   /// instead of into the text: a drawing, which cannot go into text, or
   /// anything pasted at a bare caret, which is where it goes.
   final ValueChanged<List<NoteElement>>? onPasteElements;
+
+  /// Asks the host to bring in files or a picture copied in another
+  /// program — a screenshot, say — as they would be dropped: into the
+  /// text, where there is any, or else on the page at the caret.
+  final ValueChanged<SystemClip>? onPasteCopied;
 
   /// Asks the host to make the picture or PDF page on block [block] part of
   /// the page's background, where it is: [local], in the box's own units.

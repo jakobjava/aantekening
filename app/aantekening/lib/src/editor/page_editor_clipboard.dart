@@ -30,6 +30,8 @@ extension _Clipboard on _PageEditorState {
         : await NoteClipboard.read();
     if (clip == null || !mounted) return;
     switch (clip) {
+      case CopiedClip(:final copied):
+        await _pasteCopied(copied, at: at);
       case ElementsClip(:final elements):
         _pasteElements(elements, at: at);
       // Pictures and PDF pages alone go on the page by themselves.
@@ -81,6 +83,26 @@ extension _Clipboard on _PageEditorState {
     _stopEditing();
     _pasteElements(
       elements,
+      at: Offset(box.frame.x, box.frame.y) + _textOrigin,
+    );
+  }
+
+  /// What was copied in another program, pasted while a box is typed in:
+  /// into its text, if it holds any; at its caret on the page, if not.
+  Future<void> _pasteCopiedFromBox(SystemClip copied) async {
+    final id = _editingId;
+    final box = id == null ? null : _controller.elementById(id);
+    if (box is! TextElement) {
+      await _pasteCopied(copied);
+      return;
+    }
+    if (!TextBoxEditor.isEmpty(box.blocks)) {
+      await _pasteCopied(copied, intoBox: true);
+      return;
+    }
+    // The empty box goes as the typing ends.
+    await _pasteCopied(
+      copied,
       at: Offset(box.frame.x, box.frame.y) + _textOrigin,
     );
   }

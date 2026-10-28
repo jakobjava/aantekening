@@ -5,6 +5,8 @@ library;
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/services.dart';
 
+import 'system_clipboard.dart';
+
 /// Something to paste.
 sealed class NoteClip {
   const NoteClip(this.plain);
@@ -63,6 +65,14 @@ final class TextClip extends NoteClip {
   }
 }
 
+/// Files or a picture copied in another program — a screenshot, say —
+/// brought in as they would be dropped on the page.
+final class CopiedClip extends NoteClip {
+  const CopiedClip(this.copied) : super('');
+
+  final SystemClip copied;
+}
+
 /// Whole things on the page: text boxes, pictures, PDF pages, drawings.
 final class ElementsClip extends NoteClip {
   ElementsClip(List<NoteElement> elements)
@@ -104,12 +114,13 @@ final class ElementsClip extends NoteClip {
 
 /// What was last copied on a page, and the system clipboard.
 ///
-/// The system clipboard carries only text, which is what other applications
-/// receive. What was copied here is kept here, and pasted as long as the
+/// What is copied here goes on the system clipboard as text, which is what
+/// other applications receive, and is kept here, and pasted as long as the
 /// system clipboard still holds its text; once something else has been
-/// copied, that is pasted instead. A copy with no text of its own — a
-/// picture — leaves the system clipboard empty, so it pastes until text is
-/// copied elsewhere.
+/// copied, that is pasted instead: files copied in a file manager, a
+/// picture — a screenshot — or text. A copy with no text of its own — a
+/// picture — leaves the system clipboard empty, so it pastes until
+/// something else is copied elsewhere.
 abstract final class NoteClipboard {
   static NoteClip? _held;
 
@@ -123,6 +134,13 @@ abstract final class NoteClipboard {
   static Future<NoteClip?> read() async {
     final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text ?? '';
     final held = _held;
+    if (held != null && text.isNotEmpty && held.plain == text) return held;
+    // Files, or a picture with no text beside it: a spreadsheet's cells are
+    // copied with a picture of them, and paste as their text.
+    final copied = await SystemClipboard.read();
+    if (copied case CopiedFiles() || CopiedPicture(withText: false)) {
+      return CopiedClip(copied!);
+    }
     if (held != null && held.plain == text) return held;
     return text.isEmpty ? null : PlainClip(text);
   }

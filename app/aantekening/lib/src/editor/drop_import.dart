@@ -4,6 +4,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_interchange/aantekening_interchange.dart';
@@ -53,19 +54,34 @@ final class DroppedFile extends Dropped {
   final BlockEmbed embed;
 }
 
-/// Reads what was dropped on a page: each of [paths] — a file, or the
-/// address of one on the web — or else [text], dragged by itself. What
-/// cannot be read is said in [failures], and left out.
+/// Reads what was dropped or pasted on a page: each of [paths] — a file,
+/// or the address of one on the web — and [pictures], each its bytes and a
+/// name for it; or else [text], dragged by itself. What cannot be read is
+/// said in [failures], and left out.
 ///
 /// Notes from one program dropped together are read as one import.
 Future<List<Dropped>> readDropped(
   AantekeningStore store, {
   required List<String> paths,
+  List<({Uint8List bytes, String name})> pictures =
+      const <({Uint8List bytes, String name})>[],
   String? text,
   required http.Client client,
   List<String>? failures,
 }) async {
   final dropped = <Dropped>[];
+  for (final (:bytes, :name) in pictures) {
+    try {
+      dropped.add(
+        DroppedMedia(
+          await MediaImport.importBytes(store, bytes, name: name),
+          printout: mimeTypeOf(bytes, name: name) == 'application/pdf',
+        ),
+      );
+    } on Object catch (error) {
+      failures?.add('$name: $error');
+    }
+  }
   final notes = <NotesImporter, List<String>>{};
   for (final path in paths) {
     try {
@@ -90,7 +106,10 @@ Future<List<Dropped>> readDropped(
   for (final MapEntry(key: importer, value: paths) in notes.entries) {
     dropped.add(DroppedNotes(importer, paths));
   }
-  if (paths.isEmpty && text != null && text.trim().isNotEmpty) {
+  if (paths.isEmpty &&
+      pictures.isEmpty &&
+      text != null &&
+      text.trim().isNotEmpty) {
     dropped.add(DroppedText(_plain(text)));
   }
   return dropped;

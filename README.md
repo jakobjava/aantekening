@@ -32,8 +32,10 @@ thousands of pages instant.
   decorations, patterns, angles, matrices and pgfplots graphs — as
   pictures in the text, resized like photos, their source a right-click
   away.
-- **PDFs and pictures.** Insert them to annotate. PDFs stay sharp at any
-  zoom and their text is searchable.
+- **PDFs and pictures.** Insert, drop or paste them to annotate — a
+  screenshot is a Ctrl+V away. PDFs stay sharp at any
+  zoom, their text is searchable and selected as in a PDF reader, and
+  their links open with Ctrl+click.
 - **Organised like a notebook.** Notebooks, nested sections, pages and
   subpages, with tabs and split views, a bin with undo, and a graph of it
   all.

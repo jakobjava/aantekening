@@ -8,6 +8,7 @@ import 'dart:math' as math;
 
 import 'package:aantekening/src/commands/command_keys.dart';
 import 'package:aantekening/src/editor/page_editor.dart';
+import 'package:aantekening/src/editor/system_clipboard.dart';
 import 'package:aantekening/src/editor/text/text_box_controller.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/look/theme.dart';
@@ -59,6 +60,11 @@ Future<void> openEditor(
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  // No runner answers for the clipboard's files and pictures in a test,
+  // and a call to it would wait on the test's clock: it holds none, unless
+  // the test says otherwise.
+  SystemClipboard.debugRead ??= () async => null;
+  addTearDown(() => SystemClipboard.debugRead = null);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [

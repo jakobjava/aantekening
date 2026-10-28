@@ -39,7 +39,9 @@ extension _Media on _PageEditorState {
         : _controller.elementById(editingId);
     final atBareCaret =
         editing is TextElement && TextBoxEditor.isEmpty(editing.blocks);
-    if (_textController.isActive && !atBareCaret) {
+    // Into the box only while it is typed in: one whose typing has just
+    // ended is still active until it is built again.
+    if (_textController.isActive && editing is TextElement && !atBareCaret) {
       _textController.insertEmbeds(items);
       return;
     }

@@ -47,16 +47,60 @@ extension _Drop on _PageEditorState {
     required String? text,
     required Offset at,
   }) async {
-    final store = _store;
-    if (store == null || !_ready) return;
     if (paths.isEmpty && (text == null || text.trim().isEmpty)) {
       _showMessage('What was dropped could not be read.');
       return;
     }
+    final point = _controller.viewport.toPage(at);
+    final editingId = _editingId;
+    final editing = editingId == null
+        ? null
+        : _controller.elementById(editingId);
+    await _bringIn(
+      paths: _isDraggedText(paths, text) ? const <String>[] : paths,
+      text: text,
+      at: point,
+      intoBox:
+          editing is TextElement &&
+          editing.bounds.containsPoint(point.dx, point.dy),
+    );
+  }
+
+  /// Puts what was copied in another program on the page — the files, as
+  /// though dropped, or the picture — at [at], on the page, or in the
+  /// middle of the view; into the text box being typed in, if [intoBox].
+  Future<void> _pasteCopied(
+    SystemClip copied, {
+    Offset? at,
+    bool intoBox = false,
+  }) => _bringIn(
+    paths: copied is CopiedFiles ? copied.paths : const <String>[],
+    pictures: <({Uint8List bytes, String name})>[
+      if (copied case CopiedPicture(:final bytes, :final name))
+        (bytes: bytes, name: name),
+    ],
+    at: at ?? _controller.viewCenter,
+    intoBox: intoBox,
+  );
+
+  /// Brings in [paths], [pictures] or [text], as [_drop] says, at [at] on
+  /// the page: into the text box being typed in if [intoBox] and it holds
+  /// text already.
+  Future<void> _bringIn({
+    required List<String> paths,
+    List<({Uint8List bytes, String name})> pictures =
+        const <({Uint8List bytes, String name})>[],
+    String? text,
+    required Offset at,
+    required bool intoBox,
+  }) async {
+    final store = _store;
+    if (store == null || !_ready) return;
     final failures = <String>[];
     final dropped = await readDropped(
       store,
-      paths: _isDraggedText(paths, text) ? const <String>[] : paths,
+      paths: paths,
+      pictures: pictures,
       text: text,
       client: ref.read(httpClientProvider),
       failures: failures,
@@ -67,16 +111,16 @@ extension _Drop on _PageEditorState {
     }
     if (dropped.isEmpty) return;
 
-    final point = _controller.viewport.toPage(at);
+    final point = at;
     final editingId = _editingId;
     final editing = editingId == null
         ? null
         : _controller.elementById(editingId);
-    final intoBox =
+    intoBox =
+        intoBox &&
         _textController.isActive &&
         editing is TextElement &&
-        !TextBoxEditor.isEmpty(editing.blocks) &&
-        editing.bounds.containsPoint(point.dx, point.dy);
+        !TextBoxEditor.isEmpty(editing.blocks);
     if (!intoBox) _stopEditing();
 
     // The first where it was let go — a picture in the middle there, text

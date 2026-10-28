@@ -162,6 +162,7 @@ extension _Elements on _PageEditorState {
       onSizeChanged: (size) => _onTextSizeChanged(id, size),
       onExit: _stopEditing,
       onPasteElements: _pasteFromBox,
+      onPasteCopied: (copied) => unawaited(_pasteCopiedFromBox(copied)),
       onEmbedToBackground: (block, local) =>
           _embedToBackground(id, block, local),
       onOpenFile: (file) => unawaited(_openFile(file)),
