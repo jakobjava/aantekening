@@ -69,8 +69,12 @@ const arrowCommandMapping = {
 
   '\\xtofrom': '\u21c4',
   '\\xrightleftarrows': '\u21c4',
-  '\\xrightequilibrium': '\u21cc', // Not a perfect match.
-  '\\xleftequilibrium': '\u21cb', // None better available.
+  // aantekening: the equilibria lying one way are drawn as KaTeX draws
+  // them, the arrow that way the longer, by their own names: as the
+  // characters nearest them, they were drawn as the equilibrium lying
+  // neither way, and written back as it.
+  '\\xrightequilibrium': 'xrightequilibrium',
+  '\\xleftequilibrium': 'xleftequilibrium',
 };
 
 GreenNode _arrowHandler(TexParser parser, FunctionContext context) {

@@ -14,6 +14,11 @@ its `pubspec.yaml`; 0.7.4 is the package's latest release.
   clearance apart, as TeX keeps lines apart by `\lineskip` where their
   boxes would otherwise meet. Arrays in TeX have no such rule, and a matrix
   of fractions was drawn with each one touching the next.
+* **Equilibria lying one way drawn as such**
+  (`lib/src/parser/tex/functions/katex_base/arrow.dart`): `\xrightequilibrium`
+  and `\xleftequilibrium` are drawn with KaTeX's pictures of them, one
+  arrow longer than the other, rather than as `⇌` and `⇋`, which drew them
+  as `\xrightleftharpoons`.
 * **Brackets drawn as large as they were chosen**
   (`lib/src/ast/nodes/left_right.dart`,
   `lib/src/render/layout/layout_builder_baseline.dart`): a `\left`/`\right`
