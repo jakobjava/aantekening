@@ -81,6 +81,7 @@ extension _Commands on _PageEditorState {
     const SingleActivator(LogicalKeyboardKey.escape): () {
       _stopEditing();
       _controller.clearSelection();
+      _pdfPick.value = null;
     },
     const SingleActivator(LogicalKeyboardKey.keyM): _formulaShortcut,
     const SingleActivator(LogicalKeyboardKey.keyM, control: true):

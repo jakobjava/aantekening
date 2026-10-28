@@ -3,10 +3,15 @@ part of 'page_editor.dart';
 /// Cutting, copying and pasting what is on the page, and the menu a
 /// right-click on it opens.
 extension _Clipboard on _PageEditorState {
-  /// Copies the things picked on the page, or cuts them. Text being edited
-  /// is copied by its box.
+  /// Copies the things picked on the page, or cuts them; or the text picked
+  /// on a PDF page, which is not cut. Text being edited is copied by its
+  /// box.
   Future<void> _copySelection({bool cut = false}) async {
     if (_editingId != null) return;
+    if (_pdfPickedText case final text?) {
+      await Clipboard.setData(ClipboardData(text: text));
+      return;
+    }
     final selected = _controller.selectedElements;
     if (selected.isEmpty) return;
     await NoteClipboard.copy(ElementsClip(selected));

@@ -127,6 +127,11 @@ extension _Elements on _PageEditorState {
 
   Widget _elementWidget(_ElementBuild built) {
     final element = built.element;
+    if (element is PdfElement) {
+      // Its text read now, to be selected as soon as it is pressed on.
+      _wordsOf(element);
+      return _withPdfPick(element, CanvasElementView(element: element));
+    }
     if (element is! TextElement) {
       return CanvasElementView(
         element: element,

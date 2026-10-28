@@ -14,6 +14,7 @@ export 'src/canvas_controller.dart';
 export 'src/canvas_painters.dart';
 export 'src/canvas_scope.dart';
 export 'src/canvas_scroll.dart';
+export 'src/canvas_text.dart';
 export 'src/canvas_viewport.dart';
 export 'src/infinite_canvas.dart';
 export 'src/lasso.dart';

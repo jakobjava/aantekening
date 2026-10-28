@@ -92,6 +92,8 @@ extension _Pointer on _InfiniteCanvasState {
       case _PointerAction.transform:
       case _PointerAction.pan:
       case _PointerAction.claimed:
+      case _PointerAction.text:
+      case _PointerAction.link:
       case _PointerAction.pinch:
       case _PointerAction.none:
         break;
@@ -187,7 +189,11 @@ extension _Pointer on _InfiniteCanvasState {
           break;
         }
         _update(() => _lasso = lasso.extendedTo(page));
+      case _PointerAction.text:
+        final from = _textFrom;
+        if (_dragged && from != null) widget.text?.select(from, page);
       case _PointerAction.claimed:
+      case _PointerAction.link:
       case _PointerAction.pinch:
       case _PointerAction.none:
         break;
@@ -236,6 +242,10 @@ extension _Pointer on _InfiniteCanvasState {
           final velocity = _touchVelocity?.getVelocity().pixelsPerSecond;
           if (velocity != null) _motion.fling(velocity);
         }
+      case _PointerAction.text:
+        _textLetGo(event, page);
+      case _PointerAction.link:
+        if (!_dragged) widget.text?.openLink(page);
       case _PointerAction.erase:
       case _PointerAction.move:
       case _PointerAction.transform:
@@ -246,6 +256,29 @@ extension _Pointer on _InfiniteCanvasState {
     }
 
     _resetPointer();
+  }
+
+  /// A press on text let go of at [page]: dragged, it has selected the
+  /// text; pressed twice where it was, it selects a word; else it does
+  /// what it would have done without the text there — picks up what it
+  /// was on, or places the caret.
+  void _textLetGo(PointerEvent event, Offset page) {
+    final tapped = _textTap;
+    _textTap = null;
+    if (_dragged) return;
+    if (tapped != null &&
+        event.timeStamp - tapped.at <= kDoubleTapTimeout &&
+        (page - tapped.page).distance <=
+            _controller.viewport.toPageDistance(kDoubleTapSlop)) {
+      widget.text?.selectWord(page);
+      return;
+    }
+    _textTap = (at: event.timeStamp, page: page);
+    if (_textHit case final hit?) {
+      if (!_controller.selection.contains(hit.id)) _controller.select(hit.id);
+    } else {
+      widget.onEmptyTap?.call(page);
+    }
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
@@ -290,6 +323,8 @@ extension _Pointer on _InfiniteCanvasState {
       _marqueeAnchor = null;
       _lasso = null;
       _transform = null;
+      _textHit = null;
+      _textFrom = null;
       _touchVelocity = null;
     });
     _syncZooming();
@@ -474,6 +509,26 @@ extension _Pointer on _InfiniteCanvasState {
       _pressed(hit);
       _controller.select(hit.id, additive: true);
       return _PointerAction.move;
+    }
+
+    // Text beneath what is picked up — a PDF page's — is selected by
+    // dragging across it, as a reader selects it, and its links are opened
+    // with Ctrl. A finger dragged across it scrolls, as across the rest.
+    final text = widget.text;
+    if (text != null &&
+        event.kind != PointerDeviceKind.touch &&
+        !_controller.pressesGroup(page, hit)) {
+      if (HardwareKeyboard.instance.isControlPressed &&
+          text.linkAt(page, hit)) {
+        _pressed(hit);
+        return _PointerAction.link;
+      }
+      if (text.selectsAt(page, hit)) {
+        _pressed(hit);
+        _textHit = hit;
+        _textFrom = page;
+        return _PointerAction.text;
+      }
     }
 
     // A group is picked up by any of its members, text boxes included.

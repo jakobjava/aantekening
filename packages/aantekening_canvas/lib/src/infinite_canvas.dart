@@ -15,6 +15,7 @@ import 'canvas_controller.dart';
 import 'canvas_motion.dart';
 import 'canvas_painters.dart';
 import 'canvas_scope.dart';
+import 'canvas_text.dart';
 import 'canvas_viewport.dart';
 import 'element_transforms.dart';
 import 'ink_ahead.dart';
@@ -82,6 +83,7 @@ class InfiniteCanvas extends StatefulWidget {
     super.key,
     this.elementBuilder,
     this.claimsPointer,
+    this.text,
     this.grips,
     this.onEmptyTap,
     this.onCanvasPress,
@@ -105,6 +107,11 @@ class InfiniteCanvas extends StatefulWidget {
   /// Lets an element's widget take a press with the select tool — a text box
   /// placing its caret, say — instead of the canvas picking the element up.
   final CanvasPointerClaim? claimsPointer;
+
+  /// Text on the page that the select tool selects by dragging across it,
+  /// as a reader does — a PDF page's — and whose links a click with Ctrl
+  /// held opens.
+  final CanvasText? text;
 
   /// Finds a selected element's grip under a press. A selected element is
   /// picked up by its grip even where another element lies over it, as the
@@ -187,6 +194,15 @@ enum _PointerAction {
   /// An element's own widget is handling this pointer.
   claimed,
 
+  /// A press on text beneath what is picked up ([InfiniteCanvas.text]):
+  /// dragged, it selects the text; let go where it was, it does what it
+  /// would have done without it, or selects a word, pressed twice.
+  text,
+
+  /// A press with Ctrl on a link in that text, which opens it if it is let
+  /// go where it was.
+  link,
+
   /// Two fingers are on the screen.
   pinch,
 }
@@ -261,6 +277,17 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
 
   Offset? _marqueeAnchor;
   Aabb? _marquee;
+
+  /// What a press on text would have picked up, without the text: picked
+  /// up if it is let go of where it was.
+  NoteElement? _textHit;
+
+  /// Where on the page a press on text began.
+  Offset? _textFrom;
+
+  /// When and where text was last pressed and let go of, for a second
+  /// press there to select a word.
+  ({Duration at, Offset page})? _textTap;
   Lasso? _lasso;
 
   /// The pointer last pressed on [InfiniteCanvas.afterSheets] or

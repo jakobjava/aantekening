@@ -55,6 +55,15 @@ extension _Hover on _InfiniteCanvasState {
           : MouseCursor.defer;
     }
     final hit = _controller.hitTest(page);
+    // Text to select beneath it, or with Ctrl, a link to open.
+    final text = widget.text;
+    if (text != null && !_controller.pressesGroup(page, hit)) {
+      if (HardwareKeyboard.instance.isControlPressed &&
+          text.linkAt(page, hit)) {
+        return SystemMouseCursors.click;
+      }
+      if (text.selectsAt(page, hit)) return SystemMouseCursors.text;
+    }
     return hit == null ? MouseCursor.defer : SystemMouseCursors.move;
   }
 

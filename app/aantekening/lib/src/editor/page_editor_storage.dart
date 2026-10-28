@@ -33,6 +33,7 @@ extension _Storage on _PageEditorState {
       // from before pages had a top-left corner, moved onto the page.
       final document = MathStorage.withLatexFormulas(page).withContentOnPage();
       _controller.loadDocument(document);
+      _pdfPick.value = null;
       if (_views[pageId] case final view?) _controller.viewport = view;
       if (twin != null) _follow(twin);
       if (!identical(document, page)) unawaited(_persist(pageId, document));

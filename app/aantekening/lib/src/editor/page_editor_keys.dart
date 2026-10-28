@@ -196,7 +196,7 @@ extension _Keys on _PageEditorState {
           'c',
           'Copy',
           run: () => unawaited(_copySelection()),
-          enabled: some,
+          enabled: some || _pdfPick.value != null,
         ),
         KeyAction('v', 'Paste', run: () => unawaited(_paste())),
         KeyAction(
@@ -342,7 +342,7 @@ extension _Keys on _PageEditorState {
           'y',
           'Copy',
           run: () => unawaited(_copySelection()),
-          enabled: some,
+          enabled: some || _pdfPick.value != null,
         ),
         KeyAction('p', 'Paste', run: () => unawaited(_paste())),
         KeyAction(
@@ -479,7 +479,7 @@ extension _Keys on _PageEditorState {
         'y',
         'Copy',
         run: () => unawaited(_copySelection()),
-        enabled: some,
+        enabled: some || _pdfPick.value != null,
       ),
       KeyAction(
         'c',

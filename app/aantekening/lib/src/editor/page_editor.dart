@@ -49,6 +49,7 @@ import 'focus_glide.dart';
 import 'jump_labels.dart';
 import 'latex_dialog.dart';
 import 'media_import.dart';
+import 'media_views.dart' show pdfDocumentProvider;
 import 'note_clipboard.dart';
 import 'page_commands.dart';
 import 'page_layers.dart';
@@ -56,6 +57,7 @@ import 'page_minimap.dart';
 import 'page_status.dart';
 import 'page_title.dart';
 import 'palette.dart';
+import 'pdf_text.dart';
 import 'pen_preferences.dart';
 import 'printout_place.dart';
 import 'sheet_choices.dart';
@@ -78,6 +80,7 @@ part 'page_editor_elements.dart';
 part 'page_editor_keys.dart';
 part 'page_editor_media.dart';
 part 'page_editor_modes.dart';
+part 'page_editor_pdf_text.dart';
 part 'page_editor_storage.dart';
 part 'page_editor_text.dart';
 part 'page_editor_twin.dart';
@@ -252,6 +255,13 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// What has the keys in a tab with no page open.
   final FocusNode _emptyFocus = FocusNode(debugLabel: 'No page');
   final ValueNotifier<bool> _saving = ValueNotifier<bool>(false);
+
+  /// The text picked on a PDF page, if any, and the text of the PDF pages
+  /// as the canvas selects it.
+  final ValueNotifier<PdfTextPick?> _pdfPick = ValueNotifier<PdfTextPick?>(
+    null,
+  );
+  late final CanvasText _pdfText = _PdfTextOnPage(this);
   late final BoxFormatting _boxFormatting = BoxFormatting(_controller);
 
   /// Whether a formula is being typed.
@@ -533,6 +543,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _canvasFocus.dispose();
     _emptyFocus.dispose();
     _saving.dispose();
+    _pdfPick.dispose();
     _glide.dispose();
     super.dispose();
   }
@@ -724,6 +735,7 @@ class _PageEditorState extends ConsumerState<PageEditor> {
                     child: InfiniteCanvas(
                       controller: _controller,
                       claimsPointer: _claimsPointer,
+                      text: _pdfText,
                       overlay: ValueListenableBuilder<Widget?>(
                         valueListenable: _textController.formulaField,
                         builder: (context, field, _) =>

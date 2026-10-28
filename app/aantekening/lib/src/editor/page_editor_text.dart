@@ -89,6 +89,8 @@ extension _TextEditing on _PageEditorState {
   }
 
   void _onCanvasPress(NoteElement? hit) {
+    // Pressed anywhere, what was picked of a PDF page's text is let go of.
+    _pdfPick.value = null;
     // Paper pressed with the select tool is not yet known to leave the box: a
     // click there places a caret, and a drag picks what it passes over, each
     // ending the typing as it happens. Ending it on the press left nothing
