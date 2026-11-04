@@ -121,6 +121,12 @@ class NoteAgent {
   /// what it has.
   static const int maxRounds = 10;
 
+  /// Said to the model with what its tools gave in the round before the
+  /// last, so that it answers in the last.
+  static const String _answerNow =
+      'That is all the looking up there is room for. Answer now from what '
+      'you have found, without asking for any more.';
+
   /// Answers [question] about [scope], after [history] — the conversation
   /// so far, empty for its first question. With [searchWeb], the web may be
   /// searched.
@@ -232,9 +238,22 @@ class NoteAgent {
             yield progress(AgentStage.working, tools.describe(call));
             results.add(await tools.run(call, given: sourcesIn(messages)));
           }
+          // The round before the last: the next is for answering.
+          if (round == maxRounds - 2) results.add(const TextPart(_answerNow));
           messages.add(ChatMessage.user(results));
           // A space between what was written before the tools and after.
           if (!builder.answer.isEmpty) builder.note('\n\n');
+          // The last round, and still looking: what it asked for is looked
+          // up, to keep the conversation whole, but it is not asked again.
+          if (round == maxRounds - 1) {
+            builder.note(
+              builder.answer.isEmpty
+                  ? '*The model kept looking through the notes and did not '
+                        'get to answer.* Ask again, or about less at once.'
+                  : '*The model stopped here, still looking through the '
+                        'notes.*',
+            );
+          }
           continue;
         case StopReason.maxTokens:
           builder.note(

@@ -287,6 +287,77 @@ void main() {
     expect(progress.last.messages, hasLength(4));
   });
 
+  group('a model that keeps asking for tools', () {
+    List<ChatEvent> searching(int round) => <ChatEvent>[
+      MessageDone(
+        ChatMessage.assistant(<ChatPart>[
+          ToolCallPart(
+            id: 't$round',
+            name: NoteTools.searchNotes,
+            input: const <String, Object?>{'query': 'speed'},
+          ),
+        ]),
+        stop: StopReason.toolUse,
+      ),
+    ];
+
+    test('is told in the round before the last to answer now', () async {
+      final provider = ScriptedProvider(<List<ChatEvent>>[
+        for (var round = 0; round < NoteAgent.maxRounds - 1; round++)
+          searching(round),
+        <ChatEvent>[
+          const TextDelta('Speed is distance over time.'),
+          const MessageDone(
+            ChatMessage(ChatRole.assistant, <ChatPart>[]),
+            stop: StopReason.done,
+          ),
+        ],
+      ]);
+      final last =
+          await NoteAgent(provider: provider, model: 'm', reader: notes)
+              .ask(
+                scope: section,
+                history: const <ChatMessage>[],
+                question: 'Hi',
+              )
+              .last;
+      expect(provider.asked, hasLength(NoteAgent.maxRounds));
+      final told = <String>[
+        for (final request in provider.asked)
+          request.messages.last.parts
+              .whereType<TextPart>()
+              .map((p) => p.text)
+              .join(),
+      ];
+      expect(told.last, contains('Answer now'));
+      expect(told.skip(1).take(NoteAgent.maxRounds - 2), everyElement(''));
+      expect(last.answer.markdown, 'Speed is distance over time.');
+    });
+
+    test('and still does in the last says it did not answer', () async {
+      final provider = ScriptedProvider(<List<ChatEvent>>[
+        for (var round = 0; round < NoteAgent.maxRounds; round++)
+          searching(round),
+      ]);
+      final last =
+          await NoteAgent(provider: provider, model: 'm', reader: notes)
+              .ask(
+                scope: section,
+                history: const <ChatMessage>[],
+                question: 'Hi',
+              )
+              .last;
+      expect(provider.asked, hasLength(NoteAgent.maxRounds));
+      expect(last.done, isTrue);
+      expect(last.answer.markdown, contains('did not get to answer'));
+      expect(
+        last.messages.last.parts.single,
+        isA<ToolResultPart>(),
+        reason: 'each call it made answered, the conversation whole',
+      );
+    });
+  });
+
   test('a model that thinks its room away is said to have, and what to do '
       'about it', () async {
     final provider = ScriptedProvider(<List<ChatEvent>>[
