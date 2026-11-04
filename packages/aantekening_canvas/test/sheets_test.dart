@@ -557,6 +557,75 @@ void main() {
       );
     });
 
+    testWidgets('a line written off its sheet and back on is not joined '
+        'across the desk', (tester) async {
+      final controller = CanvasController()
+        ..loadDocument(_paged(const <NoteElement>[]))
+        ..setTool(CanvasTool.pen);
+      await tester.pumpWidget(_host(controller));
+      await tester.pump();
+      final view = controller.viewport;
+      final fold = controller.fold!;
+      final start = view.toScreen(Offset(fold.width - 60, 300));
+
+      // Off the right edge, down the desk, and back on lower down.
+      final pen = await tester.startGesture(
+        start,
+        kind: PointerDeviceKind.stylus,
+      );
+      for (var x = 10.0; x <= 120; x += 10) {
+        await pen.moveTo(start + Offset(x, 0));
+      }
+      for (var y = 10.0; y <= 100; y += 10) {
+        await pen.moveTo(start + Offset(120, y));
+      }
+      for (var x = 110.0; x >= 0; x -= 10) {
+        await pen.moveTo(start + Offset(x, 100));
+      }
+      await pen.up();
+      await tester.pump();
+
+      final stroke =
+          (controller.document.elements.single as InkElement).strokes.single;
+      for (var i = 0; i < stroke.pointCount; i++) {
+        expect(stroke.yAt(i), lessThan(310), reason: 'nothing after the cut');
+      }
+    });
+
+    testWidgets('a line written off its sheet is not made a shape while the '
+        'pen is off it', (tester) async {
+      final controller = CanvasController()
+        ..loadDocument(_paged(const <NoteElement>[]))
+        ..setTool(CanvasTool.pen);
+      await tester.pumpWidget(_host(controller));
+      await tester.pump();
+      final view = controller.viewport;
+      final fold = controller.fold!;
+      final start = view.toScreen(Offset(fold.width - 60, 300));
+
+      // A straight line off the edge, and the pen moving on over the desk
+      // for longer than a hold takes.
+      final pen = await tester.startGesture(
+        start,
+        kind: PointerDeviceKind.stylus,
+      );
+      for (var x = 10.0; x <= 80; x += 10) {
+        await pen.moveTo(start + Offset(x, 0));
+      }
+      for (var y = 0; y < 10; y++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        await pen.moveTo(start + Offset(80 + y * 10.0, y * 10.0));
+      }
+      await pen.up();
+      await tester.pump();
+
+      final stroke =
+          (controller.document.elements.single as InkElement).strokes.single;
+      for (var i = 0; i < stroke.pointCount; i++) {
+        expect(stroke.yAt(i), lessThan(302), reason: 'not drawn on down it');
+      }
+    });
+
     testWidgets('places a box where the sheets lay it out', (tester) async {
       final height = Sheets().heightOf(0);
       final controller = CanvasController()

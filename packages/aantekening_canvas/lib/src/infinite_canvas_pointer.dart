@@ -66,6 +66,7 @@ extension _Pointer on _InfiniteCanvasState {
         _controller.beginShape(page);
       case _PointerAction.draw:
         _strokeSheet = _sheetAt(event.localPosition);
+        _strokeCut = false;
         _controller.beginStroke(
           page,
           pressure: _normalizedPressure(event),
@@ -141,13 +142,17 @@ extension _Pointer on _InfiniteCanvasState {
 
     switch (_action) {
       // Written off the sheet it began on, a line is cut there, as it would
-      // be at the edge of paper, not drawn along the edge.
+      // be at the edge of paper, not drawn along the edge, nor joined across
+      // the desk to where the pen comes back on; and it is not made a shape
+      // by the pen held still off it.
       case _PointerAction.draw
           when _strokeSheet != null &&
               !_controller.isShaping &&
               _controller.tool != CanvasTool.shape &&
-              _sheetAt(event.localPosition) != _strokeSheet:
-        break;
+              (_strokeCut || _sheetAt(event.localPosition) != _strokeSheet):
+        _strokeCut = true;
+        _hold?.cancel();
+        _hold = null;
       case _PointerAction.draw:
         _controller.extendStroke(
           page,

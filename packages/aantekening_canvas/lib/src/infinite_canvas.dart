@@ -297,6 +297,10 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   /// The sheet the line being drawn began on, of a page shown as pages.
   int? _strokeSheet;
 
+  /// Whether the line being drawn has left [_strokeSheet], and is cut
+  /// where it did: brought back onto the sheet, the pen adds no more to it.
+  bool _strokeCut = false;
+
   /// Where the pen came to rest while drawing, how far it may tremble
   /// there and still be at rest, and the wait for it to stay there long
   /// enough for the stroke to become a shape.
