@@ -89,11 +89,13 @@ class AiStep {
 /// took to get there.
 @immutable
 class PendingTurn {
-  /// [question], just asked — or, with [profile], a set of it being made;
-  /// or, with [rewriting], a part of that turn's answer written again.
+  /// [question], just asked in conversation [threadId] or a new one — or,
+  /// with [profile], a set of it being made; or, with [rewriting], a part
+  /// of that turn's answer written again.
   factory PendingTurn({
     required String question,
     required bool local,
+    String? threadId,
     StudyProfile? profile,
     String? rewriting,
   }) {
@@ -101,6 +103,7 @@ class PendingTurn {
     return PendingTurn._(
       question: question,
       local: local,
+      threadId: threadId,
       profile: profile,
       rewriting: rewriting,
       startedAt: now,
@@ -118,6 +121,7 @@ class PendingTurn {
   const PendingTurn._({
     required this.question,
     required this.local,
+    required this.threadId,
     required this.profile,
     required this.rewriting,
     required this.startedAt,
@@ -128,6 +132,10 @@ class PendingTurn {
   });
 
   final String question;
+
+  /// The conversation it was asked in, which its answer is kept in — or
+  /// null for a new one — whatever shows by the time it comes.
+  final String? threadId;
 
   /// The profile of the study set being made, if it is one rather than an
   /// answer.
@@ -164,6 +172,7 @@ class PendingTurn {
     return PendingTurn._(
       question: question,
       local: local,
+      threadId: threadId,
       profile: profile,
       rewriting: rewriting,
       startedAt: startedAt,
@@ -410,6 +419,7 @@ class AiSession extends Notifier<AiSessionState> {
     state = state.copyWith(
       itemId: () => null,
       threadId: () => null,
+      turns: const <AiTurn>[],
       shownProfile: () => id,
       shownPodcast: () => null,
     );
@@ -437,6 +447,13 @@ class AiSession extends Notifier<AiSessionState> {
   }) async {
     final text = question.trim();
     if (text.isEmpty || state.pending != null) return;
+    // Asked in the conversation showing now, with what was said in it.
+    final threadId = state.threadId;
+    final history = <ChatMessage>[
+      for (final turn in state.turns)
+        for (final json in turn.messages)
+          ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
+    ];
     final model = await ref.read(aiModelProvider.future);
     if (model == null) {
       state = state.copyWith(error: () => 'Choose a model to ask first.');
@@ -446,16 +463,15 @@ class AiSession extends Notifier<AiSessionState> {
     final info = await reader.scope(scope);
     if (info == null) return;
     final web = await ref.read(webSearchProvider.future);
-    final history = <ChatMessage>[
-      for (final turn in state.turns)
-        for (final json in turn.messages)
-          ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
-    ];
 
     state = state.copyWith(
       itemId: () => null,
       shownProfile: () => null,
-      pending: () => PendingTurn(question: text, local: model.config.local),
+      pending: () => PendingTurn(
+        question: text,
+        local: model.config.local,
+        threadId: threadId,
+      ),
       error: () => null,
     );
     await _follow(
@@ -468,8 +484,13 @@ class AiSession extends Notifier<AiSessionState> {
       read: () => state.pending,
       write: (pending) => state = state.copyWith(pending: () => pending),
       started: (subscription) => _answering = subscription,
-      onDone: (progress) =>
-          _keepTurn(text, progress, model.config, action: action),
+      onDone: (progress) => _keepTurn(
+        text,
+        progress,
+        model.config,
+        threadId: threadId,
+        action: action,
+      ),
     );
   }
 
@@ -489,6 +510,11 @@ class AiSession extends Notifier<AiSessionState> {
     required bool searchWeb,
   }) async {
     if (state.pending != null) return;
+    final history = <ChatMessage>[
+      for (final each in state.turns)
+        for (final json in each.messages)
+          ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
+    ];
     final model = await ref.read(aiModelProvider.future);
     if (model == null) {
       state = state.copyWith(error: () => 'Choose a model to ask first.');
@@ -498,11 +524,6 @@ class AiSession extends Notifier<AiSessionState> {
     final info = await reader.scope(scope);
     if (info == null) return;
     final web = await ref.read(webSearchProvider.future);
-    final history = <ChatMessage>[
-      for (final each in state.turns)
-        for (final json in each.messages)
-          ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
-    ];
     final answer = AiAnswer.fromJson(turn.answer);
     final part = answer.textOf(section);
     final how = instruction.trim();
@@ -515,6 +536,7 @@ class AiSession extends Notifier<AiSessionState> {
             ? 'Write this again: “${_excerpt(part)}”'
             : 'Write this again — $how: “${_excerpt(part)}”',
         local: model.config.local,
+        threadId: turn.threadId,
         rewriting: turn.id,
       ),
       error: () => null,
@@ -577,8 +599,9 @@ class AiSession extends Notifier<AiSessionState> {
         messages: <Object?>[...last.messages, ...added],
       );
     }
+    final showing = _showingOnceKept(turn.threadId, turn.threadId);
     state = state.copyWith(pending: () => null);
-    await _load(threadId: turn.threadId);
+    await _load(threadId: showing);
   }
 
   /// [usage] with [more] added to it: the tokens and what they cost; how
@@ -632,6 +655,7 @@ class AiSession extends Notifier<AiSessionState> {
     state = state.copyWith(
       itemId: () => null,
       threadId: () => null,
+      turns: const <AiTurn>[],
       shownProfile: () => id,
       shownPodcast: () => null,
       error: () => null,
@@ -839,27 +863,31 @@ class AiSession extends Notifier<AiSessionState> {
           ),
         ),
         model.config,
+        threadId: pending.threadId,
       );
     } else {
       state = state.copyWith(pending: () => null);
     }
   }
 
+  /// Keeps what [progress] answered to [question] in conversation
+  /// [threadId], where it was asked, or a new one.
   Future<void> _keepTurn(
     String question,
     AgentProgress progress,
     ProviderConfig config, {
+    required String? threadId,
     AiAction? action,
   }) async {
     final store = await _store;
     final took = state.pending == null
         ? null
         : DateTime.now().difference(state.pending!.startedAt);
-    final threadId =
-        state.threadId ??
+    final kept =
+        threadId ??
         (await store.ai.createThread(scope, title: _titleOf(question))).id;
     await store.ai.addTurn(
-      threadId,
+      kept,
       question: question,
       answer: <String, Object?>{
         ...progress.answer.toJson(),
@@ -870,8 +898,16 @@ class AiSession extends Notifier<AiSessionState> {
       model: config.model,
       usage: _usageOf(progress, took: took),
     );
+    final showing = _showingOnceKept(threadId, kept);
     state = state.copyWith(pending: () => null);
-    await _load(threadId: threadId);
+    await _load(threadId: showing);
+  }
+
+  /// The conversation to show once an answer asked in [asked] is kept in
+  /// [kept]: that one, unless another was opened meanwhile.
+  String _showingOnceKept(String? asked, String kept) {
+    final showing = state.threadId;
+    return showing == null || showing == asked ? kept : showing;
   }
 
   /// Keeps the answer to [turn], to come back to.
@@ -932,6 +968,7 @@ class AiSession extends Notifier<AiSessionState> {
   void showPodcast(String id) => state = state.copyWith(
     itemId: () => null,
     threadId: () => null,
+    turns: const <AiTurn>[],
     shownProfile: () => null,
     shownPodcast: () => id,
   );

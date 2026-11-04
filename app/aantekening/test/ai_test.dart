@@ -561,6 +561,71 @@ void main() {
     ], reason: 'the next question goes on from the part written again');
   });
 
+  testWidgets('an answer is kept in the conversation it was asked in, '
+      'whatever is looked at while it comes', (tester) async {
+    final container = await openShell(tester);
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    final link = NoteLink.page(page.id);
+    final session = container.read(aiSessionProvider(link).notifier);
+    AiSessionState state() => container.read(aiSessionProvider(link));
+    Future<void> settle() async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    await ask(tester, 'What is force?');
+    final first = state().threadId!;
+    session.newThread();
+    await ask(tester, 'What is mass?');
+    final second = state().threadId!;
+    expect(second, isNot(first));
+
+    // Asked in the first; meanwhile the flashcards, as the 1 key opens
+    // them.
+    await session.openThread(first);
+    await settle();
+    var gate = model.gate = Completer<void>();
+    unawaited(session.ask('And its unit?', searchWeb: false));
+    await settle();
+    session.openProfile(StudyKind.flashcards.name);
+    await settle();
+    gate.complete();
+    await settle();
+
+    // Asked in the first again; meanwhile the second, opened.
+    await session.openThread(first);
+    await settle();
+    gate = model.gate = Completer<void>();
+    unawaited(session.ask('Who named it?', searchWeb: false));
+    await settle();
+    await session.openThread(second);
+    await settle();
+    expect(
+      find.textContaining('Who named it?'),
+      findsNothing,
+      reason: 'not shown as asked in the second',
+    );
+    gate.complete();
+    await settle();
+    expect(state().threadId, second, reason: 'still the one looked at');
+
+    final threads = await tester.runAsync(() => store.ai.threadsAbout(link));
+    expect(threads, hasLength(2));
+    Future<List<String>> questionsOf(String id) async => <String>[
+      for (final turn in (await tester.runAsync(() => store.ai.turnsOf(id)))!)
+        turn.question,
+    ];
+    expect(await questionsOf(first), <String>[
+      'What is force?',
+      'And its unit?',
+      'Who named it?',
+    ]);
+    expect(await questionsOf(second), <String>['What is mass?']);
+    model.gate = null;
+  });
+
   testWidgets('shows how an answer is coming along: each step, how long '
       'it took, and what the model thinks', (tester) async {
     final container = await openShell(tester);

@@ -706,7 +706,9 @@ class _Conversation extends ConsumerWidget {
                 : (section) =>
                       unawaited(_rewrite(context, ref, session, turn, section)),
           ),
-        if (pending != null)
+        // In the conversation it was asked in, not another opened meanwhile.
+        if (pending != null &&
+            (state.threadId == null || state.threadId == pending.threadId))
           _Exchange(
             question: pending.question,
             answer: pending.answer,
