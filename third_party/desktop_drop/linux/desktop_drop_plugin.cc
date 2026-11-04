@@ -49,17 +49,21 @@ void on_drag_data_received(GtkWidget *widget, GdkDragContext *drag_context,
 
   double point[] = {double(x), double(y)};
   g_autoptr(FlValue) args = fl_value_new_list();
-  fl_value_append(args, fl_value_new_string(payload));
-  fl_value_append(args, fl_value_new_float_list(point, 2));
+  // aantekening: the list takes the values made for it, rather than a
+  // reference of its own to each, which left them never freed.
+  fl_value_append_take(args, fl_value_new_string(payload));
+  fl_value_append_take(args, fl_value_new_float_list(point, 2));
   fl_method_channel_invoke_method(channel, method_name, args,
                                   nullptr, nullptr, nullptr);
 }
 
-void on_drag_motion(GtkWidget *widget, GdkDragContext *drag_context,
-                    gint x, gint y, guint time, gpointer user_data) {
+// aantekening: drag-motion's handlers say whether the point is somewhere
+// to drop; this one returned nothing. GTK_DEST_DEFAULT_ALL answers for it.
+gboolean on_drag_motion(GtkWidget *widget, GdkDragContext *drag_context,
+                        gint x, gint y, guint time, gpointer user_data) {
   if (ignoreNext) {
     ignoreNext = FALSE;
-    return;
+    return FALSE;
   }
 
   auto *channel = static_cast<FlMethodChannel *>(user_data);
@@ -67,6 +71,7 @@ void on_drag_motion(GtkWidget *widget, GdkDragContext *drag_context,
   g_autoptr(FlValue) args = fl_value_new_float_list(point, 2);
   fl_method_channel_invoke_method(channel, "updated", args,
                                   nullptr, nullptr, nullptr);
+  return FALSE;
 }
 
 void on_drag_leave(GtkWidget *widget, GdkDragContext *drag_context, guint time, gpointer user_data) {
@@ -93,7 +98,8 @@ static void desktop_drop_plugin_class_init(DesktopDropPluginClass *klass) {
 static void desktop_drop_plugin_init(DesktopDropPlugin *self) {
   const char * desktopEnv = getenv("XDG_CURRENT_DESKTOP");
   if (desktopEnv) {
-    const char * lowercaseDesktopEnv = g_ascii_strdown(desktopEnv, -1);
+    // aantekening: freed once compared.
+    g_autofree gchar *lowercaseDesktopEnv = g_ascii_strdown(desktopEnv, -1);
 
     if (strcmp(lowercaseDesktopEnv, "kde") == 0 || strcmp(lowercaseDesktopEnv, "plasma") == 0) {
         isKDE = TRUE;

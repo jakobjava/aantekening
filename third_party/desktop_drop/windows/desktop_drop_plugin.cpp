@@ -9,6 +9,8 @@
 #include <memory>
 #include <sstream>
 #include <algorithm>
+// aantekening: included for the one message it writes, not by chance.
+#include <iostream>
 
 namespace {
 
@@ -177,6 +179,10 @@ namespace {
     }
 
     HRESULT DesktopDropTarget::DragEnter(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect) {
+        // aantekening: what is dropped is copied, and the pointer says so;
+        // left as it came, it said whatever the source allowed: Move,
+        // dragged within a drive in Explorer.
+        *pdwEffect = DROPEFFECT_COPY;
         POINT point = {pt.x, pt.y};
         ScreenToClient(window_handle_, &point);
         channel_->InvokeMethod("entered", std::make_unique<flutter::EncodableValue>(
@@ -189,6 +195,8 @@ namespace {
     }
 
     HRESULT DesktopDropTarget::DragOver(DWORD grfKeyState, POINTL pt, DWORD *pdwEffect) {
+        // aantekening: copied, as in DragEnter.
+        *pdwEffect = DROPEFFECT_COPY;
         POINT point = {pt.x, pt.y};
         ScreenToClient(window_handle_, &point);
         channel_->InvokeMethod("updated", std::make_unique<flutter::EncodableValue>(
@@ -206,6 +214,8 @@ namespace {
     }
 
     HRESULT DesktopDropTarget::Drop(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect) {
+        // aantekening: copied, as in DragEnter, and said so to the source.
+        *pdwEffect = DROPEFFECT_COPY;
 
         flutter::EncodableList list = {};
 
@@ -222,11 +232,20 @@ namespace {
                 if (data != nullptr) {
                     auto files = DragQueryFile(reinterpret_cast<HDROP>(data), 0xFFFFFFFF, nullptr, 0);
                     for (unsigned int i = 0; i < files; ++i) {
-                        TCHAR filename[MAX_PATH];
-                        DragQueryFile(reinterpret_cast<HDROP>(data), i, filename, sizeof(TCHAR) * MAX_PATH);
-                        std::wstring wide(filename);
+                        // aantekening: a buffer as long as the path, asked
+                        // for first. The buffer of MAX_PATH characters was
+                        // said to hold twice as many, its size in bytes,
+                        // so a longer path ran past it, and one of MAX_PATH
+                        // or more was cut short. Nor is every path dropped
+                        // written to the console any longer.
+                        UINT length = DragQueryFileW(reinterpret_cast<HDROP>(data), i, nullptr, 0);
+                        if (length == 0) {
+                            continue;
+                        }
+                        std::wstring wide(length + 1, L'\0');
+                        DragQueryFileW(reinterpret_cast<HDROP>(data), i, &wide[0], length + 1);
+                        wide.resize(length);
                         std::string path = ws2s(wide);
-                        std::cout << "done: " << path << std::endl;
                         list.push_back(flutter::EncodableValue(path));
                     }
                     GlobalUnlock(stgmed.hGlobal);
