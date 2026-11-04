@@ -1056,6 +1056,26 @@ void main() {
       expect(await store.assets.totalBytes(), 64);
     });
 
+    test(
+      'writes again the bytes of a known asset whose file is gone',
+      () async {
+        final bytes = Uint8List.fromList(<int>[5, 6, 7, 8]);
+        final asset = await store.assets.importBytes(
+          bytes,
+          mimeType: 'image/png',
+        );
+        store.assets.fileFor(asset).deleteSync();
+
+        final again = await store.assets.importBytes(
+          bytes,
+          mimeType: 'image/png',
+        );
+
+        expect(again.id, asset.id);
+        expect(await store.assets.readBytes(asset.id), bytes);
+      },
+    );
+
     test('reads back what was imported', () async {
       final bytes = Uint8List.fromList(<int>[1, 2, 3, 4]);
       final asset = await store.assets.importBytes(

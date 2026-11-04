@@ -38,10 +38,15 @@ class AssetStore {
   }) async {
     final digest = sha256.convert(bytes).toString();
 
+    // Known here, its bytes are written again all the same if they are not
+    // here: an asset another computer added can arrive before its file does,
+    // and a file can go missing while its asset stays.
     final existing = await findByHash(digest);
-    if (existing != null) return existing;
+    final file = existing == null
+        ? File(_pathForHash(digest))
+        : fileForHash(digest);
+    if (existing != null && file.existsSync()) return existing;
 
-    final file = File(_pathForHash(digest));
     await file.parent.create(recursive: true);
     // Whole or not at all under its name: written aside, then moved over,
     // so neither a crash nor the same bytes imported at once leaves a file
@@ -53,6 +58,7 @@ class AssetStore {
     } finally {
       if (await aside.exists()) await aside.delete();
     }
+    if (existing != null) return existing;
 
     final asset = AssetRef(
       id: Ulid.generate(),
