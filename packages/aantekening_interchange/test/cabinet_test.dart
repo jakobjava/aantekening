@@ -70,6 +70,26 @@ void main() {
       expect(decodeAll(frames, 17), input);
     });
 
+    test('refuses a match running on past the end of its frame, as the '
+        'format forbids', () {
+      // Microsoft's LZX format: "the compressor may not emit any matches
+      // that span a 32768-byte boundary in the input". Read on, the frames
+      // after it would each start where the match ended, not where they do.
+      final input = sampleText(100000, seed: 5);
+      final frames = encodeLzx(input, acrossFrames: true);
+      expect(frames.length, 4);
+      expect(
+        () => decodeAll(frames, 16),
+        throwsA(
+          isA<FormatDamage>().having(
+            (damage) => damage.message,
+            'message',
+            contains('frame'),
+          ),
+        ),
+      );
+    });
+
     test('reads a stored block of odd length and the block after it', () {
       final input = sampleText(4001, seed: 3);
       final frames = encodeLzx(

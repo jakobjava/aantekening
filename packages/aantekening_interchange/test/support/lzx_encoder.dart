@@ -102,11 +102,15 @@ enum TestBlock { verbatim, aligned, stored }
 /// Encodes [input] as LZX with a window of 2^[windowBits] bytes, in blocks
 /// of [blockSize] bytes of the kinds [blocks] cycles through; returns each
 /// 32 KiB frame's compressed bytes with its uncompressed size.
+///
+/// With [acrossFrames], matches run on past the end of a frame, as the
+/// format forbids: the frame ends after the match that crosses it.
 List<(Uint8List, int)> encodeLzx(
   Uint8List input, {
   int windowBits = 16,
   int blockSize = 20000,
   List<TestBlock> blocks = const <TestBlock>[TestBlock.verbatim],
+  bool acrossFrames = false,
 }) {
   final slots = switch (windowBits) {
     20 => 42,
@@ -119,7 +123,8 @@ List<(Uint8List, int)> encodeLzx(
   var r1 = 1;
   var r2 = 1;
 
-  // Tokens: greedy matching against earlier text, never across a frame.
+  // Tokens: greedy matching against earlier text, never across a frame
+  // unless asked to.
   final tokens = <_Token>[];
   final frameOf = <int>[];
   final last = <int, int>{};
@@ -134,7 +139,7 @@ List<(Uint8List, int)> encodeLzx(
         var length = 0;
         while (length < 257 &&
             i + length < input.length &&
-            i + length < frameEnd &&
+            (acrossFrames || i + length < frameEnd) &&
             input[previous + length] == input[i + length]) {
           length++;
         }
@@ -155,8 +160,8 @@ List<(Uint8List, int)> encodeLzx(
   var tokenIndex = 0;
   var blockNumber = 0;
 
-  void endFrameIfFull() {
-    if (produced > 0 && produced % 32768 == 0) {
+  void endFrameIfFull(int before) {
+    if (produced ~/ 32768 > before ~/ 32768) {
       frames.add((writer.take(), 32768));
     }
   }
@@ -198,8 +203,9 @@ List<(Uint8List, int)> encodeLzx(
       }
       writer.raw(bytes);
       if (bytes.length.isOdd) writer.raw(<int>[0]);
+      final before = produced;
       produced += bytes.length;
-      endFrameIfFull();
+      endFrameIfFull(before);
       continue;
     }
 
@@ -282,7 +288,7 @@ List<(Uint8List, int)> encodeLzx(
     final alignedCodes = aligned == null ? null : canonicalCodes(aligned);
     for (var t = 0; t < symbols.length; t++) {
       final symbol = symbols[t];
-      final frameBefore = produced ~/ 32768;
+      final before = produced;
       writer.write(mainCodes[symbol.main], newMain[symbol.main]);
       if (symbol.length != null) {
         writer.write(lengthCodes[symbol.length!], newLength[symbol.length!]);
@@ -301,8 +307,12 @@ List<(Uint8List, int)> encodeLzx(
         }
       }
       produced += blockTokens[t].length;
-      assert(produced ~/ 32768 == frameBefore || produced % 32768 == 0);
-      endFrameIfFull();
+      assert(
+        acrossFrames ||
+            produced ~/ 32768 == before ~/ 32768 ||
+            produced % 32768 == 0,
+      );
+      endFrameIfFull(before);
     }
     r0 = s0;
     r1 = s1;

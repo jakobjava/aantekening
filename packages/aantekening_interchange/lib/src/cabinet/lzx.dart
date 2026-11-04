@@ -16,7 +16,8 @@ import '../bytes.dart';
 ///
 /// Each cabinet data block is one frame: its compressed bytes decode to
 /// the number of bytes the block says, 32 KiB for all but the last, and
-/// blocks may continue from one frame into the next.
+/// blocks may continue from one frame into the next — though no match
+/// may, as Microsoft's description of LZX in cabinets says.
 final class LzxDecoder {
   LzxDecoder(int windowBits)
     : assert(windowBits >= 15 && windowBits <= 21),
@@ -249,6 +250,12 @@ final class LzxDecoder {
       }
       if (produced + length > _blockRemaining) {
         throw FormatDamage('An LZX match runs past its block');
+      }
+      // Nor past its frame: the format forbids a match to cross a 32 KiB
+      // boundary, and the frame after one that did would start where it
+      // ended, not where that frame does.
+      if (produced + length > wanted) {
+        throw FormatDamage('An LZX match runs past its frame');
       }
       _copyMatch(offset, length);
       produced += length;
