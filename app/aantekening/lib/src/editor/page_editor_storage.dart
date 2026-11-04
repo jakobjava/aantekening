@@ -56,8 +56,10 @@ extension _Storage on _PageEditorState {
   /// Brings the place a followed link points at into view, and picks it,
   /// once its page is showing.
   void _meetRevealRequest() {
+    // Closed before the page was laid out, it has nothing to show.
+    if (!mounted) return;
     final link = ref.read(revealRequestProvider);
-    if (!mounted || link == null || link.id != widget.pageId || !_ready) return;
+    if (link == null || link.id != widget.pageId || !_ready) return;
     ref.read(revealRequestProvider.notifier).done();
     final id = link.elementId;
     final element = id == null ? null : _controller.elementById(id);

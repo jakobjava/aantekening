@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:aantekening/src/editor/page_editor.dart';
 import 'package:aantekening/src/files/notes_keeper.dart';
 import 'package:aantekening/src/files/notes_location.dart';
+import 'package:aantekening/src/preferences.dart';
+import 'package:aantekening/src/providers.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/services.dart';
@@ -115,6 +117,26 @@ void main() {
     }
     expect(found, hasLength(1));
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('an editor closed as its page opens goes quietly', (
+    tester,
+  ) async {
+    Widget window({required bool open}) => ProviderScope(
+      overrides: [
+        storeProvider.overrideWith((ref) async => store),
+        preferencesProvider.overrideWith((ref) async => Preferences.inMemory()),
+      ],
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: open ? PageEditor(pageId: pageId) : const SizedBox(),
+      ),
+    );
+    await tester.pumpWidget(window(open: true));
+    // Read before the next frame, which closes it.
+    await tester.pumpWidget(window(open: false));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a page that cannot be saved is rescued, not lost', (
