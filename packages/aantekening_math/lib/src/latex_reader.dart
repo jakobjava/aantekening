@@ -115,9 +115,17 @@ class LatexReader {
         }
       }
       final atom = _atom(stops);
-      if (atom != null) items.add(_scripts(atom));
+      final read = _readOn;
+      _readOn = null;
+      if (atom != null) items.add(read == null ? _scripts(atom) : atom);
+      if (read != null) items.addAll(read);
     }
   }
+
+  /// What an unclosed fence read after its opening, where it is what the
+  /// reading the fence is in would read there again: the fence's opening
+  /// is followed by it, and the reading goes on from where it stopped.
+  List<MathNode>? _readOn;
 
   bool _stopsHere(_Stops stops) {
     if (_char == '}') return true;
@@ -244,14 +252,60 @@ class LatexReader {
   }) {
     final start = _i;
     _i += open.length;
-    final items = _sequence(stops.inside(close));
-    if (!_atEnd && _startsWith(close)) {
-      _i += close.length;
-      return FencedNode(left, right, _join(items), isRoundParen: round);
+    final inside = stops.inside(close);
+    // What is read within a fence depends only on where it starts and on
+    // what stops it, so a fence found unclosed is not looked for again:
+    // brackets left open, `[0,1) \cup [1,2)`, are read once each, not
+    // again for every bracket before them.
+    final _Attempt attempt = (
+      at: _i,
+      close: close,
+      grid: inside.grid,
+      right: inside.right,
+    );
+    var unclosed = _unclosed[attempt];
+    // Past so many unclosed, or so many being read one in another, a
+    // closing bracket is not looked for: what they hold might be read
+    // again for each, as the fence around them is read on.
+    if (unclosed == null &&
+        (_unclosed.length >= _fencesAllowed || _fencesOpen >= _fencesAllowed)) {
+      return SymbolNode(open.isEmpty ? left : open);
     }
+    if (unclosed == null) {
+      _fencesOpen++;
+      final items = _sequence(inside);
+      _fencesOpen--;
+      if (!_atEnd && _startsWith(close)) {
+        _i += close.length;
+        return FencedNode(left, right, _join(items), isRoundParen: round);
+      }
+      unclosed = _unclosed[attempt] = (items: items, end: _i);
+    }
+    // Read within a fence closed alike, what it read is what is read on
+    // here, unless a script hangs on the opening.
     _i = start + open.length;
+    _skipSpace();
+    final scripted = !_atEnd && (_char == '_' || _char == '^' || _char == "'");
+    if (stops.closer == close && !scripted) {
+      _readOn = unclosed.items;
+      _i = unclosed.end;
+    } else {
+      _i = start + open.length;
+    }
     return SymbolNode(open.isEmpty ? left : open);
   }
+
+  /// How many fences may be found unclosed, and how many read one in
+  /// another, before an opening is read as it is when it is unclosed.
+  static const int _fencesAllowed = 64;
+
+  /// How many fences are being read, one in another.
+  int _fencesOpen = 0;
+
+  /// The fences found unclosed: what was read in each, and where it
+  /// stopped.
+  final Map<_Attempt, ({List<MathNode> items, int end})> _unclosed =
+      <_Attempt, ({List<MathNode> items, int end})>{};
 
   /// A command's argument: a braced group, or else a single token, as TeX
   /// takes it (`\frac12`, `x^2`).
@@ -553,6 +607,10 @@ class LatexReader {
 
 /// Where a sequence being read ends, besides the end of the source and a
 /// closing brace.
+/// A fence's reading: where what it holds starts, its closer, and what
+/// else stops the reading of it.
+typedef _Attempt = ({int at, String close, bool grid, bool right});
+
 class _Stops {
   const _Stops({this.closer, this.grid = false, this.right = false});
 

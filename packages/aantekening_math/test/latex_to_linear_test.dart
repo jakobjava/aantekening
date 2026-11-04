@@ -228,4 +228,26 @@ void main() {
       expect(() => LinearMath.translate(simple), returnsNormally);
     }
   });
+
+  test('reads brackets left open as they are, each once', () {
+    expect(
+      LinearMath.fromLatex(r'[0,1) \cup [1,2) \cup (a, [b) c'),
+      '`[`0, 1`)` cup `[`1, 2`)` cup (a, `[`b)c',
+    );
+    expect(LinearMath.fromLatex('P(A|B) |x'), 'P`(`A|B`)`|x');
+    expect(LinearMath.fromLatex('(^2 (x) [y'), '`(`^2 (x)`[`y');
+  });
+
+  test('reads many brackets left open quickly, and deep ones too', () {
+    final watch = Stopwatch()..start();
+    for (final latex in <String>[
+      List<String>.generate(24, (i) => '[$i,${i + 1})').join(r' \cup '),
+      List<String>.filled(24, 'P(A|B)').join(' + '),
+      '${List<String>.filled(20000, '(').join()}x',
+      '${List<String>.filled(20000, r'\lvert(').join()}x',
+    ]) {
+      expect(() => LinearMath.fromLatex(latex), returnsNormally);
+    }
+    expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
+  });
 }
