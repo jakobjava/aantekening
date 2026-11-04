@@ -1020,6 +1020,31 @@ void main() {
       expect(await store.search.search('infty'), isNotEmpty);
     });
 
+    test('counts as many pages as it finds', () async {
+      final sectionId = await workspace.seedSection();
+      for (final title in <String>['Waves', 'Wave optics', 'Light']) {
+        final page = await store.pages.createPage(
+          sectionId: sectionId,
+          title: title,
+        );
+        await store.pages.saveDocument(
+          page.id,
+          documentWithText(page.id, 'wavelength'),
+        );
+      }
+      final binned = await workspace.seedSection(section: 'Binned');
+      final page = await store.pages.createPage(sectionId: binned);
+      await store.pages.saveDocument(
+        page.id,
+        documentWithText(page.id, 'wavelength'),
+      );
+      await store.library.deleteSection(binned);
+
+      expect(await store.search.search('wavel'), hasLength(3));
+      expect(await store.search.count('wavel'), 3);
+      expect(await store.search.count('wavel', sectionId: sectionId), 3);
+    });
+
     test('returns nothing for an empty query', () async {
       await addPage('Notes', 'content');
       expect(await store.search.search('  '), isEmpty);

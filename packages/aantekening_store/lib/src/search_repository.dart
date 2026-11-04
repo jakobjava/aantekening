@@ -51,17 +51,11 @@ class SearchRepository {
     );
     if (match == null) return const <SearchHit>[];
 
-    final filters = StringBuffer();
-    final filterParameters = <Object?>[];
-    if (notebookId != null) {
-      filters.write(' AND s.notebook_id = ?');
-      filterParameters.add(notebookId);
-    }
-    if (sectionId != null) {
-      filters.write(' AND p.section_id = ?');
-      filterParameters.add(sectionId);
-    }
-
+    final (matching, parameters) = _matching(
+      match,
+      notebookId: notebookId,
+      sectionId: sectionId,
+    );
     final rows = _db.select(
       '''
       SELECT
@@ -71,15 +65,7 @@ class SearchRepository {
         s.notebook_id  AS notebook_id,
         snippet(page_search, 1, ?, ?, ?, 14) AS snippet,
         bm25(page_search, $_titleWeight, $_bodyWeight) AS rank
-      FROM page_search
-      JOIN pages p     ON p.rowid = page_search.rowid
-      JOIN sections s  ON s.id = p.section_id
-      JOIN notebooks n ON n.id = s.notebook_id
-      WHERE page_search MATCH ?
-        AND p.deleted_at IS NULL
-        AND s.deleted_at IS NULL
-        AND n.deleted_at IS NULL
-        $filters
+      $matching
       ORDER BY rank
       LIMIT ?
     ''',
@@ -87,8 +73,7 @@ class SearchRepository {
         SnippetMarkers.start,
         SnippetMarkers.end,
         SnippetMarkers.ellipsis,
-        match,
-        ...filterParameters,
+        ...parameters,
         limit,
       ],
     );
@@ -108,26 +93,52 @@ class SearchRepository {
     ];
   }
 
-  /// Counts the pages matching [query], for result summaries.
-  Future<int> count(String query, {String? notebookId}) async {
-    final match = FtsQuery.build(query);
+  /// Counts the pages matching [query], for result summaries: those
+  /// [search] finds, as many as there are.
+  Future<int> count(
+    String query, {
+    String? notebookId,
+    String? sectionId,
+    bool prefixLastTerm = true,
+    bool matchAny = false,
+  }) async {
+    final match = FtsQuery.build(
+      query,
+      prefixLastTerm: prefixLastTerm,
+      matchAny: matchAny,
+    );
     if (match == null) return 0;
-
-    final rows = notebookId == null
-        ? _db.select(
-            'SELECT COUNT(*) AS c FROM page_search '
-            'JOIN pages p ON p.rowid = page_search.rowid '
-            'WHERE page_search MATCH ? AND p.deleted_at IS NULL',
-            <Object?>[match],
-          )
-        : _db.select(
-            'SELECT COUNT(*) AS c FROM page_search '
-            'JOIN pages p ON p.rowid = page_search.rowid '
-            'JOIN sections s ON s.id = p.section_id '
-            'WHERE page_search MATCH ? AND p.deleted_at IS NULL '
-            'AND s.notebook_id = ?',
-            <Object?>[match, notebookId],
-          );
-    return integer(rows.first, 'c');
+    final (matching, parameters) = _matching(
+      match,
+      notebookId: notebookId,
+      sectionId: sectionId,
+    );
+    return integer(
+      _db.select('SELECT COUNT(*) AS c $matching', parameters).first,
+      'c',
+    );
   }
+
+  /// The pages [match] matches, in [notebookId] or [sectionId] if given,
+  /// that are not in the bin, nor in a section or notebook that is: as a
+  /// query's FROM and WHERE, and their parameters.
+  static (String, List<Object?>) _matching(
+    String match, {
+    String? notebookId,
+    String? sectionId,
+  }) => (
+    '''
+      FROM page_search
+      JOIN pages p     ON p.rowid = page_search.rowid
+      JOIN sections s  ON s.id = p.section_id
+      JOIN notebooks n ON n.id = s.notebook_id
+      WHERE page_search MATCH ?
+        AND p.deleted_at IS NULL
+        AND s.deleted_at IS NULL
+        AND n.deleted_at IS NULL
+        ${notebookId == null ? '' : 'AND s.notebook_id = ?'}
+        ${sectionId == null ? '' : 'AND p.section_id = ?'}
+    ''',
+    <Object?>[match, ?notebookId, ?sectionId],
+  );
 }
