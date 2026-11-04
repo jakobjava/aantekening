@@ -119,6 +119,11 @@ final class AantekeningImporter implements NotesImporter {
         }
       }
 
+      // The sections and pages being built, each within the one before it:
+      // one that is its own parent, or its parent's, is not built again
+      // within itself.
+      final building = <String>{};
+
       List<PageDraft> pagesIn(String sectionId, String? parentId) {
         final here =
             pageFiles.values
@@ -129,20 +134,41 @@ final class AantekeningImporter implements NotesImporter {
                 )
                 .toList()
               ..sort((a, b) => a.page.position.compareTo(b.page.position));
-        return <PageDraft>[for (final file in here) _page(file, pagesIn)];
+        final drafts = <PageDraft>[];
+        for (final file in here) {
+          if (!building.add(file.page.id)) continue;
+          drafts.add(_page(file, pagesIn));
+          building.remove(file.page.id);
+        }
+        return drafts;
       }
 
-      SectionDraft sectionDraft(Section section) => SectionDraft(
-        title: section.title,
-        color: section.color,
-        pages: pagesIn(section.id, null),
-        sections: <SectionDraft>[
-          for (final child in _sorted(
-            sections.values.where((each) => each.parentId == section.id),
-          ))
-            sectionDraft(child),
-        ],
-      );
+      PageDraft page(PageFile file) {
+        building.add(file.page.id);
+        final draft = _page(file, pagesIn);
+        building.remove(file.page.id);
+        return draft;
+      }
+
+      SectionDraft sectionDraft(Section section) {
+        building.add(section.id);
+        final draft = SectionDraft(
+          title: section.title,
+          color: section.color,
+          pages: pagesIn(section.id, null),
+          sections: <SectionDraft>[
+            for (final child in _sorted(
+              sections.values.where(
+                (each) =>
+                    each.parentId == section.id && !building.contains(each.id),
+              ),
+            ))
+              sectionDraft(child),
+          ],
+        );
+        building.remove(section.id);
+        return draft;
+      }
 
       List<String> ids(String key) => <String>[
         for (final id in (list[key] as List<Object?>?) ?? const <Object?>[])
@@ -172,7 +198,7 @@ final class AantekeningImporter implements NotesImporter {
         ],
         pages: <PageDraft>[
           for (final id in ids('pages'))
-            if (pageFiles[id] case final page?) _page(page, pagesIn),
+            if (pageFiles[id] case final file?) page(file),
         ],
         assets: assets,
       );
