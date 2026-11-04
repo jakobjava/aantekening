@@ -21,6 +21,11 @@ import '../row_read.dart';
 import 'entity_files.dart';
 import 'notes_folder.dart';
 
+part 'folder_mirror_reading.dart';
+part 'folder_mirror_records.dart';
+part 'folder_mirror_watching.dart';
+part 'folder_mirror_writing.dart';
+
 /// What the mirror found in the folder that other copies of the notes had
 /// changed, and put into the database.
 final class FolderChanges {
@@ -109,6 +114,34 @@ final class FolderMirror {
   String? _problem;
   var _closed = false;
 
+  // ------------------------------------------------------------ watching
+
+  Timer? _looker;
+  StreamSubscription<SqliteUpdate>? _queued;
+
+  /// The files changed in the folder since it was last looked at for them.
+  final Set<String> _touched = <String>{};
+
+  int _waited = 0;
+
+  /// How many more checks go by before writing is tried again, after the
+  /// folder could not be written to: a drive taken out stays out a while.
+  int _resting = 0;
+
+  // ------------------------------------------------------------- writing
+
+  /// What could not be written as it was, by kind and id: the change it
+  /// was at, and why. Tried again once it changes.
+  final Map<String, (int, String)> _stuck = <String, (int, String)>{};
+
+  // ------------------------------------------------------------- reading
+
+  /// What [scan] has found so far, handed on when it finishes.
+  FolderChanges _found = const FolderChanges();
+
+  /// The columns of each table rows have been put into.
+  final Map<String, Set<String>> _columns = <String, Set<String>>{};
+
   /// Changes read from the folder, as they are.
   Stream<FolderChanges> get changes => _changes.stream;
 
@@ -148,111 +181,8 @@ final class FolderMirror {
   /// Writes and reads by themselves: what changes is written once it has
   /// been still a moment, and the folder is looked at every [every] and
   /// whenever something in it changes.
-  void startAutomatically({Duration every = const Duration(minutes: 1)}) {
-    // Nothing is checked while nothing waits to be written: a change
-    // queued starts the checking, which stops once all is written.
-    _queued ??= _db.raw.updates
-        .where(
-          (update) =>
-              update.tableName == 'mirror_outbox' &&
-              update.kind != SqliteUpdateKind.delete,
-        )
-        .listen((_) => _wake());
-    _wake();
-    _looker ??= Timer.periodic(every, (_) => unawaited(scan()));
-    // Each kind's folder is watched by itself: not every system can watch
-    // a folder and all the folders in it at once.
-    if (_watches.isEmpty) {
-      for (final kind in EntityKind.values) {
-        try {
-          final directory = folder.folderOf(kind)..createSync(recursive: true);
-          _watches.add(
-            directory
-                .watch()
-                .map(
-                  // A file written beside where it goes and moved there, as
-                  // sync services write, arrives where it is moved to.
-                  (event) => event is FileSystemMoveEvent
-                      ? event.destination ?? event.path
-                      : event.path,
-                )
-                .where(NotesFolder.looksLikeEntity)
-                .listen(_touch, onError: (Object _) {}),
-          );
-        } on FileSystemException {
-          // Where the folder cannot be watched, it is looked at every minute.
-        }
-      }
-    }
-  }
-
-  /// Notes that [path] changed in the folder, to be read once changes
-  /// settle: sync services write in bursts.
-  void _touch(String path) {
-    _touched.add(path);
-    _settle?.cancel();
-    _settle = Timer(const Duration(seconds: 2), () {
-      final touched = List.of(_touched);
-      _touched.clear();
-      // Files this copy of the notes wrote itself need no looking at.
-      if (!touched.every(_known)) unawaited(scan());
-    });
-  }
-
-  Timer? _looker;
-  StreamSubscription<SqliteUpdate>? _queued;
-
-  /// The files changed in the folder since it was last looked at for them.
-  final Set<String> _touched = <String>{};
-
-  /// Whether the file at [path] is as it was last written or read here.
-  bool _known(String path) {
-    try {
-      return _matches(_record(path), File(path).statSync());
-    } on FileSystemException {
-      return false;
-    }
-  }
-
-  /// Starts checking each second for what waits to be written.
-  void _wake() {
-    if (_closed) return;
-    _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) => _tick());
-  }
-
-  /// Writes what changed once it stops changing, and at the latest after a
-  /// few seconds; stops checking once nothing waits.
-  void _tick() {
-    if (_closed) return;
-    if (_resting > 0) {
-      _resting--;
-      return;
-    }
-    final rows = _db.select(
-      'SELECT COALESCE(MAX(seq), 0) AS seq, COUNT(*) AS n FROM mirror_outbox',
-    );
-    final seq = integer(rows.first, 'seq');
-    final pending = integer(rows.first, 'n');
-    // What waits only until it changes wakes the checking again when it
-    // does.
-    if (pending <= _stuck.length) {
-      _lastSeq = seq;
-      _ticker?.cancel();
-      _ticker = null;
-      return;
-    }
-    if (seq == _lastSeq || ++_waited >= 5) {
-      _waited = 0;
-      unawaited(flush());
-    }
-    _lastSeq = seq;
-  }
-
-  int _waited = 0;
-
-  /// How many more checks go by before writing is tried again, after the
-  /// folder could not be written to: a drive taken out stays out a while.
-  int _resting = 0;
+  void startAutomatically({Duration every = const Duration(minutes: 1)}) =>
+      _startWatching(every);
 
   /// Runs [work] after whatever flush or scan is running.
   Future<T> _serially<T>(Future<T> Function() work) {
@@ -261,8 +191,6 @@ final class FolderMirror {
     return result;
   }
 
-  // ------------------------------------------------------------- writing
-
   /// Writes every change waiting to the folder.
   ///
   /// A file that cannot be written now — the folder is on a drive taken
@@ -270,583 +198,16 @@ final class FolderMirror {
   /// in a while. One that cannot be written as it is stays waiting too, but
   /// is tried again only once it changes, or the app starts again, rather
   /// than again and again; it is never let go unwritten.
-  Future<void> flush() => _serially(() async {
-    String? problem;
-    // Read on from the last one read, by its change and then its name:
-    // what was queued in one go, as everything is at first, shares one.
-    (int, String, String) after = (-1, '', '');
-    while (true) {
-      final rows = _db.select(
-        'SELECT kind, id, seq FROM mirror_outbox '
-        'WHERE (seq, kind, id) > (?, ?, ?) '
-        'ORDER BY seq, kind, id LIMIT 64',
-        <Object?>[after.$1, after.$2, after.$3],
-      );
-      if (rows.isEmpty) break;
-      for (final row in rows) {
-        final name = str(row, 'kind');
-        final id = str(row, 'id');
-        final seq = integer(row, 'seq');
-        after = (seq, name, id);
-        final key = '$name/$id';
-        if (_stuck[key] case (final at, final error) when at == seq) {
-          problem ??= error;
-          continue;
-        }
-        final kind = EntityKind.named(name);
-        try {
-          if (kind != null) await _write(kind, id);
-        } on FileSystemException catch (error) {
-          _resting = 30;
-          _report('Could not write to the notes folder: ${error.message}');
-          return;
-        } on Object catch (error) {
-          problem = 'Could not write $name $id to the notes folder: $error';
-          _stuck[key] = (seq, problem);
-          continue;
-        }
-        _stuck.remove(key);
-        _db.run(
-          'DELETE FROM mirror_outbox WHERE kind = ? AND id = ? AND seq = ?',
-          <Object?>[name, id, seq],
-        );
-      }
-    }
-    _lastWritten = _clock();
-    _report(problem);
-  });
-
-  /// What could not be written as it was, by kind and id: the change it
-  /// was at, and why. Tried again once it changes.
-  final Map<String, (int, String)> _stuck = <String, (int, String)>{};
+  Future<void> flush() => _serially(_writeWaiting);
 
   void _report(String? problem) {
     _problem = problem;
     if (!_status.isClosed) _status.add(status);
   }
 
-  /// The file [kind] [id] is kept in now, or a tombstone if it is gone.
-  EntityFile _current(EntityKind kind, String id) {
-    final now = _clock().millisecondsSinceEpoch;
-    final EntityFile? file = switch (kind) {
-      EntityKind.notebook => _one(
-        'SELECT * FROM notebooks WHERE id = ?',
-        id,
-        (row) => NotebookFile(LibraryRepository.notebookOf(row)),
-      ),
-      EntityKind.section => _one(
-        'SELECT * FROM sections WHERE id = ?',
-        id,
-        (row) => SectionFile(LibraryRepository.sectionOf(row)),
-      ),
-      EntityKind.page => _pages.pageFile(id),
-      EntityKind.thread => _rows(
-        kind,
-        'ai_threads',
-        'ai_turns',
-        'thread_id',
-        id,
-      ),
-      EntityKind.item => _rows(kind, 'ai_items', 'ai_reviews', 'item_id', id),
-    };
-    return file ?? Tombstone(kind, id, now);
-  }
-
-  EntityFile? _one(String sql, String id, EntityFile Function(Row row) read) {
-    final rows = _db.select(sql, <Object?>[id]);
-    return rows.isEmpty ? null : read(rows.first);
-  }
-
-  RowsFile? _rows(
-    EntityKind kind,
-    String table,
-    String children,
-    String column,
-    String id,
-  ) {
-    final rows = _db.select('SELECT * FROM $table WHERE id = ?', <Object?>[id]);
-    if (rows.isEmpty) return null;
-    return RowsFile(kind, _rowMap(rows.first), <Map<String, Object?>>[
-      for (final child in _db.select(
-        'SELECT * FROM $children WHERE $column = ?',
-        <Object?>[id],
-      ))
-        _rowMap(child),
-    ]);
-  }
-
-  static Map<String, Object?> _rowMap(Row row) => <String, Object?>{
-    for (final column in row.keys) column: row[column],
-  };
-
-  Future<void> _write(EntityKind kind, String id) async {
-    final file = _current(kind, id);
-    final bytes = await away(
-      _encode,
-      file,
-      heavy: file is PageFile && (file.documentJson?.length ?? 0) >= heavyBytes,
-    );
-    final path = folder.pathFor(kind, id);
-    final digest = sha256.convert(bytes).toString();
-    final record = _record(path);
-    final disk = File(path);
-    final stat = disk.statSync();
-    final exists = stat.type == FileSystemEntityType.file;
-
-    if (exists && !_matches(record, stat)) {
-      // Changed by someone else since it was last written or read here.
-      final theirs = NotesFolder.read(disk);
-      if (theirs != null) {
-        final theirDigest = sha256.convert(theirs).toString();
-        if (theirDigest == digest) {
-          _remember(path, kind, id, disk.statSync(), digest);
-          return;
-        }
-        if (record == null || theirDigest != record.digest) {
-          // What a newer version wrote holds what this one may not know
-          // of: it waits, and is said to, rather than being written over.
-          if (EntityFile.isNewer(theirs)) {
-            throw const FormatException(
-              'a newer version of aantekening wrote it there; update this '
-              'one to change it here',
-            );
-          }
-          await _keepTheirs(EntityFile.decode(theirs), file);
-        }
-      }
-    } else if (exists && record?.digest == digest) {
-      return;
-    }
-    await NotesFolder.writeAtomically(path, bytes);
-    _remember(path, kind, id, File(path).statSync(), digest);
-  }
-
-  /// [file]'s bytes, once it is sure what it holds can be read back: a
-  /// page's contents damaged in the index must not be written over a good
-  /// file, and from there to every computer.
-  static Uint8List _encode(EntityFile file) {
-    if (file is PageFile) {
-      if (file.documentJson case final json?) {
-        if (jsonDecode(utf8.decode(json)) is! Map<String, Object?>) {
-          throw const FormatException('The page is damaged in the index');
-        }
-      }
-    }
-    return file.encode();
-  }
-
-  /// Keeps [theirs], a page another copy of the notes wrote that is about
-  /// to be written over by [ours], as a page of its own if they differ —
-  /// or if [ours] is the page deleted for good here, which it was changed
-  /// elsewhere since.
-  Future<void> _keepTheirs(EntityFile? theirs, EntityFile ours) async {
-    if (theirs is! PageFile) return;
-    if (ours is! Tombstone) {
-      if (ours is! PageFile) return;
-      if (theirs.document.encode() == ours.document.encode() &&
-          theirs.page.title == ours.page.title) {
-        return;
-      }
-    }
-    final kept = await _keepAsCopy(theirs);
-    // Kept while writing, not reading: said at once, as no scan says it.
-    if (!_changes.isClosed) {
-      _changes.add(FolderChanges(pages: <String>{kept}, library: true));
-    }
-  }
-
-  /// Adds the page [copy] holds as a page of its own, beside the page it is
-  /// a copy of, so that neither version is lost — or, if its section is
-  /// not here, in a notebook of rescued pages; returns its id.
-  Future<String> _keepAsCopy(PageFile copy) async {
-    final id = Ulid.generate();
-    final page = copy.page;
-    final sectionExists = _db.select(
-      'SELECT 1 FROM sections WHERE id = ?',
-      <Object?>[page.sectionId],
-    ).isNotEmpty;
-    final sectionId = sectionExists
-        ? page.sectionId
-        : (await Rescue.rescuedSection(_library)).id;
-    final parentExists =
-        page.parentId != null &&
-        _db.select('SELECT 1 FROM pages WHERE id = ?', <Object?>[
-          page.parentId,
-        ]).isNotEmpty;
-    _pages.putPage(
-      PageFile(
-        page: PageRef(
-          id: id,
-          sectionId: sectionId,
-          parentId: parentExists && sectionExists ? page.parentId : null,
-          title: '${page.title} (other version)',
-          position: page.position + 1e-6,
-          createdAt: page.createdAt,
-          updatedAt: _clock().millisecondsSinceEpoch,
-          preview: page.preview,
-          revision: page.revision,
-          color: page.color,
-        ),
-        document: PageDocument(
-          id: id,
-          revision: copy.document.revision,
-          canvas: copy.document.canvas,
-          elements: copy.document.elements,
-        ),
-        assets: copy.assets,
-        tags: copy.tags,
-      ),
-    );
-    return id;
-  }
-
-  // ------------------------------------------------------------- reading
-
-  /// What [scan] has found so far, handed on when it finishes.
-  FolderChanges _found = const FolderChanges();
-
   /// Reads into the database every file of the folder changed by another
   /// copy of the notes, returning what changed.
-  Future<FolderChanges> scan() => _serially(() async {
-    if (!folder.isAvailable) {
-      _report('The notes folder cannot be found: ${folder.path}');
-      return const FolderChanges();
-    }
-    _found = const FolderChanges();
-    final damaged = <String>[];
-    final seen = <String>{};
-    final waiting = <_Arrival>[];
-    // Listed away from the window, and checked against the records read in
-    // one go: only what changed is read here.
-    final listing = await away(_listing, folder.path, heavy: true);
-    final records = _allRecords();
-
-    for (final listed in listing) {
-      seen.add(listed.key);
-      // As it was last written or read here: nothing to do. Only a thing's
-      // own file has a record; a sync service's copy of one never does.
-      final record = records[listed.key];
-      if (record != null &&
-          record.size == listed.size &&
-          record.modified == listed.modified) {
-        continue;
-      }
-      final entry = folder.entryOf(listed);
-      final path = entry.file.path;
-      // One file that cannot be read — or put in — must not keep every
-      // other from being read: it is said to be damaged, and left.
-      try {
-        final stat = entry.file.statSync();
-        if (stat.type != FileSystemEntityType.file) continue;
-        final bytes = NotesFolder.read(entry.file);
-        if (bytes == null) continue;
-        final digest = sha256.convert(bytes).toString();
-        if (!entry.isCopy && record?.digest == digest) {
-          _remember(path, entry.kind, entry.id!, stat, digest);
-          continue;
-        }
-        final file = EntityFile.decode(bytes);
-        if (file == null || file.kind != entry.kind) {
-          damaged.add(path);
-          continue;
-        }
-        if (entry.isCopy) {
-          await _readCopy(entry, file);
-        } else if (file.id == entry.id) {
-          waiting.add(_Arrival(entry, file, stat, digest));
-        } else {
-          damaged.add(path);
-        }
-      } on Object {
-        damaged.add(path);
-      }
-    }
-
-    // Parents before what they hold; what cannot go in yet — its section
-    // not arrived — waits for a later look.
-    waiting.sort((a, b) => _order(a.file).compareTo(_order(b.file)));
-    var progress = true;
-    while (waiting.isNotEmpty && progress) {
-      progress = false;
-      for (final arrival in List.of(waiting)) {
-        bool applied;
-        try {
-          applied = _apply(arrival);
-        } on Object {
-          damaged.add(arrival.path);
-          applied = true;
-        }
-        if (applied) {
-          waiting.remove(arrival);
-          progress = true;
-        }
-      }
-    }
-
-    _rewriteMissing(records, seen);
-    final found = FolderChanges(
-      pages: _found.pages,
-      library: _found.library,
-      ai: _found.ai,
-      damaged: damaged,
-    );
-    if (!found.isEmpty && !_changes.isClosed) _changes.add(found);
-    return found;
-  });
-
-  static List<ListedFile> _listing(String path) => NotesFolder.listing(path);
-
-  static int _order(EntityFile file) => switch (file) {
-    NotebookFile() => 0,
-    SectionFile(:final section) => 1 + (section.parentId == null ? 0 : 1),
-    PageFile(:final page) => 3 + (page.parentId == null ? 0 : 1),
-    Tombstone(:final kind) => 10 - kind.index,
-    RowsFile() => 6,
-  };
-
-  /// Puts what [arrival] brings into the database, reporting whether it
-  /// could go in now.
-  bool _apply(_Arrival arrival) {
-    final file = arrival.file;
-    final kind = file.kind;
-    final pendingHere = _db.select(
-      'SELECT 1 FROM mirror_outbox WHERE kind = ? AND id = ?',
-      <Object?>[kind.name, file.id],
-    ).isNotEmpty;
-    if (pendingHere) {
-      // Changed here too, and not yet written: this copy's version wins,
-      // the other is kept as a page of its own when it is written over.
-      return true;
-    }
-    if (!_canApply(file)) return false;
-    _paused(() {
-      switch (file) {
-        case NotebookFile(:final notebook):
-          _library.putNotebook(notebook);
-          _found = _with(library: true);
-        case SectionFile(:final section):
-          _library.putSection(section);
-          _found = _with(library: true);
-        case PageFile():
-          _pages.putPage(file);
-          _found = _with(library: true, page: file.id);
-        case RowsFile():
-          _putRows(file);
-          _found = _with(ai: true);
-        case Tombstone(:final kind, :final id):
-          switch (kind) {
-            case EntityKind.notebook:
-              _bin.purgeNotebook(id);
-            case EntityKind.section:
-              _bin.purgeSection(id);
-            case EntityKind.page:
-              _bin.purgePage(id);
-            case EntityKind.thread:
-              _db.run('DELETE FROM ai_threads WHERE id = ?', <Object?>[id]);
-            case EntityKind.item:
-              _db.run('DELETE FROM ai_items WHERE id = ?', <Object?>[id]);
-          }
-          _found = _with(library: true, ai: true);
-      }
-      _remember(arrival.path, kind, file.id, arrival.stat, arrival.digest);
-    });
-    return true;
-  }
-
-  FolderChanges _with({bool library = false, bool ai = false, String? page}) =>
-      FolderChanges(
-        pages: page == null ? _found.pages : <String>{..._found.pages, page},
-        library: _found.library || library,
-        ai: _found.ai || ai,
-      );
-
-  /// Whether what [file] belongs in is there for it to go into.
-  bool _canApply(EntityFile file) {
-    bool exists(String table, String? id) =>
-        id == null ||
-        _db.select('SELECT 1 FROM $table WHERE id = ?', <Object?>[
-          id,
-        ]).isNotEmpty;
-    return switch (file) {
-      SectionFile(:final section) =>
-        exists('notebooks', section.notebookId) &&
-            exists('sections', section.parentId),
-      PageFile(:final page) =>
-        exists('sections', page.sectionId) && exists('pages', page.parentId),
-      _ => true,
-    };
-  }
-
-  /// Runs [change] with the triggers paused, as one transaction.
-  void _paused(void Function() change) {
-    _db.transaction(() {
-      _db.run("UPDATE mirror_control SET value = 1 WHERE key = 'paused'");
-      try {
-        change();
-      } finally {
-        _db.run("UPDATE mirror_control SET value = 0 WHERE key = 'paused'");
-      }
-    });
-  }
-
-  /// Puts a conversation and its turns, or a kept item and its reviews,
-  /// in place of what the database has of it.
-  void _putRows(RowsFile file) {
-    final (table, children, column) = switch (file.kind) {
-      EntityKind.thread => ('ai_threads', 'ai_turns', 'thread_id'),
-      _ => ('ai_items', 'ai_reviews', 'item_id'),
-    };
-    _db.run('DELETE FROM $children WHERE $column = ?', <Object?>[file.id]);
-    final row = <String, Object?>{...file.row};
-    // A kept answer names the turn it came from, which may not be here.
-    final turn = row['turn_id'];
-    if (turn != null &&
-        _db.select('SELECT 1 FROM ai_turns WHERE id = ?', <Object?>[
-          turn,
-        ]).isEmpty) {
-      row['turn_id'] = null;
-    }
-    _insertRow(table, row, replace: true);
-    for (final child in file.children) {
-      _insertRow(children, child, replace: true);
-    }
-  }
-
-  /// Inserts [row] into [table], taking only the columns [table] has.
-  void _insertRow(
-    String table,
-    Map<String, Object?> row, {
-    bool replace = false,
-  }) {
-    final columns = _columns[table] ??= <String>{
-      for (final info in _db.select('PRAGMA table_info($table)'))
-        str(info, 'name'),
-    };
-    final keys = row.keys.where(columns.contains).toList();
-    if (keys.isEmpty) return;
-    _db.run(
-      'INSERT ${replace ? 'OR REPLACE ' : ''}INTO $table '
-      '(${keys.join(', ')}) VALUES (${List.filled(keys.length, '?').join(', ')})',
-      <Object?>[for (final key in keys) row[key]],
-    );
-  }
-
-  /// The columns of each table rows have been put into.
-  final Map<String, Set<String>> _columns = <String, Set<String>>{};
-
-  /// Reads a copy a sync service made of a file: a page that differs from
-  /// the page is kept as a page of its own; then the copy goes.
-  Future<void> _readCopy(FolderEntry entry, EntityFile file) async {
-    if (file is PageFile) {
-      final ours = _pages.pageFile(file.id);
-      if (ours == null ||
-          ours.document.encode() != file.document.encode() ||
-          ours.page.title != file.page.title) {
-        // Kept by the triggers, so it is written as a file of its own.
-        _found = _with(library: true, page: await _keepAsCopy(file));
-      }
-    }
-    try {
-      entry.file.deleteSync();
-    } on FileSystemException {
-      // Looked at again next time.
-    }
-  }
-
-  /// Queues for writing again everything whose file was written or read
-  /// here — [records] — but is not among the files [present] in the folder.
-  void _rewriteMissing(Map<String, _Record> records, Set<String> present) {
-    for (final MapEntry(key: path, value: record) in records.entries) {
-      if (present.contains(path)) continue;
-      _db.run('DELETE FROM mirror_files WHERE path = ?', <Object?>[path]);
-      _db.run(
-        'INSERT INTO mirror_outbox (kind, id, seq) VALUES (?, ?, '
-        '(SELECT COALESCE(MAX(seq), 0) + 1 FROM mirror_outbox)) '
-        'ON CONFLICT (kind, id) DO NOTHING',
-        <Object?>[record.kind, record.id],
-      );
-    }
-  }
-
-  // ------------------------------------------------------------ records
-
-  /// [path] as the records keep it: from the folder, with forward
-  /// slashes, so the folder can move without its files seeming new.
-  String _key(String path) =>
-      p.relative(path, from: folder.path).replaceAll(r'\', '/');
-
-  /// Every file as it was last written or read here, by its key.
-  Map<String, _Record> _allRecords() => <String, _Record>{
-    for (final row in _db.select(
-      'SELECT path, kind, id, size, modified, digest FROM mirror_files',
-    ))
-      str(row, 'path'): _Record(
-        integer(row, 'size'),
-        integer(row, 'modified'),
-        str(row, 'digest'),
-        kind: str(row, 'kind'),
-        id: str(row, 'id'),
-      ),
-  };
-
-  _Record? _record(String path) {
-    final rows = _db.select(
-      'SELECT size, modified, digest FROM mirror_files WHERE path = ?',
-      <Object?>[_key(path)],
-    );
-    if (rows.isEmpty) return null;
-    return _Record(
-      integer(rows.first, 'size'),
-      integer(rows.first, 'modified'),
-      str(rows.first, 'digest'),
-    );
-  }
-
-  static bool _matches(_Record? record, FileStat stat) =>
-      record != null &&
-      stat.type == FileSystemEntityType.file &&
-      record.size == stat.size &&
-      record.modified == stat.modified.millisecondsSinceEpoch;
-
-  /// How long after a file is written another write to it may still bear
-  /// the same time: a file system stamps files from a clock that moves on
-  /// only every few milliseconds, and FAT's every two seconds.
-  static const Duration _sameTime = Duration(seconds: 3);
-
-  /// What a file's time is remembered as where it cannot be told apart
-  /// from a write made just after it: never what a file bears, so the file
-  /// is read and its contents compared the next time it is looked at.
-  static const int _unsure = -1;
-
-  /// Remembers [path] as it is now: its size, time and [digest]. A file
-  /// written so lately that another write could bear the same time and
-  /// size — two computers writing a page within a tick of each other — is
-  /// remembered as one to read again, as git treats an entry racily clean:
-  /// else the later write would seem to be the earlier, and be passed over
-  /// for good.
-  void _remember(
-    String path,
-    EntityKind kind,
-    String id,
-    FileStat stat,
-    String digest,
-  ) => _db.run(
-    'INSERT INTO mirror_files (path, kind, id, size, modified, digest) '
-    'VALUES (?, ?, ?, ?, ?, ?) '
-    'ON CONFLICT (path) DO UPDATE SET kind = excluded.kind, '
-    '  id = excluded.id, size = excluded.size, '
-    '  modified = excluded.modified, digest = excluded.digest',
-    <Object?>[
-      _key(path),
-      kind.name,
-      id,
-      stat.size,
-      _clock().difference(stat.modified) < _sameTime
-          ? _unsure
-          : stat.modified.millisecondsSinceEpoch,
-      digest,
-    ],
-  );
+  Future<FolderChanges> scan() => _serially(_readChanged);
 
   /// Writes what is waiting, and stops looking at the folder.
   Future<void> close() async {
@@ -864,28 +225,4 @@ final class FolderMirror {
     unawaited(_changes.close());
     unawaited(_status.close());
   }
-}
-
-/// A file read from the folder, waiting to go into the database.
-final class _Arrival {
-  _Arrival(this.entry, this.file, this.stat, this.digest);
-
-  final FolderEntry entry;
-  final EntityFile file;
-  final FileStat stat;
-  final String digest;
-
-  String get path => entry.file.path;
-}
-
-final class _Record {
-  const _Record(this.size, this.modified, this.digest, {this.kind, this.id});
-
-  final int size;
-  final int modified;
-  final String digest;
-
-  /// What the file is of, when read with every record.
-  final String? kind;
-  final String? id;
 }
