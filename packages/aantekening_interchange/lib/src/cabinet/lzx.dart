@@ -19,9 +19,17 @@ import '../bytes.dart';
 /// blocks may continue from one frame into the next — though no match
 /// may, as Microsoft's description of LZX in cabinets says.
 final class LzxDecoder {
-  LzxDecoder(int windowBits)
-    : assert(windowBits >= 15 && windowBits <= 21),
-      _window = Uint8List(1 << windowBits),
+  /// A decoder for a window of 2^[windowBits] bytes, which LZX has only
+  /// from 32 KiB to 2 MiB.
+  factory LzxDecoder(int windowBits) {
+    if (windowBits < 15 || windowBits > 21) {
+      throw FormatDamage('An LZX window of 2^$windowBits bytes does not exist');
+    }
+    return LzxDecoder._(windowBits);
+  }
+
+  LzxDecoder._(int windowBits)
+    : _window = Uint8List(1 << windowBits),
       _positionSlots = _slotsFor(windowBits) {
     _mainLengths = Uint8List(_literals + 8 * _positionSlots);
   }
@@ -338,9 +346,12 @@ enum _BlockType { verbatim, aligned, stored }
 /// Words are taken into a buffer a few at a time, so that looking at the
 /// next bits and taking them is a shift and a mask, not a loop.
 final class _BitReader {
-  _BitReader(this._bytes);
+  _BitReader(this._bytes) : _end = _bytes.length & ~1;
 
   final Uint8List _bytes;
+
+  /// Where the last whole word ends.
+  final int _end;
 
   /// Where the next word not yet in [_buffer] starts.
   int _position = 0;
@@ -351,7 +362,7 @@ final class _BitReader {
 
   /// Takes in words until at least [count] bits wait. Past the end, zeros:
   /// the last code of a frame may be followed by fewer padding bits than
-  /// the widest code a tree has.
+  /// the widest code a tree has — though none of them may be read.
   void _fill(int count) {
     while (_count < count) {
       final word = _position + 1 < _bytes.length
@@ -366,6 +377,10 @@ final class _BitReader {
   void _skip(int count) {
     _count -= count;
     _buffer &= (1 << _count) - 1;
+    // Bits read past the end would be a frame's worth out of nothing.
+    if (_position > _end && (_position - _end) * 8 > _count) {
+      throw FormatDamage('An LZX frame is cut short');
+    }
   }
 
   /// Reads [count] bits, up to 32.

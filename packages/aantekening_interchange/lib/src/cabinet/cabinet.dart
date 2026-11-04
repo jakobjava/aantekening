@@ -80,10 +80,17 @@ final class CabinetFile {
 /// Stored, MSZIP and LZX folders can be read; every data block's checksum
 /// is checked, so a damaged archive fails rather than giving damaged files.
 final class Cabinet {
-  Cabinet._(this._source, this._folders, this.files, this._dataReserve);
+  Cabinet._(
+    this._source,
+    this._folders,
+    this.files,
+    this._dataReserve,
+    this._limit,
+  );
 
-  /// Reads the directory of the cabinet in [source].
-  factory Cabinet.read(RandomSource source) {
+  /// Reads the directory of the cabinet in [source], which is unpacked to
+  /// at most [limit] bytes, by default [unpackedLimit] of its length.
+  factory Cabinet.read(RandomSource source, {int? limit}) {
     final header = ByteReader(source.readAt(0, _min(source.length, 1 << 16)));
     if (header.u32() != 0x4643534D) {
       throw FormatDamage('Not a cabinet archive');
@@ -150,10 +157,21 @@ final class Cabinet {
         ),
       );
     }
-    return Cabinet._(source, folders, files, dataReserve);
+    return Cabinet._(
+      source,
+      folders,
+      files,
+      dataReserve,
+      limit ?? unpackedLimit(source.length),
+    );
   }
 
   static int _min(int a, int b) => a < b ? a : b;
+
+  /// The most a cabinet of [length] bytes is unpacked to: far more than
+  /// any notebook compresses by, far less than LZX can make out of next
+  /// to nothing — 32 KiB out of a few bytes — which would fill the disk.
+  static int unpackedLimit(int length) => (256 << 20) + 100 * length;
 
   /// [name] with backslashes as slashes, and with no part that would climb
   /// out of the folder it is extracted to.
@@ -166,6 +184,7 @@ final class Cabinet {
   final List<_Folder> _folders;
   final List<CabinetFile> files;
   final int _dataReserve;
+  final int _limit;
 
   /// Decompresses every folder, handing each file's bytes to [onBytes] in
   /// order, a piece at a time, and calling [onFile] once each file is
@@ -176,7 +195,15 @@ final class Cabinet {
     void Function(int done, int total)? onProgress,
   }) {
     final total = files.fold<int>(0, (sum, file) => sum + file.size);
+    final limit = _limit;
+    if (total > limit) {
+      throw FormatDamage(
+        'The cabinet says it holds more than it can: '
+        '${total >> 20} MiB in ${_source.length >> 20} MiB',
+      );
+    }
     var done = 0;
+    var decoded = 0;
     for (var index = 0; index < _folders.length; index++) {
       final inFolder = files.where((file) => file.folder == index).toList()
         ..sort((a, b) => a.offset.compareTo(b.offset));
@@ -185,6 +212,10 @@ final class Cabinet {
       var position = 0;
       for (final frame in _frames(_folders[index])) {
         final frameEnd = position + frame.length;
+        decoded += frame.length;
+        if (decoded > limit) {
+          throw FormatDamage('The cabinet unpacks to more than it can hold');
+        }
         while (next < inFolder.length) {
           final file = inFolder[next];
           final start = file.offset > position ? file.offset : position;

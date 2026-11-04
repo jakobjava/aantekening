@@ -141,6 +141,33 @@ void main() {
         throwsA(isA<FormatDamage>()),
       );
     });
+
+    test('fails on a frame cut short, rather than reading on in zeros', () {
+      // A block running on into a frame with no bytes at all, as a data
+      // block of no size can be: once a frame of 32 KiB out of nothing.
+      final input = sampleText(70000, seed: 4);
+      final frames = encodeLzx(input, blockSize: 70000);
+      final decoder = LzxDecoder(16);
+      final (first, size) = frames.first;
+      expect(decoder.decodeFrame(first, size), input.sublist(0, size));
+      expect(
+        () => decoder.decodeFrame(Uint8List(0), 32768),
+        throwsA(isA<FormatDamage>()),
+      );
+      final (second, _) = frames[1];
+      expect(
+        () => LzxDecoder(16)
+          ..decodeFrame(first, size)
+          ..decodeFrame(Uint8List.sublistView(second, 0, 100), 32768),
+        throwsA(isA<FormatDamage>()),
+      );
+    });
+
+    test('refuses a window LZX does not have, rather than making it', () {
+      for (final windowBits in <int>[0, 14, 22, 31]) {
+        expect(() => LzxDecoder(windowBits), throwsA(isA<FormatDamage>()));
+      }
+    });
   });
 
   group('Cabinet', () {
@@ -196,6 +223,35 @@ void main() {
       cabinet[cabinet.length - 30] ^= 0x40;
       expect(
         () => Cabinet.read(BytesSource(cabinet)).contents,
+        throwsA(isA<FormatDamage>()),
+      );
+    });
+
+    test('unpacks to no more than its limit, however little it says', () {
+      final cabinet = writeCabinet(
+        files,
+        compression: 3 | (16 << 8),
+        encode: encodeLzx,
+      );
+      expect(
+        () => Cabinet.read(BytesSource(cabinet), limit: 50000).contents,
+        throwsA(isA<FormatDamage>()),
+      );
+      expect(Cabinet.read(BytesSource(cabinet)).contents, hasLength(4));
+
+      // A file it says is small, far into its folder: what comes before
+      // it is unpacked too, and counts.
+      final far = writeCabinet(
+        <String, Uint8List>{'Far.one': sampleText(70000, seed: 9)},
+        compression: 3 | (16 << 8),
+        encode: encodeLzx,
+      );
+      ByteData.sublistView(far)
+        ..setUint32(44, 10, Endian.little)
+        ..setUint32(48, 69990, Endian.little);
+      expect(Cabinet.read(BytesSource(far)).contents['Far.one'], hasLength(10));
+      expect(
+        () => Cabinet.read(BytesSource(far), limit: 50000).contents,
         throwsA(isA<FormatDamage>()),
       );
     });
