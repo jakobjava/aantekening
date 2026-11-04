@@ -1,5 +1,9 @@
 /// A notebook's, section's or page's AI: its conversations, what was kept,
 /// and the question being answered.
+///
+/// One session, in parts by what it does: asking in its conversations, the
+/// study sets it makes and the flashcards among them, and its podcasts,
+/// each a part of its own beside what they share here.
 library;
 
 import 'dart:async';
@@ -13,6 +17,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import 'ai_state.dart';
 import 'workspace_reader.dart';
+
+part 'ai_session_conversations.dart';
+part 'ai_session_podcasts.dart';
+part 'ai_session_study_sets.dart';
 
 /// Reads the workspace for the AI, one reader for the workspace open.
 final workspaceReaderProvider = FutureProvider<WorkspaceReader>((ref) async {
@@ -30,171 +38,6 @@ final aiScopeInfoProvider = FutureProvider.family<ScopeInfo?, NoteLink>((
   final reader = await ref.watch(workspaceReaderProvider.future);
   return reader.scope(link);
 });
-
-/// A question asked often, offered to start a conversation with. What is
-/// made to study from — a summary, flashcards — is a [StudyProfile]
-/// instead.
-enum AiAction {
-  explain(
-    'Explain the hardest part',
-    'Which idea in this {kind} is the hardest? Explain it simply, with an '
-        'example.',
-  ),
-  test(
-    'What would a test ask?',
-    'What would a test on this {kind} most likely ask? Give the likely '
-        'questions, and how to answer each well.',
-  ),
-  tutor(
-    'Check my understanding',
-    'Check my understanding of this {kind}: ask me one question at a time, '
-        'wait for my answer, then tell me what was right and what to look '
-        'at again.',
-  ),
-  connect(
-    'How does it connect?',
-    'How does this {kind} connect to the rest of my notes? Point out where '
-        'the same ideas come up.',
-  );
-
-  const AiAction(this.label, this._prompt);
-
-  final String label;
-  final String _prompt;
-
-  /// What is asked about a [kind] — a page, a section, a notebook.
-  String promptFor(String kind) => _prompt.replaceAll('{kind}', kind);
-}
-
-/// A step an answer took, done with: the model reading, thinking, a
-/// search of the notes.
-@immutable
-class AiStep {
-  const AiStep({
-    required this.stage,
-    required this.activity,
-    required this.took,
-    this.reasoning = '',
-  });
-
-  final AgentStage stage;
-  final String activity;
-  final Duration took;
-
-  /// What the model reasoned, for a step of thinking.
-  final String reasoning;
-}
-
-/// The question being answered, as far as it has got, and the steps it
-/// took to get there.
-@immutable
-class PendingTurn {
-  /// [question], just asked in conversation [threadId] or a new one — or,
-  /// with [profile], a set of it being made; or, with [rewriting], a part
-  /// of that turn's answer written again.
-  factory PendingTurn({
-    required String question,
-    required bool local,
-    String? threadId,
-    StudyProfile? profile,
-    String? rewriting,
-  }) {
-    final now = DateTime.now();
-    return PendingTurn._(
-      question: question,
-      local: local,
-      threadId: threadId,
-      profile: profile,
-      rewriting: rewriting,
-      startedAt: now,
-      progress: const AgentProgress(
-        answer: AiAnswer(),
-        stage: AgentStage.gathering,
-        activity: 'Gathering your notes',
-      ),
-      since: now,
-      writtenBefore: 0,
-      steps: const <AiStep>[],
-    );
-  }
-
-  const PendingTurn._({
-    required this.question,
-    required this.local,
-    required this.threadId,
-    required this.profile,
-    required this.rewriting,
-    required this.startedAt,
-    required this.progress,
-    required this.since,
-    required this.writtenBefore,
-    required this.steps,
-  });
-
-  final String question;
-
-  /// The conversation it was asked in, which its answer is kept in — or
-  /// null for a new one — whatever shows by the time it comes.
-  final String? threadId;
-
-  /// The profile of the study set being made, if it is one rather than an
-  /// answer.
-  final StudyProfile? profile;
-
-  /// The id of the turn a part of whose answer is being written again, if
-  /// that is what this is.
-  final String? rewriting;
-
-  /// Whether the model runs on this computer, where reading is slow.
-  final bool local;
-  final DateTime startedAt;
-
-  /// Where the answer is now.
-  final AgentProgress progress;
-
-  /// When the step it is on began.
-  final DateTime since;
-
-  /// How much the model had written when the step it is on began: for how
-  /// fast it writes in it.
-  final int writtenBefore;
-
-  /// The steps done with, first first.
-  final List<AiStep> steps;
-
-  AiAnswer get answer => progress.answer;
-
-  /// Moved on to [next], at [now]: a step of its own if it does something
-  /// else.
-  PendingTurn moved(AgentProgress next, DateTime now) {
-    final same =
-        next.stage == progress.stage && next.activity == progress.activity;
-    return PendingTurn._(
-      question: question,
-      local: local,
-      threadId: threadId,
-      profile: profile,
-      rewriting: rewriting,
-      startedAt: startedAt,
-      progress: next,
-      since: same ? since : now,
-      writtenBefore: same ? writtenBefore : progress.written,
-      steps: same
-          ? steps
-          : <AiStep>[
-              ...steps,
-              AiStep(
-                stage: progress.stage,
-                activity: progress.activity,
-                took: now.difference(since),
-                reasoning: progress.stage == AgentStage.thinking
-                    ? progress.reasoning
-                    : '',
-              ),
-            ],
-    );
-  }
-}
 
 @immutable
 class AiSessionState {
@@ -332,32 +175,9 @@ class AiSessionState {
 ///
 /// Kept while the app runs, so an answer goes on arriving while another
 /// tab is showing.
-class AiSession extends Notifier<AiSessionState> {
-  AiSession(this.scope);
-
-  final NoteLink scope;
-  StreamSubscription<AgentProgress>? _answering;
-
-  /// What makes each set being made, by the id of its profile.
-  final Map<String, StreamSubscription<AgentProgress>> _makers =
-      <String, StreamSubscription<AgentProgress>>{};
-
-  /// What makes or speaks each podcast under way, by the key of
-  /// [AiSessionState.podcasts].
-  final Map<String, StreamSubscription<PodcastProgress>> _podcasters =
-      <String, StreamSubscription<PodcastProgress>>{};
-
-  /// Whether a question is being started: from the click that asks it to
-  /// its pending turn, which then keeps a second from being asked.
-  bool _asking = false;
-
-  /// The sets and podcasts being started, as `set <id>` and `podcast <id>`
-  /// by the id of their profile, from the click that makes one until it
-  /// shows as being made: marked before anything is awaited, so a second
-  /// click meanwhile starts no second one, paid for twice.
-  final Set<String> _starting = <String>{};
-
-  Future<AantekeningStore> get _store => ref.read(storeProvider.future);
+class AiSession extends _AiSessionCore
+    with _Conversations, _StudySets, _Podcasts {
+  AiSession(super.scope);
 
   @override
   AiSessionState build() {
@@ -378,25 +198,6 @@ class AiSession extends Notifier<AiSessionState> {
     });
     unawaited(_load());
     return const AiSessionState();
-  }
-
-  Future<void> _load({String? threadId}) async {
-    final store = await _store;
-    final threads = await store.ai.threadsAbout(scope);
-    final items = await store.ai.itemsAbout(scope);
-    final open = threadId ?? state.threadId;
-    final turns = open == null
-        ? const <AiTurn>[]
-        : await store.ai.turnsOf(open);
-    // The state taken once they are read: an answer or a set may have
-    // moved on, or ended, meanwhile.
-    state = state.copyWith(
-      loaded: true,
-      threads: threads,
-      items: items,
-      threadId: () => open,
-      turns: turns,
-    );
   }
 
   /// Shows conversation [id].
@@ -424,26 +225,82 @@ class AiSession extends Notifier<AiSessionState> {
   );
 
   /// Shows kept thing [id].
+  @override
   void openItem(String id) => state = state.copyWith(
     itemId: () => id,
     shownProfile: () => null,
     shownPodcast: () => null,
   );
 
-  /// Shows the study set of profile [id]: as it is being made, as it was
-  /// kept, or, not made yet, what it would be and a way to make it.
-  void openProfile(String id) {
-    final item = state.setOf(id);
-    if (item != null && !state.making.containsKey(id)) {
-      openItem(item.id);
-      return;
+  /// How long [turn] took to answer, if that was kept.
+  static Duration? tookOf(AiTurn turn) => switch (turn.usage?[_tookKey]) {
+    final int ms => Duration(milliseconds: ms),
+    _ => null,
+  };
+
+  /// What a turn or a kept set with [usage] cost, in US dollars, if that
+  /// was kept.
+  static double? costOf(Map<String, Object?>? usage) =>
+      (usage?[_costKey] as num?)?.toDouble();
+
+  Future<void> renameItem(String id, String title) async {
+    await (await _store).ai.renameItem(id, title);
+    await _load();
+  }
+
+  Future<void> deleteItem(String id) async {
+    // A podcast being spoken is stopped first; its sound goes as the
+    // speaking left it.
+    if (state.podcasts.containsKey(id)) await stopPodcast(id);
+    final item = state.items.where((item) => item.id == id).firstOrNull;
+    if (PodcastEpisode.fromJson(item?.body) case final episode?
+        when episode.spoken) {
+      await deletePodcastAudio(ref, episode.audio);
     }
+    await (await _store).ai.deleteItem(id);
+    if (state.itemId == id) state = state.copyWith(itemId: () => null);
+    await _load();
+  }
+
+  Future<void> deleteThread(String id) async {
+    await (await _store).ai.deleteThread(id);
+    if (state.threadId == id) newThread();
+    await _load();
+  }
+}
+
+/// What the parts of an [AiSession] share: where it keeps what it is
+/// answered, the model it asks and the notes it reads, and following an
+/// answer or a set as it comes.
+abstract class _AiSessionCore extends Notifier<AiSessionState> {
+  _AiSessionCore(this.scope);
+
+  final NoteLink scope;
+
+  /// The sets and podcasts being started, as `set <id>` and `podcast <id>`
+  /// by the id of their profile, from the click that makes one until it
+  /// shows as being made: marked before anything is awaited, so a second
+  /// click meanwhile starts no second one, paid for twice.
+  final Set<String> _starting = <String>{};
+
+  Future<AantekeningStore> get _store => ref.read(storeProvider.future);
+
+  Future<void> _load({String? threadId}) async {
+    final store = await _store;
+    final threads = await store.ai.threadsAbout(scope);
+    final items = await store.ai.itemsAbout(scope);
+    final open = threadId ?? state.threadId;
+    final turns = open == null
+        ? const <AiTurn>[]
+        : await store.ai.turnsOf(open);
+    // The state taken once they are read: an answer or a set may have
+    // moved on, or ended, meanwhile.
     state = state.copyWith(
-      itemId: () => null,
-      threadId: () => null,
-      turns: const <AiTurn>[],
-      shownProfile: () => id,
-      shownPodcast: () => null,
+      loaded: true,
+      threads: threads,
+      items: items,
+      threadId: () => open,
+      turns: turns,
     );
   }
 
@@ -472,285 +329,6 @@ class AiSession extends Notifier<AiSessionState> {
         notesTokens: model.config.notesTokens,
         about: ref.read(aiSettingsProvider).about,
       );
-
-  /// Asks [question] in the conversation showing, or a new one — the
-  /// question of [action], if it is one. With [searchWeb], the web may be
-  /// searched.
-  Future<void> ask(
-    String question, {
-    required bool searchWeb,
-    AiAction? action,
-  }) async {
-    final text = question.trim();
-    if (text.isEmpty || state.pending != null || _asking) return;
-    // Asked in the conversation showing now, with what was said in it.
-    final threadId = state.threadId;
-    final history = <ChatMessage>[
-      for (final turn in state.turns)
-        for (final json in turn.messages)
-          ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
-    ];
-    _asking = true;
-    final _Ready? ready;
-    final WebSearch? web;
-    try {
-      ready = await _ready('Choose a model to ask first.');
-      web = ready == null ? null : await ref.read(webSearchProvider.future);
-    } finally {
-      _asking = false;
-    }
-    if (ready == null) return;
-    final (:model, :reader, :info) = ready;
-
-    state = state.copyWith(
-      itemId: () => null,
-      shownProfile: () => null,
-      pending: () => PendingTurn(
-        question: text,
-        local: model.config.local,
-        threadId: threadId,
-      ),
-      error: () => null,
-    );
-    await _follow(
-      holdingProvider(
-        model.provider,
-        _agent(model, reader, web: web).ask(
-          scope: info,
-          history: history,
-          question: text,
-          searchWeb: searchWeb,
-        ),
-      ),
-      read: () => state.pending,
-      write: (pending) => state = state.copyWith(pending: () => pending),
-      started: (subscription) => _answering = subscription,
-      ended: () => _answering = null,
-      onDone: (progress) => _keepTurn(
-        text,
-        progress,
-        model.config,
-        threadId: threadId,
-        action: action,
-      ),
-    );
-  }
-
-  /// Writes [section] of the answer to [turn] again — as [instruction]
-  /// says, where it says anything — in its place, the rest of the answer
-  /// as it was. With [searchWeb], the web may be searched.
-  ///
-  /// The model is asked in the conversation, after all of it, so it knows
-  /// what it wrote and why; and what it was asked and wrote is added at the
-  /// conversation's end, never between what was said before, so the next
-  /// question goes on from the answer as it now is, and what the provider
-  /// kept of the conversation still holds.
-  Future<void> rewrite(
-    AiTurn turn,
-    AnswerSection section, {
-    String instruction = '',
-    required bool searchWeb,
-  }) async {
-    if (state.pending != null || _asking) return;
-    final history = <ChatMessage>[
-      for (final each in state.turns)
-        for (final json in each.messages)
-          ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
-    ];
-    _asking = true;
-    final _Ready? ready;
-    final WebSearch? web;
-    try {
-      ready = await _ready('Choose a model to ask first.');
-      web = ready == null ? null : await ref.read(webSearchProvider.future);
-    } finally {
-      _asking = false;
-    }
-    if (ready == null) return;
-    final (:model, :reader, :info) = ready;
-    final answer = AiAnswer.fromJson(turn.answer);
-    final part = answer.textOf(section);
-    final how = instruction.trim();
-
-    state = state.copyWith(
-      itemId: () => null,
-      shownProfile: () => null,
-      pending: () => PendingTurn(
-        question: how.isEmpty
-            ? 'Write this again: “${_excerpt(part)}”'
-            : 'Write this again — $how: “${_excerpt(part)}”',
-        local: model.config.local,
-        threadId: turn.threadId,
-        rewriting: turn.id,
-      ),
-      error: () => null,
-    );
-    await _follow(
-      holdingProvider(
-        model.provider,
-        _agent(model, reader, web: web).ask(
-          scope: info,
-          history: history,
-          question: NoteAgent.rewriteRequest(
-            part,
-            question: turn.question,
-            instruction: how,
-          ),
-          searchWeb: searchWeb,
-        ),
-      ),
-      read: () => state.pending,
-      write: (pending) => state = state.copyWith(pending: () => pending),
-      started: (subscription) => _answering = subscription,
-      ended: () => _answering = null,
-      onDone: (progress) => _keepRewrite(turn, section, progress),
-    );
-  }
-
-  /// Keeps what [progress] wrote of [section] of the answer to [turn] in
-  /// its place, and what was asked and written at the conversation's end.
-  Future<void> _keepRewrite(
-    AiTurn asked,
-    AnswerSection section,
-    AgentProgress progress,
-  ) async {
-    if (progress.answer.isEmpty) {
-      state = state.copyWith(
-        pending: () => null,
-        error: () => 'The model wrote nothing in its place. Try again.',
-      );
-      return;
-    }
-    final store = await _store;
-    // As they are now, whichever conversation shows.
-    final turns = await store.ai.turnsOf(asked.threadId);
-    final turn = turns.where((each) => each.id == asked.id).firstOrNull;
-    final last = turns.lastOrNull;
-    if (turn == null || last == null) {
-      state = state.copyWith(pending: () => null);
-      return;
-    }
-    final answer = AiAnswer.fromJson(turn.answer)
-        .replacing(section, progress.answer);
-    final added = <Object?>[for (final m in progress.messages) m.toJson()];
-    await store.ai.updateTurn(
-      turn.id,
-      answer: <String, Object?>{...turn.answer, ...answer.toJson()},
-      messages: last.id == turn.id
-          ? <Object?>[...turn.messages, ...added]
-          : null,
-      usage: _added(turn.usage, _usageOf(progress)),
-    );
-    if (last.id != turn.id) {
-      await store.ai.updateTurn(
-        last.id,
-        messages: <Object?>[...last.messages, ...added],
-      );
-    }
-    final showing = _showingOnceKept(turn.threadId, turn.threadId);
-    state = state.copyWith(pending: () => null);
-    await _load(threadId: showing);
-  }
-
-  /// [usage] with [more] added to it: the tokens and what they cost; how
-  /// long it took stays as it was.
-  static Map<String, Object?> _added(
-    Map<String, Object?>? usage,
-    Map<String, Object?> more,
-  ) => <String, Object?>{
-    ...?usage,
-    for (final MapEntry(:key, :value) in more.entries)
-      if (key != _tookKey)
-        key: switch ((usage?[key], value)) {
-          (final num a, final num b) => a + b,
-          _ => value,
-        },
-  };
-
-  /// The start of [text], to say in a line what it is.
-  static String _excerpt(String text) {
-    final line = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return line.length <= 60 ? line : '${line.substring(0, 57)}…';
-  }
-
-  /// Makes a study set as [profile] describes it from the notes of the
-  /// scope, shown as it is written, and keeps it — in place of the one made
-  /// before, what was learnt of its cards carried over. Made alongside
-  /// anything else going on; its page shows it coming, and anything else
-  /// can be looked at meanwhile.
-  Future<void> make(StudyProfile profile) async {
-    final id = profile.id;
-    if (state.making.containsKey(id)) {
-      openProfile(id);
-      return;
-    }
-    final starting = 'set $id';
-    if (!_starting.add(starting)) return;
-    final _Ready? ready;
-    try {
-      ready = await _ready('Choose a model first.');
-    } finally {
-      _starting.remove(starting);
-    }
-    if (ready == null) return;
-    final (:model, :reader, :info) = ready;
-    void write(PendingTurn? pending) => _setMaking(id, pending);
-    write(
-      PendingTurn(
-        question: profile.name,
-        local: model.config.local,
-        profile: profile,
-      ),
-    );
-    state = state.copyWith(
-      itemId: () => null,
-      threadId: () => null,
-      turns: const <AiTurn>[],
-      shownProfile: () => id,
-      shownPodcast: () => null,
-      error: () => null,
-    );
-    StreamSubscription<AgentProgress>? making;
-    await _follow(
-      holdingProvider(
-        model.provider,
-        _agent(model, reader).make(profile, scope: info),
-      ),
-      read: () => state.making[id],
-      write: write,
-      started: (subscription) => _makers[id] = making = subscription,
-      onDone: (progress) async {
-        if (progress.study case final set?) {
-          await _keepSet(
-            set,
-            profile: profile,
-            provider: model.config.name,
-            model: model.config.model,
-            usage: _usageOf(progress),
-          );
-        }
-      },
-    );
-    // Another may have been started once this one was kept.
-    if (identical(_makers[id], making)) _makers.remove(id);
-  }
-
-  /// Stops making the set of profile [id], keeping the one made before, if
-  /// any.
-  Future<void> stopMaking(String id) async {
-    _setMaking(id, null);
-    await _makers.remove(id)?.cancel();
-  }
-
-  /// Keeps how far making the set of profile [id] has got, or with null
-  /// that it is no longer being made.
-  void _setMaking(String id, PendingTurn? pending) => state = state.copyWith(
-    making: <String, PendingTurn>{
-      for (final entry in state.making.entries)
-        if (entry.key != id) entry.key: entry.value,
-      id: ?pending,
-    },
-  );
 
   /// Follows [answer] into what [read] and [write] keep of it — the
   /// question's pending turn, or a set's — handing its subscription to
@@ -818,629 +396,23 @@ class AiSession extends Notifier<AiSessionState> {
     );
     return done.future;
   }
-
-  /// Keeps [set] as the scope's set of [profile], and shows it if its page
-  /// is showing.
-  Future<void> _keepSet(
-    StudySet set, {
-    required StudyProfile profile,
-    required String provider,
-    required String model,
-    Map<String, Object?>? usage,
-  }) async {
-    final store = await _store;
-    final earlier = state.setOf(profile.id);
-    var kept = set;
-    if (earlier == null) {
-      final item = await store.ai.addItem(
-        scope,
-        kind: profile.id,
-        title: profile.name,
-        body: set.toJson(),
-        provider: provider,
-        model: model,
-        usage: usage,
-      );
-      await _shown(profile.id, item.id);
-      return;
-    }
-    if ((set, StudySet.fromJson(earlier.body)) case (
-      final FlashcardSet made,
-      final FlashcardSet before,
-    )) {
-      final cards = made.keepingIdsOf(before);
-      kept = cards;
-      await store.ai.forgetReviews(
-        earlier.id,
-        keep: <String>{for (final card in cards.cards) card.id},
-      );
-    }
-    await store.ai.updateItem(
-      earlier.id,
-      body: kept.toJson(),
-      title: profile.name,
-      usage: usage,
-    );
-    ref.invalidate(cardReviewsProvider(earlier.id));
-    await _shown(profile.id, earlier.id);
-  }
-
-  /// Once the set of profile [id] is kept as [itemId]: shown in place of
-  /// its page, if that is showing.
-  Future<void> _shown(String id, String itemId) async {
-    _setMaking(id, null);
-    await _load();
-    if (state.shownProfile == id) {
-      state = state.copyWith(itemId: () => itemId, shownProfile: () => null);
-    }
-  }
-
-  /// Adds [cards] — from an answer, say — to the scope's flashcards.
-  Future<void> addCards(List<StudyCard> cards) async {
-    final model = await ref.read(aiModelProvider.future);
-    final profile = ref
-        .read(aiSettingsProvider)
-        .studyProfiles
-        .firstWhere((profile) => profile.id == StudyKind.flashcards.name);
-    final earlier = state.setOf(profile.id);
-    final before = earlier == null ? null : StudySet.fromJson(earlier.body);
-    final set = FlashcardSet(cards);
-    if (earlier == null || before is! FlashcardSet) {
-      await _keepSet(
-        set,
-        profile: profile,
-        provider: model?.config.name ?? '',
-        model: model?.config.model ?? '',
-      );
-      return;
-    }
-    final store = await _store;
-    await store.ai.updateItem(earlier.id, body: set.addedTo(before).toJson());
-    await _load();
-  }
-
-  /// Keeps [set] as what kept thing [id] holds: a card edited or taken out.
-  Future<void> updateSet(String id, StudySet set) async {
-    final store = await _store;
-    await store.ai.updateItem(id, body: set.toJson());
-    if (set is FlashcardSet) {
-      await store.ai.forgetReviews(
-        id,
-        keep: <String>{for (final card in set.cards) card.id},
-      );
-      ref.invalidate(cardReviewsProvider(id));
-    }
-    await _load();
-  }
-
-  /// Stops the answer coming, keeping what came of it — but for a part
-  /// being written again, which stays as it was.
-  Future<void> stop() async {
-    final pending = state.pending;
-    final answering = _answering;
-    // Come to its end already, and being kept: nothing is left to stop,
-    // nor to keep a second time.
-    if (answering == null) return;
-    _answering = null;
-    await answering.cancel();
-    if (pending == null) return;
-    if (pending.rewriting != null) {
-      state = state.copyWith(pending: () => null);
-      return;
-    }
-    final model = await ref.read(aiModelProvider.future);
-    if (model == null || pending.answer.isEmpty) {
-      state = state.copyWith(pending: () => null);
-      return;
-    }
-    try {
-      await _keepTurn(
-        pending.question,
-        AgentProgress(
-          answer: AiAnswer(
-            markdown: '${pending.answer.markdown}\n\n*Stopped.*',
-            citations: pending.answer.citations,
-          ),
-        ),
-        model.config,
-        threadId: pending.threadId,
-      );
-    } on Object catch (error) {
-      state = state.copyWith(
-        pending: () => null,
-        error: () => 'The answer could not be kept: $error',
-      );
-    }
-  }
-
-  /// Keeps what [progress] answered to [question] in conversation
-  /// [threadId], where it was asked, or a new one.
-  Future<void> _keepTurn(
-    String question,
-    AgentProgress progress,
-    ProviderConfig config, {
-    required String? threadId,
-    AiAction? action,
-  }) async {
-    final store = await _store;
-    final took = state.pending == null
-        ? null
-        : DateTime.now().difference(state.pending!.startedAt);
-    final kept =
-        threadId ??
-        (await store.ai.createThread(scope, title: _titleOf(question))).id;
-    await store.ai.addTurn(
-      kept,
-      question: question,
-      answer: <String, Object?>{
-        ...progress.answer.toJson(),
-        if (action != null) _actionKey: action.name,
-      },
-      messages: <Object?>[for (final m in progress.messages) m.toJson()],
-      provider: config.name,
-      model: config.model,
-      usage: _usageOf(progress, took: took),
-    );
-    final showing = _showingOnceKept(threadId, kept);
-    state = state.copyWith(pending: () => null);
-    await _load(threadId: showing);
-  }
-
-  /// The conversation to show once an answer asked in [asked] is kept in
-  /// [kept]: that one, unless another was opened meanwhile.
-  String _showingOnceKept(String? asked, String kept) {
-    final showing = state.threadId;
-    return showing == null || showing == asked ? kept : showing;
-  }
-
-  /// Keeps the answer to [turn], to come back to.
-  Future<void> keep(AiTurn turn) async {
-    final store = await _store;
-    final item = await store.ai.addItem(
-      scope,
-      kind: 'answer',
-      title: _titleOf(turn.question),
-      body: AiAnswer.fromJson(turn.answer).toJson(),
-      provider: turn.provider,
-      model: turn.model,
-      turnId: turn.id,
-    );
-    await _load();
-    state = state.copyWith(itemId: () => item.id);
-  }
-
-  /// Whether the answer to [turn] is kept already.
-  bool isKept(AiTurn turn) => state.items.any((item) => item.turnId == turn.id);
-
-  /// What [progress] took, done — and what it cost, and how long it
-  /// [took], where that is known — as a turn or a kept set keeps it.
-  static Map<String, Object?> _usageOf(
-    AgentProgress progress, {
-    Duration? took,
-  }) => <String, Object?>{
-    'input': progress.usage.input,
-    'output': progress.usage.output,
-    'cacheRead': progress.usage.cacheRead,
-    'cacheWrite': progress.usage.cacheWrite,
-    'webSearches': progress.usage.webSearches,
-    _costKey: ?progress.cost,
-    if (took != null) _tookKey: took.inMilliseconds,
-  };
-
-  /// How long [turn] took to answer, if that was kept.
-  static Duration? tookOf(AiTurn turn) => switch (turn.usage?[_tookKey]) {
-    final int ms => Duration(milliseconds: ms),
-    _ => null,
-  };
-
-  /// What a turn or a kept set with [usage] cost, in US dollars, if that
-  /// was kept.
-  static double? costOf(Map<String, Object?>? usage) =>
-      (usage?[_costKey] as num?)?.toDouble();
-
-  static const String _tookKey = 'milliseconds';
-  static const String _costKey = 'dollars';
-
-  /// Where a turn's answer says which [AiAction] asked it.
-  static const String _actionKey = 'action';
-
-  // ------------------------------------------------------------- podcasts
-
-  /// Shows the podcast of episode profile [id] being made, or the latest
-  /// made by it.
-  void showPodcast(String id) => state = state.copyWith(
-    itemId: () => null,
-    threadId: () => null,
-    turns: const <AiTurn>[],
-    shownProfile: () => null,
-    shownPodcast: () => id,
-  );
-
-  /// A model to write a podcast with, as [choice] names it, with its key,
-  /// and whether it is the podcast's own to close once written, else the
-  /// model in use's to let go of — or null where it names none that is
-  /// set up.
-  Future<({PodcastWriter writer, bool own})?> _writerOf(
-    ModelChoice choice,
-  ) async {
-    if (choice.isInUse) {
-      final model = await ref.read(aiModelProvider.future);
-      if (model == null) return null;
-      // Held open, though the settings change, until it is written.
-      holdProvider(model.provider);
-      return (
-        writer: (provider: model.provider, model: model.config.model),
-        own: false,
-      );
-    }
-    final config = ref.read(aiSettingsProvider).providerOf(choice);
-    if (config == null) return null;
-    final model = choice.model.isEmpty ? config.model : choice.model;
-    if (model.isEmpty) return null;
-    final key = await ref
-        .read(aiSecretsProvider)
-        .read(providerKeyName(config.id));
-    return (
-      writer: (provider: config.create(apiKey: key), model: model),
-      own: true,
-    );
-  }
-
-  /// What speaks podcasts through [voice], in [model] or its own.
-  Future<SpeechProvider> _speechOf(VoiceConfig voice, String model) async =>
-      ref.read(speechMakerProvider)(
-        voice,
-        await ref.read(aiSecretsProvider).read(voiceKeyName(voice.id)),
-        model,
-      );
-
-  /// Keeps how far the podcast under [key] has got, under every key it
-  /// goes by, or with null that it is no longer under way.
-  void _setPodcast(String key, PodcastProgress? progress) {
-    final keys = _keysOf(key);
-    state = state.copyWith(
-      podcasts: <String, PodcastProgress>{
-        for (final entry in state.podcasts.entries)
-          if (!keys.contains(entry.key)) entry.key: entry.value,
-        for (final key in keys) key: ?progress,
-      },
-    );
-  }
-
-  /// The keys the podcast under way under [key] goes by: the id of its
-  /// episode profile and, once it is kept, that of what keeps it.
-  Set<String> _keysOf(String key) {
-    final run = _podcasters[key];
-    return <String>{
-      key,
-      if (run != null)
-        for (final MapEntry(key: other, value: each) in _podcasters.entries)
-          if (identical(each, run)) other,
-    };
-  }
-
-  /// Has the podcast under way under [key] go by [also] too: one made,
-  /// once kept, by what keeps it — so its page shows it being spoken, and
-  /// it is not spoken a second time from there, and stops if deleted.
-  void _podcastAlsoAs(String key, String also) {
-    if (!_podcasters.containsKey(key)) return;
-    _podcasters[also] = _podcasters[key]!;
-    _setPodcast(key, state.podcasts[key]);
-  }
-
-  /// Follows [run] into [AiSessionState.podcasts] under [key], saying
-  /// what went wrong as [failed] puts it.
-  Future<void> _followPodcast(
-    String key,
-    Stream<PodcastProgress> run, {
-    required String Function(String why) failed,
-  }) {
-    final done = Completer<void>();
-    final subscription = run.listen(
-      (progress) => _setPodcast(key, progress),
-      onError: (Object error) {
-        _setPodcast(key, null);
-        final why = error is AiException ? error.message : '$error';
-        state = state.copyWith(error: () => failed(why));
-        if (!done.isCompleted) done.complete();
-      },
-      onDone: () {
-        _setPodcast(key, null);
-        if (!done.isCompleted) done.complete();
-      },
-      cancelOnError: true,
-    );
-    _podcasters[key] = subscription;
-    return done.future.whenComplete(
-      () => _podcasters.removeWhere((_, run) => identical(run, subscription)),
-    );
-  }
-
-  /// Makes a podcast of the scope as episode profile [profile] says: plans
-  /// it and writes what is said with the models it names, keeps the
-  /// transcript, then speaks it with the voices of its speaker profile.
-  /// Made alongside anything else; its page shows it coming.
-  Future<void> makePodcast(EpisodeProfile profile) async {
-    final id = profile.id;
-    if (state.podcasts.containsKey(id)) {
-      showPodcast(id);
-      return;
-    }
-    final starting = 'podcast $id';
-    if (!_starting.add(starting)) return;
-    final settings = ref.read(aiSettingsProvider);
-    final cast = settings.castOf(profile.speakersId);
-    final voice = settings.voiceOf(cast?.voiceId ?? '');
-    String? missing;
-    if (cast == null) {
-      missing = 'Set up who speaks in the AI settings first.';
-    } else if (voice == null) {
-      missing =
-          'Add a voice provider in the AI settings first: it speaks the '
-          'podcast.';
-    }
-    final ({PodcastWriter writer, bool own})? outlining;
-    final ({PodcastWriter writer, bool own})? writing;
-    final WorkspaceReader reader;
-    final ScopeInfo? scoped;
-    try {
-      outlining = await _writerOf(profile.outline);
-      writing = await _writerOf(profile.transcript);
-      reader = await ref.read(workspaceReaderProvider.future);
-      scoped = await reader.scope(scope);
-    } on Object catch (error) {
-      // A key the keychain would not give, say.
-      state = state.copyWith(
-        error: () => 'The podcast could not be made: $error',
-      );
-      return;
-    } finally {
-      _starting.remove(starting);
-    }
-    void close() {
-      for (final used in <({PodcastWriter writer, bool own})?>[
-        outlining,
-        writing,
-      ]) {
-        switch (used) {
-          case (:final writer, own: true):
-            writer.provider.close();
-          case (:final writer, own: false):
-            releaseProvider(writer.provider);
-          case null:
-        }
-      }
-    }
-
-    if (outlining == null || writing == null) {
-      missing ??=
-          'Choose the models that write “${profile.name}” in the podcast '
-          'settings first.';
-    }
-    if (missing != null || scoped == null) {
-      close();
-      if (missing != null) state = state.copyWith(error: () => missing);
-      return;
-    }
-    final info = scoped;
-    final outliner = outlining!.writer;
-    final writer = writing!.writer;
-    final speakers = cast!.voiced(voice!.voiceFor);
-    _setPodcast(
-      id,
-      const PodcastProgress(
-        stage: PodcastStage.gathering,
-        activity: 'Gathering your notes',
-      ),
-    );
-    showPodcast(id);
-    state = state.copyWith(error: () => null);
-    final maker = PodcastMaker(
-      reader: reader,
-      outliner: outliner,
-      writer: writer,
-      notesTokens:
-          settings.active?.notesTokens ?? ContextBudget.defaultNotesTokens,
-      about: settings.about,
-    );
-    final models = <String>{outliner.model, writer.model}.toList();
-    String? kept;
-    Stream<PodcastProgress> run() async* {
-      PodcastProgress? written;
-      try {
-        await for (final progress in maker.write(
-          profile,
-          speakers: speakers,
-          scope: info,
-        )) {
-          written = progress;
-          yield progress;
-        }
-      } finally {
-        close();
-      }
-      if (written == null || !written.done) return;
-      // The transcript is kept first: if speaking fails, it stays.
-      final episode = PodcastEpisode(
-        title: profile.name,
-        profile: profile.name,
-        outline: written.outline,
-        lines: written.lines,
-        speakers: speakers,
-        models: models,
-      );
-      final store = await _store;
-      final item = await store.ai.addItem(
-        scope,
-        kind: PodcastEpisode.kindKey,
-        title: '${profile.name} · ${info.title}',
-        body: episode.toJson(),
-        provider: profile.transcript.isInUse
-            ? (await ref.read(aiModelProvider.future))?.config.name ?? ''
-            : settings.providerOf(profile.transcript)?.name ?? '',
-        model: writer.model,
-        usage: <String, Object?>{
-          'input': written.usage.input,
-          'output': written.usage.output,
-          _costKey: ?written.cost,
-        },
-      );
-      kept = item.id;
-      _podcastAlsoAs(id, item.id);
-      await _load();
-      yield* _spoken(
-        item.id,
-        episode,
-        voice: voice,
-        model: cast.voiceModel,
-        written: written,
-      );
-    }
-
-    await _followPodcast(
-      id,
-      run(),
-      failed: (why) => 'The podcast could not be made: $why',
-    );
-    if (state.shownPodcast == id) {
-      state = state.copyWith(shownPodcast: () => null, itemId: () => kept);
-    }
-  }
-
-  /// [episode], kept as item [itemId], spoken through [voice] — its sound
-  /// saved and the item told where — showing [written] while it is.
-  Stream<PodcastProgress> _spoken(
-    String itemId,
-    PodcastEpisode episode, {
-    required VoiceConfig voice,
-    required String model,
-    PodcastProgress? written,
-  }) async* {
-    final speech = await _speechOf(voice, model);
-    try {
-      await for (final progress in PodcastMaker.speak(
-        episode.lines,
-        speakers: episode.speakers,
-        speech: speech,
-        parallel: voice.local ? 1 : 4,
-      )) {
-        if (progress.sound case final sound?) {
-          final audio = await savePodcastAudio(ref, sound);
-          final store = await _store;
-          await store.ai.updateItem(
-            itemId,
-            body: episode
-                .copyWith(
-                  audio: audio,
-                  duration: sound.duration,
-                  starts: progress.starts,
-                  voice:
-                      '${voice.name} · '
-                      '${model.trim().isEmpty ? voice.model : model.trim()}',
-                  voiceId: voice.id,
-                )
-                .toJson(),
-          );
-          await _load();
-        }
-        yield written == null
-            ? progress
-            : progress.copyWith(outline: written.outline);
-      }
-    } on AiException catch (error) {
-      throw AiException(
-        'it was written, but could not be spoken: ${error.message} Its '
-        'transcript is kept; speak it again from its page.',
-      );
-    } finally {
-      speech.close();
-    }
-  }
-
-  /// Speaks kept podcast [itemId] again: one made on another computer, or
-  /// one whose speaking failed — with the voices it was made with where
-  /// their provider is still set up, else with the first voice provider's.
-  Future<void> speakPodcast(String itemId) async {
-    if (state.podcasts.containsKey(itemId)) return;
-    final item = state.items.where((item) => item.id == itemId).firstOrNull;
-    final episode = PodcastEpisode.fromJson(item?.body);
-    if (episode == null) return;
-    final settings = ref.read(aiSettingsProvider);
-    final voice = settings.voiceOf(episode.voiceId);
-    if (voice == null) {
-      state = state.copyWith(
-        error: () =>
-            'Add a voice provider in the AI settings first: it speaks the '
-            'podcast.',
-      );
-      return;
-    }
-    final same = voice.id == episode.voiceId;
-    final speakers = same
-        ? episode.speakers
-        : <PodcastSpeaker>[
-            for (final (i, speaker) in episode.speakers.indexed)
-              speaker.copyWith(voice: voice.voiceFor(i)),
-          ];
-    _setPodcast(
-      itemId,
-      PodcastProgress(stage: PodcastStage.speaking, lines: episode.lines),
-    );
-    state = state.copyWith(error: () => null);
-    await _followPodcast(
-      itemId,
-      _spoken(
-        itemId,
-        episode.copyWith(speakers: speakers),
-        voice: voice,
-        model: '',
-      ),
-      failed: (why) => 'The podcast could not be spoken: $why',
-    );
-  }
-
-  /// Stops making or speaking the podcast under [key].
-  Future<void> stopPodcast(String key) async {
-    final keys = _keysOf(key);
-    final run = _podcasters[key];
-    _setPodcast(key, null);
-    keys.forEach(_podcasters.remove);
-    await run?.cancel();
-    if (keys.contains(state.shownPodcast)) {
-      state = state.copyWith(shownPodcast: () => null);
-    }
-  }
-
-  Future<void> renameItem(String id, String title) async {
-    await (await _store).ai.renameItem(id, title);
-    await _load();
-  }
-
-  Future<void> deleteItem(String id) async {
-    // A podcast being spoken is stopped first; its sound goes as the
-    // speaking left it.
-    if (state.podcasts.containsKey(id)) await stopPodcast(id);
-    final item = state.items.where((item) => item.id == id).firstOrNull;
-    if (PodcastEpisode.fromJson(item?.body) case final episode?
-        when episode.spoken) {
-      await deletePodcastAudio(ref, episode.audio);
-    }
-    await (await _store).ai.deleteItem(id);
-    if (state.itemId == id) state = state.copyWith(itemId: () => null);
-    await _load();
-  }
-
-  Future<void> deleteThread(String id) async {
-    await (await _store).ai.deleteThread(id);
-    if (state.threadId == id) newThread();
-    await _load();
-  }
-
-  static String _titleOf(String question) {
-    final line = question.trim().split('\n').first;
-    return line.length <= 60 ? line : '${line.substring(0, 57).trimRight()}…';
-  }
 }
+
+/// What [progress] took, done — and what it cost, and how long it
+/// [took], where that is known — as a turn or a kept set keeps it.
+Map<String, Object?> _usageOf(AgentProgress progress, {Duration? took}) =>
+    <String, Object?>{
+      'input': progress.usage.input,
+      'output': progress.usage.output,
+      'cacheRead': progress.usage.cacheRead,
+      'cacheWrite': progress.usage.cacheWrite,
+      'webSearches': progress.usage.webSearches,
+      _costKey: ?progress.cost,
+      if (took != null) _tookKey: took.inMilliseconds,
+    };
+
+const String _tookKey = 'milliseconds';
+const String _costKey = 'dollars';
 
 /// What [AiSession] answers or makes with, read.
 typedef _Ready = ({AiModel model, WorkspaceReader reader, ScopeInfo info});
@@ -1452,84 +424,3 @@ final aiSessionProvider =
 /// profilesWith] has them.
 List<StudyProfile> studyProfilesOf(WidgetRef ref, AiSessionState state) =>
     state.profilesWith(ref.watch(aiSettingsProvider).studyProfiles);
-
-/// How each card of kept set [itemId] is learnt, and grading them.
-class CardReviews extends AsyncNotifier<Map<String, CardReview>> {
-  CardReviews(this.itemId);
-
-  final String itemId;
-
-  @override
-  Future<Map<String, CardReview>> build() async {
-    final store = await ref.watch(storeProvider.future);
-    return <String, CardReview>{
-      for (final entry in (await store.ai.reviewsOf(itemId)).entries)
-        entry.key: CardReview.fromJson(entry.value),
-    };
-  }
-
-  /// How card [cardId] is learnt now: as it was, or new.
-  CardReview of(String cardId, DateTime now) =>
-      state.value?[cardId] ?? CardReview.fresh(now);
-
-  /// Keeps that card [cardId] was remembered as [grade] at [now], and
-  /// returns what it comes to.
-  Future<CardReview> grade(String cardId, Grade grade, DateTime now) async {
-    final next = of(cardId, now).after(grade, now);
-    state = AsyncData(<String, CardReview>{...?state.value, cardId: next});
-    final store = await ref.read(storeProvider.future);
-    await store.ai.saveReview(
-      itemId,
-      cardId,
-      state: next.toJson(),
-      dueAt: next.due.millisecondsSinceEpoch,
-    );
-    return next;
-  }
-}
-
-final cardReviewsProvider =
-    AsyncNotifierProvider.family<CardReviews, Map<String, CardReview>, String>(
-      CardReviews.new,
-    );
-
-/// How many cards not yet studied a session brings in, besides those due.
-const int newCardsPerSession = 20;
-
-/// How many of kept set [item]'s cards a session would study now — those
-/// due, and new ones up to [newCardsPerSession] — or 0 for a set that is
-/// not flashcards.
-int cardsToStudy(WidgetRef ref, AiItem? item) {
-  if (item == null) return 0;
-  final set = StudySet.fromJson(item.body);
-  if (set is! FlashcardSet) return 0;
-  final status = deckStatus(
-    set.cards,
-    ref.watch(cardReviewsProvider(item.id)).value ??
-        const <String, CardReview>{},
-    DateTime.now(),
-  );
-  return status.due + status.fresh.clamp(0, newCardsPerSession);
-}
-
-/// How far along [cards] are, by [reviews], at [now].
-({int due, int fresh, int learnt}) deckStatus(
-  List<StudyCard> cards,
-  Map<String, CardReview> reviews,
-  DateTime now,
-) {
-  var due = 0;
-  var fresh = 0;
-  var learnt = 0;
-  for (final card in cards) {
-    final review = reviews[card.id];
-    if (review == null) {
-      fresh++;
-    } else if (review.isDue(now)) {
-      due++;
-    } else if (!review.learning) {
-      learnt++;
-    }
-  }
-  return (due: due, fresh: fresh, learnt: learnt);
-}
