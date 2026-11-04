@@ -168,9 +168,24 @@ class TikzPicture {
   /// drawn.
   static TikzPicture read(String latex) {
     final before = _readBefore.remove(latex);
-    final picture = before ?? (_read(latex)..draw());
+    final picture = before ?? _guarded<TikzPicture>(() => _read(latex)..draw());
     if (_readBefore.length >= _kept) _readBefore.remove(_readBefore.keys.first);
     return _readBefore[latex] = picture;
+  }
+
+  /// What [work] gives, whatever else stops it said as a [FormatException]
+  /// is: arithmetic that comes to no number, `1/0` taken as a count, or
+  /// braces nested too deeply to read.
+  static T _guarded<T>(T Function() work) {
+    try {
+      return work();
+    } on FormatException {
+      rethrow;
+    } on StackOverflowError {
+      throw const FormatException('The picture is nested too deeply to draw');
+    } on Object catch (e) {
+      throw FormatException('Cannot draw the picture: $e');
+    }
   }
 
   static TikzPicture _read(String latex) {
@@ -219,7 +234,9 @@ class TikzPicture {
         return made.drawing;
       }
     }
-    final drawing = _Painter(ink, labelSizes).run(_options, _body);
+    final drawing = _guarded(
+      () => _Painter(ink, labelSizes).run(_options, _body),
+    );
     if (_drawn.length >= _keptDrawings) _drawn.removeAt(0);
     _drawn.add((
       ink: ink,

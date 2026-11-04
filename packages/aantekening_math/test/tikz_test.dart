@@ -314,6 +314,16 @@ void main() {
       );
     });
 
+    test('are said where arithmetic comes to no number', () {
+      for (final body in <String>[
+        r'\foreach \x in {0,...,1/0} \draw (\x,0) -- (\x,1);',
+        r'\draw[domain=0:1, samples=0/0] plot (\x, \x);',
+        r'\node[regular polygon, regular polygon sides=1/0, draw] {};',
+      ]) {
+        expect(problem(body), isNotNull, reason: body);
+      }
+    });
+
     test(r'a \tikz command is a picture too', () {
       expect(TikzPicture.holds(r'\tikz \draw (0,0) -- (1,0);'), isTrue);
       expect(TikzPicture.holds(r'\begin{tikzpicture}'), isTrue);
