@@ -749,14 +749,11 @@ Future<void> _rewrite(
   final part = AiAnswer.fromJson(turn.answer).textOf(section);
   final instruction = await _askHowToRewrite(context, part);
   if (instruction == null) return;
-  final model = ref.read(aiModelProvider).value;
   await session.rewrite(
     turn,
     section,
     instruction: instruction,
-    searchWeb:
-        ref.read(aiSettingsProvider).searchWeb &&
-        _webAvailable(model, ref.read(webSearchProvider)),
+    searchWeb: searchesWeb(ref, session.scope),
   );
 }
 
@@ -844,12 +841,6 @@ class _RewriteDialogState extends State<_RewriteDialog> {
     );
   }
 }
-
-/// Whether the web can be searched with [model]: by its provider, or by
-/// the search set up.
-bool _webAvailable(AiModel? model, AsyncValue<WebSearch?> search) =>
-    model != null &&
-    (model.config.kind == ProviderKind.anthropic || search.value != null);
 
 /// A question, set off to the right in the accent's tint, and its answer
 /// beneath it.
@@ -1039,7 +1030,6 @@ class _AskLine extends ConsumerStatefulWidget {
 
 class _AskLineState extends ConsumerState<_AskLine> {
   final TextEditingController _text = TextEditingController();
-  bool? _web;
 
   FocusNode get _focus => widget.focus;
 
@@ -1062,11 +1052,7 @@ class _AskLineState extends ConsumerState<_AskLine> {
   void _send() {
     final question = _text.text.trim();
     if (question.isEmpty) return;
-    final settings = ref.read(aiSettingsProvider);
-    final model = ref.read(aiModelProvider).value;
-    final web =
-        (_web ?? settings.searchWeb) &&
-        _webAvailable(model, ref.read(webSearchProvider));
+    final web = searchesWeb(ref, widget.scope);
     _text.clear();
     unawaited(
       ref
@@ -1084,9 +1070,10 @@ class _AskLineState extends ConsumerState<_AskLine> {
     final info = ref.watch(aiScopeInfoProvider(widget.scope)).value;
     final model = ref.watch(aiModelProvider).value;
     final search = ref.watch(webSearchProvider);
-    final available = _webAvailable(model, search);
+    final available = webAvailable(model, search);
     final web =
-        (_web ?? ref.watch(aiSettingsProvider.select((s) => s.searchWeb))) &&
+        (ref.watch(webChoiceProvider(widget.scope)) ??
+            ref.watch(aiSettingsProvider.select((s) => s.searchWeb))) &&
         available;
     final colour = EditorMode.ai.colourOn(tones);
     const compact = ButtonStyle(
@@ -1170,7 +1157,9 @@ class _AskLineState extends ConsumerState<_AskLine> {
                     child: _WebToggle(
                       on: web,
                       onChanged: available
-                          ? (on) => setState(() => _web = on)
+                          ? ref
+                                .read(webChoiceProvider(widget.scope).notifier)
+                                .choose
                           : null,
                     ),
                   ),

@@ -230,6 +230,37 @@ final webSearchProvider = FutureProvider<WebSearch?>((ref) async {
   return search;
 });
 
+/// Whether the web can be searched with [model]: by its provider, or by
+/// the search set up.
+bool webAvailable(AiModel? model, AsyncValue<WebSearch?> search) =>
+    model != null &&
+    (model.config.kind == ProviderKind.anthropic || search.value != null);
+
+/// Whether the web is searched for the AI of a scope, as the toggle on its
+/// ask line was last set — or null, as the settings have it.
+class WebChoice extends Notifier<bool?> {
+  WebChoice(this.scope);
+
+  final NoteLink scope;
+
+  @override
+  bool? build() => null;
+
+  void choose(bool on) => state = on;
+}
+
+final webChoiceProvider = NotifierProvider.family<WebChoice, bool?, NoteLink>(
+  WebChoice.new,
+);
+
+/// Whether what is asked about [scope] now may search the web: as its ask
+/// line's toggle has it, where the web can be searched at all — for a
+/// question typed, one ready to ask, and a part written again alike.
+bool searchesWeb(WidgetRef ref, NoteLink scope) =>
+    (ref.read(webChoiceProvider(scope)) ??
+        ref.read(aiSettingsProvider).searchWeb) &&
+    webAvailable(ref.read(aiModelProvider).value, ref.read(webSearchProvider));
+
 /// What the AI is being asked about in a tab: the page it has open, or else
 /// its section, or else its notebook.
 NoteLink? aiScopeOf({String? notebookId, String? sectionId, String? pageId}) =>

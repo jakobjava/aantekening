@@ -643,7 +643,7 @@ void askReady(WidgetRef ref, NoteLink scope, AiAction action) {
         .read(aiSessionProvider(scope).notifier)
         .ask(
           action.promptFor(kindName ?? 'page'),
-          searchWeb: ref.read(aiSettingsProvider).searchWeb,
+          searchWeb: searchesWeb(ref, scope),
           action: action,
         ),
   );

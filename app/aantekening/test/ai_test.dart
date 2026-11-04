@@ -195,6 +195,16 @@ class UnreachableSecrets implements AiSecrets {
   Future<void> write(String name, String? value) async => throw _trouble;
 }
 
+/// Finds nothing on the web, and is set up.
+class FakeWebSearch implements WebSearch {
+  @override
+  Future<List<Source>> search(String query, {int count = 6}) async =>
+      const <Source>[];
+
+  @override
+  void close() {}
+}
+
 void main() {
   late AantekeningStore store;
   late Directory assets;
@@ -461,6 +471,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(StudyOverview), findsNothing);
     expect(container.read(aiSessionProvider(scope)).turns, hasLength(1));
+  });
+
+  testWidgets('a question ready to ask searches the web only as the ask '
+      'line has it', (tester) async {
+    await openShell(
+      tester,
+      overrides: <Override>[
+        webSearchProvider.overrideWith((ref) async => FakeWebSearch()),
+      ],
+    );
+    await pressControl(tester, LogicalKeyboardKey.keyJ);
+    bool searched() =>
+        model.asked.last.tools.any((tool) => tool.name == NoteTools.searchWeb);
+    Future<void> askReady() async {
+      await typeKeys(tester, 'q');
+      final explain = find.widgetWithText(KeyGuideRow, AiAction.explain.label);
+      await typeKeys(tester, tester.widget<KeyGuideRow>(explain).action.key);
+      await tester.pumpAndSettle();
+    }
+
+    await askReady();
+    expect(searched(), isTrue, reason: 'as the settings have it');
+
+    await typeKeys(tester, 'n');
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.tap(find.text('Web'));
+    await tester.pumpAndSettle();
+    await askReady();
+    expect(model.asked, hasLength(2));
+    expect(searched(), isFalse, reason: 'turned off on the ask line');
   });
 
   testWidgets('an answer comes from the notes, cites them, and says what '
