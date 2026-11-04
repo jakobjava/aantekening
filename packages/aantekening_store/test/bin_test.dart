@@ -77,6 +77,17 @@ void main() {
       ]);
     });
 
+    test('says how many pages emptying it deleted, each once', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+      await store.pages.createPage(sectionId: sectionId);
+      await store.pages.deletePage(page.id);
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      await store.library.deleteSection(sectionId);
+
+      expect(await store.bin.empty(), 2);
+    });
+
     test('restores a page, with the section it was in when that has gone '
         'since', () async {
       final sectionId = await workspace.seedSection();

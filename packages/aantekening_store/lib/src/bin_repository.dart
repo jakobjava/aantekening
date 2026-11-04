@@ -162,15 +162,19 @@ class BinRepository {
     });
   }
 
-  /// Deletes everything in the bin for good, returning how many pages went.
+  /// Deletes everything in the bin for good, returning how many pages went:
+  /// counted as they go, as a page deleted by itself and then with its
+  /// section is in the bin twice over.
   Future<int> empty() async {
-    var pages = 0;
+    final before = _pageCount();
     for (final entry in await list()) {
-      pages += entry.pages;
       await purge(entry);
     }
-    return pages;
+    return before - _pageCount();
   }
+
+  int _pageCount() =>
+      integer(_db.select('SELECT COUNT(*) AS n FROM pages').first, 'n');
 
   /// Deletes notebook [id], its sections and their pages, for good.
   ///
