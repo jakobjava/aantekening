@@ -12,6 +12,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
+import '../bytes.dart';
 import '../importer.dart';
 
 /// Page units per point, Xournal++'s unit.
@@ -126,7 +127,10 @@ final class _Reader {
     try {
       final bytes = file.readAsBytesSync();
       final text = bytes.length > 2 && bytes[0] == 0x1F && bytes[1] == 0x8B
-          ? utf8.decode(gzip.decode(bytes), allowMalformed: true)
+          ? utf8.decode(
+              inflateAtMost(bytes, inflatedLimit(bytes.length)),
+              allowMalformed: true,
+            )
           : utf8.decode(bytes, allowMalformed: true);
       xml = XmlDocument.parse(text);
     } on Object catch (error) {

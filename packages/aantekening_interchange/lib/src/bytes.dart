@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
@@ -160,6 +161,43 @@ final class Guid {
     return '${hex(0, 4, reversed: true)}-${hex(4, 6, reversed: true)}-'
         '${hex(6, 8, reversed: true)}-${hex(8, 10)}-${hex(10, 16)}';
   }
+}
+
+/// [bytes] inflated — gzipped, or [raw] deflate — refusing with a
+/// [FormatDamage] to make more than [limit] bytes of them: a few kilobytes
+/// of deflate make a gigabyte, and these make it a piece at a time.
+Uint8List inflateAtMost(Uint8List bytes, int limit, {bool raw = false}) {
+  final out = _BoundedSink(limit);
+  final input = (raw ? ZLibDecoder(raw: true) : gzip.decoder)
+      .startChunkedConversion(out);
+  for (var at = 0; at < bytes.length; at += 4096) {
+    final end = at + 4096 < bytes.length ? at + 4096 : bytes.length;
+    input.add(Uint8List.sublistView(bytes, at, end));
+  }
+  input.close();
+  return out.bytes.takeBytes();
+}
+
+/// The most a compressed file of [length] bytes is inflated to: far more
+/// than notes compress by, far less than deflate can make.
+int inflatedLimit(int length) => (64 << 20) + 64 * length;
+
+final class _BoundedSink implements Sink<List<int>> {
+  _BoundedSink(this._limit);
+
+  final int _limit;
+  final BytesBuilder bytes = BytesBuilder(copy: false);
+
+  @override
+  void add(List<int> chunk) {
+    if (bytes.length + chunk.length > _limit) {
+      throw FormatDamage('The file unpacks to more than ${_limit >> 20} MiB');
+    }
+    bytes.add(chunk);
+  }
+
+  @override
+  void close() {}
 }
 
 /// Decodes UTF-16LE [bytes], dropping a terminating nul and anything after

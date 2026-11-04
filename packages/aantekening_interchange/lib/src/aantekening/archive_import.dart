@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
@@ -61,11 +62,19 @@ final class AantekeningImporter implements NotesImporter {
     final input = InputFileStream(path);
     try {
       final archive = ZipDecoder().decodeStream(input);
+      // What the entries may unpack to, taken together.
+      var left = inflatedLimit(input.length);
+      Uint8List unpack(ArchiveFile file) {
+        final bytes = _unpack(file, left);
+        left -= bytes.length;
+        return bytes;
+      }
+
       final manifest = archive.findFile(ArchiveExport.manifestName);
       if (manifest == null) {
         throw FormatDamage('${p.basename(path)} is not an export of notes');
       }
-      final list = jsonDecode(utf8.decode(manifest.readBytes()!));
+      final list = jsonDecode(utf8.decode(unpack(manifest)));
       if (list is! Map<String, Object?>) {
         throw FormatDamage('${p.basename(path)} is damaged');
       }
@@ -81,7 +90,7 @@ final class AantekeningImporter implements NotesImporter {
           assetFiles[p.basename(name)] = file;
           continue;
         }
-        final entity = EntityFile.decode(file.readBytes()!);
+        final entity = EntityFile.decode(_ungzip(unpack(file)));
         switch (entity) {
           case NotebookFile(:final notebook):
             notebooks[notebook.id] = notebook;
@@ -98,8 +107,9 @@ final class AantekeningImporter implements NotesImporter {
       for (final page in pageFiles.values) {
         for (final asset in page.assets) {
           if (assets.containsKey(asset.id)) continue;
-          final bytes = assetFiles[asset.sha256]?.readBytes();
-          if (bytes == null) continue;
+          final file = assetFiles[asset.sha256];
+          if (file == null) continue;
+          final bytes = unpack(file);
           final (_, draft) = work.keep(
             bytes,
             name: asset.originalName,
@@ -168,6 +178,36 @@ final class AantekeningImporter implements NotesImporter {
       );
     } finally {
       input.closeSync();
+    }
+  }
+
+  /// The bytes of [file], unpacked to no more than [limit] of them.
+  static Uint8List _unpack(ArchiveFile file, int limit) {
+    final raw =
+        file.rawContent?.getStream(decompress: false).toUint8List() ??
+        Uint8List(0);
+    return switch (file.compression) {
+      CompressionType.deflate => inflateAtMost(raw, limit, raw: true),
+      CompressionType.none || null when raw.length <= limit => raw,
+      CompressionType.none || null => throw FormatDamage(
+        'The export unpacks to more than ${limit >> 20} MiB',
+      ),
+      CompressionType.bzip2 => throw FormatDamage(
+        '${file.name} is compressed in a way not read',
+      ),
+    };
+  }
+
+  /// A page file's [bytes] ungzipped, as [EntityFile.decode] would — but
+  /// to a limit — or as they are if they are not gzipped, or damaged.
+  static Uint8List _ungzip(Uint8List bytes) {
+    if (bytes.length < 3 || bytes[0] != 0x1F || bytes[1] != 0x8B) {
+      return bytes;
+    }
+    try {
+      return inflateAtMost(bytes, inflatedLimit(bytes.length));
+    } on FormatException {
+      return bytes;
     }
   }
 

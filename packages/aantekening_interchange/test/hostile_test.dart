@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:aantekening_interchange/aantekening_interchange.dart';
 import 'package:aantekening_interchange/src/bytes.dart';
 import 'package:aantekening_interchange/src/onenote/model.dart';
 import 'package:aantekening_interchange/src/onenote/notebook_reader.dart';
@@ -9,6 +11,9 @@ import 'package:aantekening_interchange/src/onenote/properties.dart';
 import 'package:aantekening_interchange/src/onenote/section_reader.dart';
 import 'package:aantekening_interchange/src/onestore/file_nodes.dart';
 import 'package:aantekening_interchange/src/onestore/revision_store.dart';
+import 'package:aantekening_store/aantekening_store.dart' show ArchiveExport;
+import 'package:archive/archive.dart' show Archive, ArchiveFile, ZipEncoder;
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'support/onestore_writer.dart';
@@ -122,6 +127,55 @@ void main() {
       ]);
       final bytes = writer.finish(root: root);
       expect(await bounded(() => RevisionStore.read(bytes)), 'read');
+    });
+  });
+
+  group('compressed files', () {
+    late Directory folder;
+
+    setUp(() => folder = Directory.systemTemp.createTempSync('hostile_'));
+    tearDown(() => folder.deleteSync(recursive: true));
+
+    // Eighty megabytes of nothing, which deflate keeps in eighty kilobytes.
+    final nothing = Uint8List(80 << 20);
+
+    test('inflate to no more than their limit', () {
+      final packed = Uint8List.fromList(gzip.encode(Uint8List(1 << 20)));
+      expect(inflateAtMost(packed, 1 << 20), hasLength(1 << 20));
+      expect(
+        () => inflateAtMost(packed, (1 << 20) - 1),
+        throwsA(isA<FormatDamage>()),
+      );
+      final raw = Uint8List.fromList(
+        ZLibEncoder(raw: true).convert(Uint8List(1000)),
+      );
+      expect(inflateAtMost(raw, 1000, raw: true), hasLength(1000));
+    });
+
+    test('a Xournal++ document unpacking to far more than it is is '
+        'refused', () {
+      final path = p.join(folder.path, 'Bomb.xopp');
+      File(path).writeAsBytesSync(gzip.encode(nothing));
+      final draft = const XournalImporter().read(<String>[
+        path,
+      ], ImportWork(Directory(p.join(folder.path, 'work'))..createSync()));
+      expect(draft.pages, isEmpty);
+      expect(draft.warnings.single, contains('unpacks to more than'));
+    });
+
+    test('an export unpacking to far more than it is is refused', () {
+      final path = p.join(folder.path, 'Bomb.aantekening');
+      final archive = Archive()
+        ..addFile(ArchiveFile.string(ArchiveExport.manifestName, '{}'))
+        ..addFile(ArchiveFile.bytes('pages/bomb.json', nothing));
+      File(path).writeAsBytesSync(ZipEncoder().encode(archive));
+      expect(File(path).lengthSync(), lessThan(1 << 20));
+      expect(
+        () => const AantekeningImporter().read(<String>[
+          path,
+        ], ImportWork(Directory(p.join(folder.path, 'work'))..createSync())),
+        throwsA(isA<FormatDamage>()),
+      );
     });
   });
 
