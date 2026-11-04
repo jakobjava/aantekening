@@ -105,6 +105,12 @@ final class Checker {
   bool _compoundTimedOut = false;
   final Stopwatch _globalClock = Stopwatch();
 
+  /// Whether the check last [timed] ran out of time somewhere, and so
+  /// may have said a word is wrong that, given longer, it would have found
+  /// right.
+  bool get timedOut => _timedOut;
+  bool _timedOut = false;
+
   /// Whether [word] is spelled correctly.
   bool spell(String word, [InfoBox? info]) =>
       timed(() => _spell(word, <String>[], info ?? InfoBox()));
@@ -114,6 +120,7 @@ final class Checker {
   T timed<T>(T Function() check, {Duration limit = _globalTimeLimit}) {
     if (_globalClock.isRunning) return check();
     _timeLimit = limit;
+    _timedOut = false;
     _globalClock
       ..reset()
       ..start();
@@ -130,7 +137,10 @@ final class Checker {
     if (candidates.contains(word) || candidates.length >= _maxBreakDepth) {
       return false;
     }
-    if (_globalClock.elapsed > _timeLimit) return false;
+    if (_globalClock.elapsed > _timeLimit) {
+      _timedOut = true;
+      return false;
+    }
     candidates.add(word);
     final result = _spellInternal(word, candidates, info);
     candidates.removeLast();
@@ -396,6 +406,7 @@ final class Checker {
   /// compound; null if it is none of these.
   WordEntry? checkWord(String input, InfoBox? info) {
     if (_globalClock.isRunning && _globalClock.elapsed > _timeLimit) {
+      _timedOut = true;
       return null;
     }
     final word = rules.removeIgnored(input);
@@ -842,7 +853,9 @@ final class Checker {
 
   bool _compoundTimeUp() {
     if (_compoundTimedOut) return true;
-    if (_compoundClock.elapsed > _compoundTimeLimit) _compoundTimedOut = true;
+    if (_compoundClock.elapsed > _compoundTimeLimit) {
+      _compoundTimedOut = _timedOut = true;
+    }
     return _compoundTimedOut;
   }
 
@@ -1063,7 +1076,7 @@ final class Checker {
         ..start();
       _compoundTimedOut = false;
     } else if (_compoundClock.elapsed > _compoundTimeLimit) {
-      _compoundTimedOut = true;
+      _compoundTimedOut = _timedOut = true;
     }
 
     final oldWords = words;

@@ -29,10 +29,20 @@ final class SpellChecker {
     if (_personal.remove(word)) _verdicts.clear();
   }
 
-  /// Whether [word] is spelled correctly in any of the languages.
-  bool isCorrect(String word) => _verdicts[word] ??=
-      _isPersonal(word) ||
-      dictionaries.any((dictionary) => dictionary.check(word));
+  /// Whether [word] is spelled correctly in any of the languages. A word
+  /// a dictionary ran out of time on is said to be wrong, as Hunspell
+  /// says, but is not remembered so: it is checked again next time.
+  bool isCorrect(String word) {
+    if (_verdicts[word] case final verdict?) return verdict;
+    if (_isPersonal(word)) return _verdicts[word] = true;
+    var sure = true;
+    for (final dictionary in dictionaries) {
+      if (dictionary.check(word)) return _verdicts[word] = true;
+      if (dictionary.timedOut) sure = false;
+    }
+    if (sure) _verdicts[word] = false;
+    return false;
+  }
 
   bool _isPersonal(String word) {
     if (_personal.contains(word)) return true;

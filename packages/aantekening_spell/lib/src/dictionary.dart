@@ -45,6 +45,10 @@ final class HunspellDictionary {
   /// Whether [word] is spelled correctly.
   bool check(String word) => _checker.spell(word);
 
+  /// Whether the last [check] ran out of time before it was sure: a word
+  /// it said is wrong may be right, and is worth checking again.
+  bool get timedOut => _checker.timedOut;
+
   /// Likely spellings of [word], best first.
   List<String> suggest(String word) => _suggester.suggest(word);
 
