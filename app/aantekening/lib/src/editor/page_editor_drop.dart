@@ -95,6 +95,7 @@ extension _Drop on _PageEditorState {
     required bool intoBox,
   }) async {
     final store = _store;
+    final pageId = widget.pageId;
     if (store == null || !_ready) return;
     final failures = <String>[];
     final dropped = await readDropped(
@@ -110,6 +111,10 @@ extension _Drop on _PageEditorState {
       _showMessage('Could not bring in ${failures.join('; ')}.');
     }
     if (dropped.isEmpty) return;
+    if (!_stillOn(pageId)) {
+      _showNotPut();
+      return;
+    }
 
     final point = at;
     final editingId = _editingId;
@@ -127,7 +132,7 @@ extension _Drop on _PageEditorState {
     // starting there — and each after under the last, its top there.
     Offset? under;
     for (final thing in dropped) {
-      if (!mounted) return;
+      if (!mounted || !_stillOn(pageId)) return;
       final top = under;
       switch (thing) {
         case DroppedMedia(:final items, :final printout):

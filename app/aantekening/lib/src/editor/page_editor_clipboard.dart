@@ -25,10 +25,11 @@ extension _Clipboard on _PageEditorState {
   /// on from what they copy, and a box into the middle of the view.
   Future<void> _paste({Offset? at, bool textOnly = false}) async {
     if (_editingId != null || !_ready) return;
+    final pageId = widget.pageId;
     final clip = textOnly
         ? await NoteClipboard.readText()
         : await NoteClipboard.read();
-    if (clip == null || !mounted) return;
+    if (clip == null || !_stillOn(pageId) || _editingId != null) return;
     switch (clip) {
       case CopiedClip(:final copied):
         await _pasteCopied(copied, at: at);

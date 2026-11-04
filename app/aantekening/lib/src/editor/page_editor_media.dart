@@ -9,6 +9,7 @@ extension _Media on _PageEditorState {
   /// caret, or onto the canvas in view if no box is being edited.
   Future<void> _insertMedia(MediaKind kind) async {
     final store = _store;
+    final pageId = widget.pageId;
     if (store == null) return;
     final List<BlockEmbed> items;
     try {
@@ -18,6 +19,10 @@ extension _Media on _PageEditorState {
       return;
     }
     if (items.isEmpty || !mounted) return;
+    if (!_stillOn(pageId)) {
+      _showNotPut();
+      return;
+    }
     await _placeMedia(items, printout: kind == MediaKind.pdf);
   }
 
@@ -31,6 +36,7 @@ extension _Media on _PageEditorState {
     Offset? at,
     bool fromTop = false,
   }) async {
+    final pageId = widget.pageId;
     // At a bare caret the pictures go onto the paper where the caret is, as
     // in OneNote; in a box with text they go into the box.
     final editingId = _editingId;
@@ -57,7 +63,7 @@ extension _Media on _PageEditorState {
           PrintoutPlace.newPage,
         ],
       );
-      if (place == null || !mounted) return;
+      if (place == null || !_stillOn(pageId)) return;
       switch (place) {
         case PrintoutPlace.newPage:
           await _printAsNewPage(items);
@@ -195,6 +201,7 @@ extension _Media on _PageEditorState {
     final pageId = widget.pageId;
     if (store == null || pageId == null || printout.isEmpty) return;
     final file = await store.assets.find(printout.first.assetId);
+    if (!mounted) return;
     final sheets = Sheets(
       templates: <SheetTemplate>[for (final _ in printout) SheetTemplate.blank],
       orientations: <SheetOrientation>[
@@ -246,4 +253,11 @@ extension _Media on _PageEditorState {
     if (!mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showMessage(message);
   }
+
+  /// Says that what was brought in is not on the page it was meant for,
+  /// another having been opened while it was read.
+  void _showNotPut() => _showMessage(
+    'What was brought in is not put on the page: another page was opened '
+    'while it was read.',
+  );
 }

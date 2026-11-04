@@ -5,6 +5,12 @@ extension _Commands on _PageEditorState {
   /// Whether a page is showing, for the page's commands to act on.
   bool get _pageShowing => _ready && widget.aiScope == null;
 
+  /// Whether [pageId], open as something began that waits — on a dialog,
+  /// the clipboard, a download — is open and read still, for what it
+  /// brings to go on it rather than on whatever page is open by then.
+  bool _stillOn(String? pageId) =>
+      mounted && _ready && pageId != null && widget.pageId == pageId;
+
   /// Shows the page as pages, or as one canvas, whichever it is not.
   void _toggleLayout() {
     _stopEditing();
@@ -17,6 +23,7 @@ extension _Commands on _PageEditorState {
   /// and which way up it is turned — as that one is, unless another is
   /// chosen — then adds it, and shows it.
   Future<void> _addSheet({required int after}) async {
+    final pageId = widget.pageId;
     final sheets = _controller.document.canvas.sheetsShown;
     if (sheets == null) return;
     final chosen = await chooseSheet(
@@ -27,7 +34,7 @@ extension _Commands on _PageEditorState {
       orientation: sheets.orientationOf(after),
       action: 'Add',
     );
-    if (chosen == null || !mounted) return;
+    if (chosen == null || !_stillOn(pageId)) return;
     _controller.insertSheet(
       after + 1,
       chosen.template,

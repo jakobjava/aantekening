@@ -224,8 +224,9 @@ extension _TextEditing on _PageEditorState {
   /// tables — into the box being edited at its caret, or into a box of its
   /// own in the middle of the view.
   Future<void> _insertLatex() async {
+    final pageId = widget.pageId;
     final source = await askForLatex(context);
-    if (source == null || !mounted) return;
+    if (source == null || !_stillOn(pageId)) return;
     final blocks = LatexText.read(source).blocks;
     if (blocks.isEmpty) return;
     if (_textController.isActive) {

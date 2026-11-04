@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:aantekening/src/spelling/spelling.dart';
@@ -196,6 +197,45 @@ void main() {
     expect(
       canvasOf(tester).document.elements.whereType<ImageElement>(),
       hasLength(1),
+    );
+  });
+
+  testWidgets('what is still being fetched as another page opens goes on '
+      'neither page', (tester) async {
+    final other = (await store.pages.createPage(
+      sectionId: (await store.pages.findPage(pageId))!.sectionId,
+    )).id;
+    final fetched = Completer<void>();
+    final overrides = [
+      httpClientProvider.overrideWithValue(
+        MockClient((request) async {
+          await fetched.future;
+          return http.Response.bytes(_gif, 200);
+        }),
+      ),
+    ];
+    await openEditor(tester, store, pageId, overrides: overrides);
+    await drop(
+      tester,
+      'https://example.org/funny.gif',
+      const Offset(400, 300),
+      lands: false,
+    );
+    await openEditor(tester, store, other, overrides: overrides);
+    fetched.complete();
+    await tester.runAsync(() async {
+      for (var i = 0; i < 25; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await tester.pump();
+      }
+    });
+    await tester.pumpAndSettle();
+
+    expect(canvasOf(tester).document.elements, isEmpty);
+    expect(find.textContaining('not put on the page'), findsOneWidget);
+    expect(
+      (await tester.runAsync(() => store.pages.loadDocument(pageId)))!.elements,
+      isEmpty,
     );
   });
 }
