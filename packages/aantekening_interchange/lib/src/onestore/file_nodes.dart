@@ -163,7 +163,7 @@ final class StoreFile {
   /// transaction log, with only an empty revision store around it.
   static bool _embedsPackage(Uint8List bytes, FileChunk log) {
     final at = log.offset + log.length;
-    if (log.isEmpty || at + 64 > bytes.length) return false;
+    if (log.isEmpty || at < 0 || at > bytes.length - 64) return false;
     return Guid(Uint8List.sublistView(bytes, at + 48, at + 64)) ==
         _packagingFormat;
   }
@@ -240,6 +240,10 @@ final class _ListReader {
       while (!chunk.isEmpty) {
         if (!visited.add(chunk.offset)) {
           throw FormatDamage('A file node list loops back on itself');
+        }
+        // Its header and its footer, at least.
+        if (chunk.length < 36) {
+          throw FormatDamage('A file node list fragment is too short');
         }
         final fragment = _file.at(chunk.offset, chunk.length);
         if (fragment.u64() != _fragmentMagic) {

@@ -35,7 +35,8 @@ final class ByteReader {
   bool get atEnd => position >= bytes.length;
 
   void _need(int count) {
-    if (count < 0 || position + count > bytes.length) {
+    // Compared so, a count near 2^63 cannot wrap round to pass.
+    if (count < 0 || position < 0 || count > bytes.length - position) {
       throw FormatDamage(
         'Needed $count bytes at $position, but the data ends at '
         '${bytes.length}',
@@ -92,7 +93,7 @@ final class ByteReader {
   /// A reader over the [count] bytes at [offset], leaving this one where it
   /// is.
   ByteReader at(int offset, int count) {
-    if (offset < 0 || count < 0 || offset + count > bytes.length) {
+    if (offset < 0 || count < 0 || offset > bytes.length - count) {
       throw FormatDamage(
         'A reference to $count bytes at $offset points past the end, '
         '${bytes.length}',

@@ -189,7 +189,7 @@ final class RevisionStore {
     )) {
       if (reference.id != NodeId.fileDataStoreObjectReference) continue;
       final guid = reference.fields.guid();
-      final chunk = reference.chunk!;
+      final chunk = _chunk(reference);
       final object = ByteReader(file.bytes).at(chunk.offset, chunk.length);
       object.skip(16);
       final length = object.u64();
@@ -199,6 +199,11 @@ final class RevisionStore {
     return files;
   }
 }
+
+/// The chunk [node] points at, which a node of its kind must.
+FileChunk _chunk(FileNode node) =>
+    node.chunk ??
+    (throw FormatDamage('A file node points at nothing it should'));
 
 /// A revision of an object space: the objects it declared or changed, the
 /// roots it set, and the global id table in effect at its end.
@@ -414,7 +419,7 @@ final class _SpaceReader {
         final id = _resolve(fields.u32(), table);
         final jcid = fields.u32();
         if (id != null) {
-          objects[id] = StoreObject(jcid, _propertySet(node.chunk!, table));
+          objects[id] = StoreObject(jcid, _propertySet(_chunk(node), table));
         }
       case NodeId.objectDeclarationWithRefCount ||
           NodeId.objectDeclarationWithRefCount2:
@@ -426,7 +431,7 @@ final class _SpaceReader {
         // The JCID index; the declaration always has a property set.
         final jcid = (bits & 0x3FF) | 0x20000;
         if (id != null) {
-          objects[id] = StoreObject(jcid, _propertySet(node.chunk!, table));
+          objects[id] = StoreObject(jcid, _propertySet(_chunk(node), table));
         }
       case NodeId.objectDeclarationFileData3RefCount ||
           NodeId.objectDeclarationFileData3LargeRefCount:
@@ -451,8 +456,11 @@ final class _SpaceReader {
   /// be found.
   Uint8List? _fileData(String reference, String extension) {
     if (reference.startsWith('<ifndf>')) {
-      final guid = Guid.parse(reference.substring('<ifndf>'.length));
-      return _files[guid];
+      try {
+        return _files[Guid.parse(reference.substring('<ifndf>'.length))];
+      } on FormatException {
+        return null;
+      }
     }
     if (reference.startsWith('<file>')) {
       return _externalFile?.call(reference.substring('<file>'.length));
@@ -482,7 +490,7 @@ final class _SpaceReader {
     if (earlier == null) return;
     revision.objects[id] = StoreObject(
       earlier.jcid,
-      _propertySet(node.chunk!, table),
+      _propertySet(_chunk(node), table),
       fileData: earlier.fileData,
     );
   }

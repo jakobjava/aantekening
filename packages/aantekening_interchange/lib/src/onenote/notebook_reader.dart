@@ -81,6 +81,12 @@ OneEntry readSectionFile(File file, {Directory? notebook}) {
     return OneUnreadableSection(name, damage.message);
   } on FileSystemException catch (error) {
     return OneUnreadableSection(name, error.message);
+  } on OutOfMemoryError {
+    rethrow;
+  } on Object {
+    // Whatever else a damaged file runs the readers into, it is damage
+    // too: this section's, not the whole notebook's.
+    return OneUnreadableSection(name, 'The section is damaged');
   }
 }
 
@@ -101,7 +107,11 @@ Uint8List? _externalFile(Directory notebook, String reference) {
 List<String> _tableOfContents(File file) {
   try {
     return tableOfContents(RevisionStore.read(file.readAsBytesSync()));
-  } on FormatDamage {
+  } on OutOfMemoryError {
+    rethrow;
+  } on Object {
+    // A table of contents that cannot be read leaves the order to the
+    // names: it is not needed for the rest.
     return const <String>[];
   }
 }

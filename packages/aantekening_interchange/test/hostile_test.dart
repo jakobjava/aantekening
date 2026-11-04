@@ -75,6 +75,62 @@ void main() {
     });
   });
 
+  group('OneNote files damaged where a range error waited', () {
+    // Each of these once failed with an error of its own, not as damage,
+    // and took the whole notebook down with it.
+    test('say a fragment too short to hold its header is damage', () async {
+      final writer = OneStoreWriter();
+      // The magic, a list id and the first sequence number, and no more.
+      final root = writer.data(<int>[
+        0xC4, 0xF4, 0xF7, 0xF5, 0xB1, 0x7A, 0x56, 0xA4, //
+        ...u32(0x10),
+        ...u32(0),
+      ]);
+      final log = writer.data(List<int>.filled(8, 0));
+      expect(
+        await bounded(() => StoreFile.read(writer.finish(root: root))),
+        'damage: A file node list fragment is too short',
+      );
+      expect(
+        await bounded(
+          () => StoreFile.read(
+            writer.finish(root: root, log: log, transactions: 1),
+          ),
+        ),
+        'damage: A fragment of the transaction log is too short',
+      );
+    });
+
+    test('say a transaction log past every offset is damage', () async {
+      final writer = OneStoreWriter();
+      final root = writer.list(const <TestNode>[]);
+      final bytes = writer.finish(
+        root: root,
+        log: (-1 << 63, 12),
+        transactions: 1,
+      );
+      expect(await bounded(() => StoreFile.read(bytes)), startsWith('damage'));
+    });
+
+    test('say a file reference pointing at nothing is damage', () async {
+      final writer = OneStoreWriter();
+      final files = writer.list(<TestNode>[
+        fileNode(
+          NodeId.fileDataStoreObjectReference,
+          fields: List<int>.filled(16, 0xF0),
+        ),
+      ]);
+      final root = writer.list(<TestNode>[
+        fileNode(NodeId.fileDataStoreListReference, list: files),
+      ]);
+      final bytes = writer.finish(root: root);
+      expect(
+        await bounded(() => RevisionStore.read(bytes)),
+        'damage: A file node points at nothing it should',
+      );
+    });
+  });
+
   group('OneNote revisions', () {
     test('end the search for an earlier object, revisions looping', () async {
       // B; A on B; B again, on A — so A, B and A again —; and C on B,
