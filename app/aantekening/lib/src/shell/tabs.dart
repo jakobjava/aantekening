@@ -295,10 +295,26 @@ class TabsController extends Notifier<TabsState> {
   /// Forgets the page being gone to, which could not be opened.
   void cancelTravel() => _travellingTo = null;
 
+  /// Whether pages opened now take the place of the one showing rather
+  /// than being stepped to.
+  bool _replacing = false;
+
+  /// Carries out [open], the page it opens in the tab showing taking the
+  /// place of the page there, as a better match a search found does of the
+  /// one it showed a moment ago: Back goes to the page before both.
+  void replacing(void Function() open) {
+    _replacing = true;
+    try {
+      open();
+    } finally {
+      _replacing = false;
+    }
+  }
+
   /// Remembers that the tab showing is leaving [from] for [to], unless it is
   /// going back or forward.
   void _step(NoteTab tab, String? from, String? to) {
-    if (from == to) return;
+    if (from == to || _replacing) return;
     if (to != null && to == _travellingTo) {
       _travellingTo = null;
       return;

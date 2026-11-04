@@ -888,6 +888,44 @@ void main() {
       await tester.pumpAndSettle();
       expect(container.read(selectedPageProvider), second.id);
     });
+
+    testWidgets('goes back to where it began, past the matches typed through', (
+      tester,
+    ) async {
+      final start = await openPage(tester, text: 'nothing here');
+      for (final (title, text) in <(String, String)>[
+        ('Lecture 2', 'alpha decay'),
+        ('Lecture 3', 'beta decay'),
+      ]) {
+        final made = await store.pages.createPage(
+          sectionId: start.sectionId,
+          title: title,
+        );
+        await store.pages.saveDocument(made.id, withText(made.id, text));
+      }
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(HomeShell)),
+      );
+
+      // Each pause in the typing opens what matches best so far.
+      await search(tester, 'alpha');
+      expect(container.read(selectedPageProvider), isNot(start.id));
+      final field = find.descendant(
+        of: find.byType(SearchLine),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(field, 'beta');
+      await tester.pump(SearchLine.typingPause);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pumpAndSettle();
+      expect(container.read(selectedPageProvider), start.id);
+    });
   });
 
   group('trees', () {

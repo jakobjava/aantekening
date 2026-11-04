@@ -32,6 +32,7 @@ class SearchLineOpen extends Notifier<bool> {
   void open() {
     _ahead?.take();
     _ahead = TypeAhead();
+    ref.read(searchSessionProvider.notifier).begin();
     state = true;
   }
 
