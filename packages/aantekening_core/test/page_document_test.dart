@@ -447,6 +447,29 @@ void main() {
       expect(page.referencedAssetIds, <String>{'shared'});
     });
 
+    test('names no asset for a picture or printout that names none', () {
+      final page = PageDocument.decode(
+        jsonEncode(<String, Object?>{
+          'id': 'PAGE10',
+          'elements': <Object?>[
+            <String, Object?>{
+              'type': 'image',
+              'id': 'i',
+              'frame': <String, Object?>{'x': 0, 'y': 0, 'w': 10, 'h': 10},
+            },
+            <String, Object?>{
+              'type': 'pdf',
+              'id': 'p',
+              'frame': <String, Object?>{'x': 0, 'y': 0, 'w': 10, 'h': 10},
+            },
+          ],
+        }),
+      );
+
+      expect(page.elements, hasLength(2));
+      expect(page.referencedAssetIds, isEmpty);
+    });
+
     test('content bounds cover every element', () {
       final page = PageDocument(
         id: 'PAGE09',

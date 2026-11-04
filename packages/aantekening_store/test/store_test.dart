@@ -1017,6 +1017,33 @@ void main() {
       expect(await store.assets.find(asset.id), isNull);
     });
 
+    test('saves a page showing a picture that is not here', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+      final shown = await store.assets.importBytes(
+        Uint8List.fromList(<int>[7, 7, 7]),
+        mimeType: 'image/png',
+      );
+      ImageElement picture(String assetId) => ImageElement(
+        id: Ulid.generate(),
+        frame: const Frame(x: 0, y: 0, width: 100, height: 100),
+        createdAt: 0,
+        updatedAt: 0,
+        assetId: assetId,
+      );
+      // A picture deleted for good since, and one a damaged page names
+      // by nothing, beside one that is here.
+      final document = PageDocument.empty(id: page.id)
+          .withElementAdded(picture(shown.id))
+          .withElementAdded(picture(Ulid.generate()))
+          .withElementAdded(picture(''));
+
+      await store.pages.saveDocument(page.id, document);
+
+      expect((await store.pages.loadDocument(page.id))!.elements, hasLength(3));
+      expect(store.pages.pageFile(page.id)!.assets.single.id, shown.id);
+    });
+
     test('guesses media types from the file extension', () {
       expect(AssetStore.mimeTypeForPath('/tmp/a.PDF'), 'application/pdf');
       expect(AssetStore.mimeTypeForPath('/tmp/a.jpeg'), 'image/jpeg');

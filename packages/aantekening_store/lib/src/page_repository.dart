@@ -640,11 +640,16 @@ class PageRepository {
     );
   }
 
+  /// Links [pageId] to the pictures and files [assetIds] names that are
+  /// here: one deleted for good since, or never here, is no reason the page
+  /// cannot be saved.
   void _syncAssets(String pageId, Set<String> assetIds) {
     _db.run('DELETE FROM page_assets WHERE page_id = ?', <Object?>[pageId]);
     for (final assetId in assetIds) {
+      // Selected rather than given: OR IGNORE ignores no foreign key.
       _db.run(
-        'INSERT OR IGNORE INTO page_assets (page_id, asset_id) VALUES (?, ?)',
+        'INSERT OR IGNORE INTO page_assets (page_id, asset_id) '
+        'SELECT ?, id FROM assets WHERE id = ?',
         <Object?>[pageId, assetId],
       );
     }

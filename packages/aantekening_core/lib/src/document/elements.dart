@@ -532,7 +532,7 @@ final class ImageElement extends NoteElement {
   );
 
   @override
-  Iterable<String> get assetIds => <String>[assetId];
+  Iterable<String> get assetIds => <String>[if (assetId.isNotEmpty) assetId];
 
   @override
   void writeSearchText(StringBuffer out) {
@@ -636,7 +636,7 @@ final class PdfElement extends NoteElement {
   );
 
   @override
-  Iterable<String> get assetIds => <String>[assetId];
+  Iterable<String> get assetIds => <String>[if (assetId.isNotEmpty) assetId];
 
   @override
   void writeSearchText(StringBuffer out) {
