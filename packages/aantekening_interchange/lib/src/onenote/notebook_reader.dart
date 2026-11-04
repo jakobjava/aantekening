@@ -5,6 +5,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import '../bytes.dart';
@@ -95,39 +96,54 @@ Uint8List? _externalFile(Directory notebook, String reference) {
   return null;
 }
 
-/// The names of the sections and groups a table of contents lists, in its
-/// order: each name the file or folder it is kept in.
+/// The names of the sections and groups the table of contents in [file]
+/// lists, in its order: each name the file or folder it is kept in.
 List<String> _tableOfContents(File file) {
   try {
-    final store = RevisionStore.read(file.readAsBytesSync());
-    if (store.kind != StoreKind.tableOfContents) return const <String>[];
-    final entries = <(int, String)>[];
-    void visit(ExGuid? id, int depth) {
-      final object = store.root[id];
-      if (object == null || depth > 16) return;
-      final properties = object.properties;
-      final name = properties.text(Prop.folderChildFilename);
-      if (name != null) {
-        entries.add((
-          properties.integer(Prop.notebookElementOrderingId) ?? 1 << 30,
-          // OneNote escapes characters a file name may not hold.
-          name.replaceAll('^M', '+').replaceAll('^J', ','),
-        ));
-      }
-      for (final child in properties.refs(Prop.tocChildren)) {
-        visit(child, depth + 1);
-      }
-    }
-
-    visit(store.root.contentRoot, 0);
-    // A name listed twice is where it was listed last.
-    final seen = <String>{};
-    final latest = <(int, int, String)>[
-      for (var i = entries.length - 1; i >= 0; i--)
-        if (seen.add(entries[i].$2)) (entries[i].$1, i, entries[i].$2),
-    ]..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2 - b.$2);
-    return <String>[for (final entry in latest) entry.$3];
+    return tableOfContents(RevisionStore.read(file.readAsBytesSync()));
   } on FormatDamage {
     return const <String>[];
   }
+}
+
+/// The names the table of contents [store] lists, in its order.
+@visibleForTesting
+List<String> tableOfContents(RevisionStore store) {
+  if (store.kind != StoreKind.tableOfContents) return const <String>[];
+  final entries = <(int, String)>[];
+  // An entry within itself is passed over; entries that list one another
+  // over and over, a thousand times sixteen deep, are damage.
+  final path = <ExGuid>{};
+  var visits = 0;
+  void visit(ExGuid? id, int depth) {
+    if (++visits > 1 << 20) {
+      throw FormatDamage(
+        'The table of contents lists its entries over and over',
+      );
+    }
+    final object = store.root[id];
+    if (object == null || depth > 16 || !path.add(id!)) return;
+    final properties = object.properties;
+    final name = properties.text(Prop.folderChildFilename);
+    if (name != null) {
+      entries.add((
+        properties.integer(Prop.notebookElementOrderingId) ?? 1 << 30,
+        // OneNote escapes characters a file name may not hold.
+        name.replaceAll('^M', '+').replaceAll('^J', ','),
+      ));
+    }
+    for (final child in properties.refs(Prop.tocChildren)) {
+      visit(child, depth + 1);
+    }
+    path.remove(id);
+  }
+
+  visit(store.root.contentRoot, 0);
+  // A name listed twice is where it was listed last.
+  final seen = <String>{};
+  final latest = <(int, int, String)>[
+    for (var i = entries.length - 1; i >= 0; i--)
+      if (seen.add(entries[i].$2)) (entries[i].$1, i, entries[i].$2),
+  ]..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2 - b.$2);
+  return <String>[for (final entry in latest) entry.$3];
 }

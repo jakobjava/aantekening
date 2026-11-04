@@ -19,6 +19,8 @@ OneSection readSection(RevisionStore store, String fallbackName) {
     throw FormatDamage('The section has no pages');
   }
   final pages = <OnePage>[];
+  final read = <ExGuid>{};
+  final lookups = _Lookups();
   for (final seriesId in section.properties.refs(Prop.elementChildNodes)) {
     final series = root[seriesId];
     if (series == null || series.jcid != Jcid.pageSeriesNode) continue;
@@ -26,8 +28,9 @@ OneSection readSection(RevisionStore store, String fallbackName) {
       Prop.childGraphSpaceElementNodes,
     )) {
       final space = store.spaces[spaceId];
-      if (space == null) continue;
-      final page = _PageReader(space).read();
+      // A page is read once, however often it is listed.
+      if (space == null || !read.add(spaceId!)) continue;
+      final page = _PageReader(space, lookups).read();
       if (page != null) pages.add(page);
     }
   }
@@ -38,14 +41,37 @@ OneSection readSection(RevisionStore store, String fallbackName) {
   );
 }
 
+/// How many objects the pages of a section have looked up, and how many
+/// they may: objects that name one another over and over would otherwise
+/// be read as a tree of billions. A section of a thousand full pages
+/// looks up a few million.
+final class _Lookups {
+  static const int _limit = 1 << 24;
+  int _count = 0;
+
+  void count() {
+    if (++_count > _limit) {
+      throw FormatDamage('The pages refer to their contents over and over');
+    }
+  }
+}
+
 /// Reads one page's object space.
 final class _PageReader {
-  _PageReader(this._space);
+  _PageReader(this._space, this._lookups);
 
   final ObjectSpace _space;
+  final _Lookups _lookups;
   int _depth = 0;
 
-  StoreObject? _object(ExGuid? id) => _space[id];
+  /// The outline elements and groups being read, each within the one
+  /// before it: one within itself is passed over.
+  final Set<ExGuid> _path = <ExGuid>{};
+
+  StoreObject? _object(ExGuid? id) {
+    _lookups.count();
+    return _space[id];
+  }
 
   OnePage? read() {
     final metadata = _object(_space.metadataRoot)?.properties;
@@ -151,7 +177,7 @@ final class _PageReader {
       final elements = <OneElement>[];
       for (final id in ids) {
         final object = _object(id);
-        if (object == null) continue;
+        if (object == null || !_path.add(id!)) continue;
         final properties = object.properties;
         if (object.jcid == Jcid.outlineGroup) {
           elements.addAll(_elements(properties.refs(Prop.elementChildNodes)));
@@ -167,6 +193,7 @@ final class _PageReader {
             ),
           );
         }
+        _path.remove(id);
       }
       return elements;
     } finally {

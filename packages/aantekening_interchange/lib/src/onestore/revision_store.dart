@@ -140,6 +140,10 @@ final class ObjectSpace {
 final class RevisionStore {
   RevisionStore._(this.kind, this.root, this.spaces);
 
+  /// A store of [spaces] already read, as tests make one.
+  @visibleForTesting
+  RevisionStore.of(this.kind, this.root, this.spaces);
+
   /// Reads [bytes]; [externalFile] finds a file stored beside the section
   /// rather than in it, by its name, if it can.
   factory RevisionStore.read(

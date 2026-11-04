@@ -1,7 +1,12 @@
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:aantekening_interchange/src/bytes.dart';
+import 'package:aantekening_interchange/src/onenote/model.dart';
+import 'package:aantekening_interchange/src/onenote/notebook_reader.dart';
+import 'package:aantekening_interchange/src/onenote/properties.dart';
+import 'package:aantekening_interchange/src/onenote/section_reader.dart';
 import 'package:aantekening_interchange/src/onestore/file_nodes.dart';
 import 'package:aantekening_interchange/src/onestore/revision_store.dart';
 import 'package:test/test.dart';
@@ -119,12 +124,155 @@ void main() {
       expect(await bounded(() => RevisionStore.read(bytes)), 'read');
     });
   });
+
+  group('OneNote pages', () {
+    test('pass over an outline element within itself', () async {
+      final store = _section(<ExGuid, StoreObject>{
+        _id(10): _node(Jcid.outlineElementNode, <int, List<ExGuid>>{
+          Prop.elementChildNodes: <ExGuid>[_id(10), _id(11), _id(10)],
+        }),
+        _id(11): _node(Jcid.outlineElementNode),
+      });
+      expect(
+        await bounded(() {
+          final page = readSection(store, 'Loops').pages.single;
+          final outline = page.contents.single as OneOutline;
+          final element = outline.elements.single;
+          if (element.children.length != 1) throw StateError('$element');
+        }),
+        'read',
+      );
+    });
+
+    test('refuse elements that hold one element twice, on and on', () async {
+      // Each element holds the next twice: 2^40 elements, read one by one.
+      final store = _section(<ExGuid, StoreObject>{
+        for (var i = 10; i < 50; i++)
+          _id(i): _node(Jcid.outlineElementNode, <int, List<ExGuid>>{
+            Prop.elementChildNodes: <ExGuid>[_id(i + 1), _id(i + 1)],
+          }),
+        _id(50): _node(Jcid.outlineElementNode),
+      });
+      expect(
+        await bounded(() => readSection(store, 'Twice')),
+        startsWith('damage: '),
+      );
+    });
+
+    test('read a table of contents listing an entry within itself, or '
+        'its entries over and over', () async {
+      // An entry within itself; and entries a thousand times sixteen deep.
+      ObjectSpace contents(Map<ExGuid, StoreObject> objects) => ObjectSpace(
+        _id(0),
+        <ExGuid, StoreObject>{
+          _id(1): _node(0, <int, List<ExGuid>>{
+            Prop.tocChildren: <ExGuid>[_id(1), _id(2)],
+          }),
+          ...objects,
+        },
+        <int, ExGuid>{1: _id(1)},
+      );
+      final loop = RevisionStore.of(
+        StoreKind.tableOfContents,
+        contents(<ExGuid, StoreObject>{
+          _id(2): _node(0, const <int, List<ExGuid>>{}, 'Physik.one'),
+        }),
+        const <ExGuid, ObjectSpace>{},
+      );
+      expect(tableOfContents(loop), <String>['Physik.one']);
+      final over = RevisionStore.of(
+        StoreKind.tableOfContents,
+        contents(<ExGuid, StoreObject>{
+          for (var i = 2; i < 18; i++)
+            _id(i): _node(0, <int, List<ExGuid>>{
+              Prop.tocChildren: List<ExGuid>.filled(1000, _id(i + 1)),
+            }),
+        }),
+        const <ExGuid, ObjectSpace>{},
+      );
+      expect(
+        await bounded(() => tableOfContents(over)),
+        startsWith('damage: '),
+      );
+    });
+  });
+}
+
+ExGuid _id(int n) =>
+    ExGuid(Guid.parse('11111111-2222-3333-4444-555555555555'), n);
+
+/// An object of [jcid] referring to others by [references], named [name].
+StoreObject _node(
+  int jcid, [
+  Map<int, List<ExGuid>> references = const <int, List<ExGuid>>{},
+  String? name,
+]) => StoreObject(
+  jcid,
+  PropertySet(<int, PropertyValue>{
+    for (final MapEntry(:key, :value) in references.entries)
+      key & 0x3FFFFFF: ReferencesValue(
+        ReferenceKind.object,
+        value,
+        single: false,
+      ),
+    if (name != null)
+      Prop.folderChildFilename & 0x3FFFFFF: BytesValue(
+        Uint8List.fromList(<int>[
+          for (final unit in '$name\u0000'.codeUnits) ...<int>[unit, 0],
+        ]),
+      ),
+  }),
+);
+
+/// A section of one page, whose outline holds the element `_id(10)` of
+/// [elements].
+RevisionStore _section(Map<ExGuid, StoreObject> elements) {
+  final page = _id(100);
+  final space = ObjectSpace(
+    page,
+    <ExGuid, StoreObject>{
+      _id(1): _node(0),
+      _id(2): _node(0, <int, List<ExGuid>>{
+        Prop.contentChildNodes: <ExGuid>[_id(3)],
+      }),
+      _id(3): _node(Jcid.pageNode, <int, List<ExGuid>>{
+        Prop.elementChildNodes: <ExGuid>[_id(4)],
+      }),
+      _id(4): _node(Jcid.outlineNode, <int, List<ExGuid>>{
+        Prop.elementChildNodes: <ExGuid>[_id(10)],
+      }),
+      ...elements,
+    },
+    <int, ExGuid>{1: _id(2), 2: _id(1)},
+  );
+  final root = ObjectSpace(
+    _id(0),
+    <ExGuid, StoreObject>{
+      _id(1): _node(Jcid.sectionNode, <int, List<ExGuid>>{
+        Prop.elementChildNodes: <ExGuid>[_id(2)],
+      }),
+      _id(2): StoreObject(
+        Jcid.pageSeriesNode,
+        PropertySet(<int, PropertyValue>{
+          Prop.childGraphSpaceElementNodes & 0x3FFFFFF: ReferencesValue(
+            ReferenceKind.objectSpace,
+            <ExGuid>[page],
+            single: false,
+          ),
+        }),
+      ),
+    },
+    <int, ExGuid>{1: _id(1)},
+  );
+  return RevisionStore.of(StoreKind.section, root, <ExGuid, ObjectSpace>{
+    page: space,
+  });
 }
 
 /// What [read] comes to, in an isolate of its own given a few seconds:
 /// 'read', 'damage: ' and what it found, the error it ran into, or
 /// 'timeout'.
-Future<String> bounded(Object? Function() read) async {
+Future<String> bounded(void Function() read) async {
   final port = ReceivePort();
   final isolate = await Isolate.spawn((SendPort send) {
     try {
