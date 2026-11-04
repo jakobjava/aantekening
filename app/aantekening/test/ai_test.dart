@@ -668,6 +668,46 @@ void main() {
     );
   });
 
+  testWidgets('a set stopped while a conversation opens stays stopped', (
+    tester,
+  ) async {
+    final container = await openShell(tester);
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    final link = NoteLink.page(page.id);
+    final session = container.read(aiSessionProvider(link).notifier);
+    AiSessionState state() => container.read(aiSessionProvider(link));
+    Future<void> settle() async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    await ask(tester, 'What is force?');
+    final thread = state().threadId!;
+    final cards = model.cardsGate = Completer<void>();
+    unawaited(
+      session.make(
+        container
+            .read(aiSettingsProvider)
+            .studyProfiles
+            .firstWhere((profile) => profile.id == StudyKind.flashcards.name),
+      ),
+    );
+    await settle();
+    expect(state().making, contains(StudyKind.flashcards.name));
+
+    // Stopped once the conversation's questions are being read.
+    unawaited(session.openThread(thread));
+    await Future<void>.value();
+    unawaited(session.stopMaking(StudyKind.flashcards.name));
+    await settle();
+    expect(state().threadId, thread);
+    expect(state().making, isEmpty);
+    cards.complete();
+    await settle();
+  });
+
   testWidgets('shows how an answer is coming along: each step, how long '
       'it took, and what the model thinks', (tester) async {
     final container = await openShell(tester);

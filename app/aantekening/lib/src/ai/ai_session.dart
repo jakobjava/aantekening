@@ -379,24 +379,30 @@ class AiSession extends Notifier<AiSessionState> {
     final threads = await store.ai.threadsAbout(scope);
     final items = await store.ai.itemsAbout(scope);
     final open = threadId ?? state.threadId;
+    final turns = open == null
+        ? const <AiTurn>[]
+        : await store.ai.turnsOf(open);
+    // The state taken once they are read: an answer or a set may have
+    // moved on, or ended, meanwhile.
     state = state.copyWith(
       loaded: true,
       threads: threads,
       items: items,
       threadId: () => open,
-      turns: open == null ? const <AiTurn>[] : await store.ai.turnsOf(open),
+      turns: turns,
     );
   }
 
   /// Shows conversation [id].
   Future<void> openThread(String id) async {
     final store = await _store;
+    final turns = await store.ai.turnsOf(id);
     state = state.copyWith(
       threadId: () => id,
       itemId: () => null,
+      turns: turns,
       shownProfile: () => null,
       shownPodcast: () => null,
-      turns: await store.ai.turnsOf(id),
       error: () => null,
     );
   }
