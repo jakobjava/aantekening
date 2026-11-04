@@ -179,6 +179,9 @@ Future<void> editTikzSource(
       window.value = shown(value);
     },
   );
+  // The window gone, nothing shows what it held. It lets go of it as it
+  // goes, which it may still do afterwards.
+  window.dispose();
 }
 
 class _FormulaWindow extends ConsumerStatefulWidget {

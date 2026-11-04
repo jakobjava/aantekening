@@ -302,9 +302,13 @@ extension _Formulas on TextBoxEditorState {
     unawaited(
       showFormulaWindow(context, source: opened, onChanged: _editInWindow).then(
         (finished) {
-          if (!finished || !identical(_window, opened)) return;
-          _update(() => _window = null);
-          finishFormula();
+          if (finished && mounted && identical(_window, opened)) {
+            _update(() => _window = null);
+            finishFormula();
+          }
+          // The window gone, nothing shows what it held. It lets go of it as
+          // it goes, which it may still do afterwards.
+          opened.dispose();
         },
       ),
     );
