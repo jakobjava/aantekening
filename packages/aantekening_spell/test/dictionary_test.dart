@@ -267,6 +267,21 @@ void main() {
     });
   });
 
+  test('reads the single-byte encodings of Cyrillic and Greek '
+      'dictionaries', () {
+    for (final (encoding, word, bytes) in <(String, String, List<int>)>[
+      ('KOI8-R', 'кот', <int>[0xCB, 0xCF, 0xD4]),
+      ('microsoft-cp1251', 'кот', <int>[0xEA, 0xEE, 0xF2]),
+      ('ISO8859-7', 'γάτα', <int>[0xE3, 0xDC, 0xF4, 0xE1]),
+    ]) {
+      final dictionary = HunspellDictionary.fromBytes(
+        latin1.encode('SET $encoding\n'),
+        <int>[...latin1.encode('1\n'), ...bytes, 0x0A],
+      );
+      expect(dictionary.check(word), isTrue, reason: encoding);
+    }
+  });
+
   test('ignores comments and blank lines inside tables', () {
     final dictionary = HunspellDictionary.parse(
       'SET UTF-8\n# a comment\nSFX S Y 2\n\nSFX S 0 s .  # plural\n'
