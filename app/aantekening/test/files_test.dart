@@ -5,6 +5,7 @@ import 'package:aantekening/src/editor/text/text_styles.dart';
 import 'package:aantekening/src/files/attached_files.dart';
 import 'package:aantekening/src/files/backup_settings.dart';
 import 'package:aantekening/src/files/bin_view.dart';
+import 'package:aantekening/src/files/export_flow.dart';
 import 'package:aantekening/src/files/notes_keeper.dart';
 import 'package:aantekening/src/files/notes_location.dart';
 import 'package:aantekening/src/look/theme.dart';
@@ -13,8 +14,10 @@ import 'package:aantekening/src/providers.dart';
 import 'package:aantekening/src/settings/files_settings.dart';
 import 'package:aantekening/src/settings/settings_view.dart';
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:aantekening_interchange/aantekening_interchange.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -315,6 +318,84 @@ void main() {
     }
     expect(letGo(), isTrue, reason: 'the first notes are let go of');
     await store.close();
+  });
+
+  testWidgets('an export has the page as it was being written', (tester) async {
+    final folder = Directory.systemTemp.createTempSync('notes_export_');
+    addTearDown(() => folder.deleteSync(recursive: true));
+    final store = AantekeningStore.inMemory(
+      assetDirectory: Directory(p.join(folder.path, 'assets'))..createSync(),
+    );
+    addTearDown(store.close);
+    final notebook = await tester.runAsync(
+      () => store.library.createNotebook(title: 'Physics'),
+    );
+    final section = await tester.runAsync(
+      () =>
+          store.library.createSection(notebookId: notebook!.id, title: 'Waves'),
+    );
+    final page = (await tester.runAsync(
+      () => store.pages.createPage(sectionId: section!.id, title: 'Lecture'),
+    ))!;
+    final target = p.join(folder.path, 'Lecture.aantekening');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/file_selector'),
+      (call) async => call.method == 'getSavePath' ? target : null,
+    );
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/file_selector'),
+        null,
+      ),
+    );
+    late WidgetRef shell;
+    late BuildContext context;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          storeProvider.overrideWith((ref) async => store),
+          preferencesProvider.overrideWith(
+            (ref) async => Preferences.inMemory(),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Consumer(
+              builder: (inside, ref, _) {
+                shell = ref;
+                context = inside;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    // Words typed a moment ago, on their way to being saved.
+    shell
+        .read(openSavesProvider)
+        .register(
+          () => store.pages.saveDocument(
+            page.id,
+            PageDocument.empty(id: page.id).withElementAdded(
+              TextElement(
+                id: Ulid.generate(),
+                frame: const Frame(x: 0, y: 0, width: 200, height: 40),
+                createdAt: 0,
+                updatedAt: 0,
+                blocks: <TextBlock>[TextBlock.plain('typed just now')],
+              ),
+            ),
+          ),
+        );
+
+    await tester.runAsync(() => exportNotes(context, shell, page));
+    final draft = const AantekeningImporter().read(<String>[
+      target,
+    ], ImportWork(Directory(p.join(folder.path, 'work'))..createSync()));
+    expect(draft.pages.single.document.extractSearchText(), 'typed just now');
   });
 
   testWidgets('the settings have a page for files, with what they hold', (

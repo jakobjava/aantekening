@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../look/motion.dart';
 import '../providers.dart';
 import '../shell/library_menu.dart';
+import 'notes_keeper.dart';
 
 /// The extension an export of this app's is saved with.
 const String exportExtension = 'aantekening';
@@ -32,7 +33,9 @@ Future<void> exportNotes(
       ? location.path
       : '${location.path}.$exportExtension';
   final store = await ref.read(storeProvider.future);
-  await store.mirror?.flush();
+  // What is still being typed goes too: the export is made from the
+  // index, which has a page once it is saved.
+  await ref.read(openSavesProvider).saveAll();
   await store.exports.write(
     path,
     notebooks: <String>[if (node is Notebook) node.id],

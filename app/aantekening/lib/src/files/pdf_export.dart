@@ -26,6 +26,7 @@ import '../preferences.dart';
 import '../providers.dart';
 import '../shell/library_menu.dart';
 import 'export_flow.dart' show fileName;
+import 'notes_keeper.dart';
 import 'page_printer.dart';
 
 /// How sharp the pages of a PDF are drawn.
@@ -320,6 +321,9 @@ Future<void> exportPdf(BuildContext context, TreeNode node) async {
   final container = ProviderScope.containerOf(context, listen: false);
   final window = Navigator.of(context, rootNavigator: true).context;
   final store = await container.read(storeProvider.future);
+  // What is still being typed is printed too: the PDF is made from the
+  // index, which has a page once it is saved.
+  await container.read(openSavesProvider).saveAll();
   final contents = await PdfContents.of(store, node);
   if (!window.mounted) return;
   if (contents.pages.isEmpty) {
@@ -356,8 +360,6 @@ Future<void> exportPdf(BuildContext context, TreeNode node) async {
   final path = location.path.toLowerCase().endsWith('.pdf')
       ? location.path
       : '${location.path}.pdf';
-  await store.mirror?.flush();
-  if (!window.mounted) return;
   final failure = await showAppDialog<Object>(
     context: window,
     barrierDismissible: false,
