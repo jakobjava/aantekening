@@ -466,9 +466,11 @@ final class _SpaceReader {
     final id = _resolve(node.fields.u32(), table);
     if (id == null) return;
     StoreObject? earlier = revision.objects[id];
+    // A revision declared again, on a later one, makes the revisions loop.
+    final seen = <ExGuid>{};
     for (
       var rid = revision.dependsOn;
-      earlier == null && !rid.isNil;
+      earlier == null && !rid.isNil && seen.add(rid);
       rid = _revisions[rid]?.dependsOn ?? ExGuid.nil
     ) {
       earlier = _revisions[rid]?.objects[id];

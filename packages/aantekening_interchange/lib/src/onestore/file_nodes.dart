@@ -141,7 +141,14 @@ final class StoreFile {
       transactionLog,
       transactions,
     );
-    final lists = _ListReader(ByteReader(bytes), committed);
+    final lists = _ListReader(
+      ByteReader(bytes),
+      committed,
+      // Each node takes four bytes at least, so a file holds no more than
+      // a quarter of its length of them; read more often than that, its
+      // lists are reached many times over.
+      bytes.length + (1 << 16),
+    );
     final root = rootListChunk.isEmpty
         ? const <FileNode>[]
         : lists.read(rootListChunk);
@@ -172,7 +179,14 @@ final class StoreFile {
     final counts = <int, int>{};
     var chunk = log;
     var seen = 0;
+    final visited = <int>{};
     while (!chunk.isEmpty && seen < transactions) {
+      if (!visited.add(chunk.offset)) {
+        throw FormatDamage('The transaction log loops back on itself');
+      }
+      if (chunk.length < 12) {
+        throw FormatDamage('A fragment of the transaction log is too short');
+      }
       final fragment = file.at(chunk.offset, chunk.length);
       final entries = (chunk.length - 12) ~/ 8;
       for (var i = 0; i < entries && seen < transactions; i++) {
@@ -193,17 +207,29 @@ final class StoreFile {
 
 /// Reads file node lists, stopping each at the nodes committed to it.
 final class _ListReader {
-  _ListReader(this._file, this._committed);
+  _ListReader(this._file, this._committed, this._limit);
 
   final ByteReader _file;
   final Map<int, int> _committed;
   int _depth = 0;
+
+  /// The lists being read, each within the one before it, by where each
+  /// starts.
+  final Set<int> _open = <int>{};
+
+  /// How many nodes have been read, and how many may be.
+  int _nodes = 0;
+  final int _limit;
 
   static const int _fragmentMagic = 0xA4567AB1F5F7F4C4;
   static const int _fragmentFooter = 0x8BC215C38233BA4B;
 
   List<FileNode> read(FileChunk first) {
     if (++_depth > 64) throw FormatDamage('File node lists nest too deep');
+    if (!_open.add(first.offset)) {
+      _depth--;
+      throw FormatDamage('A file node list loops back on itself');
+    }
     try {
       final nodes = <FileNode>[];
       var chunk = first;
@@ -232,6 +258,11 @@ final class _ListReader {
           final node = _readNode(fragment);
           if (node == null) break;
           if (node.id == NodeId.chunkTerminator) break;
+          if (++_nodes > _limit) {
+            throw FormatDamage(
+              'The file node lists are reached many times over',
+            );
+          }
           nodes.add(node);
           left--;
         }
@@ -246,6 +277,7 @@ final class _ListReader {
       return nodes;
     } finally {
       _depth--;
+      _open.remove(first.offset);
     }
   }
 
