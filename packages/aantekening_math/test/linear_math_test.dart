@@ -628,6 +628,16 @@ void main() {
       expect(translation.diagnostics, isNotEmpty);
     });
 
+    test('with their end read as a command\'s argument, still end', () {
+      final open = LinearMath.translate(r'[a;\foo[x]');
+      expect(open.latex, r'\left[ a; \foo[x] \right.');
+      expect(open.diagnostics, isNotEmpty);
+      final typing = LinearMath.translate(r'x = [0; \foo[');
+      expect(typing.latex, startsWith(r'x = \left[ 0; \foo'));
+      expect(typing.diagnostics, isNotEmpty);
+      expectLatex(r'[a;\foo[x]] + 1', r'\left[ a; \foo[x] \right] + 1');
+    });
+
     test('are written back as they are typed', () {
       for (final (typed, written) in const <(String, String)>[
         ('[a;+infty[', '[a; +infty['),

@@ -45,7 +45,12 @@ class MathParser {
 
   Token get _current => _tokens[_index];
 
-  Token _advance() => _tokens[_index++];
+  /// The token at hand, taken; the end of the stream is never taken past.
+  Token _advance() {
+    final token = _current;
+    if (token.type != TokenType.end) _index++;
+    return token;
+  }
 
   bool _check(TokenType type) => _current.type == type;
 
@@ -877,10 +882,23 @@ class MathParser {
         final separator = _separator() ?? ';';
         final to = _parseExpression();
         skipTo(() => false);
-        final close = _advance();
+        // The bracket that was to end it may have been read already, as a
+        // command's argument in `[a;\foo[x]]`: the next one ends it then,
+        // or nothing if none is at hand.
+        final String close;
+        if (_index == end ||
+            _check(TokenType.leftBracket) ||
+            _check(TokenType.rightBracket)) {
+          close = _advance().lexeme;
+        } else {
+          diagnostics.add(
+            MathDiagnostic(_current.offset, 'Missing "${_tokens[end].lexeme}"'),
+          );
+          close = '.';
+        }
         return FencedNode(
           open.lexeme,
-          close.lexeme,
+          close,
           ListNode(<MathNode>[from, to], <String>[separator]),
         );
       });
