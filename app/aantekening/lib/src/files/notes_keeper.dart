@@ -65,8 +65,14 @@ class _NotesKeeperState extends ConsumerState<NotesKeeper> {
       onHide: _keep,
       onPause: _keep,
     );
-    // Backed up once the notes are open, and then whenever one is due.
+    // Backed up once the notes are open, and then whenever one is due:
+    // open as the window does, or once tried again after they could not
+    // be, or opened from another folder.
     unawaited(_backUpWhenOpen());
+    ref.listenManual<AsyncValue<AantekeningStore>>(
+      storeProvider,
+      (_, next) => _opened(next.value),
+    );
     _backups = Timer.periodic(
       const Duration(hours: 1),
       (_) => unawaited(ref.read(backupsProvider.notifier).backUpIfDue()),
@@ -81,9 +87,17 @@ class _NotesKeeperState extends ConsumerState<NotesKeeper> {
       // The window says why the notes could not be opened.
       return;
     }
-    if (!mounted) return;
+    _opened(store);
+  }
+
+  /// The notes last opened, and seen to.
+  AantekeningStore? _seen;
+
+  void _opened(AantekeningStore? store) {
+    if (store == null || identical(store, _seen) || !mounted) return;
+    _seen = store;
     _sayRescued(store.rescued);
-    await ref.read(backupsProvider.notifier).backUpIfDue();
+    unawaited(ref.read(backupsProvider.notifier).backUpIfDue());
   }
 
   /// Says which pages were put back that could not be saved last time.

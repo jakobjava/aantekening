@@ -54,6 +54,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   void initState() {
     super.initState();
     unawaited(_forgetMissing());
+    // And each time the notes open again: tried again after they could not
+    // be, or opened from another folder.
+    ref.listenManual<AsyncValue<AantekeningStore>>(
+      storeProvider,
+      (_, next) => unawaited(_opened(next.value)),
+    );
     // What panes are made of is laid out once, unseen, as the window opens.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) warmControls(context);
@@ -87,6 +93,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // The window says why the notes could not be opened.
       return;
     }
+    await _opened(store);
+  }
+
+  /// The notes last opened, and seen to.
+  AantekeningStore? _seen;
+
+  Future<void> _opened(AantekeningStore? store) async {
+    if (store == null || identical(store, _seen)) return;
+    _seen = store;
     await ref.read(preferencesProvider.future);
     if (!mounted) return;
     await ref.read(tabsProvider.notifier).forgetMissing(store);

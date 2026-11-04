@@ -263,6 +263,58 @@ void main() {
       expect(KeyCatch.active, isFalse);
     });
 
+    testWidgets('sees to the notes when they open once tried again', (
+      tester,
+    ) async {
+      final notebook = await store.library.createNotebook(title: 'Physics');
+      final section = await store.library.createSection(
+        notebookId: notebook.id,
+        title: 'Mechanics',
+      );
+      final rescued = await store.pages.createPage(
+        sectionId: section.id,
+        title: 'Kept',
+      );
+      store.rescued = <PageRef>[rescued];
+      var tries = 0;
+      useSurface(tester, wideWindow);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            storeProvider.overrideWith(
+              (ref) async => tries++ == 0 ? throw const NotesInUse() : store,
+            ),
+            preferencesProvider.overrideWith(
+              (ref) async => Preferences.inMemory(<String, Object?>{
+                'tabs': <Object?>[
+                  <String, Object?>{
+                    'notebook': notebook.id,
+                    'section': section.id,
+                    'page': 'a page long gone',
+                  },
+                ],
+              }),
+            ),
+          ],
+          retry: (_, _) => null,
+          child: MaterialApp(theme: AppTheme.light(), home: const HomeShell()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('aantekening is open already.'), findsOneWidget);
+
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('could not be saved last time'),
+        findsOneWidget,
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(HomeShell)),
+      );
+      expect(container.read(tabsProvider).current.pageId, isNull);
+    });
+
     testWidgets('with no page open, Space opens the menu of what needs none', (
       tester,
     ) async {
