@@ -186,6 +186,19 @@ void main() {
       expect(dashed.path.computeMetrics().length, greaterThan(3));
     });
 
+    test('a dash pattern is drawn with the dashes it gives', () {
+      for (final pattern in <String>[
+        'on 2pt off 3pt',
+        'on 2 pt off 3 pt',
+        'on 2pt off 3pt on 1pt off 3pt',
+      ]) {
+        final dashed = drawn(
+          '\\draw[dash pattern=$pattern] (0,0) -- (1,0);',
+        ).marks.single;
+        expect(dashed.path.computeMetrics().length, greaterThan(3));
+      }
+    });
+
     test('a clip crops what is drawn after it, to the end of its scope', () {
       final cropped = drawn(
         r'\clip (0,0) rectangle (2,1); \draw (-1,-1) -- (3,3);',

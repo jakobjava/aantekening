@@ -402,7 +402,9 @@ class _Style {
       case 'dash pattern' when value != null:
         dashes = <double>[
           for (final match in RegExp(
-            r'(on|off)\s+([^\s]+(?:\s*[a-z]{2})?)',
+            // A unit may follow its number after a space, `on 2 pt`, but
+            // the `on` or the `of` of `off` after it is none.
+            r'(on|off)\s+([^\s]+(?:\s*(?!on\b)[a-z]{2}\b)?)',
           ).allMatches(value))
             TikzExpression.length(match.group(2)!),
         ];
