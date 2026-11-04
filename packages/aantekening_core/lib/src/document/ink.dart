@@ -262,7 +262,9 @@ class InkStroke {
     final usable = flat.length - (flat.length % stride);
     final buffer = Float32List(usable);
     for (var i = 0; i < usable; i++) {
-      buffer[i] = flat[i];
+      // A value too large for a float is held as the largest there is, not
+      // as infinity, which no page could be written with again.
+      buffer[i] = flat[i].clamp(-_floatMax, _floatMax);
     }
     return InkStroke(
       tool: readEnum(json, 'tool', InkTool.values, InkTool.pen),
@@ -271,6 +273,9 @@ class InkStroke {
       points: buffer,
     );
   }
+
+  /// The largest value a [Float32List] holds.
+  static const double _floatMax = 3.4028234663852886e38;
 
   static double _round2(double value) => (value * 100).roundToDouble() / 100;
 

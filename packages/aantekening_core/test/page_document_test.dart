@@ -209,6 +209,21 @@ void main() {
       expect(stroke.pointCount, 1);
     });
 
+    test('writes again ink read with a point too far out to hold', () {
+      final stroke = InkStroke.fromJson(<String, Object?>{
+        'tool': 'pen',
+        'color': 0xFF000000,
+        'width': 2.0,
+        'points': <double>[1e308, -1e308, 1, 0],
+      });
+      expect(stroke.points.every((value) => value.isFinite), isTrue);
+      expect(stroke.xAt(0), greaterThan(1e38));
+      expect(stroke.yAt(0), lessThan(-1e38));
+      final written = StringBuffer();
+      stroke.writeJson(written);
+      expect(jsonDecode(written.toString()), jsonDecode(jsonEncode(stroke)));
+    });
+
     test('keeps the width a box that fits its text wraps at', () {
       final document = PageDocument(
         id: 'PAGE01',
