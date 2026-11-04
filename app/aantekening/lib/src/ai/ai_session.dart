@@ -361,14 +361,20 @@ class AiSession extends Notifier<AiSessionState> {
 
   @override
   AiSessionState build() {
+    // Other notes opened, from another folder: begun afresh, nothing of
+    // these kept in those.
+    ref.watch(storeProvider.select((store) => store.value));
     ref.onDispose(() {
       unawaited(_answering?.cancel());
-      for (final maker in <StreamSubscription<Object?>>[
+      for (final maker in <StreamSubscription<Object?>>{
         ..._makers.values,
         ..._podcasters.values,
-      ]) {
+      }) {
         unawaited(maker.cancel());
       }
+      _answering = null;
+      _makers.clear();
+      _podcasters.clear();
     });
     unawaited(_load());
     return const AiSessionState();

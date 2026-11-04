@@ -797,6 +797,44 @@ void main() {
     expect(made.last.closed, isFalse);
   });
 
+  testWidgets('other notes opened, the AI begins afresh, keeping nothing '
+      'of these in those', (tester) async {
+    final first = store;
+    final other = AantekeningStore.inMemory(assetDirectory: assets);
+    final container = await openShell(tester);
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    final link = NoteLink.page(page.id);
+    AiSessionState state() => container.read(aiSessionProvider(link));
+    Future<void> settle() async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    await ask(tester, 'What is force?');
+    expect(state().threads, hasLength(1));
+    final gate = model.gate = Completer<void>();
+    unawaited(
+      container
+          .read(aiSessionProvider(link).notifier)
+          .ask('And its unit?', searchWeb: false),
+    );
+    await settle();
+
+    // The store the shell opens, closed when the test ends.
+    store = other;
+    addTearDown(first.close);
+    container.invalidate(storeProvider);
+    await settle();
+    gate.complete();
+    await settle();
+    expect(state().threads, isEmpty);
+    expect(state().turns, isEmpty);
+    expect(state().pending, isNull);
+    expect(await tester.runAsync(() => other.ai.threadsAbout(link)), isEmpty);
+  });
+
   testWidgets('shows how an answer is coming along: each step, how long '
       'it took, and what the model thinks', (tester) async {
     final container = await openShell(tester);
