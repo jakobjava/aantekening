@@ -85,14 +85,31 @@ final class SymbolNode extends MathNode {
 final class TextNode extends MathNode {
   const TextNode(this.text);
 
+  /// The prose as it is read, plain text and not LaTeX: `50% off`.
   final String text;
+
+  /// The characters LaTeX takes for something else in text, and how each
+  /// is written to be set as itself.
+  static const Map<String, String> escapes = <String, String>{
+    r'\': r'\textbackslash{}',
+    '{': r'\{',
+    '}': r'\}',
+    r'$': r'\$',
+    '&': r'\&',
+    '#': r'\#',
+    '%': r'\%',
+    '_': r'\_',
+    '^': r'\textasciicircum{}',
+    '~': r'\textasciitilde{}',
+  };
 
   @override
   void writeLatex(StringBuffer out) {
-    out
-      ..write(r'\text{')
-      ..write(text)
-      ..write('}');
+    out.write(r'\text{');
+    for (final char in text.split('')) {
+      out.write(escapes[char] ?? char);
+    }
+    out.write('}');
   }
 }
 

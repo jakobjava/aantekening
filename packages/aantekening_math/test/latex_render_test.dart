@@ -51,6 +51,7 @@ void main() {
     'T = 25 °C',
     'pu(1,5 kJ/mol)',
     'x in ]-oo; 0[ cup ]0; 1]',
+    r'"50% off, R&D, a_b, x^2, a~b, {#1}, cost in $, C:\temp" x',
   ];
 
   group('every example the cheat sheet shows parses', () {

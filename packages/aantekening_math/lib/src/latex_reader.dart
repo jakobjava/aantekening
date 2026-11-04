@@ -291,6 +291,30 @@ class LatexReader {
     return text;
   }
 
+  /// The text of `\text{…}` as the plain text it sets, its escaped
+  /// characters as themselves: `50\%` is `50%`. Null where it holds more
+  /// than plain text, maths or a command of its own, or a `"`, which
+  /// quoted text cannot hold; it is kept as LaTeX then.
+  static String? _plainText(String latex) {
+    final plain = StringBuffer();
+    for (var i = 0; i < latex.length; i++) {
+      final char = latex[i];
+      if (char == '"') return null;
+      if (char != r'\') {
+        if (TextNode.escapes.containsKey(char)) return null;
+        plain.write(char);
+        continue;
+      }
+      final escaped = TextNode.escapes.entries
+          .where((entry) => latex.startsWith(entry.value, i))
+          .firstOrNull;
+      if (escaped == null) return null;
+      plain.write(escaped.key);
+      i += escaped.value.length - 1;
+    }
+    return plain.toString();
+  }
+
   String _commandName() {
     // At the backslash.
     _i++;
@@ -356,7 +380,9 @@ class LatexReader {
       case 'textrm':
       case 'textnormal':
       case 'mbox':
-        return TextNode(_bracedText());
+        final text = _bracedText();
+        final plain = _plainText(text);
+        return plain != null ? TextNode(plain) : RawNode('$command{$text}');
       case 'bra':
       case 'Bra':
         return BraketNode(BraketKind.bra, <MathNode>[_argument()]);

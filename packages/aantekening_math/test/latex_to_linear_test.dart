@@ -93,6 +93,10 @@ void main() {
       r'\lVert v \rVert': 'norm(v)',
       r'\{1, 2\}': 'set(1, 2)',
       r'\text{if } x > 0': '"if " x > 0',
+      r'\text{50\% off}': '"50% off"',
+      r'\text{a\_b\textbackslash{}}': r'"a_b\"',
+      r'\text{the point $P$}': r'\text{the point $P$}',
+      r'\text{say "hi"}': r'\text{say "hi"}',
       "f'(x)": "f'(x)",
       r'\operatorname{sgn}(x)': 'sgn(x)',
       r'\operatorname{Hom}(A, B)': r'\operatorname{Hom}(A, B)',
@@ -144,6 +148,7 @@ void main() {
       r'{}^{14}_{6}\mathrm{C}',
       r'x \in \left] -\infty ; 0 \right[',
       r'x = \pm a',
+      r'\text{50\% of R\&D}',
     ]) {
       test('LaTeX: $latex', () {
         final simple = LinearMath.fromLatex(latex);

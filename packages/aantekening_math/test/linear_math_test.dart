@@ -264,6 +264,16 @@ void main() {
       expectLatex('"if" x > 0', r'\text{if} x > 0');
     });
 
+    test('sets quoted prose as it is typed, what LaTeX reads as more too', () {
+      expectLatex('"50% off"', r'\text{50\% off}');
+      expectLatex(r'"R&D in $"', r'\text{R\&D in \$}');
+      expectLatex('"a_b^c"', r'\text{a\_b\textasciicircum{}c}');
+      expectLatex(
+        r'"{#1} ~ \"',
+        r'\text{\{\#1\} \textasciitilde{} \textbackslash{}}',
+      );
+    });
+
     test('handles commas inside brackets', () {
       expectLatex('f(x, y)', r'f \left( x, y \right)');
       expectLatex('binom(n,k)', r'\binom{n}{k}');
