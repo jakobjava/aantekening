@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:aantekening/src/editor/text/text_styles.dart';
 import 'package:aantekening/src/files/attached_files.dart';
@@ -330,9 +330,11 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    container
-        .read(storeProvider.future)
-        .then<void>((_) {}, onError: (Object _) {});
+    unawaited(
+      container
+          .read(storeProvider.future)
+          .then<void>((_) {}, onError: (Object _) {}),
+    );
     // Another folder chosen once the first notes have begun to open.
     bool locked() =>
         Directory(index).existsSync() &&

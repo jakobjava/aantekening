@@ -333,7 +333,8 @@ void main() {
                   showChooser(
                     context,
                     choicesFor: (ref, typed) => <Choice>[
-                      for (final title in ref.watch(offered).value ?? [])
+                      for (final title
+                          in ref.watch(offered).value ?? const <String>[])
                         if (title.startsWith(typed))
                           Choice(title: title, run: () => taken.add(title)),
                     ],
