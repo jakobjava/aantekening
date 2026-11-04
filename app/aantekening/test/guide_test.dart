@@ -390,6 +390,56 @@ void main() {
     expect(templates()[canvas.currentSheet], SheetTemplate.grid);
   });
 
+  testWidgets('a sheet deleted is put back by its message, and only it', (
+    tester,
+  ) async {
+    await store.pages.saveDocument(
+      pageId,
+      PageDocument(
+        id: pageId,
+        canvas: CanvasSettings(
+          layout: NoteLayout.pages,
+          sheets: Sheets(
+            templates: const <SheetTemplate>[
+              SheetTemplate.lined,
+              SheetTemplate.grid,
+            ],
+          ),
+        ),
+      ),
+    );
+    await openEditor(tester, store, pageId);
+    final canvas = _canvas(tester);
+    int sheets() => canvas.document.canvas.sheetsShown!.count;
+
+    await press(tester, LogicalKeyboardKey.space);
+    await typeKeys(tester, 'sd');
+    expect(sheets(), 1);
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(sheets(), 2, reason: 'put back');
+
+    // Something done after it is not what the message undoes.
+    await press(tester, LogicalKeyboardKey.space);
+    await typeKeys(tester, 'sd');
+    canvas.addElement(
+      const TextElement(
+        id: 'after',
+        frame: Frame(x: 100, y: 100, width: 300, height: 60),
+        createdAt: 0,
+        updatedAt: 0,
+        blocks: <TextBlock>[
+          TextBlock(runs: <TextRun>[TextRun('later')]),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(canvas.elementById('after'), isNotNull);
+    expect(sheets(), 1);
+  });
+
   testWidgets('a sheet is added turned landscape among upright ones', (
     tester,
   ) async {

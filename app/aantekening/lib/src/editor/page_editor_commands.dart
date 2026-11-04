@@ -55,12 +55,22 @@ extension _Commands on _PageEditorState {
       ..reveal(_controller.document.canvas.sheetsShown!.bandOf(to));
   }
 
-  /// Takes away the sheet in view, saying so, with a way to put it back.
+  /// Takes away the sheet in view, saying so, with a way to put it back:
+  /// for as long as nothing else is done to the page, so that what is
+  /// undone is the deleting, not what came after it, on this page or the
+  /// next.
   void _deleteSheet() {
     final sheet = _controller.currentSheet;
+    final before = _controller.document;
     _controller.removeSheet(sheet);
+    final deleted = _controller.document;
+    if (identical(deleted, before)) return;
     ScaffoldMessenger.maybeOf(context)
-        ?.showUndoable('Sheet ${sheet + 1} is deleted.', _controller.undo);
+        ?.showUndoable('Sheet ${sheet + 1} is deleted.', () {
+          if (!_disposed && identical(_controller.document, deleted)) {
+            _controller.undo();
+          }
+        });
   }
 
   /// Page-level shortcuts: those of editing what is on the page, and the
