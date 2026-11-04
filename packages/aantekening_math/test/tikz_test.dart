@@ -337,6 +337,34 @@ void main() {
       }
     });
 
+    test('are said where a picture would draw too much to be drawn', () {
+      final watch = Stopwatch()..start();
+      expect(problem(r'\draw (0,0) arc (0:1e9:1);'), contains('arc'));
+      expect(
+        problem(r'\fill[pattern=dots] (0,0) rectangle (300,200);'),
+        contains('pattern'),
+      );
+      expect(
+        problem(
+          r'\draw[dash pattern=on 0.001pt off 0.001pt] (0,0) -- (100,0);',
+        ),
+        contains('dashes'),
+      );
+      expect(
+        problem(r'\fill[pattern=grid] (0,0) rectangle (21,29.7);'),
+        contains('pattern'),
+      );
+      expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+      // What a page is drawn with is still drawn.
+      expect(problem(r'\draw (0,0) arc (0:3600:1);'), isNull);
+      expect(problem(r'\fill[pattern=dots] (0,0) rectangle (4,3);'), isNull);
+      expect(
+        problem(r'\fill[pattern=north east lines] (0,0) rectangle (21,29.7);'),
+        isNull,
+      );
+      expect(problem(r'\draw[dotted] (0,0) -- (21,0);'), isNull);
+    });
+
     test(r'a \tikz command is a picture too', () {
       expect(TikzPicture.holds(r'\tikz \draw (0,0) -- (1,0);'), isTrue);
       expect(TikzPicture.holds(r'\begin{tikzpicture}'), isTrue);

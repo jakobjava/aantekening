@@ -179,7 +179,12 @@ Path _dashed(Path path, List<double> pattern) {
   final dashed = Path();
   final total = pattern.fold<double>(0, (sum, length) => sum + length);
   if (total <= 0) return path;
-  for (final metric in path.computeMetrics()) {
+  final metrics = path.computeMetrics().toList();
+  final drawn = metrics.fold<double>(0, (sum, metric) => sum + metric.length);
+  if (drawn / total * pattern.length > 200000) {
+    throw const FormatException('The dashes are too many to draw');
+  }
+  for (final metric in metrics) {
     var distance = 0.0;
     var i = 0;
     while (distance < metric.length) {

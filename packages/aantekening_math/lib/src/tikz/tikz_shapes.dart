@@ -434,7 +434,12 @@ extension _Shapes on _Painter {
     double from,
     double to,
   ) {
-    final pieces = math.max(1, ((to - from).abs() / 90).ceil());
+    final turned = (to - from).abs();
+    // A thousand times round is more than any arc is drawn.
+    if (!turned.isFinite || turned > 360000) {
+      throw const FormatException('The arc turns too far round');
+    }
+    final pieces = math.max(1, (turned / 90).ceil());
     final step = (to - from) / pieces * math.pi / 180;
     final k = 4 / 3 * math.tan(step / 4);
     var a = from * math.pi / 180;

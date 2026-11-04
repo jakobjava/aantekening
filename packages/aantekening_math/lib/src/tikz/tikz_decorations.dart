@@ -292,6 +292,19 @@ abstract final class _Decorations {
     if (bounds.isEmpty) return null;
     const gap = 3.0;
     const half = 0.2;
+    // Cut to the shape, dots and the crossings of lines take time faster
+    // than they grow in number: some six thousand, dots over a square
+    // eight centimetres across, take a second.
+    final across = bounds.width / gap + 1;
+    final down = bounds.height / gap + 1;
+    final pieces = switch (name) {
+      'dots' || 'grid' || 'crosshatch' => across * down,
+      'crosshatch dots' => 2 * across * down,
+      _ => across + down,
+    };
+    if (pieces > 6000) {
+      throw const FormatException('The pattern fills too large an area');
+    }
     final lines = Path();
     void line(Offset a, Offset b) {
       final d = b - a;
