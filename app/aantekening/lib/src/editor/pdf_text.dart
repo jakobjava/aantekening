@@ -320,15 +320,23 @@ class _Reading {
 }
 
 /// The text and links of the pages of PDFs, read once each and kept: what
-/// a page shows does not change.
+/// a page shows does not change. A page that could not be read — its PDF
+/// still opening, say, or let go of as it was read — is read again when
+/// asked for once [retryAfter] has passed.
 class PdfWordsCache {
-  PdfWordsCache._();
+  @visibleForTesting
+  PdfWordsCache({this.retryAfter = const Duration(seconds: 2)});
 
   /// The one every page shares.
-  static final PdfWordsCache shared = PdfWordsCache._();
+  static final PdfWordsCache shared = PdfWordsCache();
+
+  final Duration retryAfter;
 
   final Map<String, PdfPageWords?> _read = <String, PdfPageWords?>{};
   final Set<String> _reading = <String>{};
+
+  /// When each page that could not be read last failed to be.
+  final Map<String, DateTime> _failed = <String, DateTime>{};
 
   /// Keeps [words] as the text of page [pageIndex] of the PDF [assetId],
   /// as though it had been read: for tests, where there is no PDFium.
@@ -345,37 +353,46 @@ class PdfWordsCache {
   }) {
     final key = '$assetId/$pageIndex';
     if (_read.containsKey(key)) return _read[key];
+    final failed = _failed[key];
+    if (failed != null && DateTime.now().difference(failed) < retryAfter) {
+      return null;
+    }
     if (_reading.add(key)) {
       unawaited(
-        _readPage(open, pageIndex).then((words) {
-          _read[key] = words;
-          _reading.remove(key);
-        }),
+        _readPage(open, pageIndex)
+            .then(
+              (words) {
+                _read[key] = words;
+                _failed.remove(key);
+              },
+              onError: (Object _) {
+                _failed[key] = DateTime.now();
+              },
+            )
+            .whenComplete(() => _reading.remove(key)),
       );
     }
     return null;
   }
 
+  /// The text of page [pageIndex] of the PDF [open] gives: null where it
+  /// has none, or no such page. Throws where it could not be read.
   static Future<PdfPageWords?> _readPage(
     Future<PdfDocument?> Function() open,
     int pageIndex,
   ) async {
-    try {
-      final document = await open();
-      if (document == null || pageIndex >= document.pages.length) return null;
-      final page = document.pages[pageIndex];
-      final text = await page.loadStructuredText();
-      final links = await page.loadLinks();
-      return PdfPageWords.read(
-        text,
-        links,
-        width: page.width,
-        height: page.height,
-        place: (rect) => rect.toRect(page: page),
-      );
-    } on Object {
-      // A page whose text cannot be read is one without text to select.
-      return null;
-    }
+    final document = await open();
+    if (document == null) throw StateError('the PDF is not open');
+    if (pageIndex >= document.pages.length) return null;
+    final page = document.pages[pageIndex];
+    final text = await page.loadStructuredText();
+    final links = await page.loadLinks();
+    return PdfPageWords.read(
+      text,
+      links,
+      width: page.width,
+      height: page.height,
+      place: (rect) => rect.toRect(page: page),
+    );
   }
 }

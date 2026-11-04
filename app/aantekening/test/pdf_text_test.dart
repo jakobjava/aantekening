@@ -192,6 +192,32 @@ void main() {
     });
   });
 
+  test(
+    'a page whose text could not be read is read again a moment on',
+    () async {
+      final cache = PdfWordsCache(retryAfter: const Duration(milliseconds: 50));
+      var opened = 0;
+      // Still opening: no document yet.
+      Future<PdfDocument?> open() async {
+        opened++;
+        return null;
+      }
+
+      Future<void> settle() => Future<void>.delayed(Duration.zero);
+      expect(cache.of('pdf', 0, open: open), isNull);
+      await settle();
+      expect(opened, 1);
+      // Not asked again at once, at every move of the pointer.
+      expect(cache.of('pdf', 0, open: open), isNull);
+      await settle();
+      expect(opened, 1);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(cache.of('pdf', 0, open: open), isNull);
+      await settle();
+      expect(opened, 2, reason: 'read again');
+    },
+  );
+
   group('On the page', () {
     late AantekeningStore store;
     late String pageId;

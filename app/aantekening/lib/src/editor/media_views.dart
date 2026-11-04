@@ -234,7 +234,15 @@ class _PdfPageState extends State<_PdfPage> {
   @override
   void didUpdateWidget(_PdfPage old) {
     super.didUpdateWidget(old);
-    if (old.id == widget.id) return;
+    if (old.id == widget.id) {
+      // Opened again, the document is asked anew for what it could not
+      // draw before: a picture that failed as it was let go of, say.
+      if (old.document != null && !identical(old.document, widget.document)) {
+        _askFor(const <PdfRaster>{});
+        _askedPlan = null;
+      }
+      return;
+    }
     _askFor(const <PdfRaster>{});
     _askedPlan = null;
     _rasters = PdfRasters.shared.of(widget.id);
@@ -679,7 +687,8 @@ class _Picture {
   VoidCallback? cancel;
   bool calledOff = false;
 
-  /// Whether it could not be drawn: it is not tried again.
+  /// Whether it could not be drawn: it is not tried again while it is
+  /// wanted, but once wanted anew — from a document opened again, say.
   bool failed = false;
 }
 
