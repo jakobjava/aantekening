@@ -82,7 +82,8 @@ final class Rescue {
   /// contents itself; otherwise — or if it is gone — the contents become a
   /// page of their own beside it, "(rescued)", or in a notebook "Rescued"
   /// if its section is gone too. A file is deleted only once what it holds
-  /// is in the notes; one that cannot be read is left where it is.
+  /// is in the notes; one that cannot be read, or put back, is left where
+  /// it is, to be put back another time, and the rest are put back still.
   Future<List<PageRef>> restore(
     PageRepository pages,
     LibraryRepository library,
@@ -95,7 +96,11 @@ final class Rescue {
       } on Object {
         continue;
       }
-      restored.add(await _putBack(rescued, pages, library));
+      try {
+        restored.add(await _putBack(rescued, pages, library));
+      } on Object {
+        continue;
+      }
       try {
         file.deleteSync();
       } on FileSystemException {

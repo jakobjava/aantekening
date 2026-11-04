@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -92,6 +93,26 @@ void main() {
     expect(await textOf(store, copy.id), 'last words');
   });
 
+  test('puts back every page it can, though one cannot go back', () async {
+    final store = await open();
+    addTearDown(store.close);
+    final (sectionId, pageId) = await seed(store);
+    final other = await store.pages.createPage(sectionId: sectionId);
+    final stuck = await store.rescuePage(
+      documentWithText(pageId, 'cannot go back'),
+    );
+    await store.rescuePage(documentWithText(other.id, 'goes back'));
+
+    final restored = await store.rescue.restore(
+      _Refusing(store.database, pageId),
+      store.library,
+    );
+
+    expect(restored.map((page) => page.id), <String>[other.id]);
+    expect(await textOf(store, other.id), 'goes back');
+    expect(stuck.existsSync(), isTrue, reason: 'put back another time');
+  });
+
   test('leaves a file it cannot read where it is', () async {
     var store = await open();
     await seed(store);
@@ -122,4 +143,21 @@ void main() {
     expect(store.rescued, hasLength(1));
     expect(await textOf(store, pageId), 'third try');
   });
+}
+
+/// Pages of which one, [refused], cannot be saved.
+final class _Refusing extends PageRepository {
+  _Refusing(super.db, this.refused);
+
+  final String refused;
+
+  @override
+  Future<PageRef> saveDocument(
+    String pageId,
+    PageDocument document, {
+    String? title,
+  }) async {
+    if (pageId == refused) throw StateError('The disk is full');
+    return super.saveDocument(pageId, document, title: title);
+  }
 }
