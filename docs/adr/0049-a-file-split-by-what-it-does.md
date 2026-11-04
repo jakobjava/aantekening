@@ -36,6 +36,10 @@ and is as long as what it covers.
 
 * The list is a reminder, not a gate: a change is never held up by it, and
   a file on it is split when a change to it would be easier to make so.
+* A part whose methods are public, or that sets a notifier's protected
+  `state`, cannot be an extension: an AI session's conversations, study sets
+  and podcasts are private mixins on a small base that holds what they
+  share, and the session is made of the three.
 * A model whose methods are its public API — the canvas's controller, the
   editing of rich text — stays whole, as ADR 34 found; a file of several
   things does not.
