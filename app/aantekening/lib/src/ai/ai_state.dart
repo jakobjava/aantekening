@@ -132,16 +132,72 @@ final aiSettingsProvider = NotifierProvider<AiSettingsController, AiSettings>(
 /// model — or null until one is chosen.
 typedef AiModel = ({ChatProvider provider, ProviderConfig config});
 
+/// Makes what asks the provider [config] describes, with [apiKey].
+typedef ChatMaker = ChatProvider Function(
+  ProviderConfig config,
+  String? apiKey,
+);
+
+/// What asks a model: a provider as the settings have it.
+final chatMakerProvider = Provider<ChatMaker>(
+  (ref) =>
+      (config, apiKey) => config.create(apiKey: apiKey),
+);
+
 final aiModelProvider = FutureProvider<AiModel?>((ref) async {
   final config = ref.watch(aiSettingsProvider.select((s) => s.active));
   if (config == null || config.model.isEmpty) return null;
   final key = await ref
       .watch(aiSecretsProvider)
       .read(providerKeyName(config.id));
-  final provider = config.create(apiKey: key);
-  ref.onDispose(provider.close);
+  final provider = ref.read(chatMakerProvider)(config, key);
+  // Made again whenever the settings or a key change, under an answer
+  // still coming through this one, which is closed once it is done.
+  ref.onDispose(() => closeProviderWhenDone(provider));
   return (provider: provider, config: config);
 });
+
+/// How many answers, sets and podcasts are still asked through each
+/// provider; and those let go of meanwhile, to close once none is.
+final Map<ChatProvider, int> _held = Map<ChatProvider, int>.identity();
+final Set<ChatProvider> _letGo = Set<ChatProvider>.identity();
+
+/// Keeps [provider] open, though let go of, until [releaseProvider] as often.
+void holdProvider(ChatProvider provider) =>
+    _held[provider] = (_held[provider] ?? 0) + 1;
+
+/// Lets go of a [holdProvider] on [provider]: closed with the last, if it was let
+/// go of meanwhile.
+void releaseProvider(ChatProvider provider) {
+  final left = (_held[provider] ?? 1) - 1;
+  if (left > 0) {
+    _held[provider] = left;
+    return;
+  }
+  _held.remove(provider);
+  if (_letGo.remove(provider)) provider.close();
+}
+
+/// Closes [provider] now, or once nothing asked through it is still
+/// coming.
+void closeProviderWhenDone(ChatProvider provider) {
+  if (_held.containsKey(provider)) {
+    _letGo.add(provider);
+  } else {
+    provider.close();
+  }
+}
+
+/// [stream], asked through [provider], which is held open until it ends
+/// or is stopped.
+Stream<T> holdingProvider<T>(ChatProvider provider, Stream<T> stream) async* {
+  holdProvider(provider);
+  try {
+    yield* stream;
+  } finally {
+    releaseProvider(provider);
+  }
+}
 
 /// Where the web is searched from for a provider that cannot, or null.
 final webSearchProvider = FutureProvider<WebSearch?>((ref) async {

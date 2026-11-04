@@ -507,11 +507,14 @@ class AiSession extends Notifier<AiSessionState> {
       error: () => null,
     );
     await _follow(
-      _agent(model, reader, web: web).ask(
-        scope: info,
-        history: history,
-        question: text,
-        searchWeb: searchWeb,
+      holdingProvider(
+        model.provider,
+        _agent(model, reader, web: web).ask(
+          scope: info,
+          history: history,
+          question: text,
+          searchWeb: searchWeb,
+        ),
       ),
       read: () => state.pending,
       write: (pending) => state = state.copyWith(pending: () => pending),
@@ -577,15 +580,18 @@ class AiSession extends Notifier<AiSessionState> {
       error: () => null,
     );
     await _follow(
-      _agent(model, reader, web: web).ask(
-        scope: info,
-        history: history,
-        question: NoteAgent.rewriteRequest(
-          part,
-          question: turn.question,
-          instruction: how,
+      holdingProvider(
+        model.provider,
+        _agent(model, reader, web: web).ask(
+          scope: info,
+          history: history,
+          question: NoteAgent.rewriteRequest(
+            part,
+            question: turn.question,
+            instruction: how,
+          ),
+          searchWeb: searchWeb,
         ),
-        searchWeb: searchWeb,
       ),
       read: () => state.pending,
       write: (pending) => state = state.copyWith(pending: () => pending),
@@ -700,7 +706,10 @@ class AiSession extends Notifier<AiSessionState> {
     );
     StreamSubscription<AgentProgress>? making;
     await _follow(
-      _agent(model, reader).make(profile, scope: info),
+      holdingProvider(
+        model.provider,
+        _agent(model, reader).make(profile, scope: info),
+      ),
       read: () => state.making[id],
       write: write,
       started: (subscription) => _makers[id] = making = subscription,
@@ -1042,14 +1051,17 @@ class AiSession extends Notifier<AiSessionState> {
   );
 
   /// A model to write a podcast with, as [choice] names it, with its key,
-  /// and whether it is the podcast's own to close once written — or null
-  /// where it names none that is set up.
+  /// and whether it is the podcast's own to close once written, else the
+  /// model in use's to let go of — or null where it names none that is
+  /// set up.
   Future<({PodcastWriter writer, bool own})?> _writerOf(
     ModelChoice choice,
   ) async {
     if (choice.isInUse) {
       final model = await ref.read(aiModelProvider.future);
       if (model == null) return null;
+      // Held open, though the settings change, until it is written.
+      holdProvider(model.provider);
       return (
         writer: (provider: model.provider, model: model.config.model),
         own: false,
@@ -1178,7 +1190,13 @@ class AiSession extends Notifier<AiSessionState> {
         outlining,
         writing,
       ]) {
-        if (used != null && used.own) used.writer.provider.close();
+        switch (used) {
+          case (:final writer, own: true):
+            writer.provider.close();
+          case (:final writer, own: false):
+            releaseProvider(writer.provider);
+          case null:
+        }
       }
     }
 

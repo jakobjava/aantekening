@@ -49,6 +49,10 @@ class FakeProvider implements ChatProvider {
   /// While set, flashcards are written once it is completed.
   Completer<void>? cardsGate;
 
+  /// Whether it was closed: what is still being answered then breaks off,
+  /// as a closed HTTP client breaks it off.
+  bool closed = false;
+
   @override
   String get name => 'Fake';
 
@@ -116,6 +120,7 @@ class FakeProvider implements ChatProvider {
     if (gate case final gate?) {
       yield const Reasoning('They ask about force.\nNewton’s second law.');
       await gate.future;
+      if (closed) throw StateError('Client is already closed.');
     }
     if (question.contains('<part>')) {
       yield const TextDelta('Force is what makes a mass accelerate');
@@ -143,7 +148,7 @@ class FakeProvider implements ChatProvider {
   Future<List<ModelInfo>> listModels() async => const <ModelInfo>[];
 
   @override
-  void close() {}
+  void close() => closed = true;
 }
 
 /// Speaks every line as a tenth of a second of sound, and keeps what it
@@ -738,6 +743,58 @@ void main() {
     model.gate = null;
     await ask(tester, 'What is mass?');
     expect(state().turns.single.question, 'What is mass?');
+  });
+
+  testWidgets('an answer goes on coming when the settings change meanwhile, '
+      'its provider closed once it is done', (tester) async {
+    final made = <FakeProvider>[];
+    final container = await openShell(
+      tester,
+      withModel: false,
+      overrides: <Override>[
+        chatMakerProvider.overrideWithValue((config, key) {
+          final provider = FakeProvider();
+          made.add(provider);
+          return provider;
+        }),
+      ],
+    );
+    final settings = container.read(aiSettingsProvider.notifier);
+    final config = ProviderConfig.of(
+      ProviderPreset.ollama,
+      id: 'local',
+    ).copyWith(model: 'test-model');
+    settings.update(container.read(aiSettingsProvider).withProvider(config));
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    final link = NoteLink.page(page.id);
+    final session = container.read(aiSessionProvider(link).notifier);
+    AiSessionState state() => container.read(aiSessionProvider(link));
+    Future<void> settle() async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    final gate = made.single.gate = Completer<void>();
+    unawaited(session.ask('What is force?', searchWeb: false));
+    await settle();
+    // How much of the notes it is given, changed while it answers.
+    settings.update(
+      container
+          .read(aiSettingsProvider)
+          .withProvider(config.copyWith(notesTokens: 50000)),
+    );
+    await settle();
+    expect(made, hasLength(2));
+    expect(made.first.closed, isFalse, reason: 'still answering');
+
+    gate.complete();
+    await settle();
+    expect(state().error, isNull);
+    expect(state().turns.single.question, 'What is force?');
+    expect(made.first.closed, isTrue, reason: 'done with');
+    expect(made.last.closed, isFalse);
   });
 
   testWidgets('shows how an answer is coming along: each step, how long '
