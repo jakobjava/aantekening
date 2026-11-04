@@ -293,7 +293,10 @@ class Frame {
     rotation: _num(json['rotation']),
   );
 
-  static double _num(Object? value) => value is num ? value.toDouble() : 0;
+  /// [value] as a double: 0 if it is no number, or infinite, as a number
+  /// too large for a double is read.
+  static double _num(Object? value) =>
+      value is num && value.isFinite ? value.toDouble() : 0;
 
   @override
   bool operator ==(Object other) =>

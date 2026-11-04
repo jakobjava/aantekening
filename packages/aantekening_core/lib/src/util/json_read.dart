@@ -25,21 +25,21 @@ String? readStringOrNull(Map<String, Object?> json, String key) {
   return value is String ? value : null;
 }
 
-/// Reads [key] as a [double], accepting any JSON number.
+/// Reads [key] as a [double], accepting any JSON number but one too large
+/// for a double, read as infinity, which could not be written again.
 double readDouble(
   Map<String, Object?> json,
   String key, [
   double fallback = 0,
-]) {
-  final value = json[key];
-  return value is num ? value.toDouble() : fallback;
-}
+]) => _finite(json[key]) ?? fallback;
 
-/// Reads [key] as a nullable [double].
-double? readDoubleOrNull(Map<String, Object?> json, String key) {
-  final value = json[key];
-  return value is num ? value.toDouble() : null;
-}
+/// Reads [key] as a nullable [double], as [readDouble] does.
+double? readDoubleOrNull(Map<String, Object?> json, String key) =>
+    _finite(json[key]);
+
+/// [value] as a double, if it is a number that is not infinite.
+double? _finite(Object? value) =>
+    value is num && value.isFinite ? value.toDouble() : null;
 
 /// Reads [key] as an [int], accepting any JSON number.
 int readInt(Map<String, Object?> json, String key, [int fallback = 0]) {
@@ -87,13 +87,17 @@ List<Map<String, Object?>> readObjectList(
   return out;
 }
 
-/// Reads [key] as a list of doubles, skipping non-numeric entries.
+/// Reads [key] as a list of doubles, skipping non-numeric entries. A number
+/// too large for a double is the largest there is, keeping its place among
+/// the rest.
 List<double> readDoubleList(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is! List) return const <double>[];
   final out = <double>[];
   for (final entry in value) {
-    if (entry is num) out.add(entry.toDouble());
+    if (entry is num) {
+      out.add(entry.toDouble().clamp(-double.maxFinite, double.maxFinite));
+    }
   }
   return out;
 }

@@ -209,6 +209,27 @@ void main() {
       expect(stroke.pointCount, 1);
     });
 
+    test('writes again a page read with a number too large for a double', () {
+      // Read as infinity, which no JSON can hold.
+      final page = PageDocument.decode(
+        '{"id":"PAGE11","elements":[{"type":"ink","id":"i",'
+        '"frame":{"x":1e999,"y":0,"width":-1e999,"height":10},'
+        '"strokes":[{"tool":"pen","width":1e999,"points":[1e999,0,1,0]}]}]}',
+      );
+
+      final again = PageDocument.decode(page.encode());
+      expect(again.elements.single.frame.x.isFinite, isTrue);
+      expect(
+        PageDocument.decode(
+          '{"id":"PAGE12","elements":[{"type":"table","id":"t",'
+          '"frame":{"x":0,"y":0,"width":10,"height":10},'
+          '"columnWidths":[1e999,40]}]}',
+        ).encode(),
+        isNotEmpty,
+      );
+      expect(again.elements.single.frame.width.isFinite, isTrue);
+    });
+
     test('writes again ink read with a point too far out to hold', () {
       final stroke = InkStroke.fromJson(<String, Object?>{
         'tool': 'pen',
