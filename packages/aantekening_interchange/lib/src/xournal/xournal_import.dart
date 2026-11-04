@@ -83,8 +83,9 @@ final class _Reader {
   final Map<String, AssetDraft> assets = <String, AssetDraft>{};
   final List<String> warnings = <String>[];
 
-  /// PDFs kept, by path, so a background used by every page is kept once.
-  final Map<String, String> _pdfs = <String, String>{};
+  /// PDFs kept, by path, so a background used by every page is kept once;
+  /// null for a file that is not a PDF.
+  final Map<String, String?> _pdfs = <String, String?>{};
 
   /// The sections a folder of documents makes: documents directly in it
   /// in a section of its name, and a section for each folder in it.
@@ -253,7 +254,18 @@ final class _Reader {
           );
           return (null, null);
         }
-        final key = _pdfs[source] ??= _keepFile(source);
+        final first = !_pdfs.containsKey(source);
+        if (first) _pdfs[source] = _keepFile(source, pdf: true);
+        final key = _pdfs[source];
+        if (key == null) {
+          if (first) {
+            warnings.add(
+              '${p.basename(document.path)}: its PDF, $name, is not a PDF, '
+              'and was left out.',
+            );
+          }
+          return (null, null);
+        }
         final pageNumber = int.tryParse(
           background.getAttribute('pageno') ?? '',
         );
@@ -275,13 +287,21 @@ final class _Reader {
             ? null
             : _findBeside(document, name, background.getAttribute('domain'));
         if (source == null) return (null, null);
+        final key = _keepFile(source, pdf: false);
+        if (key == null) {
+          warnings.add(
+            '${p.basename(document.path)}: its background picture, $name, is '
+            'not a picture, and was left out.',
+          );
+          return (null, null);
+        }
         return (
           ImageElement(
             id: Ulid.generate(),
             frame: frame,
             createdAt: now,
             updatedAt: now,
-            assetId: _keepFile(source),
+            assetId: key,
             fit: MediaFit.stretch,
             locked: true,
           ),
@@ -307,8 +327,17 @@ final class _Reader {
     return null;
   }
 
-  String _keepFile(String path) {
+  /// Keeps the file at [path] if its bytes are what a background is — a
+  /// [pdf], or a picture — and returns the key it is kept by, or null if
+  /// they are not. A document names any file it likes, anywhere: this one
+  /// may be a key or a password, which must not quietly become a note.
+  String? _keepFile(String path, {required bool pdf}) {
     final bytes = File(path).readAsBytesSync();
+    // By the bytes alone, not by the name, which the document chose.
+    final type = mimeTypeOf(bytes);
+    if (pdf ? type != 'application/pdf' : !type.startsWith('image/')) {
+      return null;
+    }
     final (key, asset) = _work.keep(bytes, name: p.basename(path));
     assets[key] = asset;
     return key;

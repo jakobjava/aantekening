@@ -116,6 +116,32 @@ void main() {
     expect(draft.assets.values.single.mimeType, 'application/pdf');
   });
 
+  test('leaves out a background that is not what it says, wherever it '
+      'is', () {
+    // A document names any file it likes: a key is not a PDF, nor a
+    // picture, and is not brought into the notes.
+    final key = File(p.join(folder.path, 'ssh', 'id_ed25519'))
+      ..parent.createSync()
+      ..writeAsStringSync('-----BEGIN OPENSSH PRIVATE KEY-----');
+    final file = document(
+      'Crafted.xopp',
+      '<page width="600" height="800">'
+          '<background type="pdf" domain="absolute" filename="${key.path}" pageno="1"/>'
+          '<layer/></page>'
+          '<page width="600" height="800">'
+          '<background type="pdf" pageno="2"/><layer/></page>'
+          '<page width="600" height="800">'
+          '<background type="pixmap" domain="absolute" filename="${key.path}"/>'
+          '<layer/></page>',
+    );
+    final draft = read(<String>[file.path]);
+    expect(draft.assets, isEmpty);
+    expect(draft.pages.single.document.elements, isEmpty);
+    expect(draft.warnings, hasLength(3));
+    expect(draft.warnings.first, contains('is not a PDF'));
+    expect(draft.warnings.last, contains('is not a picture'));
+  });
+
   test('reads a folder of documents as a notebook of sections', () {
     final root = p.join(folder.path, 'Physics');
     document(
