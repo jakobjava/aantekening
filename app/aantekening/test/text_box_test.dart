@@ -291,6 +291,37 @@ void main() {
     expect(blocks[1].plainText, 'first');
   });
 
+  testWidgets('the page follows the caret typed past the foot of the view, '
+      'and back up', (tester) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    final canvas = tester
+        .widget<InfiniteCanvas>(find.byType(InfiniteCanvas))
+        .controller;
+    final top = canvas.viewport.origin.dy;
+    for (var line = 0; line < 30; line++) {
+      await type(tester, 'line');
+      await press(tester, LogicalKeyboardKey.enter);
+    }
+    await tester.pumpAndSettle();
+    final caret = find.byType(TextBoxEditor);
+    expect(canvas.viewport.origin.dy, greaterThan(top), reason: 'followed');
+    expect(
+      tester.getRect(caret).bottom,
+      greaterThan(800),
+      reason: 'the box runs on below the view',
+    );
+    // The last line, where the caret is, is in view.
+    final lines = find.textContaining('line', findRichText: true);
+    expect(tester.getRect(lines.last).bottom, lessThanOrEqualTo(800));
+
+    for (var line = 0; line < 30; line++) {
+      await press(tester, LogicalKeyboardKey.arrowUp);
+    }
+    await tester.pumpAndSettle();
+    expect(tester.getRect(lines.first).top, greaterThanOrEqualTo(0));
+  });
+
   testWidgets('Arrow Up and Down move to the paragraph above and below', (
     tester,
   ) async {

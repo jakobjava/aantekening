@@ -48,20 +48,23 @@ extension _Layout on TextBoxEditorState {
     return marks == null ? blockStyle : blockStyle.merge(marks);
   }
 
-  Rect? _caretRectGlobal(RichPosition position) {
+  Rect? _caretRectGlobal(RichPosition position) => _caretRectIn(position);
+
+  /// The caret at [position] in [ancestor]'s coordinates, or on the screen.
+  Rect? _caretRectIn(RichPosition position, [RenderObject? ancestor]) {
     if (_blocks[position.block].isEmbed) {
       final row = _row(position.block);
       if (row == null) return null;
       final x = position.offset == 0 ? 0.0 : row.size.width;
       return MatrixUtils.transformRect(
-        row.getTransformTo(null),
+        row.getTransformTo(ancestor),
         Rect.fromLTWH(x, 0, 1, row.size.height),
       );
     }
     final paragraph = _paragraph(position.block);
     final local = _caretRectLocal(position);
     if (paragraph == null || local == null) return null;
-    return MatrixUtils.transformRect(paragraph.getTransformTo(null), local);
+    return MatrixUtils.transformRect(paragraph.getTransformTo(ancestor), local);
   }
 
   /// The laid-out grid of [table].

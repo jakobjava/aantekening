@@ -89,6 +89,7 @@ class TextBoxEditor extends StatefulWidget {
     this.mark,
     this.proofreader,
     this.onMatchPlaced,
+    this.onCaretPlaced,
     this.onPasteElements,
     this.onPasteCopied,
     this.onEmbedToBackground,
@@ -155,6 +156,10 @@ class TextBoxEditor extends StatefulWidget {
   /// Told where the first word [highlight] marks lies, in the box's own page
   /// units, once it has been laid out: for the page to bring it into view.
   final ValueChanged<Rect>? onMatchPlaced;
+
+  /// Told where the caret is, in the box's own page units, once it is laid
+  /// out where it was moved or typed to: for the page to keep it in view.
+  final ValueChanged<Rect>? onCaretPlaced;
 
   /// Asks the host to put things copied from the page onto the page
   /// instead of into the text: a drawing, which cannot go into text, or
@@ -343,6 +348,10 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
   /// The search whose first match was last reported to [TextBoxEditor.onMatchPlaced].
   SearchTerms? _placedMatchesOf;
+
+  /// Whether where the caret is is to be told [TextBoxEditor.onCaretPlaced]
+  /// once the frame is laid out.
+  bool _caretToPlace = false;
 
   /// The syntax setting this box follows while it is being edited.
   ValueNotifier<MathMode>? _syntaxSetting;

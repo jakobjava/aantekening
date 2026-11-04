@@ -30,7 +30,33 @@ extension _Elements on _PageEditorState {
   }
 
   /// Scrolls to [local], where a match lies in [element], in its own units.
-  void _revealMatch(NoteElement element, Rect local) {
+  void _revealMatch(NoteElement element, Rect local) =>
+      _controller.reveal(_onPage(element, local));
+
+  /// Scrolls to the caret, [local] in the box [id] being typed in, in its
+  /// own units, where it has gone out of view or under what floats over
+  /// the page: typed past the foot of the view, say. Where it is in view,
+  /// the page stays as it is.
+  void _keepCaretInView(String id, Rect local) {
+    final box = _controller.elementById(id);
+    if (box == null || id != _editingId) return;
+    final caret = _onPage(box, local);
+    final view = _inView;
+    final seen = Rect.fromLTRB(
+      view.left,
+      view.top + _underGlass.top / _controller.viewport.zoom,
+      view.right,
+      view.bottom,
+    );
+    if (seen.contains(Offset(caret.left, caret.top)) &&
+        seen.contains(Offset(caret.right, caret.bottom))) {
+      return;
+    }
+    _controller.reveal(caret);
+  }
+
+  /// [local], a rectangle in [element]'s own units, as it lies on the page.
+  static Aabb _onPage(NoteElement element, Rect local) {
     final toPage = element.frame.localToPage;
     var bounds = Aabb.empty;
     for (final corner in <Offset>[
@@ -42,7 +68,7 @@ extension _Elements on _PageEditorState {
       final page = toPage.apply(corner.dx, corner.dy);
       bounds = bounds.union(Aabb(page.x, page.y, page.x, page.y));
     }
-    _controller.reveal(bounds);
+    return bounds;
   }
 
   Widget? _buildElement(
@@ -156,6 +182,7 @@ extension _Elements on _PageEditorState {
       onMatchPlaced: built.placesMatch
           ? (local) => _revealMatch(element, local)
           : null,
+      onCaretPlaced: (local) => _keepCaretInView(id, local),
       onStartEditing: () => _startEditing(id),
       onChanged: (blocks, {required recordUndo}) =>
           _onTextChanged(id, blocks, recordUndo: recordUndo),

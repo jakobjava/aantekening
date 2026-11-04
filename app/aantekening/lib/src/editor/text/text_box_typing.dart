@@ -58,6 +58,25 @@ extension _Typing on TextBoxEditorState {
     _restartBlink();
     _input.sync();
     _publishState();
+    if (!_caretToPlace && widget.onCaretPlaced != null) {
+      _caretToPlace = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _placeCaret());
+    }
+  }
+
+  /// Tells [TextBoxEditor.onCaretPlaced] where the caret is, now that it is
+  /// laid out.
+  void _placeCaret() {
+    _caretToPlace = false;
+    if (!mounted || !widget.isEditing) return;
+    final box = context.findRenderObject();
+    final report = widget.onCaretPlaced;
+    if (report == null || box is! RenderBox) return;
+    final caret = _caretRectIn(
+      RichTextEditing.clamp(_blocks, _selection.extent),
+      box,
+    );
+    if (caret != null) report(caret);
   }
 
   bool _formulaContains(_OpenFormula formula, RichSelection selection) {
