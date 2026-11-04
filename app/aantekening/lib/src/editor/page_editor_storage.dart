@@ -175,9 +175,16 @@ extension _Storage on _PageEditorState {
     }
   }
 
+  /// Saves a copy of the attached [file] where the person chooses, saying
+  /// so if it could not be.
   Future<void> _saveFile(BlockEmbed file) async {
     final store = _store;
-    if (store != null) await saveAttachedFile(store, file);
+    if (store == null) return;
+    try {
+      await saveAttachedFile(store, file);
+    } on Object catch (error) {
+      if (mounted) _showMessage('The file could not be saved: $error');
+    }
   }
 
   /// Saves the open page now, if it has changes, finishing when it has and
