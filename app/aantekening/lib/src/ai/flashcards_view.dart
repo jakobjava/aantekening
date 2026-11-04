@@ -231,12 +231,8 @@ class _SessionState extends ConsumerState<_Session> {
     final queue = _queue;
     if (queue == null || queue.isEmpty || !_turned) return;
     final card = queue.first;
-    if (!_practice) {
-      await ref
-          .read(cardReviewsProvider(widget.itemId).notifier)
-          .grade(card.id, grade, DateTime.now());
-    }
-    if (!mounted) return;
+    // On to the next at once, before the grade is kept: a second press
+    // meanwhile is for that one, not this one again.
     setState(() {
       queue.removeAt(0);
       _grades[grade] = (_grades[grade] ?? 0) + 1;
@@ -248,6 +244,11 @@ class _SessionState extends ConsumerState<_Session> {
       }
       _turned = false;
     });
+    if (!_practice) {
+      await ref
+          .read(cardReviewsProvider(widget.itemId).notifier)
+          .grade(card.id, grade, DateTime.now());
+    }
   }
 
   KeyEventResult _key(FocusNode node, KeyEvent event) {

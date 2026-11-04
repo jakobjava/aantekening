@@ -1093,13 +1093,29 @@ void main() {
     expect(find.textContaining('Mass times acceleration'), findsWidgets);
     expect(find.byType(SourceLine), findsOneWidget);
 
-    await tester.tap(find.text('Good'));
+    // Clicked twice, the second before the first grade is kept: the card
+    // is graded once.
+    final good = tester.getCenter(find.text('Good'));
+    for (final pointer in <int>[91, 92]) {
+      tester.binding
+        ..handlePointerEvent(PointerDownEvent(pointer: pointer, position: good))
+        ..handlePointerEvent(PointerUpEvent(pointer: pointer, position: good));
+    }
     await tester.pumpAndSettle();
     expect(find.text('1 of 2'), findsOneWidget);
+    expect(find.text('Unit of force?'), findsOneWidget, reason: 'not skipped');
     final reviews = await tester.runAsync(
       () => store.ai.reviewsOf(items.single.id),
     );
     expect(reviews, hasLength(1));
+    final review = CardReview.fromJson(reviews!.values.single);
+    final once = CardReview.fresh(DateTime.now())
+        .after(Grade.good, DateTime.now());
+    expect(
+      review.due.difference(once.due).inMinutes.abs(),
+      lessThan(1),
+      reason: 'graded once, not twice over',
+    );
   });
 
   testWidgets('a set not made yet is only made when asked, and while one '
