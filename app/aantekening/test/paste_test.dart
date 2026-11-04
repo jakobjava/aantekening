@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:aantekening/src/editor/note_clipboard.dart';
@@ -191,6 +192,90 @@ void main() {
           .whereType<TextElement>()
           .single;
       expect(box.blocks.single.runs.single.text, 'gewone tekst');
+    });
+  });
+
+  group('The clipboard slow to answer', () {
+    /// Stands in for the system clipboard, holding [text], answering
+    /// only once [answer] is called.
+    void Function() slowClipboard(WidgetTester tester, {String? text}) {
+      var held = text;
+      final gate = Completer<void>();
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        switch (call.method) {
+          case 'Clipboard.setData':
+            await gate.future;
+            held = (call.arguments as Map<Object?, Object?>)['text'] as String?;
+            return null;
+          case 'Clipboard.getData':
+            await gate.future;
+            return held == null ? null : <String, Object?>{'text': held};
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+      return gate.complete;
+    }
+
+    TextElement box(String id, double y, String text) => TextElement(
+      id: id,
+      frame: Frame(x: 100, y: y, width: 300, height: 40),
+      createdAt: 0,
+      updatedAt: 0,
+      blocks: <TextBlock>[TextBlock.plain(text)],
+    );
+
+    testWidgets('cuts what it copied, not what is picked by the time it has '
+        'it', (tester) async {
+      await store.pages.saveDocument(
+        pageId,
+        PageDocument.empty(id: pageId)
+            .withElementAdded(box('first', 100, 'first'))
+            .withElementAdded(box('second', 300, 'second')),
+      );
+      final answer = slowClipboard(tester);
+      await openEditor(tester, store, pageId);
+      final canvas = canvasOf(tester)..select('first');
+      await press(tester, LogicalKeyboardKey.keyX, control: true);
+      canvas.select('second');
+      answer();
+      await tester.pumpAndSettle();
+      expect(canvas.elementById('first'), isNull);
+      expect(canvas.elementById('second'), isNotNull);
+    });
+
+    testWidgets('cuts nothing of a box\'s text picked anew meanwhile', (
+      tester,
+    ) async {
+      final answer = slowClipboard(tester);
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'Hello world');
+      await press(tester, LogicalKeyboardKey.keyA, control: true);
+      await press(tester, LogicalKeyboardKey.keyX, control: true);
+      await press(tester, LogicalKeyboardKey.arrowLeft, shift: true);
+      answer();
+      await tester.pumpAndSettle();
+      expect(textOf(tester), 'Hello world');
+    });
+
+    testWidgets('pastes nothing into a box no longer typed in', (tester) async {
+      final answer = slowClipboard(tester, text: 'pasted');
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await type(tester, 'Mine');
+      await press(tester, LogicalKeyboardKey.keyV, control: true);
+      await press(tester, LogicalKeyboardKey.escape);
+      answer();
+      await tester.pumpAndSettle();
+      final boxes = canvasOf(tester).document.elements.whereType<TextElement>();
+      expect(
+        boxes.map((box) => RichTextEditing.plainTextOf(box.blocks)),
+        <String>['Mine'],
+      );
     });
   });
 }

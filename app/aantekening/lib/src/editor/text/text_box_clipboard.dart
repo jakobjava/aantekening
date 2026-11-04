@@ -2,14 +2,23 @@ part of 'text_box_editor.dart';
 
 /// Cutting, copying and pasting.
 extension _Clipboard on TextBoxEditorState {
+  /// Copies what is picked, or cuts it: cut only if it is still as it was
+  /// copied once the clipboard has it, so that nothing goes that was not
+  /// copied.
   Future<void> _copy({bool cut = false}) async {
     if (_selection.isCollapsed) return;
+    final (blocks, selection) = (_blocks, _selection);
+    bool unchanged() =>
+        mounted &&
+        widget.isEditing &&
+        identical(_blocks, blocks) &&
+        _selection == selection;
     final formula = _formula;
     if (formula != null) {
       // Part of a formula's source is copied as the text it is.
       final (:source, :from, :to) = _sourceSelection(formula);
       await NoteClipboard.copy(PlainClip(source.substring(from, to)));
-      if (cut && mounted && _formula != null) _replaceInFormula('');
+      if (cut && unchanged() && _formula != null) _replaceInFormula('');
       return;
     }
     var fragment = RichTextEditing.slice(_blocks, _selection);
@@ -30,7 +39,7 @@ extension _Clipboard on TextBoxEditorState {
     await NoteClipboard.copy(
       TextClip(RichTextEditing.plainTextOf(fragment), fragment),
     );
-    if (cut && mounted) _deleteSelection();
+    if (cut && unchanged()) _deleteSelection();
   }
 
   /// Pastes what was copied — as it was, or as its text only — over the
@@ -42,7 +51,8 @@ extension _Clipboard on TextBoxEditorState {
     final clip = textOnly
         ? await NoteClipboard.readText()
         : await NoteClipboard.read();
-    if (clip == null || !mounted) return;
+    // Not into a box no longer typed in, clicked away from meanwhile.
+    if (clip == null || !mounted || !widget.isEditing) return;
     if (clip is CopiedClip) {
       // Nothing of it goes into a formula's source.
       if (_formula == null) widget.onPasteCopied?.call(clip.copied);
