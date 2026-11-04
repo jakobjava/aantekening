@@ -151,6 +151,47 @@ void main() {
       expect(controller.document.elementById('second')!.locked, isFalse);
     });
 
+    test('a stroke written after ink is set as the background is ink of '
+        'its own', () {
+      final controller = CanvasController()
+        ..beginStroke(const Offset(10, 10))
+        ..extendStroke(const Offset(60, 10))
+        ..endStroke();
+      final background = controller.document.elements.single.id;
+      controller
+        ..setAsBackground(<String>[background])
+        ..beginStroke(const Offset(10, 20))
+        ..extendStroke(const Offset(60, 20))
+        ..endStroke();
+
+      final ink = controller.document.elements.whereType<InkElement>();
+      expect(ink, hasLength(2), reason: 'not joined to the background');
+      expect(controller.document.elementById(background)!.locked, isTrue);
+      expect(
+        (controller.document.elementById(background)! as InkElement).strokes,
+        hasLength(1),
+      );
+    });
+
+    testWidgets('ink set as the background is drawn', (tester) async {
+      final controller = CanvasController()
+        ..beginStroke(const Offset(10, 10))
+        ..extendStroke(const Offset(60, 10))
+        ..endStroke();
+      final background = controller.document.elements.single.id;
+      controller.setAsBackground(<String>[background]);
+      await tester.pumpWidget(_host(controller));
+
+      final drawn = <String>{
+        for (final paint in tester.widgetList<CustomPaint>(
+          find.byType(CustomPaint),
+        ))
+          if (paint.painter case final InkPainter painter)
+            for (final element in painter.elements) element.id,
+      };
+      expect(drawn, contains(background));
+    });
+
     testWidgets('ink far out of view is made ready to draw while nothing '
         'moves', (tester) async {
       final controller = _farReaching()

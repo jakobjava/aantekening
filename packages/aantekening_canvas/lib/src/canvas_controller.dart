@@ -1254,6 +1254,7 @@ class CanvasController extends ChangeNotifier {
     final existing = active == null ? null : _byId[active];
     final joins =
         existing is InkElement &&
+        !existing.locked &&
         clock.difference(_lastStrokeEnd) < inkJoinPause &&
         existing.bounds.inflate(inkJoinDistance).intersects(stroke.bounds);
     _lastStrokeEnd = clock;

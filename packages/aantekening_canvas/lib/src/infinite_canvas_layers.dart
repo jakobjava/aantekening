@@ -357,9 +357,11 @@ class _PageContentState extends State<_PageContent> {
     // handwriting took three times a frame to draw.
     final tileScale =
         (_laidOutZooming ? math.min(_zoom, viewport.zoom) : _zoom) * pixelRatio;
+    // Ink set as the background is drawn as the rest of the ink is, as it
+    // is printed, beneath it; only it is not picked or erased.
     final ink = <InkElement>[
       for (final element in shown)
-        if (element is InkElement && !element.locked) element,
+        if (element is InkElement) element,
     ];
     final before = _placed;
     _placed = <String, (NoteElement, Widget?)>{};
