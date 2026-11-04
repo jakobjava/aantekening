@@ -450,7 +450,11 @@ class LatexReader {
             LatexReader(part).read(),
         ]);
       case 'operatorname':
-        return SymbolNode('\\operatorname{${_bracedText()}}');
+        // Starred, its scripts are set above and below it: `argmax`.
+        final starred = !_atEnd && _char == '*';
+        if (starred) _i++;
+        final operator = _bracedText();
+        return SymbolNode('$command${starred ? '*' : ''}{$operator}');
       case 'colorbox':
         return _highlight(start);
       case 'left':

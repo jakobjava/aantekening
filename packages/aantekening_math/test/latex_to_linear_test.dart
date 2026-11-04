@@ -100,6 +100,7 @@ void main() {
       "f'(x)": "f'(x)",
       r'\operatorname{sgn}(x)': 'sgn(x)',
       r'\operatorname{Hom}(A, B)': r'\operatorname{Hom}(A, B)',
+      r'\operatorname*{argmax}_x f': r'\operatorname*{argmax}_x f',
       r'\ket{\psi}': 'ket(psi)',
       r'\Bra{\phi}': 'bra(phi)',
       r'\braket{\phi|\psi}': 'braket(phi, psi)',
@@ -148,6 +149,7 @@ void main() {
       r'{}^{14}_{6}\mathrm{C}',
       r'x \in \left] -\infty ; 0 \right[',
       r'x = \pm a',
+      r'\operatorname*{argmax}_x f(x)',
       r'\text{50\% of R\&D}',
     ]) {
       test('LaTeX: $latex', () {
