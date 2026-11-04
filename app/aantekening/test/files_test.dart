@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -50,6 +51,51 @@ void main() {
       for (final name in <String>['notes.pdf', 'photo.JPG', 'data.csv']) {
         expect(runsCode(name), isFalse, reason: name);
       }
+    });
+
+    testWidgets('open as the page has them, whatever became of the copy '
+        'opened before', (tester) async {
+      final assets = Directory.systemTemp.createTempSync('attached_');
+      addTearDown(() => assets.deleteSync(recursive: true));
+      final store = AantekeningStore.inMemory(assetDirectory: assets);
+      addTearDown(store.close);
+      final opened = <String>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const launcher = MethodChannel('plugins.flutter.io/url_launcher');
+      messenger.setMockMethodCallHandler(launcher, (call) async {
+        opened.add('${(call.arguments as Map<Object?, Object?>)['url']}');
+        return true;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(launcher, null));
+      final bytes = Uint8List.fromList(utf8.encode('the data as measured'));
+      final asset = (await tester.runAsync(
+        () => store.assets.importBytes(
+          bytes,
+          mimeType: 'text/csv',
+          originalName: 'readings.csv',
+        ),
+      ))!;
+      final file = BlockEmbed(
+        kind: EmbedKind.file,
+        assetId: asset.id,
+        width: 200,
+        height: 40,
+        name: 'readings.csv',
+      );
+
+      expect(
+        await tester.runAsync(() => openAttachedFile(store, file)),
+        OpenedFile.opened,
+      );
+      final copy = File(Uri.parse(opened.single).toFilePath());
+      addTearDown(() => copy.parent.deleteSync(recursive: true));
+      expect(copy.readAsBytesSync(), bytes);
+      // Changed where it was opened, and saved there.
+      copy.writeAsStringSync('the data as wished for');
+
+      await tester.runAsync(() => openAttachedFile(store, file));
+      expect(copy.readAsBytesSync(), bytes);
     });
   });
 

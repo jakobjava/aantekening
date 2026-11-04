@@ -50,7 +50,19 @@ Future<OpenedFile> openAttachedFile(
   );
   await folder.create(recursive: true);
   final copy = File(p.join(folder.path, name));
-  if (!copy.existsSync()) await source.copy(copy.path);
+  // Copied afresh each time, whole or not at all under its name: the copy
+  // opened before may have been changed where it was opened, or cut short.
+  final fresh = File('${copy.path}.${Ulid.generate()}.part');
+  try {
+    await source.copy(fresh.path);
+    await fresh.rename(copy.path);
+  } on FileSystemException {
+    // Still open where it was opened before, which Windows will not have
+    // put in the place of: shown there again as it is.
+    if (!copy.existsSync()) return OpenedFile.failed;
+  } finally {
+    if (fresh.existsSync()) await fresh.delete();
+  }
   return await launchUrl(Uri.file(copy.path))
       ? OpenedFile.opened
       : OpenedFile.failed;
