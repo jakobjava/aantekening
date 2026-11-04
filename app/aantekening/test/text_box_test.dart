@@ -67,6 +67,62 @@ void main() {
     expect(textOf(tester), 'Hello world');
   });
 
+  testWidgets('what an input method composes is not sent back to it', (
+    tester,
+  ) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await type(tester, 'Ni');
+    final client =
+        (tester.testTextInput.log
+                    .lastWhere((call) => call.method == 'TextInput.setClient')
+                    .arguments
+                as List<Object?>)[0]!
+            as int;
+
+    // A dead key, or the first of a word in Chinese: composed, not yet
+    // taken.
+    final logged = tester.testTextInput.log.length;
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          SystemChannels.textInput.name,
+          SystemChannels.textInput.codec.encodeMethodCall(
+            MethodCall(
+              'TextInputClient.updateEditingStateWithDeltas',
+              <Object?>[
+                client,
+                <String, Object?>{
+                  'deltas': <Map<String, Object?>>[
+                    <String, Object?>{
+                      'oldText': 'Ni',
+                      'deltaText': 'h',
+                      'deltaStart': 2,
+                      'deltaEnd': 2,
+                      'selectionBase': 3,
+                      'selectionExtent': 3,
+                      'selectionAffinity': 'TextAffinity.downstream',
+                      'selectionIsDirectional': false,
+                      'composingBase': 2,
+                      'composingExtent': 3,
+                    },
+                  ],
+                },
+              ],
+            ),
+          ),
+          (_) {},
+        );
+    await tester.pump();
+    expect(textOf(tester), 'Nih');
+    expect(
+      tester.testTextInput.log
+          .skip(logged)
+          .where((call) => call.method == 'TextInput.setEditingState'),
+      isEmpty,
+      reason: 'it knows what it composed',
+    );
+  });
+
   testWidgets('pressing the paper takes the box\'s frame away with the '
       'rest of its marks, before the press ends', (tester) async {
     await openEditor(tester, store, pageId);

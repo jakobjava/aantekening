@@ -57,6 +57,10 @@ class TextBoxInput implements DeltaTextInputClient {
   TextRange get composing => _composing;
   TextRange _composing = TextRange.empty;
 
+  /// Whether a batch of the input method's edits is being taken: told
+  /// nothing until all of it is, it is sent nothing it did itself.
+  bool _taking = false;
+
   /// Opens the connection, unless it is open.
   void open() {
     if (_connection?.attached ?? false) return;
@@ -78,7 +82,7 @@ class TextBoxInput implements DeltaTextInputClient {
   /// have changed.
   void sync() {
     final connection = _connection;
-    if (connection == null || !connection.attached) return;
+    if (_taking || connection == null || !connection.attached) return;
     final value = valueOf(_composing);
     if (value != _value) {
       _value = value;
@@ -117,22 +121,27 @@ class TextBoxInput implements DeltaTextInputClient {
   @override
   void updateEditingValueWithDeltas(List<TextEditingDelta> deltas) {
     if (!accepts()) return;
-    for (final delta in deltas) {
-      _value = delta.apply(_value);
-      switch (delta) {
-        case TextEditingDeltaInsertion():
-          onReplace(
-            TextRange.collapsed(delta.insertionOffset),
-            delta.textInserted,
-          );
-        case TextEditingDeltaDeletion():
-          onReplace(delta.deletedRange, '');
-        case TextEditingDeltaReplacement():
-          onReplace(delta.replacedRange, delta.replacementText);
-        case TextEditingDeltaNonTextUpdate():
-          onSelect(delta.selection);
+    _taking = true;
+    try {
+      for (final delta in deltas) {
+        _value = delta.apply(_value);
+        _composing = delta.composing;
+        switch (delta) {
+          case TextEditingDeltaInsertion():
+            onReplace(
+              TextRange.collapsed(delta.insertionOffset),
+              delta.textInserted,
+            );
+          case TextEditingDeltaDeletion():
+            onReplace(delta.deletedRange, '');
+          case TextEditingDeltaReplacement():
+            onReplace(delta.replacedRange, delta.replacementText);
+          case TextEditingDeltaNonTextUpdate():
+            onSelect(delta.selection);
+        }
       }
-      _composing = delta.composing;
+    } finally {
+      _taking = false;
     }
     onComposed();
     sync();
