@@ -139,9 +139,11 @@ class _PageContentState extends State<_PageContent> {
     final placement = _placement.currentContext?.findRenderObject();
     final space = context.findRenderObject();
     if (placement is! RenderPagePlacement || space is! RenderBox) return null;
+    // The page space covers the canvas, so its own points are the view's
+    // pixels: where a press at [page] was made, as the elements are pressed.
     return placement.showsAt(
       id,
-      space.localToGlobal(widget.view.value.toView(page)),
+      space.localToGlobal(widget.view.value.toScreen(page)),
     );
   }
 

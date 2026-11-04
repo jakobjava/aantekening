@@ -1138,6 +1138,37 @@ void main() {
       expect(controller.document.elementById('upper')!.frame.y, 60);
     });
 
+    testWidgets('on the paper of a box above, the text of a box beneath is '
+        'what is there, the view scrolled and zoomed', (tester) async {
+      // Each box shows its text along its top, and only its paper below.
+      final controller = CanvasController()
+        ..addElement(_textBox('lower', x: 20050, y: 20130))
+        ..addElement(_textBox('upper', x: 20050, y: 20100));
+      await tester.pumpWidget(
+        _host(
+          controller,
+          offset: const Offset(30, 40),
+          elementBuilder: (context, element) => PlacedContent(
+            showsAt: (local) => local.dy >= 0 && local.dy < 20,
+            child: const ColoredBox(color: Colors.blue),
+          ),
+        ),
+      );
+      controller.viewport = const CanvasViewport(
+        origin: Offset(20000, 20050),
+        zoom: 2,
+      );
+      await tester.pump();
+
+      expect(controller.hitTest(const Offset(20100, 20140))?.id, 'lower');
+      expect(controller.hitTest(const Offset(20100, 20110))?.id, 'upper');
+      expect(
+        controller.hitTest(const Offset(20100, 20155))?.id,
+        'upper',
+        reason: 'on paper alone, the box on top',
+      );
+    });
+
     testWidgets('dragging an element moves it as one undo step', (
       tester,
     ) async {

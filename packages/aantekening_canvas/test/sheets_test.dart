@@ -573,6 +573,37 @@ void main() {
       expect(shown.dy, closeTo(expected.dy, 1));
     });
 
+    testWidgets('on the paper of a box above, the text of a box beneath is '
+        'what is there, on a sheet further down', (tester) async {
+      final height = Sheets().heightOf(0);
+      // Each box shows its text along its top, and only its paper below.
+      final controller = CanvasController()
+        ..loadDocument(
+          _paged(<NoteElement>[
+            _box('lower', y: height + 70),
+            _box('upper', y: height + 40),
+          ]),
+        );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InfiniteCanvas(
+            controller: controller,
+            elementBuilder: (context, element) => PlacedContent(
+              showsAt: (local) => local.dy >= 0 && local.dy < 20,
+              child: const ColoredBox(color: Colors.blue),
+            ),
+          ),
+        ),
+      );
+      controller.reveal(Aabb(100, height + 40, 300, height + 130));
+      await tester.pump();
+      controller.viewport = controller.viewport.copyWith(zoom: 1.5);
+      await tester.pump();
+
+      expect(controller.hitTest(Offset(150, height + 80))?.id, 'lower');
+      expect(controller.hitTest(Offset(150, height + 50))?.id, 'upper');
+    });
+
     testWidgets('a press below the last sheet is the button\'s alone', (
       tester,
     ) async {
