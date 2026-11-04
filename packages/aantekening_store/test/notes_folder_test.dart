@@ -320,6 +320,22 @@ void main() {
     );
   });
 
+  test('everything queued at once is written at once, however much', () async {
+    final store = await computer('a');
+    addTearDown(store.close);
+    final (sectionId, _) = await seed(store);
+    for (var i = 0; i < 70; i++) {
+      await store.pages.createPage(sectionId: sectionId, title: 'Page $i');
+    }
+    await store.mirror!.flush();
+
+    // As putting the notes in a folder for the first time queues them.
+    store.mirror!.enqueueAll();
+    await store.mirror!.flush();
+
+    expect(store.mirror!.status.pending, 0);
+  });
+
   test('a file deleted from the folder is written again', () async {
     final store = await computer('a');
     addTearDown(store.close);

@@ -272,19 +272,22 @@ final class FolderMirror {
   /// than again and again; it is never let go unwritten.
   Future<void> flush() => _serially(() async {
     String? problem;
-    var after = -1;
+    // Read on from the last one read, by its change and then its name:
+    // what was queued in one go, as everything is at first, shares one.
+    (int, String, String) after = (-1, '', '');
     while (true) {
       final rows = _db.select(
-        'SELECT kind, id, seq FROM mirror_outbox WHERE seq > ? '
-        'ORDER BY seq LIMIT 64',
-        <Object?>[after],
+        'SELECT kind, id, seq FROM mirror_outbox '
+        'WHERE (seq, kind, id) > (?, ?, ?) '
+        'ORDER BY seq, kind, id LIMIT 64',
+        <Object?>[after.$1, after.$2, after.$3],
       );
       if (rows.isEmpty) break;
       for (final row in rows) {
         final name = str(row, 'kind');
         final id = str(row, 'id');
         final seq = integer(row, 'seq');
-        after = seq;
+        after = (seq, name, id);
         final key = '$name/$id';
         if (_stuck[key] case (final at, final error) when at == seq) {
           problem ??= error;
