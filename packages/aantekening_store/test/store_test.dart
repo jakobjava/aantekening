@@ -741,6 +741,38 @@ void main() {
       expect(await store.pages.listPages(sectionId), hasLength(4));
     });
 
+    test(
+      'copies a page in among the subpages of one of its subpages',
+      () async {
+        final sectionId = await workspace.seedSection();
+        final page = await store.pages.createPage(sectionId: sectionId);
+        final subpage = await store.pages.createPage(
+          sectionId: sectionId,
+          parentId: page.id,
+        );
+        final beneath = await store.pages.createPage(
+          sectionId: sectionId,
+          parentId: subpage.id,
+        );
+
+        final copy = await store.pages.copyPage(
+          page.id,
+          sectionId: sectionId,
+          parentId: subpage.id,
+          after: beneath.id,
+        );
+
+        expect(copy.parentId, subpage.id);
+        final pages = await store.pages.listPages(sectionId);
+        // The three pages and a copy of each, nested as they are.
+        expect(pages, hasLength(6));
+        final copies = PageRef.hierarchy(pages);
+        final subcopy = copies.childrenOf(copy.id).single;
+        expect(copies.childrenOf(subcopy.id).single.title, beneath.title);
+        expect(copies.childrenOf(subpage.id), hasLength(2));
+      },
+    );
+
     test('deleting a page takes its subpages with it', () async {
       final sectionId = await workspace.seedSection();
       final page = await store.pages.createPage(sectionId: sectionId);

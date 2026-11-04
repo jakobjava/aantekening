@@ -691,16 +691,33 @@ class PageRepository {
     required String? parentId,
     required double position,
   }) {
-    // Listed before the copy is made, which may itself be one of them when a
-    // page is copied beneath one of its own subpages.
-    final children = <PageRef>[
-      for (final row in _db.select(
-        'SELECT * FROM pages WHERE parent_id = ? AND deleted_at IS NULL '
-        'ORDER BY position, id',
-        <Object?>[source.id],
-      ))
-        _pageRef(row),
-    ];
+    // Every page to copy is found before any copy is made: a copy made
+    // beneath one of them, as a page copied beneath one of its own
+    // subpages is, must not be copied in its turn.
+    final pages = _subtree(source.id, live: true);
+    final copies = <String, String>{};
+    late final PageRef top;
+    for (final id in pages) {
+      final page = id == source.id ? source : _findPage(id)!;
+      final copy = _copyOne(
+        page,
+        sectionId: sectionId,
+        parentId: id == source.id ? parentId : copies[page.parentId],
+        position: id == source.id ? position : page.position,
+      );
+      copies[id] = copy.id;
+      if (id == source.id) top = copy;
+    }
+    return top;
+  }
+
+  /// Copies [source] alone to [sectionId], under [parentId] at [position].
+  PageRef _copyOne(
+    PageRef source, {
+    required String sectionId,
+    required String? parentId,
+    required double position,
+  }) {
     final copy = PageRef(
       id: Ulid.generate(),
       sectionId: sectionId,
@@ -729,15 +746,6 @@ class PageRepository {
       'SELECT ?, tag_id FROM page_tags WHERE page_id = ?',
       <Object?>[copy.id, source.id],
     );
-
-    for (final child in children) {
-      _copyTree(
-        child,
-        sectionId: sectionId,
-        parentId: copy.id,
-        position: child.position,
-      );
-    }
     return copy;
   }
 
