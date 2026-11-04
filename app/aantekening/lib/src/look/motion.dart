@@ -83,7 +83,7 @@ Future<T?> showAppDialog<T>({
 /// glass fades in by itself, its frost coming as it does
 /// ([GlassArriving]): faded as a whole, what lies beneath it would be drawn
 /// again, blurred, every frame.
-class FloatingIn extends StatelessWidget {
+class FloatingIn extends StatefulWidget {
   const FloatingIn({
     required this.animation,
     required this.child,
@@ -98,25 +98,65 @@ class FloatingIn extends StatelessWidget {
   final Alignment alignment;
 
   @override
-  Widget build(BuildContext context) {
-    final grow = CurvedAnimation(
-      parent: animation,
+  State<FloatingIn> createState() => _FloatingInState();
+}
+
+/// The curves [FloatingIn] runs along, made once for its animation rather
+/// than each time it is built: each listens to the animation until it is
+/// let go of.
+class _FloatingInState extends State<FloatingIn> {
+  late CurvedAnimation _grow;
+  late CurvedAnimation _arriving;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _follow();
+  }
+
+  @override
+  void didUpdateWidget(FloatingIn oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.animation == oldWidget.animation) return;
+    _letGo();
+    _follow();
+  }
+
+  @override
+  void dispose() {
+    _letGo();
+    super.dispose();
+  }
+
+  void _follow() {
+    _grow = CurvedAnimation(
+      parent: widget.animation,
       curve: Motion.lively,
       reverseCurve: Curves.easeIn,
     );
-    return GlassArriving(
-      arriving: CurvedAnimation(
-        parent: animation,
-        curve: Motion.ease,
-        reverseCurve: Curves.easeIn,
-      ),
-      child: ScaleTransition(
-        scale: Tween<double>(begin: 0.96, end: 1).animate(grow),
-        alignment: alignment,
-        child: child,
-      ),
+    _arriving = CurvedAnimation(
+      parent: widget.animation,
+      curve: Motion.ease,
+      reverseCurve: Curves.easeIn,
     );
+    _scale = Tween<double>(begin: 0.96, end: 1).animate(_grow);
   }
+
+  void _letGo() {
+    _grow.dispose();
+    _arriving.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => GlassArriving(
+    arriving: _arriving,
+    child: ScaleTransition(
+      scale: _scale,
+      alignment: widget.alignment,
+      child: widget.child,
+    ),
+  );
 }
 
 /// Messages along the foot of the window, on glass.
@@ -210,7 +250,9 @@ class FadingPageTransitions extends PageTransitionsBuilder {
   ) => context.motion.still
       ? child
       : FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Motion.ease),
+          // Driven, not curved: a curve made at each build would listen
+          // to the route's animation for as long as the route lasts.
+          opacity: animation.drive(CurveTween(curve: Motion.ease)),
           child: child,
         );
 }

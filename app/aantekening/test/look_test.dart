@@ -9,6 +9,7 @@ import 'package:aantekening/src/look/appearance.dart';
 import 'package:aantekening/src/look/controls.dart';
 import 'package:aantekening/src/look/glass.dart';
 import 'package:aantekening/src/look/grain.dart';
+import 'package:aantekening/src/look/motion.dart';
 import 'package:aantekening/src/look/tones.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -314,6 +315,22 @@ void main() {
     });
   });
 
+  group('FloatingIn', () {
+    testWidgets('lets go of what it listens to, however often it is built', (
+      tester,
+    ) async {
+      final animation = _CountingAnimation();
+      Widget floating(int count) => MaterialApp(
+        home: FloatingIn(animation: animation, child: Text('$count')),
+      );
+      for (var count = 0; count < 5; count++) {
+        await tester.pumpWidget(floating(count));
+      }
+      await tester.pumpWidget(const SizedBox());
+      expect(animation.listening, 0);
+    });
+  });
+
   group('Tones', () {
     test('without an accent, mark in the text colour', () {
       final tones = Tones.of(
@@ -365,4 +382,27 @@ void main() {
       }
     });
   });
+}
+
+/// An animation at rest, counting what listens to how it runs.
+class _CountingAnimation extends Animation<double> {
+  int listening = 0;
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
+
+  @override
+  void addStatusListener(AnimationStatusListener listener) => listening++;
+
+  @override
+  void removeStatusListener(AnimationStatusListener listener) => listening--;
+
+  @override
+  AnimationStatus get status => AnimationStatus.completed;
+
+  @override
+  double get value => 1;
 }
