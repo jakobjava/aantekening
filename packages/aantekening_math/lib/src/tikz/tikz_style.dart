@@ -155,6 +155,9 @@ class _Style {
   int polygonSides = 5;
   int starPoints = 5;
   double starRatio = 1.5;
+
+  /// How much wider than high a diamond is, round text as wide as high.
+  double aspect = 1;
   double borderRotate = 0;
   double apexAngle = 30;
   double trapeziumLeft = 60;
@@ -236,6 +239,7 @@ class _Style {
     ..polygonSides = polygonSides
     ..starPoints = starPoints
     ..starRatio = starRatio
+    ..aspect = aspect
     ..borderRotate = borderRotate
     ..apexAngle = apexAngle
     ..trapeziumLeft = trapeziumLeft
@@ -575,6 +579,9 @@ class _Style {
         starPoints = number().round();
       case 'star point ratio':
         starRatio = number();
+      case 'aspect':
+        final value = number();
+        if (value > 0 && value.isFinite) aspect = value;
       case 'shape border rotate':
         borderRotate = number();
       case 'isosceles triangle apex angle':

@@ -4,6 +4,19 @@ part of 'tikz_picture.dart';
 /// its text: a diamond, a regular polygon, a star, an isosceles triangle, a
 /// trapezium and a semicircle.
 abstract final class _NodeShapes {
+  static ({List<Offset> outline, Map<String, int> corners}) _diamond(
+    double across,
+    double up,
+  ) => (
+    outline: <Offset>[
+      Offset(across, 0),
+      Offset(0, up),
+      Offset(-across, 0),
+      Offset(0, -up),
+    ],
+    corners: const <String, int>{},
+  );
+
   /// The corners of a node of [shape] round text that is [halfWidth] and
   /// [halfHeight] from its centre, its inner sep included, with the anchors
   /// its corners are; null for a shape that is not one of these.
@@ -17,14 +30,11 @@ abstract final class _NodeShapes {
     final h = halfHeight;
     final least = math.max(style.minWidth, style.minHeight) / 2;
     final made = switch (shape) {
-      'diamond' => (
-        outline: <Offset>[
-          Offset(math.max(2 * w, style.minWidth / 2), 0),
-          Offset(0, math.max(2 * h, style.minHeight / 2)),
-          Offset(-math.max(2 * w, style.minWidth / 2), 0),
-          Offset(0, -math.max(2 * h, style.minHeight / 2)),
-        ],
-        corners: const <String, int>{},
+      // Its half diagonals reach round the text's corners, as TikZ's do:
+      // a wide node is a wide diamond, not a flattened one.
+      'diamond' => _diamond(
+        math.max(w + h * style.aspect, style.minWidth / 2),
+        math.max(h + w / style.aspect, style.minHeight / 2),
       ),
       'regular polygon' => _regular(style.polygonSides, w, h, least),
       'star' => _star(style.starPoints, style.starRatio, w, h, least),

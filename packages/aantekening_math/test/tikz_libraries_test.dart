@@ -77,6 +77,24 @@ void main() {
       labelSizes: size,
     );
     expect(boundsOf(diamond.marks.single).width, closeTo(20, 1e-3));
+    // Round wide text, as square as TikZ draws it, or as wide as asked.
+    const wide = <Size>[Size(30, 10)];
+    final square = boundsOf(
+      drawn(
+        r'\node[draw, diamond, inner sep=0] at (0,0) {a};',
+        labelSizes: wide,
+      ).marks.single,
+    );
+    expect(square.width, closeTo(40, 1e-3));
+    expect(square.height, closeTo(40, 1e-3));
+    final aspect = boundsOf(
+      drawn(
+        r'\node[draw, diamond, aspect=2, inner sep=0] at (0,0) {a};',
+        labelSizes: wide,
+      ).marks.single,
+    );
+    expect(aspect.width, closeTo(50, 1e-3));
+    expect(aspect.height, closeTo(25, 1e-3));
     final hexagon = drawn(
       r'\node[regular polygon, regular polygon sides=6] (h) at (0,0) {a};'
       r'\node at (h.corner 1) {};',
