@@ -101,6 +101,8 @@ void main() {
       r'\operatorname{sgn}(x)': 'sgn(x)',
       r'\operatorname{Hom}(A, B)': r'\operatorname{Hom}(A, B)',
       r'\operatorname*{argmax}_x f': r'\operatorname*{argmax}_x f',
+      r'\begin{array}{c} \begin{array}{c} a \end{array} \\ b \end{array} x':
+          r'\begin{array}{c} \begin{array}{c} a \end{array} \\ b \end{array} x',
       r'\ket{\psi}': 'ket(psi)',
       r'\Bra{\phi}': 'bra(phi)',
       r'\braket{\phi|\psi}': 'braket(phi, psi)',
@@ -150,6 +152,8 @@ void main() {
       r'x \in \left] -\infty ; 0 \right[',
       r'x = \pm a',
       r'\operatorname*{argmax}_x f(x)',
+      r'\begin{aligned} a &= \begin{aligned} b &= c \end{aligned} \\ d &= e '
+          r'\end{aligned} + 1',
       r'\text{50\% of R\&D}',
     ]) {
       test('LaTeX: $latex', () {

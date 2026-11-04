@@ -566,9 +566,26 @@ class LatexReader {
   MathNode _environment(int start) {
     final environment = _bracedText();
     if (!gridEnvironments.contains(environment)) {
+      // Up to the `\end` that closes it, those of environments of the same
+      // name within it counted, as the linear syntax reads one.
+      final begin = '\\begin{$environment}';
       final end = '\\end{$environment}';
-      final at = source.indexOf(end, _i);
-      _i = at < 0 ? source.length : at + end.length;
+      var depth = 1;
+      while (depth > 0) {
+        final nextEnd = source.indexOf(end, _i);
+        if (nextEnd < 0) {
+          _i = source.length;
+          break;
+        }
+        final nextBegin = source.indexOf(begin, _i);
+        if (nextBegin >= 0 && nextBegin < nextEnd) {
+          depth++;
+          _i = nextBegin + begin.length;
+        } else {
+          depth--;
+          _i = nextEnd + end.length;
+        }
+      }
       return RawNode(source.substring(start, _i));
     }
     final rows = <List<MathNode>>[<MathNode>[]];
