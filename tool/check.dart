@@ -25,6 +25,18 @@ const List<(String, String, bool)> _packages = <(String, String, bool)>[
   ('app', 'app/aantekening', true),
 ];
 
+/// How long a file of code may grow before the check names it: a file past
+/// this most likely holds more than one thing, and is better split by what
+/// each part does (see docs/adr/0034-large-states-in-parts.md).
+const int _longFile = 1000;
+
+/// Files long on purpose, not named: Hunspell's checker and suggester,
+/// ported as they are written, so they can be held to Hunspell's own.
+const Set<String> _longOnPurpose = <String>{
+  'packages/aantekening_spell/lib/src/checker.dart',
+  'packages/aantekening_spell/lib/src/suggester.dart',
+};
+
 /// The tests that try many ways things can go, and how many each tries in
 /// a deep run.
 const Map<String, String> _deep = <String, String>{
@@ -83,6 +95,7 @@ Future<void> main(List<String> arguments) async {
       '--fatal-infos',
       '--fatal-warnings',
     ]);
+    _nameLongFiles(root);
   }
 
   final reached = <String, (int, int)>{};
@@ -165,4 +178,36 @@ Future<(int, int)?> _coverageOf(String path, {required bool flutter}) async {
     }
   }
   return (hit, total);
+}
+
+/// Names the files of code under [root] longer than [_longFile] lines, to be
+/// split by what each part does as they are worked on. It fails nothing:
+/// length alone is no fault, only a sign of one.
+void _nameLongFiles(String root) {
+  final long = <(String, int)>[];
+  for (final (_, path, _) in _packages) {
+    final lib = Directory('$root/$path/lib');
+    if (!lib.existsSync()) continue;
+    for (final file in lib.listSync(recursive: true).whereType<File>()) {
+      if (!file.path.endsWith('.dart')) continue;
+      final relative = file.path
+          .substring(root.length + 1)
+          .replaceAll(r'\', '/');
+      if (_longOnPurpose.contains(relative)) continue;
+      final lines = file.readAsLinesSync().length;
+      if (lines > _longFile) long.add((relative, lines));
+    }
+  }
+  if (long.isEmpty) return;
+  long.sort((a, b) => b.$2.compareTo(a.$2));
+  stdout
+    ..writeln(
+      '\n── long files: past $_longFile lines, to split by what each '
+      'part does',
+    )
+    ..writeln(
+      <String>[
+        for (final (path, lines) in long) '  ${'$lines'.padLeft(5)}  $path',
+      ].join('\n'),
+    );
 }
