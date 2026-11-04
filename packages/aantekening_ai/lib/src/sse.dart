@@ -4,10 +4,13 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'provider.dart';
+
 /// One event: its name, if it has one, and its data.
 typedef ServerEvent = ({String? event, String data});
 
-/// The events in [bytes], as they arrive.
+/// The events in [bytes], as they arrive. An event the stream ends in the
+/// middle of, its blank line never come, is not one: it is passed over.
 Stream<ServerEvent> serverEvents(Stream<List<int>> bytes) async* {
   String? event;
   final data = StringBuffer();
@@ -32,5 +35,13 @@ Stream<ServerEvent> serverEvents(Stream<List<int>> bytes) async* {
         data.write(value);
     }
   }
-  if (data.isNotEmpty) yield (event: event, data: data.toString());
 }
+
+/// That the answer [name] was streaming broke off before its end — the
+/// connection lost, or cut by something between, or what came unreadable
+/// ([cause]) — which another try may get whole.
+AiException brokenOff(String name, [Object? cause]) => AiException(
+  'The answer from $name broke off part way. Try again.',
+  retryable: true,
+  cause: cause,
+);

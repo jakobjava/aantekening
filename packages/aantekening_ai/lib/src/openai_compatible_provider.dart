@@ -466,54 +466,70 @@ class OpenAiCompatibleProvider implements ChatProvider {
     String? reasoningKey;
     var stop = StopReason.done;
     var usage = const Usage();
-    await for (final event in serverEvents(response.stream)) {
-      if (event.data.trim() == '[DONE]') break;
-      final data = jsonDecode(event.data) as Map<String, Object?>;
-      if (data['error'] case final Map<Object?, Object?> error) {
-        throw AiException('$name stopped: ${error['message']}');
-      }
-      if (data['usage'] case final Map<Object?, Object?> used) {
-        usage = _usage(used);
-      }
-      final choices = data['choices'] as List<Object?>?;
-      if (choices == null || choices.isEmpty) continue;
-      final choice = (choices.first! as Map).cast<String, Object?>();
-      final delta =
-          (choice['delta'] as Map?)?.cast<String, Object?>() ??
-          const <String, Object?>{};
-      for (final key in _reasoningKeys) {
-        if (delta[key] case final String reasoning when reasoning.isNotEmpty) {
-          reasoningKey ??= key;
-          if (key != reasoningKey) continue;
-          reasoned.write(reasoning);
-          yield Reasoning(withoutThinkTags(reasoning));
+    // Whether the answer came to its end: `[DONE]`, or a reason it
+    // finished, which a server may send without the other.
+    var ended = false;
+    try {
+      await for (final event in serverEvents(response.stream)) {
+        if (event.data.trim() == '[DONE]') {
+          ended = true;
+          break;
         }
-      }
-      if (delta['content'] case final String piece when piece.isNotEmpty) {
-        yield* Stream<ChatEvent>.fromIterable(answer.add(piece));
-      }
-      for (final call in (delta['tool_calls'] as List<Object?>?) ?? const []) {
-        final json = (call! as Map).cast<String, Object?>();
-        final index = json['index'] as int? ?? calls.length;
-        final entry = calls[index] ??= (
-          id: StringBuffer(),
-          name: StringBuffer(),
-          args: StringBuffer(),
-        );
-        if (json['id'] case final String id) entry.id.write(id);
-        final function = (json['function'] as Map?)?.cast<String, Object?>();
-        if (function?['name'] case final String part) entry.name.write(part);
-        if (function?['arguments'] case final String part) {
-          entry.args.write(part);
+        final data = jsonDecode(event.data) as Map<String, Object?>;
+        if (data['error'] case final Map<Object?, Object?> error) {
+          throw AiException('$name stopped: ${error['message']}');
         }
+        if (data['usage'] case final Map<Object?, Object?> used) {
+          usage = _usage(used);
+        }
+        final choices = data['choices'] as List<Object?>?;
+        if (choices == null || choices.isEmpty) continue;
+        final choice = (choices.first! as Map).cast<String, Object?>();
+        final delta =
+            (choice['delta'] as Map?)?.cast<String, Object?>() ??
+            const <String, Object?>{};
+        for (final key in _reasoningKeys) {
+          if (delta[key] case final String reasoning
+              when reasoning.isNotEmpty) {
+            reasoningKey ??= key;
+            if (key != reasoningKey) continue;
+            reasoned.write(reasoning);
+            yield Reasoning(withoutThinkTags(reasoning));
+          }
+        }
+        if (delta['content'] case final String piece when piece.isNotEmpty) {
+          yield* Stream<ChatEvent>.fromIterable(answer.add(piece));
+        }
+        for (final call
+            in (delta['tool_calls'] as List<Object?>?) ?? const []) {
+          final json = (call! as Map).cast<String, Object?>();
+          final index = json['index'] as int? ?? calls.length;
+          final entry = calls[index] ??= (
+            id: StringBuffer(),
+            name: StringBuffer(),
+            args: StringBuffer(),
+          );
+          if (json['id'] case final String id) entry.id.write(id);
+          final function = (json['function'] as Map?)?.cast<String, Object?>();
+          if (function?['name'] case final String part) entry.name.write(part);
+          if (function?['arguments'] case final String part) {
+            entry.args.write(part);
+          }
+        }
+        stop = switch (choice['finish_reason']) {
+          'tool_calls' || 'function_call' => StopReason.toolUse,
+          'length' => StopReason.maxTokens,
+          'content_filter' => StopReason.refusal,
+          _ => stop,
+        };
+        if (choice['finish_reason'] != null) ended = true;
       }
-      stop = switch (choice['finish_reason']) {
-        'tool_calls' || 'function_call' => StopReason.toolUse,
-        'length' => StopReason.maxTokens,
-        'content_filter' => StopReason.refusal,
-        _ => stop,
-      };
+    } on AiException {
+      rethrow;
+    } on Object catch (error) {
+      throw brokenOff(name, error);
     }
+    if (!ended) throw brokenOff(name);
     yield* Stream<ChatEvent>.fromIterable(answer.close());
     yield const CitedSpan(<Citation>[]);
 

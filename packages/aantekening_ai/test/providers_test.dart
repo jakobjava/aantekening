@@ -81,6 +81,219 @@ void main() {
     );
   });
 
+  test('an event the stream ends in the middle of is passed over', () async {
+    final events = await serverEvents(
+      Stream<List<int>>.value(utf8.encode('data: one\n\ndata: {"tw')),
+    ).toList();
+    expect(events.map((ServerEvent e) => e.data), <String>['one']);
+  });
+
+  group('an answer cut short', () {
+    /// Each provider, made with a client, and an answer it streams whole:
+    /// cut anywhere before `whole` characters, it is cut short.
+    final answers =
+        <
+          String,
+          ({ChatProvider Function(http.Client) make, String body, int whole})
+        >{
+          'Anthropic': () {
+            final body = sse(<Map<String, Object?>>[
+              <String, Object?>{
+                'type': 'message_start',
+                'message': <String, Object?>{'usage': <String, Object?>{}},
+              },
+              <String, Object?>{
+                'type': 'content_block_start',
+                'index': 0,
+                'content_block': <String, Object?>{'type': 'text', 'text': ''},
+              },
+              <String, Object?>{
+                'type': 'content_block_delta',
+                'index': 0,
+                'delta': <String, Object?>{
+                  'type': 'text_delta',
+                  'text': 'It is fast.',
+                },
+              },
+              <String, Object?>{'type': 'content_block_stop', 'index': 0},
+              <String, Object?>{
+                'type': 'content_block_start',
+                'index': 1,
+                'content_block': <String, Object?>{
+                  'type': 'tool_use',
+                  'id': 'toolu_1',
+                  'name': 'read_page',
+                  'input': <String, Object?>{},
+                },
+              },
+              <String, Object?>{
+                'type': 'content_block_delta',
+                'index': 1,
+                'delta': <String, Object?>{
+                  'type': 'input_json_delta',
+                  'partial_json': '{"page_id": "p2"}',
+                },
+              },
+              <String, Object?>{'type': 'content_block_stop', 'index': 1},
+              <String, Object?>{
+                'type': 'message_delta',
+                'delta': <String, Object?>{'stop_reason': 'tool_use'},
+              },
+              <String, Object?>{'type': 'message_stop'},
+            ]);
+            return (
+              make: (http.Client client) =>
+                  AnthropicProvider(apiKey: 'k', client: client),
+              body: body,
+              whole: body.length,
+            );
+          }(),
+          'OpenAI-compatible': () {
+            String chunk(Map<String, Object?> choice) =>
+                'data: ${jsonEncode(<String, Object?>{
+                  'choices': <Object?>[choice],
+                })}\n\n';
+            final finished = <String>[
+              chunk(<String, Object?>{
+                'delta': <String, Object?>{'content': 'It is fast.'},
+              }),
+              chunk(<String, Object?>{
+                'delta': <String, Object?>{
+                  'tool_calls': <Object?>[
+                    <String, Object?>{
+                      'index': 0,
+                      'id': 'c1',
+                      'function': <String, Object?>{
+                        'name': 'read_page',
+                        'arguments': '{"page_id": "p2"}',
+                      },
+                    },
+                  ],
+                },
+              }),
+              chunk(<String, Object?>{
+                'delta': <String, Object?>{},
+                'finish_reason': 'tool_calls',
+              }),
+            ].join();
+            return (
+              make: (http.Client client) => OpenAiCompatibleProvider(
+                name: 'LM Studio',
+                baseUrl: 'http://127.0.0.1:1234/v1',
+                client: client,
+              ),
+              body: '${finished}data: [DONE]\n\n',
+              // Finished, it is whole without `[DONE]`.
+              whole: finished.length,
+            );
+          }(),
+          'Ollama': () {
+            final body = <Map<String, Object?>>[
+              <String, Object?>{
+                'message': <String, Object?>{'content': 'It is fast.'},
+                'done': false,
+              },
+              <String, Object?>{
+                'message': <String, Object?>{
+                  'content': '',
+                  'tool_calls': <Object?>[
+                    <String, Object?>{
+                      'function': <String, Object?>{
+                        'name': 'read_page',
+                        'arguments': <String, Object?>{'page_id': 'p2'},
+                      },
+                    },
+                  ],
+                },
+                'done': false,
+              },
+              <String, Object?>{
+                'message': <String, Object?>{'content': ''},
+                'done': true,
+                'done_reason': 'stop',
+              },
+            ].map(jsonEncode).join('\n');
+            return (
+              make: (http.Client client) => OllamaProvider(
+                name: 'Ollama',
+                baseUrl: 'http://127.0.0.1:11434',
+                client: client,
+              ),
+              body: body,
+              whole: body.length,
+            );
+          }(),
+        };
+
+    /// A server streaming [bytes] in answer to a chat, and knowing nothing
+    /// of its models.
+    http.Client streaming(Stream<List<int>> Function() bytes) =>
+        MockClient.streaming((request, _) async {
+          final path = request.url.path;
+          return path.endsWith('/messages') ||
+                  path.endsWith('/chat') ||
+                  path.endsWith('/chat/completions')
+              ? http.StreamedResponse(bytes(), 200)
+              : http.StreamedResponse(const Stream.empty(), 404);
+        });
+
+    final brokenOff = throwsA(
+      isA<AiException>()
+          .having((e) => e.retryable, 'retryable', isTrue)
+          .having((e) => e.message, 'message', contains('broke off')),
+    );
+
+    for (final MapEntry(key: name, value: answer) in answers.entries) {
+      test('from $name is no answer, wherever the stream ends', () async {
+        final bytes = utf8.encode(answer.body);
+        final whole = await answer
+            .make(streaming(() => Stream.value(bytes)))
+            .chat(question('How fast?', tools: const <ToolSpec>[readTool]))
+            .toList();
+        final done = whole.last as MessageDone;
+        expect(done.message.text, 'It is fast.');
+        expect(done.message.toolCalls.single.input, <String, Object?>{
+          'page_id': 'p2',
+        });
+
+        for (var cut = 0; cut < answer.whole; cut++) {
+          await expectLater(
+            answer
+                .make(streaming(() => Stream.value(bytes.sublist(0, cut))))
+                .chat(question('How fast?', tools: const <ToolSpec>[readTool]))
+                .toList(),
+            brokenOff,
+            reason: 'cut after ${answer.body.substring(0, cut)}',
+          );
+        }
+      });
+
+      test('from $name is no answer when the connection is lost', () async {
+        final bytes = utf8.encode(answer.body);
+        await expectLater(
+          answer
+              .make(
+                streaming(
+                  () => Stream<List<int>>.multi((out) {
+                    out
+                      ..add(bytes.sublist(0, bytes.length ~/ 2))
+                      ..addError(
+                        http.ClientException(
+                          'Connection closed while receiving data',
+                        ),
+                      )
+                      ..close();
+                  }),
+                ),
+              )
+              .chat(question('How fast?'))
+              .toList(),
+          brokenOff,
+        );
+      });
+    }
+  });
+
   group('Anthropic', () {
     test('gives notes as search results, and asks with tools, search and '
         'a fallback', () {
@@ -277,6 +490,7 @@ void main() {
             'type': 'message_delta',
             'delta': <String, Object?>{'stop_reason': 'tool_use'},
           },
+          <String, Object?>{'type': 'message_stop'},
         ]),
       );
       final done = await AnthropicProvider(apiKey: 'k', client: fake.client)
@@ -319,6 +533,7 @@ void main() {
             },
           },
           <String, Object?>{'type': 'content_block_stop', 'index': 0},
+          <String, Object?>{'type': 'message_stop'},
         ]),
       );
       final builder = AnswerBuilder();

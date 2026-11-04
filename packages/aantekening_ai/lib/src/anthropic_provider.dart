@@ -317,82 +317,94 @@ class AnthropicProvider implements ChatProvider {
     final partialJson = <int, StringBuffer>{};
     var usage = const Usage();
     var stop = StopReason.done;
-    await for (final event in serverEvents(response.stream)) {
-      final data = jsonDecode(event.data) as Map<String, Object?>;
-      switch (data['type']) {
-        case 'message_start':
-          final message = data['message']! as Map<String, Object?>;
-          usage = usage + _usage(message['usage']);
-        case 'content_block_start':
-          final block = Map<String, Object?>.of(
-            (data['content_block']! as Map).cast<String, Object?>(),
-          );
-          blocks.add(block);
-          if (block['type'] == 'web_search_tool_result') {
-            final results = block['content'];
-            if (results is List && results.isNotEmpty) {
-              yield Activity('Read ${results.length} results from the web');
+    // Whether the answer came to its end: a stream that ends before
+    // `message_stop` was cut off, whatever it holds by then.
+    var ended = false;
+    try {
+      await for (final event in serverEvents(response.stream)) {
+        final data = jsonDecode(event.data) as Map<String, Object?>;
+        switch (data['type']) {
+          case 'message_start':
+            final message = data['message']! as Map<String, Object?>;
+            usage = usage + _usage(message['usage']);
+          case 'content_block_start':
+            final block = Map<String, Object?>.of(
+              (data['content_block']! as Map).cast<String, Object?>(),
+            );
+            blocks.add(block);
+            if (block['type'] == 'web_search_tool_result') {
+              final results = block['content'];
+              if (results is List && results.isNotEmpty) {
+                yield Activity('Read ${results.length} results from the web');
+              }
             }
-          }
-        case 'content_block_delta':
-          final index = data['index']! as int;
-          final block = blocks[index];
-          final delta = (data['delta']! as Map).cast<String, Object?>();
-          switch (delta['type']) {
-            case 'text_delta':
-              final text = delta['text']! as String;
-              block['text'] = '${block['text'] ?? ''}$text';
-              yield TextDelta(text);
-            case 'input_json_delta':
-              (partialJson[index] ??= StringBuffer()).write(
-                delta['partial_json'],
-              );
-            case 'citations_delta':
-              block['citations'] = <Object?>[
-                ...?(block['citations'] as List<Object?>?),
-                delta['citation'],
-              ];
-            case 'thinking_delta':
-              final thought = delta['thinking']! as String;
-              block['thinking'] = '${block['thinking'] ?? ''}$thought';
-              yield Reasoning(thought);
-            case 'signature_delta':
-              block['signature'] = delta['signature'];
-          }
-        case 'content_block_stop':
-          final index = data['index']! as int;
-          final block = blocks[index];
-          final json = partialJson.remove(index)?.toString();
-          if (json != null) block['input'] = ToolCallPart.inputFrom(json);
-          switch (block['type']) {
-            case 'text':
-              yield CitedSpan(<Citation>[
-                for (final c
-                    in (block['citations'] as List<Object?>?) ?? const [])
-                  ?_citation((c! as Map).cast<String, Object?>(), sources),
-              ]);
-            case 'server_tool_use' when block['name'] == 'web_search':
-              final query = (block['input'] as Map?)?['query'];
-              yield Activity(
-                query is String
-                    ? 'Searching the web for “$query”'
-                    : 'Searching the web',
-              );
-          }
-        case 'message_delta':
-          final delta = (data['delta']! as Map).cast<String, Object?>();
-          stop = _stop(delta['stop_reason'] as String?);
-          usage = _counted(usage, _usage(data['usage']));
-        case 'error':
-          final error = (data['error']! as Map).cast<String, Object?>();
-          throw AiException(
-            error['type'] == 'overloaded_error'
-                ? 'Anthropic is busy just now. Try again in a moment.'
-                : 'Anthropic stopped: ${error['message']}',
-            retryable: error['type'] == 'overloaded_error',
-          );
+          case 'content_block_delta':
+            final index = data['index']! as int;
+            final block = blocks[index];
+            final delta = (data['delta']! as Map).cast<String, Object?>();
+            switch (delta['type']) {
+              case 'text_delta':
+                final text = delta['text']! as String;
+                block['text'] = '${block['text'] ?? ''}$text';
+                yield TextDelta(text);
+              case 'input_json_delta':
+                (partialJson[index] ??= StringBuffer()).write(
+                  delta['partial_json'],
+                );
+              case 'citations_delta':
+                block['citations'] = <Object?>[
+                  ...?(block['citations'] as List<Object?>?),
+                  delta['citation'],
+                ];
+              case 'thinking_delta':
+                final thought = delta['thinking']! as String;
+                block['thinking'] = '${block['thinking'] ?? ''}$thought';
+                yield Reasoning(thought);
+              case 'signature_delta':
+                block['signature'] = delta['signature'];
+            }
+          case 'content_block_stop':
+            final index = data['index']! as int;
+            final block = blocks[index];
+            final json = partialJson.remove(index)?.toString();
+            if (json != null) block['input'] = ToolCallPart.inputFrom(json);
+            switch (block['type']) {
+              case 'text':
+                yield CitedSpan(<Citation>[
+                  for (final c
+                      in (block['citations'] as List<Object?>?) ?? const [])
+                    ?_citation((c! as Map).cast<String, Object?>(), sources),
+                ]);
+              case 'server_tool_use' when block['name'] == 'web_search':
+                final query = (block['input'] as Map?)?['query'];
+                yield Activity(
+                  query is String
+                      ? 'Searching the web for “$query”'
+                      : 'Searching the web',
+                );
+            }
+          case 'message_delta':
+            final delta = (data['delta']! as Map).cast<String, Object?>();
+            stop = _stop(delta['stop_reason'] as String?);
+            usage = _counted(usage, _usage(data['usage']));
+          case 'error':
+            final error = (data['error']! as Map).cast<String, Object?>();
+            throw AiException(
+              error['type'] == 'overloaded_error'
+                  ? 'Anthropic is busy just now. Try again in a moment.'
+                  : 'Anthropic stopped: ${error['message']}',
+              retryable: error['type'] == 'overloaded_error',
+            );
+          case 'message_stop':
+            ended = true;
+        }
       }
+    } on AiException {
+      rethrow;
+    } on Object catch (error) {
+      throw brokenOff(name, error);
     }
+    if (!ended) throw brokenOff(name);
 
     final content = _echoable(blocks);
     yield MessageDone(

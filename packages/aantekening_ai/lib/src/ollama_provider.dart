@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'conversation.dart';
 import 'openai_compatible_provider.dart';
 import 'provider.dart';
+import 'sse.dart';
 import 'streamed_answer.dart';
 
 /// Talks to Ollama through its own chat API rather than its OpenAI one,
@@ -299,67 +300,78 @@ class OllamaProvider extends OpenAiCompatibleProvider {
     final response = await send(_api('/chat'), body, stop: stop);
 
     DateTime? thinkingSince;
-    // Leaving the loop early closes the connection, which stops the model.
-    await for (final line
-        in response.stream
-            .transform(utf8.decoder)
-            .transform(const LineSplitter())) {
-      if (line.trim().isEmpty) continue;
-      final data = jsonDecode(line) as Map<String, Object?>;
-      if (data['error'] case final Object error) {
-        throw AiException('$name stopped: $error');
-      }
-      final message =
-          (data['message'] as Map?)?.cast<String, Object?>() ??
-          const <String, Object?>{};
-      if (message['thinking'] case final String thought
-          when thought.isNotEmpty) {
-        final text = withoutThinkTags(thought);
-        reply.thought.write(text);
-        if (text.isNotEmpty) yield Reasoning(text);
-        if (thoughtMax != null) {
-          final since = thinkingSince ??= clock();
-          final limit = thinkingTime;
-          if (reply.thought.length / 4 > thoughtMax ||
-              (limit != null && clock().difference(since) > limit)) {
-            reply.stopped = true;
-            return;
+    // Whether the answer came to its end, said by `done`: a stream that
+    // ends without it was cut off, whatever it holds by then.
+    var ended = false;
+    try {
+      // Leaving the loop early closes the connection, which stops the model.
+      await for (final line
+          in response.stream
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
+        if (line.trim().isEmpty) continue;
+        final data = jsonDecode(line) as Map<String, Object?>;
+        if (data['error'] case final Object error) {
+          throw AiException('$name stopped: $error');
+        }
+        final message =
+            (data['message'] as Map?)?.cast<String, Object?>() ??
+            const <String, Object?>{};
+        if (message['thinking'] case final String thought
+            when thought.isNotEmpty) {
+          final text = withoutThinkTags(thought);
+          reply.thought.write(text);
+          if (text.isNotEmpty) yield Reasoning(text);
+          if (thoughtMax != null) {
+            final since = thinkingSince ??= clock();
+            final limit = thinkingTime;
+            if (reply.thought.length / 4 > thoughtMax ||
+                (limit != null && clock().difference(since) > limit)) {
+              reply.stopped = true;
+              return;
+            }
           }
         }
-      }
-      if (message['content'] case final String piece when piece.isNotEmpty) {
-        yield* Stream<ChatEvent>.fromIterable(answer.add(piece));
-      }
-      for (final call
-          in (message['tool_calls'] as List<Object?>?) ?? const []) {
-        final function = ((call! as Map)['function'] as Map?)
-            ?.cast<String, Object?>();
-        if (function?['name'] case final String name) {
-          reply.calls.add(
-            ToolCallPart(
-              id: 'call_${reply.calls.length}',
-              name: name,
-              input: switch (function!['arguments']) {
-                final Map<Object?, Object?> input => input.cast(),
-                _ => const <String, Object?>{},
-              },
-            ),
-          );
+        if (message['content'] case final String piece when piece.isNotEmpty) {
+          yield* Stream<ChatEvent>.fromIterable(answer.add(piece));
+        }
+        for (final call
+            in (message['tool_calls'] as List<Object?>?) ?? const []) {
+          final function = ((call! as Map)['function'] as Map?)
+              ?.cast<String, Object?>();
+          if (function?['name'] case final String name) {
+            reply.calls.add(
+              ToolCallPart(
+                id: 'call_${reply.calls.length}',
+                name: name,
+                input: switch (function!['arguments']) {
+                  final Map<Object?, Object?> input => input.cast(),
+                  _ => const <String, Object?>{},
+                },
+              ),
+            );
+          }
+        }
+        if (data['done'] == true) {
+          ended = true;
+          reply
+            ..stop = data['done_reason'] == 'length'
+                ? StopReason.maxTokens
+                : StopReason.done
+            ..usage =
+                reply.usage +
+                Usage(
+                  input: data['prompt_eval_count'] as int? ?? 0,
+                  output: data['eval_count'] as int? ?? 0,
+                );
         }
       }
-      if (data['done'] == true) {
-        reply
-          ..stop = data['done_reason'] == 'length'
-              ? StopReason.maxTokens
-              : StopReason.done
-          ..usage =
-              reply.usage +
-              Usage(
-                input: data['prompt_eval_count'] as int? ?? 0,
-                output: data['eval_count'] as int? ?? 0,
-              );
-      }
+    } on AiException {
+      rethrow;
+    } on Object catch (error) {
+      throw brokenOff(name, error);
     }
+    if (!ended) throw brokenOff(name);
   }
 }
 
