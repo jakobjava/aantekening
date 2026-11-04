@@ -228,8 +228,7 @@ class TabsController extends Notifier<TabsState> {
   /// Closes the tab at [index]. Closing the last one opens a new, empty tab
   /// in its place, so there is always one.
   void close(int index) {
-    _closed.add(state.tabs[index]);
-    if (_closed.length > _remembered) _closed.removeAt(0);
+    _keepClosed(state.tabs[index]);
     final beside = state.besideTab;
     final tabs = <NoteTab>[...state.tabs]..removeAt(index);
     if (tabs.isEmpty) tabs.add(NoteTab(id: _nextId++));
@@ -249,10 +248,27 @@ class TabsController extends Notifier<TabsState> {
 
   bool get canReopen => _closed.isNotEmpty;
 
-  /// Opens the tab closed last again, after the one showing, as it was.
+  /// Keeps [tab], closed, to be opened again, and the way back and
+  /// forward it had with it; the tab closed longest ago, and its way, are
+  /// forgotten once there are too many.
+  void _keepClosed(NoteTab tab) {
+    _closed.add(tab);
+    if (_closed.length <= _remembered) return;
+    final forgotten = _closed.removeAt(0).id;
+    _back.remove(forgotten);
+    _forward.remove(forgotten);
+  }
+
+  /// Opens the tab closed last again, after the one showing, as it was:
+  /// the pages it had been to still there to go back to.
   void reopen() {
     if (_closed.isEmpty) return;
-    final tab = _closed.removeLast().reopenedAs(_nextId++);
+    final closed = _closed.removeLast();
+    final tab = closed.reopenedAs(_nextId++);
+    if (_back.remove(closed.id) case final back?) _back[tab.id] = back;
+    if (_forward.remove(closed.id) case final forward?) {
+      _forward[tab.id] = forward;
+    }
     final at = state.active + 1;
     _set(<NoteTab>[...state.tabs]..insert(at, tab), at);
   }
@@ -333,9 +349,14 @@ class TabsController extends Notifier<TabsState> {
     updateCurrent((tab) => tab.inAi(!tab.ai));
   }
 
-  /// Closes every tab but the one at [index], and shows that one.
-  void closeOthers(int index) =>
-      _set(<NoteTab>[state.tabs[index]], 0, besideId: null);
+  /// Closes every tab but the one at [index], and shows that one. Each
+  /// can be opened again, as a tab closed by itself can.
+  void closeOthers(int index) {
+    for (final (at, tab) in state.tabs.indexed) {
+      if (at != index) _keepClosed(tab);
+    }
+    _set(<NoteTab>[state.tabs[index]], 0, besideId: null);
+  }
 
   /// Shows the tab at [index]. The tab beside the one showing, it takes
   /// the keys, and the one showing goes beside it.

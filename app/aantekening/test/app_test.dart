@@ -1336,6 +1336,33 @@ void main() {
         ..closeOthers(0);
       expect(container.read(tabsProvider).tabs, hasLength(1));
     });
+
+    test('tabs closed together open again, each with its way back', () {
+      final container = ProviderContainer(
+        overrides: [
+          preferencesProvider.overrideWith(
+            (ref) async => Preferences.inMemory(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final tabs = container.read(tabsProvider.notifier);
+      void go(String pageId) =>
+          tabs.updateCurrent((tab) => tab.choosing(TabChoice.page, pageId));
+      go('a');
+      go('b');
+      tabs.open(notebookId: 'n', sectionId: 's', pageId: 'c');
+      go('d');
+      tabs
+        ..activate(0)
+        ..closeOthers(0);
+      expect(tabs.canReopen, isTrue);
+
+      tabs.reopen();
+      expect(container.read(tabsProvider).current.pageId, 'd');
+      expect(tabs.canGoBack, isTrue);
+      expect(tabs.goBack(), 'c');
+    });
   });
 
   group('snippet highlighting', () {
