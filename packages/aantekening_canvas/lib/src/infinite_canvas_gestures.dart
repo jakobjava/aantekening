@@ -162,29 +162,36 @@ extension _Gestures on _InfiniteCanvasState {
   void _onPointerSignal(PointerSignalEvent event) {
     _motion.brake();
     switch (event) {
+      // Turned over something on the page that scrolls, or over what lies
+      // over it, the wheel is that one's, which asks for it first.
       case PointerScrollEvent():
-        if (_isZoomModifierPressed) {
-          // Glided through, notch or not: a zoom at every event would lay
-          // the page out again at every one.
-          _motion.glideZoom(
-            _scrollZoom(event.scrollDelta.dy),
-            event.localPosition,
-          );
-          _syncZooming();
-          return;
-        }
-        final pan = -(HardwareKeyboard.instance.isShiftPressed
-            ? Offset(event.scrollDelta.dy, 0)
-            : event.scrollDelta);
-        if (pan.distance >= _notch) {
-          _motion.glide(pan);
-        } else {
-          _controller.panBy(pan);
-        }
+        GestureBinding.instance.pointerSignalResolver.register(
+          event,
+          (_) => _onScroll(event),
+        );
       case PointerScaleEvent():
         _controller.zoomBy(event.scale, event.localPosition);
       case _:
         break;
+    }
+  }
+
+  /// The wheel turned, or two fingers moved on a touchpad, over the page.
+  void _onScroll(PointerScrollEvent event) {
+    if (_isZoomModifierPressed) {
+      // Glided through, notch or not: a zoom at every event would lay the
+      // page out again at every one.
+      _motion.glideZoom(_scrollZoom(event.scrollDelta.dy), event.localPosition);
+      _syncZooming();
+      return;
+    }
+    final pan = -(HardwareKeyboard.instance.isShiftPressed
+        ? Offset(event.scrollDelta.dy, 0)
+        : event.scrollDelta);
+    if (pan.distance >= _notch) {
+      _motion.glide(pan);
+    } else {
+      _controller.panBy(pan);
     }
   }
 

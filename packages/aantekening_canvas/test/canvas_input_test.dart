@@ -471,6 +471,35 @@ void main() {
       await tester.sendEventToBinding(mouse.scroll(const Offset(0, 6)));
       expect(controller.viewport.origin.dy, 6);
     });
+
+    testWidgets('a wheel over what scrolls on the page scrolls it, not the '
+        'page', (tester) async {
+      final controller = _farReaching()
+        ..addElement(_textBox('list', x: 50, y: 50));
+      final list = ScrollController();
+      addTearDown(list.dispose);
+      await tester.pumpWidget(
+        _host(
+          controller,
+          elementBuilder: (context, element) => SingleChildScrollView(
+            controller: list,
+            child: const SizedBox(height: 600),
+          ),
+        ),
+      );
+      final mouse = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(mouse.hover(const Offset(100, 80)));
+
+      await tester.sendEventToBinding(mouse.scroll(const Offset(0, 6)));
+      await tester.pump();
+      expect(list.offset, 6);
+      expect(controller.viewport.origin.dy, 0, reason: 'the page left be');
+
+      // Beside it, the page.
+      await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
+      await tester.sendEventToBinding(mouse.scroll(const Offset(0, 6)));
+      expect(controller.viewport.origin.dy, 6);
+    });
   });
 
   group('InfiniteCanvas laying out', () {
