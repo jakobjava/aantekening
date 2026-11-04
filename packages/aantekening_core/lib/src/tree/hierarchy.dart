@@ -27,12 +27,14 @@ class Hierarchy<T> {
       for (final MapEntry(key: id, value: item) in byId.entries)
         id: byId.containsKey(parentOf(item)) ? parentOf(item) : null,
     };
-    // A loop of parents is broken where it is found, making that item a root.
+    // A loop of parents is broken where it closes, making the item it comes
+    // back round to a root: an item that only leads into a loop, not in it,
+    // stays where it is.
     for (final id in byId.keys) {
       final chain = <String>{id};
       for (var at = parents[id]; at != null; at = parents[at]) {
         if (!chain.add(at)) {
-          parents[id] = null;
+          parents[at] = null;
           break;
         }
       }

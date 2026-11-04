@@ -79,6 +79,16 @@ void main() {
       expect(looped.isWithin('x', 'y'), isFalse);
     });
 
+    test('leaves an item that only leads into a loop where it is', () {
+      final looped = _tree(<_Item>[
+        (id: 'c', parent: 'b'),
+        (id: 'b', parent: 'd'),
+        (id: 'd', parent: 'b'),
+      ]);
+      expect(_read(looped), <String>['b', '  c', '  d']);
+      expect(looped.parentOf('c'), 'b');
+    });
+
     test('is built for sections and pages from their parents', () {
       final pages = PageRef.hierarchy(const <PageRef>[
         PageRef(
