@@ -282,7 +282,7 @@ void main() {
                           'Connection closed while receiving data',
                         ),
                       )
-                      ..close();
+                      ..close().ignore();
                   }),
                 ),
               )
