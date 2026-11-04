@@ -1041,8 +1041,10 @@ class CanvasController extends ChangeNotifier {
   /// Replaces the element of [element]'s id with it, recorded in history as
   /// its arrival: undone, it is gone. For what was a placeholder until now,
   /// kept out of history — a caret on the paper, once something is written
-  /// at it.
+  /// at it. One no longer on the page is not brought back, and history is
+  /// left as it was.
   void replacePlaceholder(NoteElement element) {
+    if (!_byId.containsKey(element.id)) return;
     _record(_document.withElementsRemoved(<String>{element.id}));
     _apply(_document.withElementReplaced(element), recordUndo: false);
   }

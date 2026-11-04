@@ -589,6 +589,19 @@ void main() {
       expect(controller.document.elementById('a')!.frame.x, 10);
     });
 
+    test('a placeholder gone from the page before it is made real leaves '
+        'history as it was', () {
+      final controller = CanvasController()
+        ..addElement(_text('b'))
+        ..undo();
+      expect(controller.canRedo, isTrue);
+
+      controller.replacePlaceholder(_text('a', x: 10));
+      expect(controller.document.elementById('a'), isNull);
+      expect(controller.canUndo, isFalse, reason: 'no empty step');
+      expect(controller.canRedo, isTrue, reason: 'redo kept');
+    });
+
     test('loading a document resets history and dirty state', () {
       final controller = CanvasController()..addElement(_text('a'));
       controller.loadDocument(PageDocument.empty(id: 'fresh'));
