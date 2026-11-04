@@ -47,6 +47,36 @@ void main() {
       expect(bin.map((entry) => entry.id), isNot(contains(kept.id)));
     });
 
+    test('lists and restores what lies in a loop of sections', () async {
+      // A loop of sections the store keeps out, made as an older version
+      // of it would have let two computers make one.
+      final book = await store.library.createNotebook(title: 'Maths');
+      final outer = await store.library.createSection(
+        notebookId: book.id,
+        title: 'Outer',
+      );
+      final inner = await store.library.createSection(
+        notebookId: book.id,
+        title: 'Inner',
+        parentId: outer.id,
+      );
+      store.database.run(
+        'UPDATE sections SET parent_id = ? WHERE id = ?',
+        <Object?>[inner.id, outer.id],
+      );
+      final page = await store.pages.createPage(sectionId: inner.id);
+      await store.pages.deletePage(page.id);
+
+      final entry = (await store.bin.list()).single;
+      expect(entry.place, <String>['Maths', 'Outer', 'Inner']);
+      await store.bin.restore(entry);
+      expect(await store.bin.list(), isEmpty);
+      expect(await store.library.deleteSection(outer.id), <String>[
+        outer.id,
+        inner.id,
+      ]);
+    });
+
     test('restores a page, with the section it was in when that has gone '
         'since', () async {
       final sectionId = await workspace.seedSection();

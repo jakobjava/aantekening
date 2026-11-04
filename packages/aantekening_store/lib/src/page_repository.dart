@@ -531,7 +531,12 @@ class PageRepository {
       final document = renamed.isEmpty
           ? file.document
           : file.document.withAssetsRenamed(renamed);
-      final page = file.page;
+      // A parent beneath the page, from a move made elsewhere while it was
+      // moved here, would make a loop no page is reached in: it goes to the
+      // top instead.
+      final page = _db.closesLoop('pages', file.page.id, file.page.parentId)
+          ? file.page.copyWith(clearParentId: true)
+          : file.page;
       _db.run(
         'INSERT INTO pages '
         '(id, section_id, parent_id, title, position, preview, revision, '

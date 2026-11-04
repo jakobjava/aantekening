@@ -332,6 +332,56 @@ void main() {
     });
   });
 
+  group('loops', () {
+    test('a section put beneath one beneath it goes to the top', () async {
+      final book = await store.library.createNotebook(title: 'Maths');
+      final outer = await store.library.createSection(
+        notebookId: book.id,
+        title: 'Outer',
+      );
+      final inner = await store.library.createSection(
+        notebookId: book.id,
+        title: 'Inner',
+        parentId: outer.id,
+      );
+
+      // As a file moved on another computer has it.
+      store.library.putSection(outer.copyWith(parentId: inner.id));
+
+      final sections = await store.library.listAllSections(book.id);
+      expect(
+        sections.firstWhere((section) => section.id == outer.id).parentId,
+        isNull,
+      );
+      expect(
+        sections.firstWhere((section) => section.id == inner.id).parentId,
+        outer.id,
+      );
+    });
+
+    test('a loop of pages already made is deleted and copied whole', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+      final subpage = await store.pages.createPage(
+        sectionId: sectionId,
+        parentId: page.id,
+      );
+      store.database.run(
+        'UPDATE pages SET parent_id = ? WHERE id = ?',
+        <Object?>[subpage.id, page.id],
+      );
+
+      final copy = await store.pages.copyPage(page.id, sectionId: sectionId);
+      final pages = await store.pages.listPages(sectionId);
+      expect(pages, hasLength(4));
+      expect(PageRef.hierarchy(pages).childrenOf(copy.id), hasLength(1));
+      expect(await store.pages.deletePage(page.id), <String>[
+        page.id,
+        subpage.id,
+      ]);
+    });
+  });
+
   group('arranging', () {
     test('puts a page first, after another, or beneath another, and does '
         'not count it a change', () async {

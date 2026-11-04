@@ -100,6 +100,9 @@ class AantekeningDatabase {
   /// its `parent_id` column, parents before what lies beneath them: every
   /// one, only the live ones with [live], or only those deleted at
   /// [deletedAt] — deleted along with it.
+  ///
+  /// A loop of parents, which [closesLoop] keeps out, ends where it comes
+  /// back to [id]: a loop beneath [id] can only be one through it.
   List<String> subtree(
     String table,
     String id, {
@@ -107,21 +110,27 @@ class AantekeningDatabase {
     int? deletedAt,
   }) {
     final condition = live
-        ? 'WHERE t.deleted_at IS NULL'
+        ? 'AND t.deleted_at IS NULL'
         : deletedAt != null
-        ? 'WHERE t.deleted_at = ?'
+        ? 'AND t.deleted_at = ?2'
         : '';
     final rows = select(
       'WITH RECURSIVE subtree(id, depth) AS ('
-      '  SELECT ?, 0'
+      '  SELECT ?1, 0'
       '  UNION ALL'
       '  SELECT t.id, s.depth + 1 FROM $table t '
-      '  JOIN subtree s ON t.parent_id = s.id $condition'
+      '  JOIN subtree s ON t.parent_id = s.id WHERE t.id != ?1 $condition'
       ') SELECT id FROM subtree ORDER BY depth',
       <Object?>[id, ?deletedAt],
     );
     return <String>[for (final row in rows) row['id'] as String];
   }
+
+  /// Whether [parentId], as the parent of [id] in [table], would close a
+  /// loop of parents: whether it is [id] or lies beneath it — as when two
+  /// computers each move one of two pages beneath the other.
+  bool closesLoop(String table, String id, String? parentId) =>
+      parentId != null && subtree(table, id).contains(parentId);
 
   /// The position after every row of [table] matching [where], for a row
   /// added at the end of them.

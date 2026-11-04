@@ -376,8 +376,16 @@ class LibraryRepository {
   }
 
   /// Puts [section] in place of the one it names, or adds it, exactly as it
-  /// is — as the notes folder has it.
-  void putSection(Section section) => _db.run(
+  /// is — as the notes folder has it — but for a parent beneath it, from a
+  /// move made elsewhere while it was moved here, which would make a loop
+  /// no section is reached in: it goes to the top of its notebook instead.
+  void putSection(Section section) => _putSection(
+    _db.closesLoop('sections', section.id, section.parentId)
+        ? section.copyWith(clearParentId: true)
+        : section,
+  );
+
+  void _putSection(Section section) => _db.run(
     'INSERT INTO sections '
     '(id, notebook_id, parent_id, title, position, color, created_at, '
     ' updated_at, deleted_at) '
@@ -440,36 +448,28 @@ class LibraryRepository {
     required String? parentId,
     required double position,
   }) {
-    final children = <Section>[
-      for (final row in _db.select(
-        'SELECT * FROM sections WHERE parent_id = ? AND deleted_at IS NULL '
-        'ORDER BY position, id',
-        <Object?>[source.id],
-      ))
-        sectionOf(row),
-    ];
-    final now = _now;
-    final copy = Section(
-      id: Ulid.generate(),
-      notebookId: notebookId,
-      parentId: parentId,
-      title: source.title,
-      position: position,
-      color: source.color,
-      createdAt: now,
-      updatedAt: now,
-    );
-    _insertSection(copy);
-    _pages.copySectionPages(source.id, copy.id);
-    for (final child in children) {
-      _copyTree(
-        child,
+    // Every section to copy is found before any copy is made.
+    final copies = <String, String>{};
+    late final Section top;
+    for (final id in _subtree(source.id, live: true)) {
+      final section = id == source.id ? source : _findSection(id)!;
+      final now = _now;
+      final copy = Section(
+        id: Ulid.generate(),
         notebookId: notebookId,
-        parentId: copy.id,
-        position: child.position,
+        parentId: id == source.id ? parentId : copies[section.parentId],
+        title: section.title,
+        position: id == source.id ? position : section.position,
+        color: section.color,
+        createdAt: now,
+        updatedAt: now,
       );
+      _insertSection(copy);
+      _pages.copySectionPages(id, copy.id);
+      copies[id] = copy.id;
+      if (id == source.id) top = copy;
     }
-    return copy;
+    return top;
   }
 
   /// Whether [candidate] is [ancestor] or sits anywhere beneath it.

@@ -253,7 +253,9 @@ class BinRepository {
     String? notebookId;
     String? id = sectionId;
     var first = true;
-    while (id != null) {
+    // A loop of parents, which the store keeps out, would end here.
+    final seen = <String>{};
+    while (id != null && seen.add(id)) {
       final rows = _db.select(
         'SELECT title, parent_id, notebook_id FROM sections WHERE id = ?',
         <Object?>[id],
@@ -286,7 +288,8 @@ class BinRepository {
   void _restoreAbove(String sectionId, int now, {required bool includeSelf}) {
     String? id = sectionId;
     var first = true;
-    while (id != null) {
+    final seen = <String>{};
+    while (id != null && seen.add(id)) {
       final rows = _db.select(
         'SELECT parent_id, notebook_id FROM sections WHERE id = ?',
         <Object?>[id],

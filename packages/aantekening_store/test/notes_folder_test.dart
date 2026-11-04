@@ -222,6 +222,46 @@ void main() {
     expect(await textOf(first, pageId), 'theirs');
   });
 
+  test('two pages moved each beneath the other on two computers make no '
+      'loop', () async {
+    final first = await computer('a');
+    addTearDown(first.close);
+    final (sectionId, pageId) = await seed(first);
+    final other = await first.pages.createPage(
+      sectionId: sectionId,
+      title: 'Energy',
+    );
+    await first.mirror!.flush();
+    final second = await computer('b');
+    addTearDown(second.close);
+
+    await first.pages.movePage(
+      pageId,
+      sectionId: sectionId,
+      parentId: other.id,
+    );
+    await second.pages.movePage(
+      other.id,
+      sectionId: sectionId,
+      parentId: pageId,
+    );
+    await first.mirror!.flush();
+    await second.mirror!.flush();
+    await first.mirror!.scan();
+    await second.mirror!.scan();
+
+    for (final store in <AantekeningStore>[first, second]) {
+      final pages = await store.pages.listPages(sectionId);
+      final tops = pages.where((page) => page.parentId == null);
+      expect(tops, hasLength(1));
+      // What every page beneath the one at the top is reached from it.
+      expect(
+        await store.pages.deletePage(tops.single.id),
+        unorderedEquals(<String>[pageId, other.id]),
+      );
+    }
+  });
+
   test('a file written within a tick of its time is read again, not taken '
       'for unchanged by its time and size', () async {
     // Another computer's write in the same tick of the file system's clock
