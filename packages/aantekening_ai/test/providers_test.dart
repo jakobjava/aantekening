@@ -1031,6 +1031,30 @@ void main() {
       expect(events.whereType<TextDelta>().single.text, '{}');
     });
 
+    test('asks for its listing again where it could not be had', () async {
+      var asked = 0;
+      final client = MockClient((request) async {
+        if (++asked == 1) throw http.ClientException('not running yet');
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'data': <Object?>[
+              <String, Object?>{'id': 'm', 'context_length': 32768},
+            ],
+          }),
+          200,
+        );
+      });
+      final lmStudio = provider(client);
+      expect(
+        (await lmStudio.capabilitiesOf('m')).contextTokens,
+        isNot(32768),
+        reason: 'not listed yet',
+      );
+      expect((await lmStudio.capabilitiesOf('m')).contextTokens, 32768);
+      await lmStudio.capabilitiesOf('m');
+      expect(asked, 2, reason: 'a listing had is kept');
+    });
+
     test('takes what a model can do from its listing, in the words of '
         'each service, and the room it is given over it', () async {
       final client = MockClient(

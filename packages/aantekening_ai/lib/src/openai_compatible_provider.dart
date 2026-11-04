@@ -110,7 +110,8 @@ class OpenAiCompatibleProvider implements ChatProvider {
   }
 
   /// What each model is listed as able to do, once asked; none if the
-  /// list could not be had.
+  /// list could not be had, and asked for again next time — the server
+  /// may have been started since, the network come back.
   Future<Map<String, ModelCapabilities>>? _listed;
 
   @override
@@ -119,7 +120,10 @@ class OpenAiCompatibleProvider implements ChatProvider {
       (models) => <String, ModelCapabilities>{
         for (final model in models) model.id: model.capabilities,
       },
-      onError: (Object _) => const <String, ModelCapabilities>{},
+      onError: (Object _) {
+        _listed = null;
+        return const <String, ModelCapabilities>{};
+      },
     );
     return (await listed)[model] ?? _capabilities(const <String, Object?>{});
   }
