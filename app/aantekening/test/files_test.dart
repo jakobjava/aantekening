@@ -320,7 +320,8 @@ void main() {
     await store.close();
   });
 
-  testWidgets('an export has the page as it was being written', (tester) async {
+  testWidgets('an export has the page as it was being written, or says '
+      'why it could not be saved', (tester) async {
     final folder = Directory.systemTemp.createTempSync('notes_export_');
     addTearDown(() => folder.deleteSync(recursive: true));
     final store = AantekeningStore.inMemory(
@@ -337,7 +338,7 @@ void main() {
     final page = (await tester.runAsync(
       () => store.pages.createPage(sectionId: section!.id, title: 'Lecture'),
     ))!;
-    final target = p.join(folder.path, 'Lecture.aantekening');
+    var target = p.join(folder.path, 'Lecture.aantekening');
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(
@@ -396,6 +397,19 @@ void main() {
       target,
     ], ImportWork(Directory(p.join(folder.path, 'work'))..createSync()));
     expect(draft.pages.single.document.extractSearchText(), 'typed just now');
+    await tester.pumpAndSettle();
+    expect(find.text('Saved to $target'), findsOneWidget);
+
+    // Where a folder is already.
+    target = p.join(folder.path, 'Taken.aantekening');
+    Directory(p.join(target, 'kept')).createSync(recursive: true);
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    await tester.runAsync(() => exportNotes(context, shell, page));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('The export could not be saved'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the settings have a page for files, with what they hold', (

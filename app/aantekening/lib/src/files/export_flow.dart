@@ -33,17 +33,24 @@ Future<void> exportNotes(
       ? location.path
       : '${location.path}.$exportExtension';
   final store = await ref.read(storeProvider.future);
-  // What is still being typed goes too: the export is made from the
-  // index, which has a page once it is saved.
-  await ref.read(openSavesProvider).saveAll();
-  await store.exports.write(
-    path,
-    notebooks: <String>[if (node is Notebook) node.id],
-    sections: <String>[if (node is Section) node.id],
-    pages: <String>[if (node is PageRef) node.id],
-  );
+  String said;
+  try {
+    // What is still being typed goes too: the export is made from the
+    // index, which has a page once it is saved.
+    await ref.read(openSavesProvider).saveAll();
+    await store.exports.write(
+      path,
+      notebooks: <String>[if (node is Notebook) node.id],
+      sections: <String>[if (node is Section) node.id],
+      pages: <String>[if (node is PageRef) node.id],
+    );
+    said = 'Saved to $path';
+  } on Object catch (error) {
+    // A disk full, a folder that may not be written to: said, not lost.
+    said = 'The export could not be saved: $error';
+  }
   if (!context.mounted) return;
-  ScaffoldMessenger.maybeOf(context)?.showMessage('Saved to $path');
+  ScaffoldMessenger.maybeOf(context)?.showMessage(said);
 }
 
 /// [title] with what a file name may not hold replaced.
