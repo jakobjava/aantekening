@@ -441,16 +441,18 @@ final class FolderMirror {
   /// elsewhere since.
   Future<void> _keepTheirs(EntityFile? theirs, EntityFile ours) async {
     if (theirs is! PageFile) return;
-    if (ours is Tombstone) {
-      await _keepAsCopy(theirs);
-      return;
+    if (ours is! Tombstone) {
+      if (ours is! PageFile) return;
+      if (theirs.document.encode() == ours.document.encode() &&
+          theirs.page.title == ours.page.title) {
+        return;
+      }
     }
-    if (ours is! PageFile) return;
-    if (theirs.document.encode() == ours.document.encode() &&
-        theirs.page.title == ours.page.title) {
-      return;
+    final kept = await _keepAsCopy(theirs);
+    // Kept while writing, not reading: said at once, as no scan says it.
+    if (!_changes.isClosed) {
+      _changes.add(FolderChanges(pages: <String>{kept}, library: true));
     }
-    await _keepAsCopy(theirs);
   }
 
   /// Adds the page [copy] holds as a page of its own, beside the page it is
@@ -495,7 +497,6 @@ final class FolderMirror {
         tags: copy.tags,
       ),
     );
-    _found = _with(library: true, page: id);
     return id;
   }
 
@@ -742,7 +743,7 @@ final class FolderMirror {
           ours.document.encode() != file.document.encode() ||
           ours.page.title != file.page.title) {
         // Kept by the triggers, so it is written as a file of its own.
-        await _keepAsCopy(file);
+        _found = _with(library: true, page: await _keepAsCopy(file));
       }
     }
     try {

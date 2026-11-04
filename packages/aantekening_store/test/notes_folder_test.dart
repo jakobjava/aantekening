@@ -207,13 +207,17 @@ void main() {
     await second.pages.saveDocument(pageId, documentWithText(pageId, 'theirs'));
     await first.mirror!.flush();
     // The second writes over a file it did not write: it keeps the first
-    // one's version as a page of its own before it does.
+    // one's version as a page of its own before it does, and says so.
+    final heard = second.mirror!.changes.first;
     await second.mirror!.flush();
 
     final pages = await second.pages.listPages(sectionId);
     expect(pages, hasLength(2));
     final other = pages.firstWhere((page) => page.id != pageId);
     expect(other.title, contains('other version'));
+    final kept = await heard.timeout(const Duration(seconds: 5));
+    expect(kept.library, isTrue);
+    expect(kept.pages, <String>{other.id});
     expect(await textOf(second, other.id), 'mine');
     expect(await textOf(second, pageId), 'theirs');
 
