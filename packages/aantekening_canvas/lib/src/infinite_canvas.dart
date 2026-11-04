@@ -359,6 +359,11 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   void didUpdateWidget(InfiniteCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
+      // What a press was doing, it was doing to the page that went: a line
+      // half drawn there is let go of, and the rest of the press does
+      // nothing to this one.
+      oldWidget.controller.cancelStroke();
+      if (_action != _PointerAction.none) _resetPointer();
       _stopListening(oldWidget.controller);
       _listen(widget.controller);
       _inkAhead.dispose();

@@ -1286,6 +1286,42 @@ void main() {
       expect(controller.document.elements.single, isA<InkElement>());
     });
 
+    testWidgets('a page given another controller mid-drag leaves the new '
+        'page be, and the old one drawing nothing', (tester) async {
+      final before = CanvasController()
+        ..addElement(_image('a', x: 50, y: 50))
+        ..select('a');
+      final after = CanvasController()..addElement(_image('a', x: 400, y: 300));
+      await tester.pumpWidget(_host(before));
+
+      // A corner handle of the picture on the page that goes.
+      final resize = await tester.startGesture(
+        const Offset(252, 152),
+        kind: PointerDeviceKind.mouse,
+      );
+      await resize.moveBy(const Offset(20, 0));
+      await tester.pumpWidget(_host(after));
+      await resize.moveBy(const Offset(50, 0));
+      await resize.up();
+      expect(after.document.elementById('a')!.frame.x, 400);
+      expect(after.document.elementById('a')!.frame.width, 200);
+
+      // And a line begun on it.
+      before.setTool(CanvasTool.pen);
+      after.setTool(CanvasTool.pen);
+      await tester.pumpWidget(_host(before));
+      final pen = await tester.startGesture(
+        const Offset(500, 500),
+        kind: PointerDeviceKind.stylus,
+      );
+      await pen.moveBy(const Offset(20, 0));
+      await tester.pumpWidget(_host(after));
+      await pen.moveBy(const Offset(20, 0));
+      await pen.up();
+      expect(before.wetStrokes, isEmpty, reason: 'no line left half drawn');
+      expect(after.document.elements, hasLength(1), reason: 'none on it');
+    });
+
     testWidgets('dragging a corner handle resizes in proportion', (
       tester,
     ) async {
