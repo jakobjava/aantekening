@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
@@ -57,6 +58,14 @@ class MemorySecrets implements AiSecrets {
 }
 
 final aiSecretsProvider = Provider<AiSecrets>((ref) => const KeychainSecrets());
+
+/// What to say where the keychain would not read or keep a key, as
+/// [error] says why.
+String keychainTrouble(Object error) =>
+    'This computer’s keychain could not be reached, so no key is kept'
+    '${Platform.isLinux ? ' — it needs a Secret Service, such as GNOME '
+              'Keyring or KWallet' : ''}: '
+    '${error is PlatformException ? error.message ?? error.code : error}';
 
 /// The name a provider's API key is kept under.
 String providerKeyName(String providerId) => 'provider.$providerId';
@@ -147,9 +156,12 @@ final chatMakerProvider = Provider<ChatMaker>(
 final aiModelProvider = FutureProvider<AiModel?>((ref) async {
   final config = ref.watch(aiSettingsProvider.select((s) => s.active));
   if (config == null || config.model.isEmpty) return null;
-  final key = await ref
-      .watch(aiSecretsProvider)
-      .read(providerKeyName(config.id));
+  final String? key;
+  try {
+    key = await ref.watch(aiSecretsProvider).read(providerKeyName(config.id));
+  } on Object catch (error) {
+    throw AiException(keychainTrouble(error));
+  }
   final provider = ref.read(chatMakerProvider)(config, key);
   // Made again whenever the settings or a key change, under an answer
   // still coming through this one, which is closed once it is done.

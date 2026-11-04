@@ -1188,6 +1188,12 @@ class AiSession extends Notifier<AiSessionState> {
       writing = await _writerOf(profile.transcript);
       reader = await ref.read(workspaceReaderProvider.future);
       scoped = await reader.scope(scope);
+    } on Object catch (error) {
+      // A key the keychain would not give, say.
+      state = state.copyWith(
+        error: () => 'The podcast could not be made: $error',
+      );
+      return;
     } finally {
       _starting.remove(starting);
     }

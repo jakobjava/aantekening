@@ -242,9 +242,20 @@ class _VoiceBlockState extends ConsumerState<_VoiceBlock> {
 
   AiSecrets get _secrets => ref.read(aiSecretsProvider);
 
+  /// Why the keychain would not read or keep the key, if it would not.
+  String? _keyTrouble;
+
   Future<void> _readKey() async {
-    final key = await _secrets.read(voiceKeyName(widget.config.id));
-    if (mounted) setState(() => _hasKey = key != null && key.isNotEmpty);
+    try {
+      final key = await _secrets.read(voiceKeyName(widget.config.id));
+      if (!mounted) return;
+      setState(() {
+        _hasKey = key != null && key.isNotEmpty;
+        _keyTrouble = null;
+      });
+    } on Object catch (error) {
+      if (mounted) setState(() => _keyTrouble = keychainTrouble(error));
+    }
   }
 
   void _save(VoiceConfig config) => ref
@@ -253,17 +264,26 @@ class _VoiceBlockState extends ConsumerState<_VoiceBlock> {
 
   Future<void> _saveKey() async {
     final key = _key.text.trim();
-    await _secrets.write(
-      voiceKeyName(widget.config.id),
-      key.isEmpty ? null : key,
-    );
+    try {
+      await _secrets.write(
+        voiceKeyName(widget.config.id),
+        key.isEmpty ? null : key,
+      );
+    } on Object catch (error) {
+      if (mounted) setState(() => _keyTrouble = keychainTrouble(error));
+      return;
+    }
     if (!mounted) return;
     _key.clear();
     await _readKey();
   }
 
   Future<void> _remove() async {
-    await _secrets.write(voiceKeyName(widget.config.id), null);
+    try {
+      await _secrets.write(voiceKeyName(widget.config.id), null);
+    } on Object {
+      // A keychain not reached keeps no key to forget.
+    }
     if (!mounted) return;
     ref
         .read(aiSettingsProvider.notifier)
@@ -277,10 +297,11 @@ class _VoiceBlockState extends ConsumerState<_VoiceBlock> {
       _said = null;
     });
     final config = widget.config;
-    final speech = config.create(
-      apiKey: await _secrets.read(voiceKeyName(config.id)),
-    );
+    SpeechProvider? speech;
     try {
+      speech = config.create(
+        apiKey: await _secrets.read(voiceKeyName(config.id)),
+      );
       final sound = await speech.speak(
         'Hello! This is how I sound reading your notes.',
         voice: config.voiceFor(0),
@@ -299,7 +320,7 @@ class _VoiceBlockState extends ConsumerState<_VoiceBlock> {
     } on Object catch (error) {
       _said = error is AiException ? error.message : '$error';
     } finally {
-      speech.close();
+      speech?.close();
       if (mounted) setState(() => _trying = false);
     }
   }
@@ -411,6 +432,8 @@ class _VoiceBlockState extends ConsumerState<_VoiceBlock> {
                     labelText: config.preset.needsKey
                         ? 'API key'
                         : 'API key, if it needs one',
+                    errorText: _keyTrouble,
+                    errorMaxLines: 4,
                     helperText: _hasKey
                         ? 'A key is kept in this computer’s keychain. Type a '
                               'new one to replace it.'

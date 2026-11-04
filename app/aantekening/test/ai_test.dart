@@ -180,6 +180,21 @@ class FakeSpeech implements SpeechProvider {
   void close() {}
 }
 
+/// A keychain that cannot be reached: a Linux desktop without a Secret
+/// Service.
+class UnreachableSecrets implements AiSecrets {
+  static final PlatformException _trouble = PlatformException(
+    code: 'Libsecret error',
+    message: 'Failed to unlock the keyring',
+  );
+
+  @override
+  Future<String?> read(String name) async => throw _trouble;
+
+  @override
+  Future<void> write(String name, String? value) async => throw _trouble;
+}
+
 void main() {
   late AantekeningStore store;
   late Directory assets;
@@ -225,6 +240,7 @@ void main() {
     WidgetTester tester, {
     bool withModel = true,
     Preferences? preferences,
+    AiSecrets? secrets,
     List<Override> overrides = const <Override>[],
   }) async {
     tester.view.physicalSize = const Size(1500, 950);
@@ -237,7 +253,7 @@ void main() {
           preferencesProvider.overrideWith(
             (ref) async => preferences ?? Preferences.inMemory(),
           ),
-          aiSecretsProvider.overrideWithValue(MemorySecrets()),
+          aiSecretsProvider.overrideWithValue(secrets ?? MemorySecrets()),
           if (withModel)
             aiModelProvider.overrideWith(
               (ref) async => (
@@ -1402,6 +1418,46 @@ void main() {
     final settings = container.read(aiSettingsProvider);
     expect(settings.profiles, isEmpty);
     expect(settings.studyProfiles.first.isAsMade, isTrue);
+  });
+
+  testWidgets('a keychain that cannot be reached is said so, where the '
+      'model is set up and where its key is kept', (tester) async {
+    final container = await openShell(
+      tester,
+      withModel: false,
+      secrets: UnreachableSecrets(),
+    );
+    final settings = container.read(aiSettingsProvider.notifier);
+    settings.update(
+      container
+          .read(aiSettingsProvider)
+          .withProvider(
+            ProviderConfig.of(
+              ProviderPreset.anthropic,
+              id: 'claude',
+            ).copyWith(model: AnthropicProvider.defaultModel),
+          ),
+    );
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('keychain could not be reached'), findsOne);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Choose a model'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+    final trouble = find.descendant(
+      of: find.byType(TextField),
+      matching: find.textContaining('keychain could not be reached'),
+    );
+    expect(trouble, findsOne, reason: 'under the key');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'API key'),
+      'sk-not-kept',
+    );
+    await tester.tap(find.text('Save key'));
+    await tester.pumpAndSettle();
+    expect(trouble, findsOne);
   });
 
   testWidgets('without a model, it offers to choose one', (tester) async {

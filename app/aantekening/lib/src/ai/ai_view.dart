@@ -592,7 +592,7 @@ class _MainState extends ConsumerState<_Main> {
         null => StudyProfilePage(scope: scope, profile: shown),
       };
     } else if (model.value == null) {
-      page = const _ChooseModel();
+      page = _ChooseModel(trouble: model.error);
     } else if (state.atOverview ||
         state.shownProfile != null ||
         state.shownPodcast != null) {
@@ -628,7 +628,11 @@ class _MainState extends ConsumerState<_Main> {
 
 /// Before a model is chosen: what the AI does, and where to choose one.
 class _ChooseModel extends StatelessWidget {
-  const _ChooseModel();
+  const _ChooseModel({this.trouble});
+
+  /// Why the model chosen could not be set up, if one is chosen: its key
+  /// not read from the keychain, say.
+  final Object? trouble;
 
   @override
   Widget build(BuildContext context) {
@@ -651,6 +655,19 @@ class _ChooseModel extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: tones.muted, height: 1.4),
             ),
+            if (trouble case final trouble?) ...<Widget>[
+              const SizedBox(height: 10),
+              Text(
+                'The model chosen could not be set up: '
+                '${trouble is AiException ? trouble.message : trouble}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: tones.text,
+                  height: 1.4,
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
             FilledButton(
               onPressed: () => showSettings(context, page: SettingsPage.ai),

@@ -245,9 +245,20 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
 
   AiSecrets get _secrets => ref.read(aiSecretsProvider);
 
+  /// Why the keychain would not read or keep the key, if it would not.
+  String? _keyTrouble;
+
   Future<void> _readKey() async {
-    final key = await _secrets.read(providerKeyName(widget.config.id));
-    if (mounted) setState(() => _hasKey = key != null && key.isNotEmpty);
+    try {
+      final key = await _secrets.read(providerKeyName(widget.config.id));
+      if (!mounted) return;
+      setState(() {
+        _hasKey = key != null && key.isNotEmpty;
+        _keyTrouble = null;
+      });
+    } on Object catch (error) {
+      if (mounted) setState(() => _keyTrouble = keychainTrouble(error));
+    }
   }
 
   void _loadModels() {
@@ -271,10 +282,15 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
 
   Future<void> _saveKey() async {
     final key = _key.text.trim();
-    await _secrets.write(
-      providerKeyName(widget.config.id),
-      key.isEmpty ? null : key,
-    );
+    try {
+      await _secrets.write(
+        providerKeyName(widget.config.id),
+        key.isEmpty ? null : key,
+      );
+    } on Object catch (error) {
+      if (mounted) setState(() => _keyTrouble = keychainTrouble(error));
+      return;
+    }
     if (!mounted) return;
     _key.clear();
     ref.invalidate(aiModelProvider);
@@ -283,7 +299,11 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
   }
 
   Future<void> _remove() async {
-    await _secrets.write(providerKeyName(widget.config.id), null);
+    try {
+      await _secrets.write(providerKeyName(widget.config.id), null);
+    } on Object {
+      // A keychain not reached keeps no key to forget.
+    }
     if (!mounted) return;
     final settings = ref.read(aiSettingsProvider);
     ref
@@ -375,6 +395,8 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
                       labelText: config.preset.needsKey
                           ? 'API key'
                           : 'API key, if it needs one',
+                      errorText: _keyTrouble,
+                      errorMaxLines: 4,
                       helperText: _hasKey
                           ? 'A key is kept in this computer’s keychain. '
                                 'Type a new one to replace it.'
