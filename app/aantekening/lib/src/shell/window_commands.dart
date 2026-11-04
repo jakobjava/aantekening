@@ -38,6 +38,14 @@ Map<AppCommand, CommandAction> windowCommands(
   LibraryActions library() => ref.read(libraryActionsProvider);
   NoteTab tab() => ref.read(tabsProvider).current;
 
+  /// Whether the notes are open, or opening: the window shows only why
+  /// they could not be opened otherwise, with no picker or search line in
+  /// it to take the keys they would catch.
+  bool notesThere() {
+    final store = ref.read(storeProvider);
+    return store.isLoading || !store.hasError;
+  }
+
   CommandAction settings(SettingsPage page) =>
       CommandAction(() => unawaited(showSettings(context, page: page)));
 
@@ -126,12 +134,15 @@ Map<AppCommand, CommandAction> windowCommands(
     AppCommand.previousTab: CommandAction(() => tabs().step(-1)),
     AppCommand.notebooks: CommandAction(
       () => unawaited(showPicker(context, ref, PickerView.library)),
+      enabled: notesThere,
     ),
     AppCommand.search: CommandAction(
       ref.read(searchLineProvider.notifier).open,
+      enabled: notesThere,
     ),
     AppCommand.graph: CommandAction(
       () => unawaited(showPicker(context, ref, PickerView.graph)),
+      enabled: notesThere,
     ),
     AppCommand.ai: CommandAction(
       () => tabs().toggleAi(),

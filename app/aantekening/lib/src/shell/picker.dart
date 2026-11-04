@@ -542,9 +542,11 @@ class _PickerState extends ConsumerState<Picker> {
         tabsProvider.select((tabs) => tabs.current.ai),
         (_, ai) => ai ? _close() : null,
       );
-    if (!_attached && ref.watch(notebooksProvider).hasValue) {
+    final notebooks = ref.watch(notebooksProvider);
+    if (!_attached && (notebooks.hasValue || notebooks.hasError)) {
       _attached = true;
-      // The keys pressed as it opened, once there is something for them.
+      // The keys pressed as it opened, once there is something for them —
+      // or there will be nothing, and Esc must still take the picker away.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) widget.keys.attach(_press);
       });

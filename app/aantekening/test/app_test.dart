@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:aantekening/src/editor/page_title.dart';
@@ -10,6 +11,7 @@ import 'package:aantekening/src/look/glass.dart';
 import 'package:aantekening/src/look/marks.dart';
 import 'package:aantekening/src/look/theme.dart';
 import 'package:aantekening/src/look/tones.dart';
+import 'package:aantekening/src/modes/key_catch.dart';
 import 'package:aantekening/src/modes/key_guide.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
@@ -189,6 +191,76 @@ void main() {
       await showPanes(tester);
       expect(find.text('NOTEBOOKS'), findsOneWidget);
       expect(find.text('No notebooks yet — n makes one'), findsOneWidget);
+    });
+
+    testWidgets('keeps its keys when the notes cannot be opened', (
+      tester,
+    ) async {
+      var opening = Completer<AantekeningStore>();
+      useSurface(tester, wideWindow);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            storeProvider.overrideWith((ref) => opening.future),
+            preferencesProvider.overrideWith(
+              (ref) async => Preferences.inMemory(),
+            ),
+          ],
+          retry: (_, _) => null,
+          child: MaterialApp(theme: AppTheme.light(), home: const HomeShell()),
+        ),
+      );
+      await tester.pump();
+      Future<void> press(List<LogicalKeyboardKey> keys) async {
+        for (final key in keys.take(keys.length - 1)) {
+          await tester.sendKeyDownEvent(key);
+        }
+        await tester.sendKeyEvent(keys.last);
+        for (final key in keys.take(keys.length - 1).toList().reversed) {
+          await tester.sendKeyUpEvent(key);
+        }
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      const search = <LogicalKeyboardKey>[
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.keyF,
+      ];
+      const notebooks = <LogicalKeyboardKey>[
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.shiftLeft,
+        LogicalKeyboardKey.keyE,
+      ];
+      const escape = <LogicalKeyboardKey>[LogicalKeyboardKey.escape];
+
+      // The picker summoned as the notes open, which then fail to: Esc
+      // takes it away.
+      await press(notebooks);
+      opening.completeError(const NotesInUse());
+      await tester.pumpAndSettle();
+      expect(find.text('aantekening is open already.'), findsOneWidget);
+      expect(find.byType(Picker), findsOneWidget);
+      await press(escape);
+      await tester.pumpAndSettle();
+      expect(find.byType(Picker), findsNothing);
+      expect(KeyCatch.active, isFalse, reason: 'nothing takes the keys');
+
+      // Summoned once they have failed to, there is nothing to show.
+      await press(search);
+      await press(notebooks);
+      await tester.pumpAndSettle();
+      expect(find.byType(Picker), findsNothing);
+      expect(KeyCatch.active, isFalse);
+
+      // The search line summoned as they are tried again, and fail again.
+      opening = Completer<AantekeningStore>();
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      await press(search);
+      opening.completeError(const NotesInUse());
+      await tester.pumpAndSettle();
+      expect(find.text('aantekening is open already.'), findsOneWidget);
+      expect(KeyCatch.active, isFalse);
     });
 
     testWidgets('with no page open, Space opens the menu of what needs none', (

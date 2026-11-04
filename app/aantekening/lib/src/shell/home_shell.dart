@@ -98,6 +98,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ref.listen<String?>(selectedPageProvider, (_, pageId) {
       if (pageId != null) ref.read(recentPagesProvider.notifier).visit(pageId);
     });
+    // A search line summoned as the notes opened is never shown if they
+    // could not be: what was typed ahead for it lets the keys go again.
+    ref.listen<AsyncValue<AantekeningStore>>(storeProvider, (_, next) {
+      if (next.hasError && !next.isLoading) {
+        ref.read(searchLineProvider.notifier).close();
+      }
+    });
     final store = ref.watch(storeProvider);
     final top = ref.watch(statusLinePlaceProvider) == StatusLinePlace.top;
 
