@@ -791,6 +791,39 @@ void main() {
       expect(await store.pages.listPages(sectionId), hasLength(4));
     });
 
+    test('a page opened while it is being saved opens as saved', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+      await store.pages.saveDocument(
+        page.id,
+        documentWithText(page.id, 'before'),
+      );
+
+      // Left and opened again at once: the save is not done yet.
+      final saving = store.pages.saveDocument(
+        page.id,
+        documentWithText(page.id, 'after'),
+      );
+      final opened = await store.pages.loadDocument(page.id);
+      await saving;
+
+      expect(opened!.extractSearchText(), 'after');
+    });
+
+    test('closing waits for a save under way', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+
+      // Long enough to be written out on an isolate of its own, meanwhile.
+      final saving = store.pages.saveDocument(
+        page.id,
+        documentWithText(page.id, 'x' * heavyBytes),
+      );
+      await store.close();
+
+      await expectLater(saving, completes);
+    });
+
     test(
       'copies a page in among the subpages of one of its subpages',
       () async {

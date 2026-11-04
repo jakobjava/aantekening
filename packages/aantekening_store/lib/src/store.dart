@@ -312,10 +312,12 @@ class AantekeningStore {
   /// in memory.
   final FolderMirror? mirror;
 
-  /// Writes what is waiting to the notes folder, and closes the connection.
-  /// The store is unusable afterwards; closing it again does nothing.
+  /// Writes what is waiting to the notes folder, and closes the connection,
+  /// once the saves under way are done. The store is unusable afterwards;
+  /// closing it again does nothing.
   Future<void> close() => _closing ??= () async {
     try {
+      await pages.idle;
       await mirror?.close();
       database
         ..markClosed()

@@ -116,8 +116,11 @@ class PageRepository {
 
   /// Loads a page's document, or null when the page has no body.
   ///
-  /// A long page is read on an isolate of its own.
+  /// A long page is read on an isolate of its own. Saves asked for before
+  /// are waited for, so a page left and opened again at once, its save not
+  /// yet done, opens as it was left rather than as it was before.
   Future<PageDocument?> loadDocument(String pageId) async {
+    if (_saving case final saving?) await saving;
     final body = _readBody(pageId);
     if (body == null) return null;
     return away(_Body.read, body, heavy: body.stored.length >= heavyBytes ~/ 4);
@@ -170,6 +173,13 @@ class PageRepository {
 
   /// When the save last asked for is done; null while none is under way.
   Future<void>? _saving;
+
+  /// Done once no save is under way, nor waiting its turn.
+  Future<void> get idle async {
+    for (var saving = _saving; saving != null; saving = _saving) {
+      await saving;
+    }
+  }
 
   Future<PageRef> _save(
     String pageId,
