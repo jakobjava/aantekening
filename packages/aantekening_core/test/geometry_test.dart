@@ -67,5 +67,21 @@ void main() {
       }
       expect(FractionalIndex.needsRebalance(low, high), isTrue);
     });
+
+    test('flags exhausted precision far along a long list too', () {
+      // Ten thousand appends along, a key's last digit is worth more than
+      // a billionth.
+      const previous = 10000 * FractionalIndex.step;
+      var next = previous + FractionalIndex.step;
+      var inserted = 0;
+      while (!FractionalIndex.needsRebalance(previous, next)) {
+        final middle = FractionalIndex.between(previous, next);
+        expect(middle, greaterThan(previous));
+        expect(middle, lessThan(next));
+        next = middle;
+        inserted++;
+      }
+      expect(inserted, greaterThan(30));
+    });
   });
 }

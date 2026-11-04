@@ -39,8 +39,14 @@ abstract final class FractionalIndex {
   }
 
   /// Whether [a] and [b] have converged closely enough that the sibling list
-  /// should be renumbered with evenly spaced keys.
-  static bool needsRebalance(double a, double b) => (a - b).abs() < 1e-9;
+  /// should be renumbered with evenly spaced keys: so closely that no key lies
+  /// between them any more, which far along a long list comes well before
+  /// they are a billionth apart.
+  static bool needsRebalance(double a, double b) {
+    if ((a - b).abs() < 1e-9) return true;
+    final middle = between(a, b);
+    return middle == a || middle == b;
+  }
 
   /// Produces evenly spaced keys for [count] items, used when rebalancing.
   static List<double> rebalanced(int count) => <double>[
