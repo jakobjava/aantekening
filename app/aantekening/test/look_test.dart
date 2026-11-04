@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:aantekening/src/commands/app_command.dart';
@@ -6,6 +7,7 @@ import 'package:aantekening/src/commands/fuzzy.dart';
 import 'package:aantekening/src/commands/key_chord.dart';
 import 'package:aantekening/src/commands/shortcuts.dart';
 import 'package:aantekening/src/look/appearance.dart';
+import 'package:aantekening/src/look/chooser.dart';
 import 'package:aantekening/src/look/controls.dart';
 import 'package:aantekening/src/look/glass.dart';
 import 'package:aantekening/src/look/grain.dart';
@@ -312,6 +314,51 @@ void main() {
         glass,
         reason: 'no part of it is left clear, its shadow cast round it',
       );
+    });
+  });
+
+  group('Chooser', () {
+    testWidgets('takes Enter typed as it opened once it has choices', (
+      tester,
+    ) async {
+      final later = Completer<List<String>>();
+      final offered = FutureProvider<List<String>>((ref) => later.future);
+      final taken = <String>[];
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => unawaited(
+                  showChooser(
+                    context,
+                    choicesFor: (ref, typed) => <Choice>[
+                      for (final title in ref.watch(offered).value ?? [])
+                        if (title.startsWith(typed))
+                          Choice(title: title, run: () => taken.add(title)),
+                    ],
+                    hintFor: (_) => '',
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      final button = tester.widget<TextButton>(find.byType(TextButton));
+      // Typed as it opens, before what it offers is read.
+      button.onPressed!();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(Chooser), findsOneWidget);
+
+      later.complete(<String>['alpha', 'beta']);
+      await tester.pumpAndSettle();
+      expect(taken, <String>['beta']);
+      expect(find.byType(Chooser), findsNothing);
     });
   });
 

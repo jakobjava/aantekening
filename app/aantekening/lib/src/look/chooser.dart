@@ -115,21 +115,28 @@ class _ChooserState extends ConsumerState<Chooser> {
   late final TextEditingController _query;
   int _highlight = 0;
 
+  /// Whether Enter was typed as it opened, to take the first of what was
+  /// typed for once there is any — what it offers may still be being read —
+  /// unless more is typed first.
+  bool _enterAhead = false;
+
   @override
   void initState() {
     super.initState();
     final lines = (widget.ahead?.take() ?? '').split('\n');
     _query = TextEditingController(text: '${widget.initial}${lines.first}');
-    if (lines.length > 1) {
-      // Enter typed ahead takes the first of what was typed for.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final choices = widget.choicesFor(ref, _query.text);
-        if (choices.firstOrNull case final first? when first.enabled) {
-          _close(first.run);
-        }
-      });
-    }
+    _enterAhead = lines.length > 1;
+  }
+
+  /// Takes the first of [choices] for Enter typed ahead, once there are any.
+  void _takeAhead(List<Choice> choices) {
+    final first = choices.firstOrNull;
+    if (!_enterAhead || first == null) return;
+    _enterAhead = false;
+    if (!first.enabled) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _close(first.run);
+    });
   }
 
   @override
@@ -185,6 +192,7 @@ class _ChooserState extends ConsumerState<Chooser> {
     final typed = _query.text;
     final choices = widget.choicesFor(ref, typed);
     if (_highlight >= choices.length) _highlight = 0;
+    _takeAhead(choices);
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -219,7 +227,10 @@ class _ChooserState extends ConsumerState<Chooser> {
                       vertical: 14,
                     ),
                   ),
-                  onChanged: (_) => setState(() => _highlight = 0),
+                  onChanged: (_) => setState(() {
+                    _highlight = 0;
+                    _enterAhead = false;
+                  }),
                 ),
               ),
               Divider(color: context.tones.glassRim),
