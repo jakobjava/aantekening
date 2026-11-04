@@ -805,7 +805,8 @@ class _ProfileRow extends StatelessWidget {
       message: profile.briefing,
       waitDuration: const Duration(milliseconds: 600),
       child: InkWell(
-        onTap: making == null ? onMake : onShow,
+        // Only its pill makes one: looking sets no model to work by itself.
+        onTap: making == null ? null : onShow,
         borderRadius: Corners.controlRadius,
         hoverColor: tones.veil,
         child: SizedBox(

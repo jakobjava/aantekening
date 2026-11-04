@@ -626,6 +626,44 @@ void main() {
     model.gate = null;
   });
 
+  testWidgets('a second click while a question or a set is starting asks '
+      'nothing more, to be paid for twice', (tester) async {
+    final container = await openShell(tester);
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    final link = NoteLink.page(page.id);
+    final session = container.read(aiSessionProvider(link).notifier);
+
+    // Each clicked twice, the second before the first has read the model
+    // and the notes.
+    unawaited(session.ask('What is force?', searchWeb: false));
+    unawaited(session.ask('What is force?', searchWeb: false));
+    await tester.pumpAndSettle();
+    expect(model.asked, hasLength(1));
+    final turn = container.read(aiSessionProvider(link)).turns.single;
+
+    final section = AnswerSection.blocksOf(
+      AiAnswer.fromJson(turn.answer).markdown,
+    ).first;
+    unawaited(session.rewrite(turn, section, searchWeb: false));
+    unawaited(session.rewrite(turn, section, searchWeb: false));
+    await tester.pumpAndSettle();
+    expect(model.asked, hasLength(2));
+
+    final flashcards = container
+        .read(aiSettingsProvider)
+        .studyProfiles
+        .firstWhere((profile) => profile.id == StudyKind.flashcards.name);
+    unawaited(session.make(flashcards));
+    unawaited(session.make(flashcards));
+    await tester.pumpAndSettle();
+    expect(model.asked, hasLength(3));
+    expect(
+      await tester.runAsync(() => store.ai.itemsAbout(link)),
+      hasLength(1),
+    );
+  });
+
   testWidgets('shows how an answer is coming along: each step, how long '
       'it took, and what the model thinks', (tester) async {
     final container = await openShell(tester);
@@ -806,6 +844,54 @@ void main() {
     await session.deleteItem(kept.id);
     await tester.pumpAndSettle();
     expect(File('${folder.path}/${episode.audio}').existsSync(), isFalse);
+  });
+
+  testWidgets('a podcast is made by its Make alone, and once for two clicks', (
+    tester,
+  ) async {
+    final folder = Directory.systemTemp.createTempSync('aantekening_pod_');
+    addTearDown(() => folder.deleteSync(recursive: true));
+    final speech = FakeSpeech();
+    final container = await openShell(
+      tester,
+      overrides: <Override>[
+        podcastFolderProvider.overrideWith((ref) async => folder.path),
+        speechMakerProvider.overrideWithValue((voice, key, model) => speech),
+      ],
+    );
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    final settings = container.read(aiSettingsProvider.notifier);
+    settings.update(
+      container
+          .read(aiSettingsProvider)
+          .withVoice(VoiceConfig.of(SpeechPreset.openAi, id: 'voice')),
+    );
+    await tester.pumpAndSettle();
+
+    // The row, tapped beside its Make, makes nothing.
+    final row = find.byKey(
+      const ValueKey<String>('podcast study-conversation'),
+    );
+    await tester.tapAt(tester.getCenter(row));
+    await tester.pumpAndSettle();
+    expect(model.asked, isEmpty);
+
+    final link = NoteLink.page(page.id);
+    final session = container.read(aiSessionProvider(link).notifier);
+    final profile = container
+        .read(aiSettingsProvider)
+        .episodes
+        .firstWhere((profile) => profile.id == 'study-conversation');
+    unawaited(session.makePodcast(profile));
+    unawaited(session.makePodcast(profile));
+    await tester.pumpAndSettle();
+    expect(model.asked, hasLength(3), reason: 'planned, and two parts');
+    expect(speech.spoken, hasLength(3));
+    expect(
+      await tester.runAsync(() => store.ai.itemsAbout(link)),
+      hasLength(1),
+    );
   });
 
   testWidgets('a cited source opens where it is, in a tab of its own', (

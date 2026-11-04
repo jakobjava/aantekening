@@ -347,6 +347,16 @@ class AiSession extends Notifier<AiSessionState> {
   final Map<String, StreamSubscription<PodcastProgress>> _podcasters =
       <String, StreamSubscription<PodcastProgress>>{};
 
+  /// Whether a question is being started: from the click that asks it to
+  /// its pending turn, which then keeps a second from being asked.
+  bool _asking = false;
+
+  /// The sets and podcasts being started, as `set <id>` and `podcast <id>`
+  /// by the id of their profile, from the click that makes one until it
+  /// shows as being made: marked before anything is awaited, so a second
+  /// click meanwhile starts no second one, paid for twice.
+  final Set<String> _starting = <String>{};
+
   Future<AantekeningStore> get _store => ref.read(storeProvider.future);
 
   @override
@@ -425,6 +435,20 @@ class AiSession extends Notifier<AiSessionState> {
     );
   }
 
+  /// The model in use, the notes, and what the scope is, to answer or make
+  /// something with — or null, said why where no model is chosen.
+  Future<_Ready?> _ready(String noModel) async {
+    final model = await ref.read(aiModelProvider.future);
+    if (model == null) {
+      state = state.copyWith(error: () => noModel);
+      return null;
+    }
+    final reader = await ref.read(workspaceReaderProvider.future);
+    final info = await reader.scope(scope);
+    if (info == null) return null;
+    return (model: model, reader: reader, info: info);
+  }
+
   /// A model to answer with, as the settings have it: what it is asked
   /// bears in mind what the person says of themselves.
   NoteAgent _agent(AiModel model, WorkspaceReader reader, {WebSearch? web}) =>
@@ -446,7 +470,7 @@ class AiSession extends Notifier<AiSessionState> {
     AiAction? action,
   }) async {
     final text = question.trim();
-    if (text.isEmpty || state.pending != null) return;
+    if (text.isEmpty || state.pending != null || _asking) return;
     // Asked in the conversation showing now, with what was said in it.
     final threadId = state.threadId;
     final history = <ChatMessage>[
@@ -454,15 +478,17 @@ class AiSession extends Notifier<AiSessionState> {
         for (final json in turn.messages)
           ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
     ];
-    final model = await ref.read(aiModelProvider.future);
-    if (model == null) {
-      state = state.copyWith(error: () => 'Choose a model to ask first.');
-      return;
+    _asking = true;
+    final _Ready? ready;
+    final WebSearch? web;
+    try {
+      ready = await _ready('Choose a model to ask first.');
+      web = ready == null ? null : await ref.read(webSearchProvider.future);
+    } finally {
+      _asking = false;
     }
-    final reader = await ref.read(workspaceReaderProvider.future);
-    final info = await reader.scope(scope);
-    if (info == null) return;
-    final web = await ref.read(webSearchProvider.future);
+    if (ready == null) return;
+    final (:model, :reader, :info) = ready;
 
     state = state.copyWith(
       itemId: () => null,
@@ -509,21 +535,23 @@ class AiSession extends Notifier<AiSessionState> {
     String instruction = '',
     required bool searchWeb,
   }) async {
-    if (state.pending != null) return;
+    if (state.pending != null || _asking) return;
     final history = <ChatMessage>[
       for (final each in state.turns)
         for (final json in each.messages)
           ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
     ];
-    final model = await ref.read(aiModelProvider.future);
-    if (model == null) {
-      state = state.copyWith(error: () => 'Choose a model to ask first.');
-      return;
+    _asking = true;
+    final _Ready? ready;
+    final WebSearch? web;
+    try {
+      ready = await _ready('Choose a model to ask first.');
+      web = ready == null ? null : await ref.read(webSearchProvider.future);
+    } finally {
+      _asking = false;
     }
-    final reader = await ref.read(workspaceReaderProvider.future);
-    final info = await reader.scope(scope);
-    if (info == null) return;
-    final web = await ref.read(webSearchProvider.future);
+    if (ready == null) return;
+    final (:model, :reader, :info) = ready;
     final answer = AiAnswer.fromJson(turn.answer);
     final part = answer.textOf(section);
     final how = instruction.trim();
@@ -636,14 +664,16 @@ class AiSession extends Notifier<AiSessionState> {
       openProfile(id);
       return;
     }
-    final model = await ref.read(aiModelProvider.future);
-    if (model == null) {
-      state = state.copyWith(error: () => 'Choose a model first.');
-      return;
+    final starting = 'set $id';
+    if (!_starting.add(starting)) return;
+    final _Ready? ready;
+    try {
+      ready = await _ready('Choose a model first.');
+    } finally {
+      _starting.remove(starting);
     }
-    final reader = await ref.read(workspaceReaderProvider.future);
-    final info = await reader.scope(scope);
-    if (info == null) return;
+    if (ready == null) return;
+    final (:model, :reader, :info) = ready;
     void write(PendingTurn? pending) => _setMaking(id, pending);
     write(
       PendingTurn(
@@ -1055,6 +1085,8 @@ class AiSession extends Notifier<AiSessionState> {
       showPodcast(id);
       return;
     }
+    final starting = 'podcast $id';
+    if (!_starting.add(starting)) return;
     final settings = ref.read(aiSettingsProvider);
     final cast = settings.castOf(profile.speakersId);
     final voice = settings.voiceOf(cast?.voiceId ?? '');
@@ -1066,8 +1098,18 @@ class AiSession extends Notifier<AiSessionState> {
           'Add a voice provider in the AI settings first: it speaks the '
           'podcast.';
     }
-    final outlining = await _writerOf(profile.outline);
-    final writing = await _writerOf(profile.transcript);
+    final ({PodcastWriter writer, bool own})? outlining;
+    final ({PodcastWriter writer, bool own})? writing;
+    final WorkspaceReader reader;
+    final ScopeInfo? scoped;
+    try {
+      outlining = await _writerOf(profile.outline);
+      writing = await _writerOf(profile.transcript);
+      reader = await ref.read(workspaceReaderProvider.future);
+      scoped = await reader.scope(scope);
+    } finally {
+      _starting.remove(starting);
+    }
     void close() {
       for (final used in <({PodcastWriter writer, bool own})?>[
         outlining,
@@ -1082,16 +1124,14 @@ class AiSession extends Notifier<AiSessionState> {
           'Choose the models that write “${profile.name}” in the podcast '
           'settings first.';
     }
-    if (missing != null) {
+    if (missing != null || scoped == null) {
       close();
-      state = state.copyWith(error: () => missing);
+      if (missing != null) state = state.copyWith(error: () => missing);
       return;
     }
+    final info = scoped;
     final outliner = outlining!.writer;
     final writer = writing!.writer;
-    final reader = await ref.read(workspaceReaderProvider.future);
-    final info = await reader.scope(scope);
-    if (info == null) return;
     final speakers = cast!.voiced(voice!.voiceFor);
     _setPodcast(
       id,
@@ -1301,6 +1341,9 @@ class AiSession extends Notifier<AiSessionState> {
     return line.length <= 60 ? line : '${line.substring(0, 57).trimRight()}…';
   }
 }
+
+/// What [AiSession] answers or makes with, read.
+typedef _Ready = ({AiModel model, WorkspaceReader reader, ScopeInfo info});
 
 final aiSessionProvider =
     NotifierProvider.family<AiSession, AiSessionState, NoteLink>(AiSession.new);
