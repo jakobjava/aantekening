@@ -516,6 +516,7 @@ class AiSession extends Notifier<AiSessionState> {
       read: () => state.pending,
       write: (pending) => state = state.copyWith(pending: () => pending),
       started: (subscription) => _answering = subscription,
+      ended: () => _answering = null,
       onDone: (progress) => _keepTurn(
         text,
         progress,
@@ -589,6 +590,7 @@ class AiSession extends Notifier<AiSessionState> {
       read: () => state.pending,
       write: (pending) => state = state.copyWith(pending: () => pending),
       started: (subscription) => _answering = subscription,
+      ended: () => _answering = null,
       onDone: (progress) => _keepRewrite(turn, section, progress),
     );
   }
@@ -737,13 +739,15 @@ class AiSession extends Notifier<AiSessionState> {
 
   /// Follows [answer] into what [read] and [write] keep of it — the
   /// question's pending turn, or a set's — handing its subscription to
-  /// [started], and [onDone] with how it ended.
+  /// [started], telling [ended] once it has come to an end, and [onDone]
+  /// with how it ended, to keep it.
   Future<void> _follow(
     Stream<AgentProgress> answer, {
     required PendingTurn? Function() read,
     required void Function(PendingTurn? pending) write,
     required void Function(StreamSubscription<AgentProgress>) started,
     required Future<void> Function(AgentProgress last) onDone,
+    void Function()? ended,
   }) {
     final done = Completer<void>();
     AgentProgress? last;
@@ -755,6 +759,7 @@ class AiSession extends Notifier<AiSessionState> {
           if (pending != null) write(pending.moved(progress, DateTime.now()));
         },
         onError: (Object error) {
+          ended?.call();
           final profile = read()?.profile;
           write(null);
           final why = error is AiException
@@ -772,10 +777,26 @@ class AiSession extends Notifier<AiSessionState> {
           if (!done.isCompleted) done.complete();
         },
         onDone: () async {
+          ended?.call();
           final progress = last;
-          if (progress != null && progress.done) await onDone(progress);
-          if (read() != null) write(null);
-          if (!done.isCompleted) done.complete();
+          final called = read()?.profile?.called;
+          try {
+            if (progress != null && progress.done) await onDone(progress);
+          } on Object catch (error) {
+            // Not kept — the conversation deleted meanwhile, say — and
+            // said so, rather than left being answered for good.
+            state = state.copyWith(
+              error: () => switch (called) {
+                null => 'The answer could not be kept: $error',
+                final called =>
+                  '${called[0].toUpperCase()}${called.substring(1)} could '
+                      'not be kept: $error',
+              },
+            );
+          } finally {
+            if (read() != null) write(null);
+            if (!done.isCompleted) done.complete();
+          }
         },
         cancelOnError: true,
       ),
@@ -881,15 +902,23 @@ class AiSession extends Notifier<AiSessionState> {
   /// being written again, which stays as it was.
   Future<void> stop() async {
     final pending = state.pending;
-    await _answering?.cancel();
+    final answering = _answering;
+    // Come to its end already, and being kept: nothing is left to stop,
+    // nor to keep a second time.
+    if (answering == null) return;
     _answering = null;
+    await answering.cancel();
     if (pending == null) return;
     if (pending.rewriting != null) {
       state = state.copyWith(pending: () => null);
       return;
     }
     final model = await ref.read(aiModelProvider.future);
-    if (model != null && !pending.answer.isEmpty) {
+    if (model == null || pending.answer.isEmpty) {
+      state = state.copyWith(pending: () => null);
+      return;
+    }
+    try {
       await _keepTurn(
         pending.question,
         AgentProgress(
@@ -901,8 +930,11 @@ class AiSession extends Notifier<AiSessionState> {
         model.config,
         threadId: pending.threadId,
       );
-    } else {
-      state = state.copyWith(pending: () => null);
+    } on Object catch (error) {
+      state = state.copyWith(
+        pending: () => null,
+        error: () => 'The answer could not be kept: $error',
+      );
     }
   }
 

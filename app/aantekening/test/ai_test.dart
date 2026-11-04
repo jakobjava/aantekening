@@ -708,6 +708,38 @@ void main() {
     await settle();
   });
 
+  testWidgets('an answer that cannot be kept says so, and another can be '
+      'asked', (tester) async {
+    final container = await openShell(tester);
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    final link = NoteLink.page(page.id);
+    final session = container.read(aiSessionProvider(link).notifier);
+    AiSessionState state() => container.read(aiSessionProvider(link));
+    Future<void> settle() async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    await ask(tester, 'What is force?');
+    final thread = state().threadId!;
+    final gate = model.gate = Completer<void>();
+    unawaited(session.ask('And its unit?', searchWeb: false));
+    await settle();
+    // Its conversation deleted while it is answered.
+    await session.deleteThread(thread);
+    await settle();
+    gate.complete();
+    await settle();
+    expect(state().pending, isNull);
+    expect(state().error, contains('could not be kept'));
+
+    model.gate = null;
+    await ask(tester, 'What is mass?');
+    expect(state().turns.single.question, 'What is mass?');
+  });
+
   testWidgets('shows how an answer is coming along: each step, how long '
       'it took, and what the model thinks', (tester) async {
     final container = await openShell(tester);
