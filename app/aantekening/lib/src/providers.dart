@@ -245,7 +245,9 @@ final assetBytesProvider = FutureProvider.autoDispose
     .family<Uint8List?, String>((ref, assetId) async {
       ref.keepAWhile();
       final store = await ref.watch(storeProvider.future);
-      return store.assets.readBytes(assetId);
+      final bytes = await store.assets.readBytes(assetId);
+      if (bytes == null) ref.lookAgainSoon();
+      return bytes;
     });
 
 /// What a provider made kept after nothing watches it any more, for a
@@ -259,27 +261,40 @@ extension KeepAWhile on Ref {
     onResume(() => letGo?.cancel());
     onDispose(() => letGo?.cancel());
   }
+
+  /// Looks again in a moment for what was not there: an asset another
+  /// computer added, its page come through the notes folder ahead of its
+  /// file.
+  void lookAgainSoon([Duration time = const Duration(seconds: 5)]) {
+    final again = Timer(time, invalidateSelf);
+    onDispose(again.cancel);
+  }
 }
 
 /// What is known of an imported asset: its name, kind and size.
-final assetRefProvider = FutureProvider.family<AssetRef?, String>((
+final assetRefProvider = FutureProvider.autoDispose.family<AssetRef?, String>((
   ref,
   assetId,
 ) async {
+  ref.keepAWhile();
   final store = await ref.watch(storeProvider.future);
-  return store.assets.find(assetId);
+  final asset = await store.assets.find(assetId);
+  if (asset == null) ref.lookAgainSoon();
+  return asset;
 });
 
 /// The file holding an imported asset, for renderers that read from disk —
 /// such as the PDF engine, which should not need a large document copied into
 /// memory first.
-final assetFileProvider = FutureProvider.family<File?, String>((
+final assetFileProvider = FutureProvider.autoDispose.family<File?, String>((
   ref,
   assetId,
 ) async {
+  ref.keepAWhile();
   final store = await ref.watch(storeProvider.future);
   final asset = await store.assets.find(assetId);
-  if (asset == null) return null;
-  final file = store.assets.fileFor(asset);
-  return file.existsSync() ? file : null;
+  final file = asset == null ? null : store.assets.fileFor(asset);
+  if (file != null && file.existsSync()) return file;
+  ref.lookAgainSoon();
+  return null;
 });

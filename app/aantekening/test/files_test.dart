@@ -412,6 +412,31 @@ void main() {
     );
   });
 
+  testWidgets('a file not there yet is looked for again', (tester) async {
+    final folder = Directory.systemTemp.createTempSync('asset_later_');
+    addTearDown(() => folder.deleteSync(recursive: true));
+    final store = AantekeningStore.inMemory(assetDirectory: folder);
+    addTearDown(store.close);
+    final bytes = Uint8List.fromList(<int>[1, 2, 3]);
+    final asset = (await tester.runAsync(
+      () => store.assets.importBytes(bytes, mimeType: 'application/pdf'),
+    ))!;
+    // Its page has come through the notes folder, its file not yet.
+    final file = store.assets.fileFor(asset)..deleteSync();
+    final container = ProviderContainer(
+      overrides: [storeProvider.overrideWith((ref) async => store)],
+    );
+    addTearDown(container.dispose);
+    container.listen(assetFileProvider(asset.id), (_, _) {});
+    await tester.pump();
+    expect(container.read(assetFileProvider(asset.id)).value, isNull);
+
+    file.writeAsBytesSync(bytes);
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pump();
+    expect(container.read(assetFileProvider(asset.id)).value?.path, file.path);
+  });
+
   testWidgets('the settings have a page for files, with what they hold', (
     tester,
   ) async {
