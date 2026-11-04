@@ -4,6 +4,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'conversation.dart';
 import 'openai_compatible_provider.dart';
@@ -342,7 +343,7 @@ class OllamaProvider extends OpenAiCompatibleProvider {
           if (function?['name'] case final String name) {
             reply.calls.add(
               ToolCallPart(
-                id: 'call_${reply.calls.length}',
+                id: _callId(reply.calls.length),
                 name: name,
                 input: switch (function!['arguments']) {
                   final Map<Object?, Object?> input => input.cast(),
@@ -374,6 +375,15 @@ class OllamaProvider extends OpenAiCompatibleProvider {
     if (!ended) throw brokenOff(name);
   }
 }
+
+final math.Random _random = math.Random();
+
+/// An id for the [index]th tool call of a reply. Ollama gives none, and a
+/// conversation may go on with another provider, which takes the calls of
+/// every turn for one another's if their ids are the same; so each is new.
+String _callId(int index) =>
+    'call_${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
+    '${_random.nextInt(1 << 20).toRadixString(36)}_$index';
 
 /// What has come of a reply so far, over the requests it takes.
 class _Reply {

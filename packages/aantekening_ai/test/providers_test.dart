@@ -1378,6 +1378,39 @@ void main() {
       expect(fake.chats, hasLength(1));
     });
 
+    test('names each tool call apart, from turn to turn', () async {
+      const calling = <Map<String, Object?>>[
+        <String, Object?>{
+          'message': <String, Object?>{
+            'content': '',
+            'tool_calls': <Object?>[
+              <String, Object?>{
+                'function': <String, Object?>{
+                  'name': 'read_page',
+                  'arguments': <String, Object?>{'page_id': 'p1'},
+                },
+              },
+            ],
+          },
+          'done': true,
+        },
+      ];
+      final fake = ollama(
+        calling,
+        later: const <List<Map<String, Object?>>>[calling],
+      );
+      final ids = <String>[
+        for (var turn = 0; turn < 2; turn++)
+          (await fake.provider.chat(question('How fast?')).last as MessageDone)
+              .message
+              .toolCalls
+              .single
+              .id,
+      ];
+      expect(ids.toSet(), hasLength(2));
+      expect(ids, everyElement(matches(RegExp(r'^[A-Za-z0-9_-]+$'))));
+    });
+
     test('lists its models with what each can do', () async {
       final client = MockClient(
         (request) async => http.Response(
