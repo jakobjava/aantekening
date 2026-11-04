@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -347,6 +348,32 @@ void main() {
     expect(await textOf(store, pageId), 'F = ma', reason: 'not taken away');
     await store.mirror!.flush();
     expect(page.existsSync(), isTrue);
+  });
+
+  test('a page a newer version wrote is not written over', () async {
+    final store = await computer('a');
+    addTearDown(store.close);
+    final (_, pageId) = await seed(store);
+    await store.mirror!.flush();
+    final page = File(p.join(notes, 'pages', '$pageId.json.gz'));
+    final newer = gzip.encode(
+      utf8.encode(
+        jsonEncode(<String, Object?>{
+          'format': EntityFile.format + 1,
+          'kind': 'page',
+          'id': pageId,
+          'what': 'only a newer version knows',
+        }),
+      ),
+    );
+    page.writeAsBytesSync(newer);
+
+    await store.pages.saveDocument(pageId, documentWithText(pageId, 'older'));
+    await store.mirror!.flush();
+
+    expect(page.readAsBytesSync(), newer);
+    expect(store.mirror!.status.pending, 1, reason: 'still waiting');
+    expect(store.mirror!.status.problem, contains('newer version'));
   });
 
   test('a damaged file is left alone, and the page kept', () async {

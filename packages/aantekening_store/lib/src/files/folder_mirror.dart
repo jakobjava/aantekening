@@ -403,6 +403,14 @@ final class FolderMirror {
           return;
         }
         if (record == null || theirDigest != record.digest) {
+          // What a newer version wrote holds what this one may not know
+          // of: it waits, and is said to, rather than being written over.
+          if (EntityFile.isNewer(theirs)) {
+            throw const FormatException(
+              'a newer version of aantekening wrote it there; update this '
+              'one to change it here',
+            );
+          }
           await _keepTheirs(EntityFile.decode(theirs), file);
         }
       }

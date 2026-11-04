@@ -62,10 +62,7 @@ sealed class EntityFile {
   /// build understands — damaged, cut short, or from a newer build.
   static EntityFile? decode(Uint8List bytes) {
     try {
-      final text = bytes.length > 2 && bytes[0] == 0x1F && bytes[1] == 0x8B
-          ? utf8.decode(gzip.decode(bytes))
-          : utf8.decode(bytes);
-      final json = jsonDecode(text);
+      final json = _read(bytes);
       if (json is! Map<String, Object?>) return null;
       if (readInt(json, 'format', 1) > format) return null;
       final kind = EntityKind.named(readString(json, 'kind'));
@@ -106,6 +103,25 @@ sealed class EntityFile {
       return null;
     }
   }
+
+  /// Whether [bytes] are a file a newer build wrote, in a format this one
+  /// does not know: whole, but not to be read here, nor written over.
+  static bool isNewer(Uint8List bytes) {
+    try {
+      final json = _read(bytes);
+      return json is Map<String, Object?> &&
+          readInt(json, 'format', 1) > format;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// The JSON [bytes] hold, gzipped or not.
+  static Object? _read(Uint8List bytes) => jsonDecode(
+    bytes.length > 2 && bytes[0] == 0x1F && bytes[1] == 0x8B
+        ? utf8.decode(gzip.decode(bytes))
+        : utf8.decode(bytes),
+  );
 
   /// The version of the files this build writes.
   static const int format = 1;
