@@ -1038,14 +1038,39 @@ class AiSession extends Notifier<AiSessionState> {
         model,
       );
 
-  void _setPodcast(String key, PodcastProgress? progress) =>
-      state = state.copyWith(
-        podcasts: <String, PodcastProgress>{
-          for (final entry in state.podcasts.entries)
-            if (entry.key != key) entry.key: entry.value,
-          key: ?progress,
-        },
-      );
+  /// Keeps how far the podcast under [key] has got, under every key it
+  /// goes by, or with null that it is no longer under way.
+  void _setPodcast(String key, PodcastProgress? progress) {
+    final keys = _keysOf(key);
+    state = state.copyWith(
+      podcasts: <String, PodcastProgress>{
+        for (final entry in state.podcasts.entries)
+          if (!keys.contains(entry.key)) entry.key: entry.value,
+        for (final key in keys) key: ?progress,
+      },
+    );
+  }
+
+  /// The keys the podcast under way under [key] goes by: the id of its
+  /// episode profile and, once it is kept, that of what keeps it.
+  Set<String> _keysOf(String key) {
+    final run = _podcasters[key];
+    return <String>{
+      key,
+      if (run != null)
+        for (final MapEntry(key: other, value: each) in _podcasters.entries)
+          if (identical(each, run)) other,
+    };
+  }
+
+  /// Has the podcast under way under [key] go by [also] too: one made,
+  /// once kept, by what keeps it — so its page shows it being spoken, and
+  /// it is not spoken a second time from there, and stops if deleted.
+  void _podcastAlsoAs(String key, String also) {
+    if (!_podcasters.containsKey(key)) return;
+    _podcasters[also] = _podcasters[key]!;
+    _setPodcast(key, state.podcasts[key]);
+  }
 
   /// Follows [run] into [AiSessionState.podcasts] under [key], saying
   /// what went wrong as [failed] puts it.
@@ -1070,9 +1095,9 @@ class AiSession extends Notifier<AiSessionState> {
       cancelOnError: true,
     );
     _podcasters[key] = subscription;
-    return done.future.whenComplete(() {
-      if (identical(_podcasters[key], subscription)) _podcasters.remove(key);
-    });
+    return done.future.whenComplete(
+      () => _podcasters.removeWhere((_, run) => identical(run, subscription)),
+    );
   }
 
   /// Makes a podcast of the scope as episode profile [profile] says: plans
@@ -1151,6 +1176,7 @@ class AiSession extends Notifier<AiSessionState> {
       about: settings.about,
     );
     final models = <String>{outliner.model, writer.model}.toList();
+    String? kept;
     Stream<PodcastProgress> run() async* {
       PodcastProgress? written;
       try {
@@ -1191,6 +1217,8 @@ class AiSession extends Notifier<AiSessionState> {
           _costKey: ?written.cost,
         },
       );
+      kept = item.id;
+      _podcastAlsoAs(id, item.id);
       await _load();
       yield* _spoken(
         item.id,
@@ -1207,8 +1235,7 @@ class AiSession extends Notifier<AiSessionState> {
       failed: (why) => 'The podcast could not be made: $why',
     );
     if (state.shownPodcast == id) {
-      final made = state.episodes.firstOrNull;
-      state = state.copyWith(shownPodcast: () => null, itemId: () => made?.id);
+      state = state.copyWith(shownPodcast: () => null, itemId: () => kept);
     }
   }
 
@@ -1306,9 +1333,12 @@ class AiSession extends Notifier<AiSessionState> {
 
   /// Stops making or speaking the podcast under [key].
   Future<void> stopPodcast(String key) async {
+    final keys = _keysOf(key);
+    final run = _podcasters[key];
     _setPodcast(key, null);
-    await _podcasters.remove(key)?.cancel();
-    if (state.shownPodcast == key) {
+    keys.forEach(_podcasters.remove);
+    await run?.cancel();
+    if (keys.contains(state.shownPodcast)) {
       state = state.copyWith(shownPodcast: () => null);
     }
   }
@@ -1319,10 +1349,12 @@ class AiSession extends Notifier<AiSessionState> {
   }
 
   Future<void> deleteItem(String id) async {
+    // A podcast being spoken is stopped first; its sound goes as the
+    // speaking left it.
+    if (state.podcasts.containsKey(id)) await stopPodcast(id);
     final item = state.items.where((item) => item.id == id).firstOrNull;
     if (PodcastEpisode.fromJson(item?.body) case final episode?
         when episode.spoken) {
-      await stopPodcast(id);
       await deletePodcastAudio(ref, episode.audio);
     }
     await (await _store).ai.deleteItem(id);

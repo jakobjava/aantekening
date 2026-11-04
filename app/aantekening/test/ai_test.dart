@@ -151,6 +151,9 @@ class FakeProvider implements ChatProvider {
 class FakeSpeech implements SpeechProvider {
   final List<(String, String)> spoken = <(String, String)>[];
 
+  /// While set, what is asked is spoken once it is completed.
+  Completer<void>? gate;
+
   @override
   int get maxCharacters => 1000;
 
@@ -164,6 +167,7 @@ class FakeSpeech implements SpeechProvider {
     String instructions = '',
   }) async {
     spoken.add((voice, text));
+    await gate?.future;
     return Sound.silence(const Duration(milliseconds: 100));
   }
 
@@ -891,6 +895,78 @@ void main() {
     expect(
       await tester.runAsync(() => store.ai.itemsAbout(link)),
       hasLength(1),
+    );
+  });
+
+  testWidgets('a podcast kept and being spoken shows so on its own page, is '
+      'not spoken twice, and stops when deleted', (tester) async {
+    final folder = Directory.systemTemp.createTempSync('aantekening_pod_');
+    addTearDown(() => folder.deleteSync(recursive: true));
+    final speech = FakeSpeech();
+    final container = await openShell(
+      tester,
+      overrides: <Override>[
+        podcastFolderProvider.overrideWith((ref) async => folder.path),
+        speechMakerProvider.overrideWithValue((voice, key, model) => speech),
+      ],
+    );
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    final settings = container.read(aiSettingsProvider.notifier);
+    settings.update(
+      container
+          .read(aiSettingsProvider)
+          .withVoice(VoiceConfig.of(SpeechPreset.openAi, id: 'voice')),
+    );
+    await tester.pumpAndSettle();
+    final link = NoteLink.page(page.id);
+    final session = container.read(aiSessionProvider(link).notifier);
+    AiSessionState state() => container.read(aiSessionProvider(link));
+    Future<void> settle() async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    final gate = speech.gate = Completer<void>();
+    unawaited(
+      session.makePodcast(
+        container
+            .read(aiSettingsProvider)
+            .episodes
+            .firstWhere((profile) => profile.id == 'study-conversation'),
+      ),
+    );
+    await settle();
+    final item = state().episodes.single;
+    expect(speech.spoken, hasLength(3), reason: 'written, kept, and speaking');
+
+    session.openItem(item.id);
+    await settle();
+    expect(find.byType(PodcastPage), findsOneWidget);
+    expect(find.text('Speak it'), findsNothing);
+    expect(find.text('Stop'), findsOneWidget);
+    await session.speakPodcast(item.id);
+    await settle();
+    expect(speech.spoken, hasLength(3), reason: 'not spoken a second time');
+
+    var deleted = false;
+    unawaited(session.deleteItem(item.id).then((_) => deleted = true));
+    await settle();
+    gate.complete();
+    await settle();
+    // What the stopping waits on is done outside the test's own time.
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await settle();
+    expect(deleted, isTrue);
+    expect(state().podcasts, isEmpty);
+    expect(await tester.runAsync(() => store.ai.itemsAbout(link)), isEmpty);
+    expect(
+      folder.existsSync()
+          ? folder.listSync(recursive: true)
+          : const <FileSystemEntity>[],
+      isEmpty,
+      reason: 'no sound kept for it',
     );
   });
 
