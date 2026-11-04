@@ -379,7 +379,8 @@ it is finished; one in a line of text stays a formula, typed as LaTeX.
 
 It is drawn as LaTeX draws it, at the size of the text around it:
 `\draw`, `\fill`, `\filldraw`, `\path`, `\shade`, `\node`, `\coordinate`,
-`\pic`, `\matrix`, scopes, `\foreach` and styles (`/.style`, `\tikzset`);
+`\pic`, `\matrix`, `\clip` (of the lines and fills after it, not the text
+of nodes), `\useasboundingbox`, scopes, `\foreach` and styles (`/.style`, `\tikzset`);
 lines (`--`, `-|`, `|-`), curves (`.. controls ..`, `to[bend left]`,
 `edge`), `rectangle`, `circle`, `ellipse`, `arc`, `grid`, `parabola`, `sin`,
 `cos` and `plot` (of coordinates or a function); nodes placed on paths,

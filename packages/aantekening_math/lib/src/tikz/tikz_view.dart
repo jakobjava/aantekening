@@ -205,7 +205,16 @@ class _RenderTikz extends RenderBox
       } else if (mark.shading case final shading?) {
         paint.shader = _shader(shading, mark.path.getBounds());
       }
-      canvas.drawPath(mark.path, paint);
+      final clip = mark.clip;
+      if (clip == null) {
+        canvas.drawPath(mark.path, paint);
+      } else {
+        canvas
+          ..save()
+          ..clipPath(clip)
+          ..drawPath(mark.path, paint)
+          ..restore();
+      }
     }
     canvas.restore();
     defaultPaint(context, offset);

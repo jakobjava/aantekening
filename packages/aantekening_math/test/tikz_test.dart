@@ -185,6 +185,37 @@ void main() {
       final dashed = drawn(r'\draw[dashed] (0,0) -- (1,0);').marks.single;
       expect(dashed.path.computeMetrics().length, greaterThan(3));
     });
+
+    test('a clip crops what is drawn after it, to the end of its scope', () {
+      final cropped = drawn(
+        r'\clip (0,0) rectangle (2,1); \draw (-1,-1) -- (3,3);',
+      );
+      expect(cropped.marks.single.clip, isNotNull);
+      expect(cropped.bounds.left, closeTo(0, 1e-3));
+      expect(cropped.bounds.right, closeTo(2 * cm, 1e-3));
+      expect(cropped.bounds.top, closeTo(-cm, 1e-3));
+      expect(cropped.bounds.bottom, closeTo(0, 1e-3));
+
+      final scoped = drawn(
+        r'\begin{scope} \clip (0,0) rectangle (1,1); '
+        r'\fill (0,0) circle (2); \end{scope} \draw (0,0) -- (3,0);',
+      );
+      expect(scoped.marks.first.clip, isNotNull);
+      expect(scoped.marks.last.clip, isNull);
+      expect(scoped.bounds.top, closeTo(-cm, 1e-3));
+      // Half its line's width beyond it.
+      expect(scoped.bounds.right, closeTo(3 * cm + 0.2, 1e-3));
+    });
+
+    test('a bounding box sizes the picture, whatever is drawn after it', () {
+      final boxed = drawn(
+        r'\draw (0,0) -- (1,0); \useasboundingbox (0,0) rectangle (2,1); '
+        r'\draw (0,0) -- (5,5);',
+      );
+      expect(boxed.marks, hasLength(2));
+      expect(boxed.bounds.right, closeTo(2 * cm, 1e-3));
+      expect(boxed.bounds.top, closeTo(-cm, 1e-3));
+    });
   });
 
   group('nodes', () {
@@ -321,5 +352,28 @@ void main() {
     expect(size.width, greaterThan(2 * cm * 2));
     expect(size.height, greaterThan(0));
     expect(math.max(size.width, size.height), lessThan(400));
+  });
+
+  testWidgets('a picture cropped by a clip is drawn as large as the clip', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: MathView(
+              source:
+                  r'\begin{tikzpicture}\clip (0,0) rectangle (2,1); '
+                  r'\fill (0,0) circle (3);\end{tikzpicture}',
+              mode: MathMode.latex,
+              textStyle: TextStyle(fontSize: 10, color: Color(0xFF000000)),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    final size = tester.getSize(find.byType(TikzView));
+    expect(size.width / size.height, closeTo(2, 1e-3));
   });
 }

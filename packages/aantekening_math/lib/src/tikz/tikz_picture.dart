@@ -49,7 +49,7 @@ class TikzDrawing {
 
 /// A path filled or stroked.
 class TikzMark {
-  const TikzMark.fill(this.path, this.colour, {this.shading})
+  const TikzMark.fill(this.path, this.colour, {this.shading, this.clip})
     : width = null,
       cap = StrokeCap.butt,
       join = StrokeJoin.miter;
@@ -60,7 +60,18 @@ class TikzMark {
     required double this.width,
     this.cap = StrokeCap.butt,
     this.join = StrokeJoin.miter,
+    this.clip,
   }) : shading = null;
+
+  const TikzMark._(
+    this.path,
+    this.colour, {
+    required this.width,
+    required this.cap,
+    required this.join,
+    required this.shading,
+    required this.clip,
+  });
 
   final Path path;
   final Color colour;
@@ -72,6 +83,33 @@ class TikzMark {
 
   /// The colours a fill runs between, if it is shaded.
   final TikzShading? shading;
+
+  /// What a `\clip` before it leaves of the picture to draw in, if one
+  /// does.
+  final Path? clip;
+
+  /// This mark drawn only within [area], and within its own clip.
+  TikzMark clippedTo(Path area) => TikzMark._(
+    path,
+    colour,
+    width: width,
+    cap: cap,
+    join: join,
+    shading: shading,
+    clip: switch (clip) {
+      final clip? => Path.combine(PathOperation.intersect, clip, area),
+      null => area,
+    },
+  );
+
+  /// What the mark covers, its line's width and its clip taken in.
+  Rect get covered {
+    final drawn = path.getBounds().inflate((width ?? 0) / 2);
+    return switch (clip) {
+      final clip? => drawn.intersect(clip.getBounds()),
+      null => drawn,
+    };
+  }
 }
 
 /// A fill running from one colour to another.
@@ -233,6 +271,10 @@ class _Painter {
 
   /// What is drawn on the background layer, beneath everything else.
   final List<TikzMark> _background = <TikzMark>[];
+
+  /// The area the first `\useasboundingbox` gives the picture, and how
+  /// many marks and labels were drawn before it.
+  ({Rect area, int marks, int background, int labels})? _boundingBox;
   late _Style _scope;
 
   /// Where what is drawn in [style] goes: on the background layer, or
@@ -243,6 +285,13 @@ class _Painter {
   TikzDrawing run(String options, String body) {
     _scope = _Style(ink)..apply(TikzSource.options(options), onPath: false);
     _statements(TikzScanner(body), inScope: false);
+    // A `\useasboundingbox` sizes the picture by what is drawn before it
+    // and its own path; nothing drawn after it counts.
+    final box = _boundingBox;
+    final counted = <TikzMark>[
+      ..._background.take(box?.background ?? _background.length),
+      ..._marks.take(box?.marks ?? _marks.length),
+    ];
     _marks.insertAll(0, _background);
     var bounds = Rect.zero;
     var first = true;
@@ -251,12 +300,16 @@ class _Painter {
       first = false;
     }
 
-    for (final mark in _marks) {
+    if (box != null) cover(box.area);
+    for (final mark in counted) {
       final rect = mark.path.getBounds();
       if (rect.isEmpty && mark.width == null) continue;
-      cover(rect.inflate((mark.width ?? 0) / 2));
+      final covered = mark.covered;
+      // Clipped away altogether, it covers nothing.
+      if (covered.width < 0 || covered.height < 0) continue;
+      cover(covered);
     }
-    for (var i = 0; i < _labels.length; i++) {
+    for (var i = 0; i < (box?.labels ?? _labels.length); i++) {
       final size = _labelSize(i);
       cover(
         Rect.fromCenter(
@@ -282,6 +335,25 @@ class _Painter {
   /// Works out the statements [scanner] reads, to the end of the scope
   /// they are in when [inScope].
   void _statements(TikzScanner scanner, {required bool inScope}) {
+    // The clips made in this scope, each with where what is drawn after
+    // it, to the scope's end, starts.
+    final clips = <({Path area, int marks, int background})>[];
+    _statementsIn(scanner, inScope: inScope, clips: clips);
+    for (final (:area, :marks, :background) in clips) {
+      for (var i = marks; i < _marks.length; i++) {
+        _marks[i] = _marks[i].clippedTo(area);
+      }
+      for (var i = background; i < _background.length; i++) {
+        _background[i] = _background[i].clippedTo(area);
+      }
+    }
+  }
+
+  void _statementsIn(
+    TikzScanner scanner, {
+    required bool inScope,
+    required List<({Path area, int marks, int background})> clips,
+  }) {
     while (!scanner.done) {
       if (scanner.take(';')) continue;
       final command = scanner.command();
@@ -314,15 +386,25 @@ class _Painter {
           scanner.group('{', '}');
           if (!inScope) throw const FormatException(r'An \end without \begin');
           return;
-        case 'draw' ||
-            'fill' ||
-            'filldraw' ||
-            'path' ||
-            'shade' ||
-            'shadedraw' ||
-            'clip' ||
-            'useasboundingbox':
+        case 'draw' || 'fill' || 'filldraw' || 'path' || 'shade' || 'shadedraw':
           _path(command!, scanner.statement());
+        // What is drawn after a clip, to the end of its scope, is drawn
+        // only within its path.
+        case 'clip':
+          final area = _path(command!, scanner.statement()).drawn;
+          clips.add((
+            area: area,
+            marks: _marks.length,
+            background: _background.length,
+          ));
+        case 'useasboundingbox':
+          final area = _path(command!, scanner.statement()).drawn.getBounds();
+          _boundingBox ??= (
+            area: area,
+            marks: _marks.length,
+            background: _background.length,
+            labels: _labels.length,
+          );
         case 'node' || 'coordinate' || 'pic':
           _path('path', '$command ${scanner.statement()}');
         case 'matrix':
@@ -368,7 +450,7 @@ class _Painter {
 
   /// Works out the path statement [command] starts, [text] being the rest
   /// of it.
-  void _path(String command, String text) {
+  _Path _path(String command, String text) {
     final style = _scope.copy()
       ..draws = command.contains('draw')
       ..fills = command.contains('fill');
@@ -384,6 +466,7 @@ class _Painter {
     final path = _Path(style);
     _items(TikzScanner(text), path);
     _finish(path);
+    return path;
   }
 
   /// Works out the items of a path, one after another.
