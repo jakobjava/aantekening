@@ -154,6 +154,7 @@ class _PodcastPageState extends ConsumerState<PodcastPage> {
   Future<void> _seek(String path, Duration to, {bool play = false}) =>
       _withPlayer(() async {
         final player = await _ready(path);
+        if (!mounted) return;
         setState(() => _position = to);
         await player.seek(to);
         if (play && !_playing) await player.resume();

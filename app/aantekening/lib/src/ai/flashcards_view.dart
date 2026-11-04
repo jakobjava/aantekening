@@ -840,50 +840,77 @@ class _SmallCard extends StatelessWidget {
 }
 
 /// Asks for [card] corrected: its question and its answer.
-Future<StudyCard?> _editCard(BuildContext context, StudyCard card) {
-  final front = TextEditingController(text: card.front);
-  final back = TextEditingController(text: card.back);
-  return showAppDialog<StudyCard>(
-    context: context,
-    builder: (context) => GlassDialog(
-      title: const Text('Correct the card'),
-      content: SizedBox(
-        width: 480,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            TextField(
-              controller: front,
-              autofocus: true,
-              minLines: 1,
-              maxLines: 4,
-              decoration: const InputDecoration(labelText: 'Question'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: back,
-              minLines: 1,
-              maxLines: 6,
-              decoration: const InputDecoration(labelText: 'Answer'),
-            ),
-          ],
-        ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(
-            card.copyWith(front: front.text.trim(), back: back.text.trim()),
+Future<StudyCard?> _editCard(BuildContext context, StudyCard card) =>
+    showAppDialog<StudyCard>(
+      context: context,
+      builder: (context) => _CardDialog(card: card),
+    );
+
+/// The dialog behind [_editCard]: its fields let go of with it, once it
+/// has gone, not as soon as it is answered.
+class _CardDialog extends StatefulWidget {
+  const _CardDialog({required this.card});
+
+  final StudyCard card;
+
+  @override
+  State<_CardDialog> createState() => _CardDialogState();
+}
+
+class _CardDialogState extends State<_CardDialog> {
+  late final TextEditingController _front = TextEditingController(
+    text: widget.card.front,
+  );
+  late final TextEditingController _back = TextEditingController(
+    text: widget.card.back,
+  );
+
+  @override
+  void dispose() {
+    _front.dispose();
+    _back.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => GlassDialog(
+    title: const Text('Correct the card'),
+    content: SizedBox(
+      width: 480,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          TextField(
+            controller: _front,
+            autofocus: true,
+            minLines: 1,
+            maxLines: 4,
+            decoration: const InputDecoration(labelText: 'Question'),
           ),
-          child: const Text('Save'),
-        ),
-      ],
+          const SizedBox(height: 12),
+          TextField(
+            controller: _back,
+            minLines: 1,
+            maxLines: 6,
+            decoration: const InputDecoration(labelText: 'Answer'),
+          ),
+        ],
+      ),
     ),
-  ).whenComplete(() {
-    front.dispose();
-    back.dispose();
-  });
+    actions: <Widget>[
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.of(context).pop(
+          widget.card.copyWith(
+            front: _front.text.trim(),
+            back: _back.text.trim(),
+          ),
+        ),
+        child: const Text('Save'),
+      ),
+    ],
+  );
 }

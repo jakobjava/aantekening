@@ -1500,6 +1500,25 @@ void main() {
     expect(trouble, findsOne);
   });
 
+  testWidgets('a thing kept is renamed, its dialog gone without a fault', (
+    tester,
+  ) async {
+    await openShell(tester);
+    final named = askName(tester.element(find.byType(HomeShell)), 'Forces');
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(GlassDialog),
+        matching: find.byType(TextField),
+      ),
+      'Newton’s laws',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
+    await tester.pumpAndSettle();
+    expect(await named, 'Newton’s laws');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('without a model, it offers to choose one', (tester) async {
     final preferences = Preferences.inMemory();
     final container = await openShell(

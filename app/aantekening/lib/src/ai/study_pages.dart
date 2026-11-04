@@ -650,27 +650,51 @@ void askReady(WidgetRef ref, NoteLink scope, AiAction action) {
 }
 
 /// Asks for a new name for something kept, [current] to start from.
-Future<String?> askName(BuildContext context, String current) {
-  final controller = TextEditingController(text: current);
-  return showAppDialog<String>(
-    context: context,
-    builder: (context) => GlassDialog(
-      title: const Text('Rename'),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-          child: const Text('Rename'),
-        ),
-      ],
+Future<String?> askName(BuildContext context, String current) =>
+    showAppDialog<String>(
+      context: context,
+      builder: (context) => _NameDialog(current: current),
+    );
+
+/// The dialog behind [askName]: its field let go of with it, once it has
+/// gone, not as soon as it is answered.
+class _NameDialog extends StatefulWidget {
+  const _NameDialog({required this.current});
+
+  final String current;
+
+  @override
+  State<_NameDialog> createState() => _NameDialogState();
+}
+
+class _NameDialogState extends State<_NameDialog> {
+  late final TextEditingController _name = TextEditingController(
+    text: widget.current,
+  );
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => GlassDialog(
+    title: const Text('Rename'),
+    content: TextField(
+      controller: _name,
+      autofocus: true,
+      onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
     ),
-  ).whenComplete(controller.dispose);
+    actions: <Widget>[
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.of(context).pop(_name.text.trim()),
+        child: const Text('Rename'),
+      ),
+    ],
+  );
 }
