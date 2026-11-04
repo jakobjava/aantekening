@@ -231,6 +231,9 @@ class NoteAgent {
       switch (done.stop) {
         case StopReason.paused:
           continue;
+        // Asking for tools, but for none: there is nothing to do but end.
+        case StopReason.toolUse when done.message.toolCalls.isEmpty:
+          break;
         case StopReason.toolUse:
           final calls = done.message.toolCalls;
           final results = <ChatPart>[];

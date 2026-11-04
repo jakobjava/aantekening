@@ -917,6 +917,36 @@ void main() {
       });
     });
 
+    test('says it is done where it says it stopped for tool calls it never '
+        'gave', () async {
+      final fake = server(
+        <String>[
+          'data: ${jsonEncode(<String, Object?>{
+            'choices': <Object?>[
+              <String, Object?>{
+                'delta': <String, Object?>{'content': 'Fast.'},
+                'finish_reason': 'tool_calls',
+              },
+            ],
+          })}\n\n',
+          'data: [DONE]\n\n',
+        ].join(),
+      );
+      final done = await provider(fake.client)
+          .chat(
+            const ChatRequest(
+              model: 'qwen',
+              system: '',
+              messages: <ChatMessage>[],
+            ),
+          )
+          .where((e) => e is MessageDone)
+          .cast<MessageDone>()
+          .single;
+      expect(done.stop, StopReason.done);
+      expect(done.message.text, 'Fast.');
+    });
+
     test('says where it could not reach', () async {
       final client = MockClient((request) async => throw Exception('refused'));
       expect(

@@ -543,7 +543,12 @@ class OpenAiCompatibleProvider implements ChatProvider {
           input: ToolCallPart.inputFrom('${entry.value.args}'),
         ),
     ];
-    if (toolCalls.isNotEmpty) stop = StopReason.toolUse;
+    // Some servers say they stopped for tool calls they could not read.
+    if (toolCalls.isNotEmpty) {
+      stop = StopReason.toolUse;
+    } else if (stop == StopReason.toolUse) {
+      stop = StopReason.done;
+    }
     yield MessageDone(
       ChatMessage.assistant(<ChatPart>[
         if (answer.text.isNotEmpty) TextPart(answer.text),

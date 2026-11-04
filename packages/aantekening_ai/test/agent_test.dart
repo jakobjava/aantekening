@@ -287,6 +287,28 @@ void main() {
     expect(progress.last.messages, hasLength(4));
   });
 
+  test('a model that asks for tools but names none is not asked again, '
+      'its answer as it is', () async {
+    final provider = ScriptedProvider(<List<ChatEvent>>[
+      for (var round = 0; round < 2; round++)
+        <ChatEvent>[
+          const TextDelta('Fast.'),
+          const MessageDone(
+            ChatMessage(ChatRole.assistant, <ChatPart>[TextPart('Fast.')]),
+            stop: StopReason.toolUse,
+          ),
+        ],
+    ]);
+    final last = await NoteAgent(
+      provider: provider,
+      model: 'm',
+      reader: notes,
+    ).ask(scope: section, history: const <ChatMessage>[], question: 'Hi').last;
+    expect(provider.asked, hasLength(1));
+    expect(last.answer.markdown, 'Fast.');
+    expect(last.messages, hasLength(2));
+  });
+
   group('a model that keeps asking for tools', () {
     List<ChatEvent> searching(int round) => <ChatEvent>[
       MessageDone(
