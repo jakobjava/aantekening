@@ -267,6 +267,56 @@ void main() {
     },
   );
 
+  test('notes left while they open are closed once they have', () async {
+    final root = Directory.systemTemp.createTempSync('notes_left_');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final first = p.join(root.path, 'First');
+    final index = p.join(root.path, 'index');
+    var folder = first;
+    final container = ProviderContainer(
+      overrides: [
+        preferencesProvider.overrideWith((ref) async => Preferences.inMemory()),
+        notesFolderProvider.overrideWith((ref) async => folder),
+        indexFolderProvider.overrideWith((ref) async => index),
+      ],
+    );
+    addTearDown(container.dispose);
+    container
+        .read(storeProvider.future)
+        .then<void>((_) {}, onError: (Object _) {});
+    // Another folder chosen once the first notes have begun to open.
+    bool locked() =>
+        Directory(index).existsSync() &&
+        Directory(index).listSync().any((file) => file.path.endsWith('.lock'));
+    while (!locked()) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    folder = p.join(root.path, 'Second');
+    container.invalidate(notesFolderProvider);
+    final store = await container.read(storeProvider.future);
+    expect(store.directory, folder);
+
+    // The first notes' index says so once they are closed.
+    bool letGo() {
+      final identity = NotesFolder(first).readIdentity();
+      if (identity == null) return false;
+      final database = AantekeningDatabase.open(
+        p.join(index, '$identity.sqlite'),
+      );
+      try {
+        return database.closedCleanly;
+      } finally {
+        database.close();
+      }
+    }
+
+    for (var tries = 0; tries < 200 && !letGo(); tries++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(letGo(), isTrue, reason: 'the first notes are let go of');
+    await store.close();
+  });
+
   testWidgets('the settings have a page for files, with what they hold', (
     tester,
   ) async {

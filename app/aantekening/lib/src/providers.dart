@@ -30,11 +30,22 @@ final storeProvider = FutureProvider<AantekeningStore>(
     // The notes open before are closed first: they may be these notes, moved
     // to another folder, and only one store at a time may work on them.
     await _storeClosing;
-    final store = await AantekeningStore.open(
+    // Notes left while that was waited for — their folder changed — are
+    // not opened at all.
+    if (!ref.mounted) throw StateError('The notes were left unopened');
+    final opening = AantekeningStore.open(
       notesFolder: notesFolder,
       indexFolder: indexFolder,
       expecting: expecting,
     );
+    // Closed when they are left, if that is while they are still opening
+    // too; waited on by the next store, whatever went wrong closing this one.
+    ref.onDispose(
+      () => _storeClosing = opening
+          .then((store) => store.close())
+          .then<void>((_) {}, onError: (Object _) {}),
+    );
+    final store = await opening;
     if (store.identity != expecting) {
       unawaited(
         preferences.set(openedNotesKey, <String, Object?>{
@@ -43,13 +54,6 @@ final storeProvider = FutureProvider<AantekeningStore>(
         }),
       );
     }
-    // Waited on by the next store, whatever went wrong closing this one.
-    ref.onDispose(
-      () => _storeClosing = store.close().then<void>(
-        (_) {},
-        onError: (Object _) {},
-      ),
-    );
     return store;
   },
   // What keeps the notes from opening — another window has them, their
