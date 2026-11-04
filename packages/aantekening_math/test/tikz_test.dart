@@ -36,6 +36,15 @@ void main() {
       expect(value(r'2*\x', <String, double>{'x': 4}), 8);
     });
 
+    test('takes a sign as looser than a power, as pgfmath does', () {
+      expect(value('-2^2'), -4);
+      expect(value(r'-\x^2', <String, double>{'x': 3}), -9);
+      expect(value('1 - 2^2'), -3);
+      expect(value('2^-1'), 0.5);
+      expect(value('(-2)^2'), 4);
+      expect(value('3*-2^2'), -12);
+    });
+
     test('gives lengths in points', () {
       final cmLength = TikzExpression.evaluate('1cm');
       expect(cmLength.length, isTrue);

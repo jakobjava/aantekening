@@ -102,27 +102,31 @@ class _Reader {
   }
 
   double _product() {
-    var value = _power();
+    var value = _unary();
     while (true) {
       if (_take('*')) {
-        value *= _power();
+        value *= _unary();
       } else if (_take('/')) {
-        value /= _power();
+        value /= _unary();
       } else {
         return value;
       }
     }
   }
 
-  double _power() {
-    final base = _unary();
-    return _take('^') ? math.pow(base, _power()).toDouble() : base;
-  }
-
+  /// A sign binds more loosely than `^`, as in pgfmath: `-x^2` is the
+  /// negative of `x^2`, and `\addplot {-x^2}` a parabola opening down.
   double _unary() {
     if (_take('-')) return -_unary();
     if (_take('+')) return _unary();
-    return _postfix(_primary());
+    return _power();
+  }
+
+  /// `^` binds to the right, and its exponent may have a sign of its own:
+  /// `2^3^2` is `2^9`, and `2^-1` a half.
+  double _power() {
+    final base = _postfix(_primary());
+    return _take('^') ? math.pow(base, _unary()).toDouble() : base;
   }
 
   /// [value] in the unit written after it, if one is.
