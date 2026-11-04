@@ -463,6 +463,50 @@ void main() {
       },
     );
 
+    test(
+      'knows how much each model takes: as listed, or by its name',
+      () async {
+        final provider = AnthropicProvider(
+          apiKey: 'k',
+          client: MockClient(
+            (request) async => http.Response(
+              jsonEncode(<String, Object?>{
+                'data': <Object?>[
+                  <String, Object?>{
+                    'id': 'claude-opus-6',
+                    'max_input_tokens': 2000000,
+                  },
+                ],
+              }),
+              200,
+            ),
+          ),
+        );
+        Future<int> room(String model) async =>
+            (await provider.capabilitiesOf(model)).contextTokens;
+        for (final model in <String>[
+          'claude-sonnet-4-20250514',
+          'claude-sonnet-4-5-20250929',
+          'claude-opus-4-1',
+          'claude-opus-4-5-20251101',
+          'claude-haiku-4-5',
+          'claude-3-7-sonnet-latest',
+        ]) {
+          expect(await room(model), 200000, reason: model);
+        }
+        for (final model in <String>[
+          'claude-opus-4-6',
+          'claude-sonnet-4-6',
+          'claude-opus-5-5',
+          'claude-haiku-5-5',
+        ]) {
+          expect(await room(model), 1000000, reason: model);
+        }
+        await provider.listModels();
+        expect(await room('claude-opus-6'), 2000000, reason: 'as listed');
+      },
+    );
+
     test('asks for tools with the input it streamed', () async {
       final fake = server(
         sse(<Map<String, Object?>>[

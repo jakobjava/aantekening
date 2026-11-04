@@ -65,15 +65,27 @@ class AnthropicProvider implements ChatProvider {
             name: model['display_name'] as String?,
             capabilities: _capabilities(
               model['id']! as String,
-              model['max_input_tokens'] as int?,
+              _contexts[model['id']! as String] =
+                  model['max_input_tokens'] as int?,
             ),
           ),
     ];
   }
 
+  /// How many tokens each model takes, as the listing said, once listed.
+  final Map<String, int?> _contexts = <String, int?>{};
+
   @override
   Future<ModelCapabilities> capabilitiesOf(String model) async =>
-      _capabilities(model, null);
+      _capabilities(model, _contexts[model]);
+
+  /// The models that take 200,000 tokens, not a million, unless asked
+  /// with a header that is not sent: Claude 3, the Haikus before 5.5,
+  /// and the Opus and Sonnet 4s before 4.6 — `claude-opus-4-1`,
+  /// `claude-sonnet-4-20250514`, `claude-opus-4-5-20251101`.
+  static final RegExp _smaller = RegExp(
+    r'^claude-(3|haiku-3|haiku-4|(opus|sonnet)-4(-[0-5])?(-\d{8})?$)',
+  );
 
   static ModelCapabilities _capabilities(String model, int? context) =>
       ModelCapabilities(
@@ -81,13 +93,7 @@ class AnthropicProvider implements ChatProvider {
         tools: true,
         nativeCitations: true,
         nativeWebSearch: true,
-        contextTokens:
-            context ??
-            (model.startsWith('claude-haiku-4') ||
-                    model.startsWith('claude-haiku-3') ||
-                    model.startsWith('claude-3')
-                ? 200000
-                : 1000000),
+        contextTokens: context ?? (_smaller.hasMatch(model) ? 200000 : 1000000),
         price: _prices.entries
             .where((entry) => model.startsWith(entry.key))
             .firstOrNull
