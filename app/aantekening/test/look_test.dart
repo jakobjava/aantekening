@@ -37,6 +37,18 @@ void main() {
     test('ignores case and spaces', () {
       expect(fuzzyScore('NEW PAGE', 'new page'), isNotNull);
     });
+
+    test('finds the start of a word past the same letters inside one', () {
+      // "cal" in "Local" first, in "calculus" better.
+      expect(
+        fuzzyScore('cal', 'Local calculus'),
+        fuzzyScore('cal', 'Lxxxx calculus'),
+      );
+      expect(
+        fuzzyScore('cal', 'Local calculus'),
+        greaterThan(fuzzyScore('cal', 'Notes on calculus')!),
+      );
+    });
   });
 
   group('KeyChord', () {
