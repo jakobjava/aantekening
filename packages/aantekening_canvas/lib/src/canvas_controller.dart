@@ -1323,7 +1323,9 @@ class CanvasController extends ChangeNotifier {
   ///
   /// Strokes are removed entire rather than split, which is what makes erasing
   /// predictable: a light touch never leaves invisible fragments behind.
-  bool eraseAt(Offset page, {double radius = 8}) {
+  /// With [recordUndo] false it joins the undo step before it, as the rest
+  /// of one swipe of the eraser does its first.
+  bool eraseAt(Offset page, {double radius = 8, bool recordUndo = true}) {
     final probe = Aabb(
       page.dx - radius,
       page.dy - radius,
@@ -1358,7 +1360,7 @@ class CanvasController extends ChangeNotifier {
       next = next.withElementsRemoved(emptied);
       if (emptied.contains(_activeInkElementId)) _activeInkElementId = null;
     }
-    _apply(next);
+    _apply(next, recordUndo: recordUndo);
     return true;
   }
 

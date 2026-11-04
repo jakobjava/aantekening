@@ -74,7 +74,13 @@ extension _Pointer on _InfiniteCanvasState {
         _restSlop = _restSlopOf(event.kind);
         _restAt(event.localPosition);
       case _PointerAction.erase:
-        _controller.eraseAt(page, radius: _eraserRadius);
+        _inOneStep(
+          (record) => _controller.eraseAt(
+            page,
+            radius: _eraserRadius,
+            recordUndo: record,
+          ),
+        );
       case _PointerAction.marquee:
         _marqueeAnchor = page;
         _marquee = Aabb(page.dx, page.dy, page.dx, page.dy);
@@ -157,15 +163,23 @@ extension _Pointer on _InfiniteCanvasState {
           _restAt(event.localPosition);
         }
       case _PointerAction.erase:
-        _controller.eraseAt(page, radius: _eraserRadius);
+        _inOneStep(
+          (record) => _controller.eraseAt(
+            page,
+            radius: _eraserRadius,
+            recordUndo: record,
+          ),
+        );
       case _PointerAction.pan:
       case _PointerAction.panOrTap:
         _controller.stretchBy(screenDelta);
       case _PointerAction.move:
         if (screenDelta == Offset.zero) break;
-        _controller.translateSelection(
-          screenDelta / _controller.viewport.zoom,
-          recordUndo: _takeUndoRecord(),
+        _inOneStep(
+          (record) => _controller.translateSelection(
+            screenDelta / _controller.viewport.zoom,
+            recordUndo: record,
+          ),
         );
       case _PointerAction.transform:
         if (_dragged) _updateTransform(page);
@@ -335,12 +349,15 @@ extension _Pointer on _InfiniteCanvasState {
       (_trackpad?.zoomed ?? false) ||
       _motion.isZooming;
 
-  /// Whether this change should open a new undo step, consuming the
-  /// allowance so that the rest of the drag joins it.
-  bool _takeUndoRecord() {
-    final record = _recordNextChange;
-    _recordNextChange = false;
-    return record;
+  /// Makes [change] to the page, told whether to open a new undo step:
+  /// only the first of a drag's changes that changes anything does, and
+  /// the rest of the drag joins it. A step that changes nothing — a move
+  /// held at the page's edge, an eraser over empty paper — leaves the
+  /// allowance to the next.
+  void _inOneStep(void Function(bool recordUndo) change) {
+    final before = _controller.document;
+    change(_recordNextChange);
+    if (!identical(_controller.document, before)) _recordNextChange = false;
   }
 
   static double _tapSlop(PointerEvent event) =>

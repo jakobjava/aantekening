@@ -1191,6 +1191,60 @@ void main() {
       );
     });
 
+    testWidgets('a move held at the edge before it goes is still its own '
+        'undo step', (tester) async {
+      final controller = CanvasController()..addElement(_image('a', y: 50));
+      await tester.pumpWidget(_host(controller));
+
+      // Left first, where the page's edge holds it, then right.
+      final gesture = await tester.startGesture(
+        const Offset(100, 100),
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.moveBy(const Offset(-10, 0));
+      for (var i = 0; i < 5; i++) {
+        await gesture.moveBy(const Offset(10, 0));
+      }
+      await gesture.up();
+
+      expect(controller.document.elementById('a')!.frame.x, 50);
+      controller.undo();
+      expect(
+        controller.document.elementById('a')?.frame.x,
+        0,
+        reason: 'the move undone, and the picture still there',
+      );
+    });
+
+    testWidgets('one swipe of the eraser is one undo step', (tester) async {
+      final controller = CanvasController();
+      for (final x in <double>[100, 150, 200]) {
+        controller
+          ..beginStroke(Offset(x, 50))
+          ..extendStroke(Offset(x, 100))
+          ..extendStroke(Offset(x, 150))
+          ..endStroke();
+      }
+      controller.setTool(CanvasTool.eraser);
+      await tester.pumpWidget(_host(controller));
+
+      final gesture = await tester.startGesture(
+        const Offset(60, 100),
+        kind: PointerDeviceKind.mouse,
+      );
+      for (var i = 0; i < 20; i++) {
+        await gesture.moveBy(const Offset(10, 0));
+      }
+      await gesture.up();
+      expect(controller.document.elements, isEmpty);
+
+      controller.undo();
+      final ink = controller.document.elements.single as InkElement;
+      expect(ink.strokes, hasLength(3), reason: 'every stroke back at once');
+      controller.undo();
+      expect(controller.document.elements.single, isA<InkElement>());
+    });
+
     testWidgets('dragging a corner handle resizes in proportion', (
       tester,
     ) async {

@@ -119,7 +119,9 @@ extension _Gestures on _InfiniteCanvasState {
         ];
       }
     }
-    _controller.replaceElements(updated, recordUndo: _takeUndoRecord());
+    _inOneStep(
+      (record) => _controller.replaceElements(updated, recordUndo: record),
+    );
   }
 
   void _beginPinch() {
