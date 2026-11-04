@@ -77,6 +77,9 @@ final class BackgroundSpellChecker {
     _isolate?.kill();
     _responses.close();
     if (!_started.isCompleted) {
+      // Waited for only once the isolate is running: an isolate that could
+      // not be started fails [spawn] with its own error, not this one.
+      _started.future.ignore();
       _started.completeError(StateError('The spell checker stopped.'));
     }
     for (final waiting in _waiting.values) {
