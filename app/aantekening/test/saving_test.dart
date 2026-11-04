@@ -1,10 +1,13 @@
 import 'dart:async';
 
+import 'package:aantekening/src/editor/page_editor.dart';
+import 'package:aantekening/src/files/notes_keeper.dart';
 import 'package:aantekening/src/files/notes_location.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'editor_harness.dart';
@@ -67,6 +70,51 @@ void main() {
     final text = await stored(pageId);
     expect(text, contains('Energy'));
     expect(text, contains('c^2'));
+  });
+
+  testWidgets('the app stops only once a long page left is saved', (
+    tester,
+  ) async {
+    // Long enough to be compressed away from the window, out of sight
+    // below the view.
+    final long = PageDocument.empty(id: pageId).withElementAdded(
+      TextElement(
+        id: Ulid.generate(),
+        frame: const Frame(x: 40, y: 20000, width: 400, height: 40),
+        createdAt: 0,
+        updatedAt: 0,
+        blocks: <TextBlock>[
+          for (var i = 0; i < 4000; i++)
+            TextBlock.plain('A line of the long page, $i'),
+        ],
+      ),
+    );
+    await tester.runAsync(() => store.pages.saveDocument(pageId, long));
+    final other = await anotherPage();
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await type(tester, 'Zebrafinch');
+    await openEditor(tester, store, other);
+
+    final saves = ProviderScope.containerOf(
+      tester.element(find.byType(PageEditor)),
+    ).read(openSavesProvider);
+    // As the app stops: what is in the notes once everything is saved.
+    List<SearchHit>? found;
+    unawaited(
+      saves.saveAll().then(
+        (_) async => found = await store.search.search('Zebrafinch'),
+      ),
+    );
+    // Compressed away from the test's clock.
+    for (var step = 0; step < 200 && found == null; step++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    expect(found, hasLength(1));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('a page that cannot be saved is rescued, not lost', (

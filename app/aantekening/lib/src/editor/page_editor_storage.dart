@@ -178,15 +178,21 @@ extension _Storage on _PageEditorState {
     if (store != null) await saveAttachedFile(store, file);
   }
 
-  /// Saves the open page now, if it has changes, finishing when it has: as
-  /// the app does before it stops. Throws if what is on it could neither be
-  /// saved nor rescued.
+  /// Saves the open page now, if it has changes, finishing when it has and
+  /// every save under way before it has — of a page left, or of the editor
+  /// closed: as the app does before it stops. Throws if what is on them
+  /// could neither be saved nor rescued.
   Future<void> _saveOpenPage() async {
-    final pageId = widget.pageId;
-    if (pageId == null || !_ready || !_controller.isDirty) return;
-    _autosave?.cancel();
-    if (!await _persist(pageId, _controller.document)) {
-      throw StateError('“${_controller.document.id}” could not be saved');
+    final earlier = List.of(_underWay);
+    final pageId = _disposed ? null : widget.pageId;
+    if (pageId != null && _ready && _controller.isDirty) {
+      _autosave?.cancel();
+      if (!await _persist(pageId, _controller.document)) {
+        throw StateError('“${_controller.document.id}” could not be saved');
+      }
+    }
+    if ((await Future.wait(earlier)).contains(false)) {
+      throw StateError('a page left could not be saved');
     }
   }
 
@@ -252,11 +258,18 @@ extension _Storage on _PageEditorState {
 
   /// Writes [document] to disk, saying whether what it holds is safe: saved,
   /// or — if it could not be — rescued, to be put back into the notes the
-  /// next time they are opened.
+  /// next time they are opened. Under way, it is among [_underWay].
   ///
   /// Also called from [dispose] for the final save, so it touches neither
   /// `ref` nor the widget once the widget is gone.
-  Future<bool> _persist(String pageId, PageDocument document) async {
+  Future<bool> _persist(String pageId, PageDocument document) {
+    final save = _write(pageId, document);
+    _underWay.add(save);
+    return save.whenComplete(() => _underWay.remove(save));
+  }
+
+  /// Writes [document] to disk, as [_persist] says.
+  Future<bool> _write(String pageId, PageDocument document) async {
     final store = _store;
     // Nothing can have been edited on a page that never loaded.
     if (store == null) return true;

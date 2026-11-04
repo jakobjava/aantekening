@@ -385,6 +385,10 @@ class _PageEditorState extends ConsumerState<PageEditor> {
   /// last saved: what was rescued goes once they are.
   final Set<String> _rescued = <String>{};
 
+  /// The saves under way, each to say whether what it writes is safe: the
+  /// app stops only once they are done, those of a page left among them.
+  final Set<Future<bool>> _underWay = <Future<bool>>{};
+
   /// What went wrong opening or saving the page, said above it.
   String? _error;
 
@@ -526,7 +530,6 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     _jump?.end();
     _endTypeOn?.call(type: false);
     _leaveKeys();
-    _unregisterSave();
     _autosave?.cancel();
     _dropHover.dispose();
     _controller.removeListener(_onCanvasChanged);
@@ -536,6 +539,12 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     final pageId = widget.pageId;
     if (pageId != null && _ready && _controller.isDirty) {
       unawaited(_persist(pageId, _controller.document));
+    }
+    // Closed, it is still waited for until its last saves are done.
+    if (_underWay.isEmpty) {
+      _unregisterSave();
+    } else {
+      unawaited(Future.wait(List.of(_underWay)).whenComplete(_unregisterSave));
     }
     _textController.formulaField.removeListener(_onFormulaChanged);
     _textController.formulaSyntax.removeListener(_onSyntaxChosen);
