@@ -323,4 +323,29 @@ void main() {
     expect(File(path).existsSync(), isFalse);
     expect(File('$path.part').existsSync(), isFalse);
   });
+
+  testWidgets('a PDF that cannot take the place of what is there leaves it', (
+    tester,
+  ) async {
+    final notes = await page('Notes', <NoteElement>[linesBox('a', 40, 3)]);
+    // Where the PDF is to go, something it cannot be put in the place of.
+    final path = '${folder.path}/taken.pdf';
+    final there = File('$path/kept')..createSync(recursive: true);
+    final failed = await tester.runAsync(() async {
+      try {
+        await writePdf(
+          store,
+          await PdfContents.of(store, notes),
+          path,
+          choices: const PdfChoices(quality: PdfQuality.small),
+        );
+      } on FileSystemException {
+        return true;
+      }
+      return false;
+    });
+    expect(failed, isTrue);
+    expect(there.existsSync(), isTrue);
+    expect(File('$path.part').existsSync(), isFalse);
+  });
 }

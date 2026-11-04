@@ -266,13 +266,13 @@ Future<bool> writePdf(
     await ready.then<void>((_) {}, onError: (Object _) {});
     await sink.close();
     await printer.close();
-    if (whole) {
-      final target = File(path);
-      // Windows does not put a file in another's place.
-      if (Platform.isWindows && target.existsSync()) target.deleteSync();
-      await part.rename(path);
-    } else if (part.existsSync()) {
-      await part.delete();
+    // Put in the place of a PDF there already in one step, on Windows too,
+    // so one that cannot be — open in a reader that will not let it go —
+    // is left as it was.
+    try {
+      if (whole) await part.rename(path);
+    } finally {
+      if (part.existsSync()) await part.delete();
     }
   }
   return true;
