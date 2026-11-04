@@ -112,9 +112,10 @@ class NoteTools {
         'Searching ${input['everywhere'] == true ? 'all your notes' : 'these notes'} '
             'for “${input['query']}”',
       readPage => 'Reading a page',
-      lookAt =>
-        'Looking at ${(input['visuals'] as List?)?.length ?? 1} '
-            'visual${(input['visuals'] as List?)?.length == 1 ? '' : 's'}',
+      lookAt => switch (_visuals(input).length) {
+        0 || 1 => 'Looking at 1 visual',
+        final n => 'Looking at $n visuals',
+      },
       searchWeb => 'Searching the web for “${input['query']}”',
       _ => 'Working',
     };
@@ -144,8 +145,21 @@ class NoteTools {
       };
     } on AiException catch (error) {
       return _error(call, error.message);
+    } on Object catch (error) {
+      // Arguments of the wrong kind, a search answering what is not JSON:
+      // the model is told, and goes on without.
+      return _error(call, 'That did not work: $error');
     }
   }
+
+  /// The visuals [input] asks for, however the model wrote them: a list,
+  /// or one alone.
+  static List<String> _visuals(Map<String, Object?> input) =>
+      switch (input['visuals']) {
+        final List<Object?> visuals => <String>[for (final v in visuals) '$v'],
+        final Object visual => <String>['$visual'],
+        null => const <String>[],
+      };
 
   Future<ToolResultPart> _search(ToolCallPart call) async {
     final query = '${call.input['query'] ?? ''}'.trim();
@@ -230,9 +244,7 @@ class NoteTools {
     final id = '${call.input['page_id'] ?? ''}'.trim();
     final digest = await reader.digest(id);
     if (digest == null) return _error(call, 'There is no page $id.');
-    final wanted = <String>[
-      for (final v in (call.input['visuals'] as List?) ?? const []) '$v',
-    ].take(4);
+    final wanted = _visuals(call.input).take(4);
     final content = <ChatPart>[];
     for (final visualId in wanted) {
       final visual = digest.visual(visualId);

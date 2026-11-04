@@ -623,4 +623,58 @@ void main() {
       );
     },
   );
+
+  test('a visual asked for alone, not in a list, is still looked at', () async {
+    final tools = NoteTools(reader: notes, scope: section, vision: true);
+    const call = ToolCallPart(
+      id: 't',
+      name: NoteTools.lookAt,
+      input: <String, Object?>{'page_id': 'p2', 'visuals': 'v1'},
+    );
+    expect(tools.describe(call), 'Looking at 1 visual');
+    final result = await tools.run(call);
+    expect(result.isError, isFalse);
+    expect(result.content.single, isA<ImagePart>());
+  });
+
+  test('a tool that fails is said to the model to have, the answer going '
+      'on', () async {
+    final result = await NoteTools(reader: Failing(notes), scope: section).run(
+      const ToolCallPart(
+        id: 't',
+        name: NoteTools.readPage,
+        input: <String, Object?>{'page_id': 'p1'},
+      ),
+    );
+    expect(result.isError, isTrue);
+    expect((result.content.single as TextPart).text, contains('locked'));
+  });
+}
+
+/// The notes of [notes], which cannot be read: the store is locked.
+class Failing implements NoteReader {
+  Failing(this.notes);
+
+  final NoteReader notes;
+
+  @override
+  Future<PageDigest?> digest(String pageId) async =>
+      throw StateError('The database is locked.');
+
+  @override
+  Future<List<PageEntry>> pagesIn(NoteLink scope) => notes.pagesIn(scope);
+
+  @override
+  Future<ImagePart?> render(String pageId, DigestVisual visual) =>
+      notes.render(pageId, visual);
+
+  @override
+  Future<ScopeInfo?> scope(NoteLink link) => notes.scope(link);
+
+  @override
+  Future<List<String>> searchPages(
+    String query, {
+    NoteLink? within,
+    int limit = 10,
+  }) => notes.searchPages(query, within: within, limit: limit);
 }
