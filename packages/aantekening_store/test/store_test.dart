@@ -1085,6 +1085,22 @@ void main() {
     });
   });
 
+  test('an export that cannot be put where it was asked to go leaves '
+      'nothing beside it', () async {
+    final notebook = await store.library.createNotebook(title: 'Physics');
+    final folder = Directory.systemTemp.createTempSync('aantekening_export_');
+    addTearDown(() => folder.deleteSync(recursive: true));
+    // A folder, not empty, stands where the export is to go.
+    final target = p.join(folder.path, 'Physics.aantekening');
+    File(p.join(target, 'inside')).createSync(recursive: true);
+
+    await expectLater(
+      store.exports.write(target, notebooks: <String>[notebook.id]),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect(File('$target.tmp').existsSync(), isFalse);
+  });
+
   group('assets', () {
     test('deduplicates identical content', () async {
       final bytes = Uint8List.fromList(List<int>.generate(64, (i) => i));

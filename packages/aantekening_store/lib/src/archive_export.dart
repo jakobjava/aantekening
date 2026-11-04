@@ -92,7 +92,9 @@ final class ArchiveExport {
       }
     }
 
-    final encoder = ZipFileEncoder()..create('$target.tmp');
+    final partial = File('$target.tmp');
+    final encoder = ZipFileEncoder()..create(partial.path);
+    var written = false;
     try {
       encoder.addArchiveFile(
         ArchiveFile.string(
@@ -121,9 +123,20 @@ final class ArchiveExport {
           );
         }
       }
-    } finally {
       encoder.closeSync();
+      await partial.rename(target);
+      written = true;
+    } finally {
+      // Not written whole — a file that could not be read, a target that
+      // cannot be written over: nothing is left of it beside the target.
+      if (!written) {
+        try {
+          encoder.closeSync();
+        } on Object {
+          // Closed already.
+        }
+        if (partial.existsSync()) partial.deleteSync();
+      }
     }
-    await File('$target.tmp').rename(target);
   }
 }
