@@ -137,10 +137,17 @@ final class UnaryNode extends MathNode {
   final String operatorLatex;
   final MathNode operand;
 
+  /// A control word written as the operator, `\pm` say, is kept apart
+  /// from a letter after it by a space: `\pm a`, not the unknown `\pma`.
   @override
   void writeLatex(StringBuffer out) {
+    final latex = operand.toLatex();
     out.write(operatorLatex);
-    operand.writeLatex(out);
+    if (RegExp(r'\\[a-zA-Z]+$').hasMatch(operatorLatex) &&
+        RegExp('^[a-zA-Z]').hasMatch(latex)) {
+      out.write(' ');
+    }
+    out.write(latex);
   }
 }
 

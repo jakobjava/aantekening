@@ -143,6 +143,7 @@ void main() {
       r'\forall \epsilon > 0 \; \exists \delta > 0',
       r'{}^{14}_{6}\mathrm{C}',
       r'x \in \left] -\infty ; 0 \right[',
+      r'x = \pm a',
     ]) {
       test('LaTeX: $latex', () {
         final simple = LinearMath.fromLatex(latex);

@@ -193,6 +193,13 @@ void main() {
       expectLatex('a * b', r'a \cdot b');
     });
 
+    test('keeps a sign written as a command apart from a letter after it', () {
+      expectLatex('x = +-a', r'x = \pm a');
+      expectLatex('-+t', r'\mp t');
+      expectLatex('+-2', r'\pm2');
+      expectLatex('-a', '-a');
+    });
+
     test('treats spelled-out operators as operators, not operands', () {
       expectLatex('x in A', r'x \in A');
       expectLatex('A cup B', r'A \cup B');
