@@ -48,7 +48,9 @@ void useTestPage(void Function(AantekeningStore store, String pageId) use) {
   });
 }
 
-/// The page editor over an in-memory workspace, filling a 1200×800 window.
+/// The page editor over an in-memory workspace, filling a 1200×800 window;
+/// waited for until it is still, unless not to [settle] — a page that opens
+/// only once a save away from the test's clock is done, say.
 Future<void> openEditor(
   WidgetTester tester,
   AantekeningStore store,
@@ -56,6 +58,7 @@ Future<void> openEditor(
   Preferences? preferences,
   Size size = const Size(1200, 800),
   List<Override> overrides = const <Override>[],
+  bool settle = true,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -83,7 +86,7 @@ Future<void> openEditor(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) await tester.pumpAndSettle();
 }
 
 /// Reads pictures from the store at once. A read left waiting on the test's

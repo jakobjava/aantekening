@@ -96,7 +96,9 @@ void main() {
     await openEditor(tester, store, pageId);
     await startTextBox(tester);
     await type(tester, 'Zebrafinch');
-    await openEditor(tester, store, other);
+    // The other page opens only once the long one's save, away from the
+    // test's clock, is done.
+    await openEditor(tester, store, other, settle: false);
 
     final saves = ProviderScope.containerOf(
       tester.element(find.byType(PageEditor)),
