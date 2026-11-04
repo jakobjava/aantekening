@@ -44,20 +44,30 @@ final class OneNoteImporter implements NotesImporter {
   @override
   ImportTarget get target => ImportTarget.newNotebook;
 
+  /// Each path is read into a folder of its own, and becomes a notebook
+  /// of its own, however alike two of their names are.
   @override
   NotesDraft read(List<String> paths, ImportWork work) =>
-      convertOneNote(<String, List<OneEntry>>{
-        for (final path in paths)
-          p.basenameWithoutExtension(
-            path,
-          ): p.extension(path).toLowerCase() == '.onepkg'
-              ? _readPackage(path, work)
-              : <OneEntry>[_readLoneSection(path, work)],
-      }, work);
+      convertOneNote(<(String, List<OneEntry>)>[
+        for (final (index, path) in paths.indexed)
+          (
+            p.basenameWithoutExtension(path),
+            p.extension(path).toLowerCase() == '.onepkg'
+                ? _readPackage(
+                    path,
+                    Directory(p.join(work.directory.path, 'notebook-$index')),
+                    work,
+                  )
+                : <OneEntry>[readSectionFile(File(path))],
+          ),
+      ], work);
 
-  static List<OneEntry> _readPackage(String path, ImportWork work) {
-    final folder = Directory(p.join(work.directory.path, 'notebook'))
-      ..createSync(recursive: true);
+  static List<OneEntry> _readPackage(
+    String path,
+    Directory folder,
+    ImportWork work,
+  ) {
+    folder.createSync(recursive: true);
     final file = File(path).openSync();
     try {
       work.progress('Unpacking', 0);
@@ -82,33 +92,19 @@ final class OneNoteImporter implements NotesImporter {
       onSection: (name) => work.progress('Reading $name'),
     );
   }
-
-  /// A section on its own, read as a notebook of one section would be.
-  static OneEntry _readLoneSection(String path, ImportWork work) {
-    final directory = Directory(p.join(work.directory.path, 'section'))
-      ..createSync(recursive: true);
-    File(path).copySync(p.join(directory.path, p.basename(path)));
-    final entries = readNotebookFolder(directory);
-    return entries.isEmpty
-        ? OneUnreadableSection(p.basename(path), 'The file is empty')
-        : entries.first;
-  }
 }
 
-/// The notebooks [notebooks] — each's sections and groups by its name — as
-/// drafts, their pictures and files kept in [work].
+/// The notebooks [notebooks] — each its name and its sections and groups
+/// — as drafts, their pictures and files kept in [work].
 NotesDraft convertOneNote(
-  Map<String, List<OneEntry>> notebooks,
+  List<(String, List<OneEntry>)> notebooks,
   ImportWork work,
 ) {
   final converter = _Converter(work);
   return NotesDraft(
     notebooks: <NotebookDraft>[
-      for (final entry in notebooks.entries)
-        NotebookDraft(
-          title: entry.key,
-          sections: converter.sections(entry.value),
-        ),
+      for (final (title, entries) in notebooks)
+        NotebookDraft(title: title, sections: converter.sections(entries)),
     ],
     assets: converter.assets,
     warnings: converter.warnings,

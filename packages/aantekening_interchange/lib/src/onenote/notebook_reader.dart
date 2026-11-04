@@ -54,7 +54,7 @@ List<OneEntry> readNotebookFolder(
     final group = groups[name];
     if (section != null) {
       onSection?.call(p.basenameWithoutExtension(name));
-      notebook.add(_readSectionFile(section, directory));
+      notebook.add(readSectionFile(section, notebook: directory));
     } else if (group != null) {
       notebook.add(
         OneSectionGroup(name, readNotebookFolder(group, onSection: onSection)),
@@ -64,12 +64,16 @@ List<OneEntry> readNotebookFolder(
   return notebook;
 }
 
-OneEntry _readSectionFile(File file, Directory notebook) {
+/// Reads the section in [file], the files it keeps beside itself found in
+/// [notebook] — or, a section read on its own, nowhere.
+OneEntry readSectionFile(File file, {Directory? notebook}) {
   final name = p.basenameWithoutExtension(file.path);
   try {
     final store = RevisionStore.read(
       file.readAsBytesSync(),
-      externalFile: (reference) => _externalFile(notebook, reference),
+      externalFile: notebook == null
+          ? null
+          : (reference) => _externalFile(notebook, reference),
     );
     return readSection(store, name);
   } on FormatDamage catch (damage) {

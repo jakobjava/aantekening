@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
@@ -12,6 +13,8 @@ import 'package:aantekening_interchange/src/onenote/section_reader.dart';
 import 'package:aantekening_interchange/src/onestore/revision_store.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+
+import 'support/lzx_encoder.dart';
 
 const OneStyle _text = OneStyle(font: 'Calibri', size: 11);
 const OneStyle _math = OneStyle(font: 'Cambria Math', size: 11, math: true);
@@ -111,6 +114,61 @@ void main() {
       );
     });
 
+    test('reads several files at once, each a notebook of its own', () {
+      final section = File(
+        'test/fixtures/onenote-2016/OneWithFileData.one',
+      ).readAsBytesSync();
+      String file(String path, List<int> bytes) {
+        final file = File(p.join(work.path, 'chosen', path))
+          ..parent.createSync(recursive: true)
+          ..writeAsBytesSync(bytes);
+        return file.path;
+      }
+
+      Uint8List package(String name) => writeCabinet(
+        <String, Uint8List>{name: section},
+        compression: 0,
+        encode: (all) => <(Uint8List, int)>[
+          for (var i = 0; i < all.length; i += 32768)
+            (
+              all.sublist(i, math.min(i + 32768, all.length)),
+              math.min(32768, all.length - i),
+            ),
+        ],
+      );
+
+      final out = Directory(p.join(work.path, 'work'))..createSync();
+      final draft = const OneNoteImporter().read(<String>[
+        file('Algebra.one', section),
+        file('Physics.one', section),
+        file(p.join('this year', 'Notes.one'), section),
+        file(p.join('last year', 'Notes.one'), section),
+        file('Work.onepkg', package('Meetings.one')),
+        file('Home.onepkg', package('Recipes.one')),
+      ], ImportWork(out));
+      expect(
+        <String>[
+          for (final notebook in draft.notebooks)
+            '${notebook.title}: '
+                '${notebook.sections.map((section) => section.title).join(', ')}',
+        ],
+        <String>[
+          'Algebra: Algebra',
+          'Physics: Physics',
+          'Notes: Notes',
+          'Notes: Notes',
+          'Work: Meetings',
+          'Home: Recipes',
+        ],
+      );
+      expect(
+        draft.notebooks.every(
+          (notebook) => notebook.sections.single.pages.length == 1,
+        ),
+        isTrue,
+      );
+    });
+
     test('decodes ink paths as the Ink Serialized Format writes numbers', () {
       // Four values: 1, -1, 64, -300.
       final bytes = Uint8List.fromList(<int>[8, 2, 3, 0x80, 0x01, 0xD9, 0x04]);
@@ -200,9 +258,9 @@ void main() {
     );
 
     NotesDraft convert(List<OnePage> pages) =>
-        convertOneNote(<String, List<OneEntry>>{
-          'Physics': <OneEntry>[OneSection('Mechanics', pages)],
-        }, ImportWork(work));
+        convertOneNote(<(String, List<OneEntry>)>[
+          ('Physics', <OneEntry>[OneSection('Mechanics', pages)]),
+        ], ImportWork(work));
 
     test('keeps the width of an outline sized by hand', () {
       final draft = convert(<OnePage>[
