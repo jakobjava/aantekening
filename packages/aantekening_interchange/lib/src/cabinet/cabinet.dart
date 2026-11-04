@@ -126,8 +126,13 @@ final class Cabinet {
         }(),
     ];
 
+    // Each entry is sixteen bytes and its name, of 256 bytes at most —
+    // though a little more is let be.
     final directory = ByteReader(
-      source.readAt(filesOffset, _min(source.length - filesOffset, 1 << 20)),
+      source.readAt(
+        filesOffset,
+        _min(source.length - filesOffset, fileCount * (16 + 1024)),
+      ),
     );
     final files = <CabinetFile>[];
     for (var i = 0; i < fileCount; i++) {
@@ -174,10 +179,14 @@ final class Cabinet {
   static int unpackedLimit(int length) => (256 << 20) + 100 * length;
 
   /// [name] with backslashes as slashes, and with no part that would climb
-  /// out of the folder it is extracted to.
+  /// out of the folder it is extracted to — nor any Windows would read as
+  /// one that does: it drops the dots and spaces a part ends in, so `.. `
+  /// and `...` are `..` to it.
   static String _normalise(String name) => <String>[
     for (final part in name.split(RegExp(r'[/\\]')))
-      if (part.isNotEmpty && part != '.' && part != '..') part,
+      if (part.replaceFirst(RegExp(r'[. ]+$'), '') case final kept
+          when kept.isNotEmpty)
+        kept,
   ].join('/');
 
   final RandomSource _source;
@@ -247,29 +256,39 @@ final class Cabinet {
   }
 
   /// Writes every file beneath [directory], keeping the folders they are
-  /// in, and returns their paths by name.
+  /// in, and returns their paths by name: a file named as one before it is
+  /// numbered, as `Notes (2).one`, and one with no name at all left out.
   Map<String, String> extractTo(
     Directory directory, {
     void Function(int done, int total)? onProgress,
   }) {
     final paths = <String, String>{};
-    final open = <String, RandomAccessFile>{};
-    RandomAccessFile sink(CabinetFile file) => open.putIfAbsent(file.name, () {
-      final path = p.joinAll(<String>[directory.path, ...file.name.split('/')]);
-      paths[file.name] = path;
+    final open = Map<CabinetFile, RandomAccessFile?>.identity();
+    RandomAccessFile? sink(CabinetFile file) => open.putIfAbsent(file, () {
+      if (file.name.isEmpty) return null;
+      var name = file.name;
+      for (var n = 2; paths.containsKey(name); n++) {
+        final extension = p.url.extension(file.name);
+        name =
+            '${file.name.substring(0, file.name.length - extension.length)} '
+            '($n)$extension';
+      }
+      final path = p.joinAll(<String>[directory.path, ...name.split('/')]);
+      if (!p.isWithin(directory.path, path)) return null;
+      paths[name] = path;
       File(path).parent.createSync(recursive: true);
       return File(path).openSync(mode: FileMode.write);
     });
     try {
       read(
-        onBytes: (file, bytes) => sink(file).writeFromSync(bytes),
+        onBytes: (file, bytes) => sink(file)?.writeFromSync(bytes),
         onFile: (file) => sink(file)
-          ..flushSync()
+          ?..flushSync()
           ..closeSync(),
         onProgress: onProgress,
       );
     } finally {
-      for (final file in open.values) {
+      for (final file in open.values.nonNulls) {
         try {
           file.closeSync();
         } on FileSystemException {

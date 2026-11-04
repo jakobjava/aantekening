@@ -275,6 +275,52 @@ void main() {
       expect(File('${directory.path}/outside.one').existsSync(), isFalse);
     });
 
+    test('unpacks files of one name each, and none of no name', () {
+      final named = <String, Uint8List>{
+        'Notes.one': sampleText(10),
+        r'.\Notes.one': sampleText(10, seed: 2),
+        './Notes.one': sampleText(10, seed: 3),
+        r'..\.. \...': sampleText(10, seed: 4),
+        'Rest.one': sampleText(10, seed: 5),
+      };
+      final cabinet = writeCabinet(
+        named,
+        compression: 3 | (15 << 8),
+        encode: (all) => encodeLzx(all, windowBits: 15),
+      );
+      final directory = Directory.systemTemp.createTempSync('cab_');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final paths = Cabinet.read(BytesSource(cabinet)).extractTo(directory);
+      expect(paths.keys, <String>[
+        'Notes.one',
+        'Notes (2).one',
+        'Notes (3).one',
+        'Rest.one',
+      ]);
+      expect(
+        File(paths['Notes (2).one']!).readAsBytesSync(),
+        named[r'.\Notes.one'],
+      );
+      expect(File(paths['Rest.one']!).readAsBytesSync(), named['Rest.one']);
+      expect(directory.listSync(), hasLength(4));
+    });
+
+    test('reads a directory of many files with long names', () {
+      // More than a mebibyte of names.
+      final many = <String, Uint8List>{
+        for (var i = 0; i < 5000; i++)
+          '${'Abschnitt ' * 24}$i.one': Uint8List.fromList(<int>[i & 0xFF]),
+      };
+      final cabinet = writeCabinet(
+        many,
+        compression: 3 | (16 << 8),
+        encode: encodeLzx,
+      );
+      final read = Cabinet.read(BytesSource(cabinet));
+      expect(read.files, hasLength(5000));
+      expect(read.contents.values.last, <int>[4999 & 0xFF]);
+    });
+
     test('says what it is not', () {
       expect(
         () => Cabinet.read(
