@@ -191,17 +191,23 @@ final class LatexPreamble {
 
   /// [source] with every use of a command defined written out, until none
   /// is left — or, for a definition that uses itself, a few rounds on.
+  ///
+  /// Written out, it grows to no more than ten times its length, or a
+  /// million characters: a command that uses itself eight times over is
+  /// 8^16 times as long after the rounds, and is left as far as it got.
   String expand(String source) {
     if (_macros.isEmpty) return source;
     final names = _macros.keys.toList()
       ..sort((a, b) => b.length.compareTo(a.length));
     final use = RegExp('(?:${names.map(RegExp.escape).join('|')})(?![A-Za-z])');
+    final limit = source.length * 10 > 1 << 20 ? source.length * 10 : 1 << 20;
     var text = source;
     for (var round = 0; round < 16; round++) {
       var changed = false;
       final out = StringBuffer();
       var at = 0;
       for (final match in use.allMatches(text)) {
+        if (out.length > limit) return text;
         if (match.start < at) continue;
         // `\\R` is a line break and an R, not a command named R.
         if (match.start > 0 && text[match.start - 1] == r'\') continue;
@@ -241,6 +247,9 @@ final class LatexPreamble {
         }
         var body = macro.body;
         for (var i = values.length; i >= 1; i--) {
+          // An argument used many times is as many times as long.
+          final uses = '#$i'.allMatches(body).length;
+          if (body.length + uses * values[i - 1].length > limit) return text;
           body = body.replaceAll('#$i', values[i - 1]);
         }
         out
@@ -261,6 +270,7 @@ final class LatexPreamble {
         changed = true;
       }
       out.write(text.substring(at));
+      if (out.length > limit) return text;
       text = out.toString();
       if (!changed) break;
     }

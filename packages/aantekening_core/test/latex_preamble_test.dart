@@ -61,6 +61,27 @@ void main() {
       expect(preamble.apply(r'\frac{a}{b}'), r'\frac{a}{b}');
     });
 
+    test('writes out a command using itself over and over only so far', () {
+      // Eight times longer each round, 8^16 times after them all: the
+      // memory would give out long before.
+      final preamble = LatexPreamble.read(
+        r'\newcommand{\a}{\a\a\a\a\a\a\a\a}'
+        r'\newcommand{\twice}[1]{#1#1}',
+      );
+      final out = preamble.apply(r'x = \a');
+      expect(out.length, lessThanOrEqualTo(1 << 20));
+      expect(
+        out.startsWith('x = {{'),
+        isTrue,
+        reason: 'written out part of the way',
+      );
+      // An argument written out many times counts as often.
+      final long = 'y' * (900 << 10);
+      final twice = preamble.apply('\\twice{$long}');
+      expect(twice.length, lessThanOrEqualTo(10 * (900 << 10) + 16));
+      expect(preamble.apply(r'\twice{ab}'), 'abab');
+    });
+
     test('says what in it is neither a command nor a style', () {
       expect(LatexPreamble.read(r'\newcommand{\a}{1} hello').leftOver, 'hello');
     });
