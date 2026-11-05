@@ -50,6 +50,7 @@ void main() {
       final file = assets.fileFor(asset);
       expect(file.existsSync(), isTrue);
 
+      now = now.add(const Duration(hours: 1));
       expect(await assets.collectGarbage(), 1);
       expect(file.existsSync(), isFalse, reason: 'set aside');
 
@@ -58,11 +59,28 @@ void main() {
     },
   );
 
+  test('a picture just put on a page, not yet saved, is not set aside, nor '
+      'forgotten', () async {
+    final store = await open();
+    addTearDown(store.close);
+    final assets = assetsOf(store);
+    final asset = await assets.importBytes(picture, mimeType: 'image/png');
+
+    now = now.add(const Duration(minutes: 5));
+    expect(await assets.collectGarbage(), 0);
+    expect(assets.fileFor(asset).existsSync(), isTrue);
+    expect(await assets.find(asset.id), isNotNull);
+
+    now = now.add(const Duration(minutes: 10));
+    expect(await assets.collectGarbage(), 1);
+  });
+
   test('what is set aside goes for good only after a while, unshown', () async {
     final store = await open();
     addTearDown(store.close);
     final assets = assetsOf(store);
     final asset = await assets.importBytes(picture, mimeType: 'image/png');
+    now = now.add(const Duration(hours: 1));
     await assets.collectGarbage();
     final aside = File(
       p.join(assets.rootDirectory.path, '.removed', asset.sha256),

@@ -148,18 +148,25 @@ class AssetStore {
   /// shared: another computer may have added a page showing it that has not
   /// reached this one yet. Reading it brings it back.
   ///
+  /// One imported less than [grace] ago is left too: the page showing it
+  /// may not have been saved yet, a moment after it was put there.
+  ///
   /// Returns the number of assets removed. Called after emptying the bin,
   /// never on a hot path.
   Future<int> collectGarbage({
     Duration keepFor = const Duration(days: 30),
+    Duration grace = const Duration(minutes: 10),
   }) async {
-    final rows = _db.select('''
+    final rows = _db.select(
+      '''
       SELECT a.id AS id, a.sha256 AS sha256
       FROM assets a
       WHERE NOT EXISTS (
         SELECT 1 FROM page_assets pa WHERE pa.asset_id = a.id
-      )
-    ''');
+      ) AND a.created_at <= ?
+    ''',
+      <Object?>[_clock().subtract(grace).millisecondsSinceEpoch],
+    );
 
     var removed = 0;
     for (final row in rows) {

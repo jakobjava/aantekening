@@ -1487,7 +1487,7 @@ void main() {
 
       store.bin.purgePage(page.id);
 
-      expect(await store.assets.collectGarbage(), 1);
+      expect(await store.assets.collectGarbage(grace: Duration.zero), 1);
       expect(await store.assets.find(asset.id), isNull);
     });
 

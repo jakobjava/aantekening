@@ -144,7 +144,7 @@ void main() {
         expect(await store.bin.empty(), 1);
         expect(await store.bin.list(), isEmpty);
         expect(await store.pages.findPage(page.id), isNull);
-        expect(await store.assets.collectGarbage(), 1);
+        expect(await store.assets.collectGarbage(grace: Duration.zero), 1);
       },
     );
 
