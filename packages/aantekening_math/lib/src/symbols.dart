@@ -49,50 +49,19 @@ class MathSymbol {
   final SymbolRole role;
 }
 
-/// Greek letters, written the way they are spelled.
-const Map<String, String> greekLetters = <String, String>{
-  'alpha': r'\alpha',
-  'beta': r'\beta',
-  'gamma': r'\gamma',
-  'delta': r'\delta',
-  'epsilon': r'\epsilon',
-  'varepsilon': r'\varepsilon',
-  'zeta': r'\zeta',
-  'eta': r'\eta',
-  'theta': r'\theta',
-  'vartheta': r'\vartheta',
-  'iota': r'\iota',
-  'kappa': r'\kappa',
-  'lambda': r'\lambda',
-  'mu': r'\mu',
-  'nu': r'\nu',
-  'xi': r'\xi',
-  'omicron': 'o',
-  'pi': r'\pi',
-  'varpi': r'\varpi',
-  'rho': r'\rho',
-  'varrho': r'\varrho',
-  'sigma': r'\sigma',
-  'varsigma': r'\varsigma',
-  'tau': r'\tau',
-  'upsilon': r'\upsilon',
-  'phi': r'\phi',
-  'varphi': r'\varphi',
-  'chi': r'\chi',
-  'psi': r'\psi',
-  'omega': r'\omega',
-  'Gamma': r'\Gamma',
-  'Delta': r'\Delta',
-  'Theta': r'\Theta',
-  'Lambda': r'\Lambda',
-  'Xi': r'\Xi',
-  'Pi': r'\Pi',
-  'Sigma': r'\Sigma',
-  'Upsilon': r'\Upsilon',
-  'Phi': r'\Phi',
-  'Psi': r'\Psi',
-  'Omega': r'\Omega',
+/// Greek letters, written the way they are spelled: each the command of its
+/// name, but omicron, which TeX sets as an o.
+final Map<String, String> greekLetters = <String, String>{
+  for (final name in _greekLetters) name: name == 'omicron' ? 'o' : '\\$name',
 };
+
+const List<String> _greekLetters = <String>[
+  'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'varepsilon', 'zeta', //
+  'eta', 'theta', 'vartheta', 'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', //
+  'omicron', 'pi', 'varpi', 'rho', 'varrho', 'sigma', 'varsigma', 'tau', //
+  'upsilon', 'phi', 'varphi', 'chi', 'psi', 'omega', 'Gamma', 'Delta', //
+  'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Upsilon', 'Phi', 'Psi', 'Omega',
+];
 
 /// Named functions, typeset upright.
 const List<String> namedFunctions = <String>[
