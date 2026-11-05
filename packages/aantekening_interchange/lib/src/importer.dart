@@ -63,10 +63,13 @@ final class ImportWork {
 
   /// Keeps [bytes] in a file of their own, returning the key a page names
   /// them by and the draft that says where they are.
+  ///
+  /// The file is not flushed to the disk: it lives only as long as the
+  /// import, and the store makes the copy it keeps lasting.
   (String, AssetDraft) keep(Uint8List bytes, {String? name, String? mime}) {
     final key = 'import-asset-${_next++}';
     final file = File(p.join(directory.path, key));
-    file.writeAsBytesSync(bytes, flush: true);
+    file.writeAsBytesSync(bytes);
     return (
       key,
       AssetDraft(
