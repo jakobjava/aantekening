@@ -70,8 +70,7 @@ void main() {
 
   test('every structure and symbol offered typesets', () {
     void expectTypesets(String latex, String what) => expect(
-      () =>
-          TexParser(RendererLatex.of(latex), const TexParserSettings()).parse(),
+      () => TexParser(latex, const TexParserSettings()).parse(),
       returnsNormally,
       reason: '$what: $latex',
     );

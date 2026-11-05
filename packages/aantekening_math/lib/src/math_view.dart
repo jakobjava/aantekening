@@ -9,7 +9,6 @@ import 'package:flutter_math_fork/tex.dart' show TexParser;
 
 import 'linear_math.dart';
 import 'packages/latex_packages.dart';
-import 'renderer_latex.dart';
 import 'tikz/tikz_picture.dart';
 import 'tikz/tikz_view.dart';
 
@@ -82,10 +81,7 @@ class MathView extends StatelessWidget {
       return (
         SyntaxTree(
           greenRoot: typesetHighlights(
-            TexParser(
-              RendererLatex.of(latex),
-              const TexParserSettings(),
-            ).parse(),
+            TexParser(latex, const TexParserSettings()).parse(),
           ),
         ),
         null,

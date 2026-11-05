@@ -480,10 +480,7 @@ void main() {
               ).text,
             );
             expect(
-              () => TexParser(
-                RendererLatex.of(marked),
-                const TexParserSettings(),
-              ).parse(),
+              () => TexParser(marked, const TexParserSettings()).parse(),
               returnsNormally,
               reason: '"${source.substring(from, to)}" gave $marked',
             );

@@ -31,19 +31,12 @@ GreenNode _operatorNameHandler(TexParser parser, FunctionContext context) {
   var name = parser.parseArgNode(mode: null, optional: false)!;
   final scripts =
       parser.parseScripts(allowLimits: context.funcName == '\\operatorname*');
-  // aantekening: what follows is taken as the operator's argument only where
-  // it can be one: another operator — \liminf after \limsup, say — or
-  // anything else taking arguments of its own stands by itself.
-  parser.consumeSpaces();
-  final next = functions[parser.fetch().text];
-  final body = next != null && next.greediness <= 1
-      ? EquationRowNode.empty()
-      : parser.parseGroup(context.funcName,
-              optional: false,
-              greediness: 1,
-              mode: null,
-              consumeSpaces: true) ??
-          EquationRowNode.empty();
+  // aantekening: the operator is its name alone, as TeX sets it: what
+  // follows, a group, another operator or anything taking arguments of its
+  // own, stands by itself after it. Taken as the operator's argument, a
+  // command after it — \left, \frac, \liminf after \limsup — failed, and
+  // a group after it took the scripts meant for that group.
+  final body = EquationRowNode.empty();
 
   name = StyleNode(
     children: name.expandEquationRow(),

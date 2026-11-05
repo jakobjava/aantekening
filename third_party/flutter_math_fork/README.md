@@ -27,5 +27,31 @@ its `pubspec.yaml`; 0.7.4 is the package's latest release.
   within the height it is asked to fill rather than made to meet it. In a script or a fraction it was drawn at the formula's
   smaller size, shorter than it was chosen to be, and a debug build stopped
   on it (`RenderResetDimension does not meet its constraints`).
+* **A named operator is its name alone**
+  (`lib/src/parser/tex/functions/katex_base/operator_name.dart`):
+  `\operatorname{tr}` is set as TeX sets it, taking nothing after it as
+  its argument. Taking what followed failed where that was a command of its
+  own, `\operatorname{tr} \left( A \right)` say, and gave a group after it
+  the scripts meant for that group.
+* **Commands of amsmath, amssymb and mathtools** (`lib/src/parser/tex/ams_macros.dart`,
+  new, gathered into `builtinMacros` in `lib/src/parser/tex/macros.dart`):
+  `\def` and `\gdef`, `\DeclareMathOperator`, labels, references and
+  `\notag`, which show what they say or nothing, since a formula is one
+  equation, and the operators, accents, fractions and upright Greek letters
+  notes use that KaTeX's set lacks.
+* **Defining commands as a note defines them**
+  (`lib/src/parser/tex/macros.dart`): `\newcommand*` is read as
+  `\newcommand`, a command defined again is defined anew, as a note's
+  preamble defines `\R`, which is defined already, and `\tag` is set after
+  the equation.
+* **Matrices whose columns are aligned**
+  (`lib/src/parser/tex/environments/array.dart`): mathtools' `matrix*`,
+  `pmatrix*` and the other starred matrices, aligned as their optional
+  argument says.
+* **amsmath's display environments**
+  (`lib/src/parser/tex/environments/eqn_array.dart`): `align`, `flalign`,
+  `split` and their starred forms are set as `aligned`, and `gather`,
+  `equation` and `multline` as `gathered`, a formula being one equation,
+  numbered by nothing.
 
 Only `lib`, the licence, the change log and the pubspec are kept.

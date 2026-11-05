@@ -18,7 +18,6 @@ export 'src/math_storage.dart';
 export 'src/math_view.dart';
 export 'src/packages/latex_packages.dart';
 export 'src/parser.dart';
-export 'src/renderer_latex.dart';
 export 'src/symbols.dart';
 export 'src/syntax_guide.dart';
 export 'src/tikz/tikz_picture.dart' show TikzPicture;

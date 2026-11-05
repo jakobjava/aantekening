@@ -6,7 +6,6 @@ import 'package:flutter_math_fork/tex.dart' show TexParser, TexParserSettings;
 
 import 'ast.dart';
 import 'linear_math.dart';
-import 'renderer_latex.dart';
 import 'symbols.dart';
 
 /// Where a highlight lies in a formula's source: the whole of it, from its
@@ -389,10 +388,7 @@ class _Reading {
         return LinearMath.translate(source).diagnostics.length;
       case MathMode.latex:
         try {
-          TexParser(
-            RendererLatex.of(source),
-            const TexParserSettings(),
-          ).parse();
+          TexParser(source, const TexParserSettings()).parse();
           return 0;
         } on Object {
           return 1;

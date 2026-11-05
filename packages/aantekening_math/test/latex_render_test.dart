@@ -1,6 +1,7 @@
 import 'package:aantekening_core/aantekening_core.dart' show MathMode;
 import 'package:aantekening_math/aantekening_math.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_math_fork/ast.dart';
 import 'package:flutter_math_fork/tex.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -63,7 +64,7 @@ void main() {
           // As it is shown: mhchem's formulas written out.
           expect(
             () => TexParser(
-              RendererLatex.of(MathView.prepared(example.latex)),
+              MathView.prepared(example.latex),
               const TexParserSettings(),
             ).parse(),
             returnsNormally,
@@ -96,19 +97,23 @@ void main() {
       r'\operatorname{sgn}{x} + \operatorname{sgn}',
     ]) {
       expect(
-        () => TexParser(
-          RendererLatex.of(latex),
-          const TexParserSettings(),
-        ).parse(),
+        () => TexParser(latex, const TexParserSettings()).parse(),
         returnsNormally,
-        reason: RendererLatex.of(latex),
+        reason: latex,
       );
     }
-    expect(
-      RendererLatex.of(r'\operatorname{tr}^2 \left( A \right)'),
-      r'\operatorname{tr}^2{} \left( A \right)',
-    );
-    expect(RendererLatex.of(r'\sin x'), r'\sin x');
+  });
+
+  test('a named operator is its name alone, as TeX sets it', () {
+    // What follows it, a group with its scripts here, stands by itself.
+    final row = TexParser(
+      r'\operatorname{sgn}{x}^2',
+      const TexParserSettings(),
+    ).parse();
+    final [operator, scripted] = row.children;
+    expect(operator, isA<FunctionNode>());
+    expect((operator as FunctionNode).argument.children, isEmpty);
+    expect(scripted, isA<MultiscriptsNode>());
   });
 
   test('a recovered fragment still parses', () {
