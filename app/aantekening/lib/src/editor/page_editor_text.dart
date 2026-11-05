@@ -22,7 +22,11 @@ extension _TextEditing on _PageEditorState {
 
   /// Lets formatting apply to whole text boxes while they are
   /// selected and none is being edited.
+  ///
+  /// While one is, formatting goes to it and shows its own: the whole
+  /// boxes' is worked out again once typing ends, not at every letter.
   void _syncBoxFormatting() {
+    if (_editingId != null) return;
     final document = _controller.document;
     final selection = _controller.selection;
     if (identical(document, _formattedDocument) &&
@@ -70,6 +74,7 @@ extension _TextEditing on _PageEditorState {
     } else if (!keepSelection && _controller.selection.contains(id)) {
       _controller.clearSelection();
     }
+    _syncBoxFormatting();
     if (refocusCanvas) _canvasFocus.requestFocus();
   }
 

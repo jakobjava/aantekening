@@ -123,6 +123,7 @@ extension _Storage on _PageEditorState {
       // The box was removed from under the caret — by undo, say.
       _editingId = null;
       _placed.remove(editingId);
+      _syncBoxFormatting();
       if (mounted) _update(() {});
     } else if (editingId != null &&
         _placed.contains(editingId) &&

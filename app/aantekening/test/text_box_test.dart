@@ -8,6 +8,7 @@ import 'package:aantekening/src/editor/text/formula_overlay.dart';
 import 'package:aantekening/src/editor/text/formula_window.dart';
 import 'package:aantekening/src/editor/text/shrink_to_width.dart';
 import 'package:aantekening/src/editor/text/table_view.dart';
+import 'package:aantekening/src/editor/text/text_box_controller.dart';
 import 'package:aantekening/src/editor/text/text_box_editor.dart';
 import 'package:aantekening/src/editor/text/text_styles.dart';
 import 'package:aantekening/src/look/glass.dart';
@@ -2343,6 +2344,40 @@ void main() {
       expect(selectedOnCanvas(tester).map((element) => element.id), <String>[
         boxes.first.element.id,
       ]);
+    });
+
+    testWidgets('a box picked by a drag that ends typing shows its own '
+        'formatting', (tester) async {
+      await openEditor(tester, store, pageId);
+      await startTextBox(tester);
+      await press(tester, LogicalKeyboardKey.keyB, control: true);
+      await type(tester, 'bold');
+      await press(tester, LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      final bold = tester.getRect(find.byType(TextBoxEditor));
+      await tester.tapAt(const Offset(700, 550), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      await type(tester, 'plain');
+      await tester.pumpAndSettle();
+
+      final mouse = await tester.startGesture(
+        bold.topLeft - const Offset(20, 20),
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.moveTo(bold.center);
+      await tester.pump();
+      await mouse.moveTo(bold.bottomRight + const Offset(20, 20));
+      await tester.pump();
+      await mouse.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widgetList<TextBoxEditor>(find.byType(TextBoxEditor))
+            .where((box) => box.isEditing),
+        isEmpty,
+      );
+      expect(pageText(tester).state.marks, contains(MarkKind.bold));
     });
 
     testWidgets('dragging across a bare caret picks nothing of it', (
