@@ -65,17 +65,28 @@ class _PodcastPageState extends ConsumerState<PodcastPage> {
   final List<StreamSubscription<Object?>> _listening =
       <StreamSubscription<Object?>>[];
   String? _source;
-  Duration _position = Duration.zero;
+
+  /// Where in the sound it is: followed by the player bar alone, many times
+  /// a second, the page built again only as the line being said moves on.
+  final ValueNotifier<Duration> _position = ValueNotifier<Duration>(
+    Duration.zero,
+  );
+
+  /// The line being said at [_position], as the page was last built for.
+  int? _line;
   bool _playing = false;
   double _rate = 1;
 
-  PodcastEpisode? get _episode => PodcastEpisode.fromJson(widget.item.body);
+  /// Whether the sound is in the file named, as it was last looked for.
+  ({String path, bool here})? _found;
+
+  PodcastEpisode? get _episode => widget.item.episode;
 
   @override
   void didUpdateWidget(PodcastPage old) {
     super.didUpdateWidget(old);
     // Spoken again, it is another sound.
-    if (_episode?.audio != PodcastEpisode.fromJson(old.item.body)?.audio) {
+    if (_episode?.audio != old.item.episode?.audio) {
       unawaited(_release());
     }
   }
@@ -83,7 +94,26 @@ class _PodcastPageState extends ConsumerState<PodcastPage> {
   @override
   void dispose() {
     unawaited(_release(gone: true));
+    _position.dispose();
     super.dispose();
+  }
+
+  /// Moves on to [position]: the page built again where another line is
+  /// said from there.
+  void _moved(Duration position) {
+    _position.value = position;
+    final line = _episode?.lineAt(position);
+    if (line != _line) setState(() => _line = line);
+  }
+
+  /// Whether the sound is in file [path], looked for once for each file.
+  bool _isHere(String path) {
+    if (_found case (path: final found, :final here) when found == path) {
+      return here;
+    }
+    final here = File(path).existsSync();
+    _found = (path: path, here: here);
+    return here;
   }
 
   /// Lets the player go — and, unless the page is [gone], shows it at the
@@ -97,10 +127,8 @@ class _PodcastPageState extends ConsumerState<PodcastPage> {
     _player = null;
     _source = null;
     if (!gone && mounted) {
-      setState(() {
-        _playing = false;
-        _position = Duration.zero;
-      });
+      setState(() => _playing = false);
+      _moved(Duration.zero);
     }
     await player?.dispose();
   }
@@ -110,13 +138,13 @@ class _PodcastPageState extends ConsumerState<PodcastPage> {
       final player = AudioPlayer();
       _listening.addAll(<StreamSubscription<Object?>>[
         player.onPositionChanged.listen((position) {
-          if (mounted) setState(() => _position = position);
+          if (mounted) _moved(position);
         }),
         player.onPlayerStateChanged.listen((state) {
           if (mounted) setState(() => _playing = state == PlayerState.playing);
         }),
         player.onPlayerComplete.listen((_) {
-          if (mounted) setState(() => _position = Duration.zero);
+          if (mounted) _moved(Duration.zero);
         }),
       ]);
       return player;
@@ -155,7 +183,9 @@ class _PodcastPageState extends ConsumerState<PodcastPage> {
       _withPlayer(() async {
         final player = await _ready(path);
         if (!mounted) return;
-        setState(() => _position = to);
+        _moved(to);
+        // Moved to while paused, the line there is marked all the same.
+        setState(() {});
         await player.seek(to);
         if (play && !_playing) await player.resume();
       });
@@ -195,9 +225,9 @@ class _PodcastPageState extends ConsumerState<PodcastPage> {
     final path = folder == null || !episode.spoken
         ? null
         : p.join(folder, episode.audio);
-    final here = path != null && File(path).existsSync();
-    final current = here && (_playing || _position > Duration.zero)
-        ? episode.lineAt(_position)
+    final here = path != null && _isHere(path);
+    final current = here && (_playing || _position.value > Duration.zero)
+        ? _line
         : null;
 
     return Column(
@@ -253,14 +283,17 @@ class _PodcastPageState extends ConsumerState<PodcastPage> {
             (null, true) => Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                _PlayerBar(
-                  playing: _playing,
-                  position: _position,
-                  duration: episode.duration,
-                  rate: _rate,
-                  onToggle: () => unawaited(_toggle(path!)),
-                  onSeek: (to) => unawaited(_seek(path!, to)),
-                  onRate: (rate) => unawaited(_setRate(rate)),
+                ValueListenableBuilder<Duration>(
+                  valueListenable: _position,
+                  builder: (context, position, _) => _PlayerBar(
+                    playing: _playing,
+                    position: position,
+                    duration: episode.duration,
+                    rate: _rate,
+                    onToggle: () => unawaited(_toggle(path!)),
+                    onSeek: (to) => unawaited(_seek(path!, to)),
+                    onRate: (rate) => unawaited(_setRate(rate)),
+                  ),
                 ),
                 if (_trouble case final trouble?)
                   Padding(
@@ -565,6 +598,8 @@ class _TranscriptState extends State<_Transcript> {
     }.toList();
     Color colourOf(String speaker) =>
         speakers.indexOf(speaker).isEven ? tones.emphasis : tones.muted;
+    // The parts something is said in already.
+    final said = <int>{for (final line in lines) line.segment};
 
     final children = <Widget>[];
     for (final (s, segment) in outline.indexed) {
@@ -583,8 +618,7 @@ class _TranscriptState extends State<_Transcript> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (segment.description.isNotEmpty &&
-                  lines.every((l) => l.segment != s))
+              if (segment.description.isNotEmpty && !said.contains(s))
                 Padding(
                   padding: const EdgeInsets.only(top: 3),
                   child: Text(
@@ -761,7 +795,7 @@ class PodcastRows extends ConsumerWidget {
                 : () => unawaited(session.makePodcast(profile)),
           ),
         for (final item in state.episodes)
-          if (PodcastEpisode.fromJson(item.body) case final episode?)
+          if (item.episode case final episode?)
             _EpisodeRow(
               key: ValueKey<String>(item.id),
               title: item.title,
