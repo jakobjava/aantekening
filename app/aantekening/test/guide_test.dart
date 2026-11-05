@@ -8,7 +8,6 @@ import 'package:aantekening/src/modes/editor_mode.dart';
 import 'package:aantekening/src/modes/key_guide.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
-import 'package:aantekening_math/aantekening_math.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
