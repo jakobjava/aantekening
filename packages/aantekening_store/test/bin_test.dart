@@ -156,6 +156,46 @@ void main() {
       await store.bin.empty();
       expect(await store.ai.threadsAbout(NoteLink.page(page.id)), isEmpty);
     });
+
+    test('takes what was kept about a notebook, its sections and their '
+        'pages, and nothing about what stays', () async {
+      final notebook = await store.library.createNotebook(title: 'Physics');
+      final section = await store.library.createSection(
+        notebookId: notebook.id,
+        title: 'Waves',
+      );
+      final page = await store.pages.createPage(sectionId: section.id);
+      final stays = await store.pages.createPage(
+        sectionId: await workspace.seedSection(),
+      );
+      final scopes = <NoteLink>[
+        NoteLink.notebook(notebook.id),
+        NoteLink.section(section.id),
+        NoteLink.page(page.id),
+        NoteLink.page(stays.id),
+      ];
+      for (final scope in scopes) {
+        await store.ai.createThread(scope, title: 'About it');
+        await store.ai.addItem(
+          scope,
+          kind: 'summary',
+          title: 'In short',
+          body: const <String, Object?>{},
+          provider: 'none',
+          model: 'none',
+        );
+      }
+
+      await store.library.deleteNotebook(notebook.id);
+      await store.bin.empty();
+
+      for (final scope in scopes.take(3)) {
+        expect(await store.ai.threadsAbout(scope), isEmpty);
+        expect(await store.ai.itemsAbout(scope), isEmpty);
+      }
+      expect(await store.ai.threadsAbout(scopes.last), hasLength(1));
+      expect(await store.ai.itemsAbout(scopes.last), hasLength(1));
+    });
   });
 
   group('storing drafts', () {

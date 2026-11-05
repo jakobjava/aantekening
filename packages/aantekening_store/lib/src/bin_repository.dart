@@ -1,6 +1,8 @@
 /// The bin: what was deleted, until it is restored or deleted for good.
 library;
 
+import 'package:aantekening_core/aantekening_core.dart';
+
 import 'database.dart';
 import 'library_repository.dart';
 import 'page_repository.dart';
@@ -187,7 +189,7 @@ class BinRepository {
       )) {
         purgeSection(str(row, 'id'));
       }
-      _forgetAiAbout(id);
+      _forgetAiAbout(NoteLinkKind.notebook, id);
       _db.run('DELETE FROM notebooks WHERE id = ?', <Object?>[id]);
     });
   }
@@ -204,7 +206,7 @@ class BinRepository {
         )) {
           purgePage(str(row, 'id'));
         }
-        _forgetAiAbout(section);
+        _forgetAiAbout(NoteLinkKind.section, section);
         _db.run('DELETE FROM sections WHERE id = ?', <Object?>[section]);
       }
     });
@@ -226,16 +228,21 @@ class BinRepository {
       _db.run('DELETE FROM page_search WHERE rowid = ?', <Object?>[
         integer(page.first, 'rid'),
       ]);
-      _forgetAiAbout(id);
+      _forgetAiAbout(NoteLinkKind.page, id);
       // Its body, tags, embeddings and links to pictures cascade.
       _db.run('DELETE FROM pages WHERE id = ?', <Object?>[id]);
     });
   }
 
-  /// The conversations and kept items about [scope], which go with it.
-  void _forgetAiAbout(String scope) {
-    _db.run('DELETE FROM ai_threads WHERE scope_id = ?', <Object?>[scope]);
-    _db.run('DELETE FROM ai_items WHERE scope_id = ?', <Object?>[scope]);
+  /// The conversations and kept items about the [kind] [scope], which go
+  /// with it: found by the index of what they are about.
+  void _forgetAiAbout(NoteLinkKind kind, String scope) {
+    for (final table in const <String>['ai_threads', 'ai_items']) {
+      _db.run(
+        'DELETE FROM $table WHERE scope_kind = ? AND scope_id = ?',
+        <Object?>[kind.name, scope],
+      );
+    }
   }
 
   int _count(String sql, String id) =>
