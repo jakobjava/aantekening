@@ -500,6 +500,67 @@ void main() {
     },
   );
 
+  for (final (length, how) in const <(int, String)>[
+    (2000, 'a long page'),
+    (40000, 'a page long enough to be written away from the window'),
+  ]) {
+    test('$how cut short in the index is not written over its file, nor '
+        'one damaged there', () async {
+      final store = await computer('a');
+      addTearDown(store.close);
+      final (_, pageId) = await seed(store);
+      final words = <String>[for (var i = 0; i < length; i++) 'word$i'];
+      await store.pages.saveDocument(
+        pageId,
+        documentWithText(pageId, words.join(' ')),
+      );
+      await store.mirror!.flush();
+      final path = p.join(notes, 'pages', '$pageId.json.gz');
+      final written = File(path).readAsBytesSync();
+      Uint8List body() =>
+          store.database.select(
+                'SELECT body FROM page_bodies WHERE page_id = ?',
+                <Object?>[pageId],
+              ).first['body']
+              as Uint8List;
+      final whole = body();
+      expect(
+        store.database.select(
+          'SELECT encoding FROM page_bodies WHERE page_id = ?',
+          <Object?>[pageId],
+        ).first['encoding'],
+        BodyEncoding.gzippedJson,
+      );
+
+      for (final damaged in <Uint8List>[
+        Uint8List.sublistView(whole, 0, whole.length ~/ 2),
+        Uint8List.fromList(whole)..[whole.length ~/ 2] ^= 0x10,
+      ]) {
+        store.database.run(
+          'UPDATE page_bodies SET body = ? WHERE page_id = ?',
+          <Object?>[damaged, pageId],
+        );
+        await store.mirror!.flush();
+
+        expect(store.mirror!.status.pending, 1, reason: 'still waiting');
+        expect(store.mirror!.status.problem, contains(pageId));
+        expect(File(path).readAsBytesSync(), written);
+      }
+
+      store.database.run(
+        'UPDATE page_bodies SET body = ? WHERE page_id = ?',
+        <Object?>[whole, pageId],
+      );
+      await store.mirror!.flush();
+      expect(store.mirror!.status.pending, 0);
+      expect(
+        (EntityFile.decode(File(path).readAsBytesSync())! as PageFile).document
+            .extractSearchText(),
+        words.join(' '),
+      );
+    });
+  }
+
   test('what cannot be written waits until it changes, never let go', () async {
     final store = await computer('a');
     addTearDown(store.close);

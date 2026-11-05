@@ -108,13 +108,8 @@ extension _Writing on FolderMirror {
 
   Future<void> _write(EntityKind kind, String id) async {
     final file = _current(kind, id);
-    final bytes = await away(
-      _encode,
-      file,
-      heavy: file is PageFile && (file.documentJson?.length ?? 0) >= heavyBytes,
-    );
+    final (bytes, digest) = await away(_encode, file, heavy: _isHeavy(file));
     final path = folder.pathFor(kind, id);
-    final digest = sha256.convert(bytes).toString();
     final record = _record(path);
     final disk = File(path);
     final stat = disk.statSync();
@@ -148,19 +143,51 @@ extension _Writing on FolderMirror {
     _remember(path, kind, id, File(path).statSync(), digest);
   }
 
-  /// [file]'s bytes, once it is sure what it holds can be read back: a
-  /// page's contents damaged in the index must not be written over a good
-  /// file, and from there to every computer.
-  static Uint8List _encode(EntityFile file) {
+  /// [file]'s bytes and their digest, once it is sure what it holds can
+  /// be read back: a page's contents damaged in the index must not be
+  /// written over a good file, and from there to every computer.
+  ///
+  /// A long page, kept gzipped, is whole if it unpacks — its check of what
+  /// it holds passed — to as much as gzip says it held; a short one is
+  /// read as JSON.
+  static (Uint8List, String) _encode(EntityFile file) {
     if (file is PageFile) {
-      if (file.documentJson case final json?) {
-        if (jsonDecode(utf8.decode(json)) is! Map<String, Object?>) {
-          throw const FormatException('The page is damaged in the index');
-        }
+      final whole = switch ((file.documentGzipped, file.documentJson)) {
+        (final gzipped?, final json?) => _unpackedWhole(gzipped, json),
+        (null, final json?) =>
+          jsonDecode(utf8.decode(json)) is Map<String, Object?>,
+        _ => true,
+      };
+      if (!whole) {
+        throw const FormatException('The page is damaged in the index');
       }
     }
-    return file.encode();
+    final bytes = file.encode();
+    return (bytes, sha256.convert(bytes).toString());
   }
+
+  /// Whether [json] is all [gzipped] held: as long as its last four bytes
+  /// say. Cut short, gzip unpacks what there is and says nothing.
+  static bool _unpackedWhole(List<int> gzipped, List<int> json) {
+    final at = gzipped.length - 4;
+    if (at < 0) return false;
+    final size =
+        gzipped[at] |
+        gzipped[at + 1] << 8 |
+        gzipped[at + 2] << 16 |
+        gzipped[at + 3] << 24;
+    return size == json.length & 0xFFFFFFFF;
+  }
+
+  /// Whether [file] takes long enough to write out that it is written away
+  /// from the window: a page past [heavyBytes] of JSON, or a quarter of
+  /// that gzipped, as reading one is.
+  static bool _isHeavy(EntityFile file) =>
+      file is PageFile &&
+      switch (file.documentGzipped) {
+        final gzipped? => gzipped.length >= heavyBytes ~/ 4,
+        null => (file.documentJson?.length ?? 0) >= heavyBytes,
+      };
 
   /// Keeps [theirs], a page another copy of the notes wrote that is about
   /// to be written over by [ours], as a page of its own if they differ —

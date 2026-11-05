@@ -179,9 +179,13 @@ final class PageFile extends EntityFile {
     PageDocument? document,
     this.assets = const <AssetRef>[],
     this.tags = const <String>[],
-    this.documentJson,
-  }) : assert(document != null || documentJson != null),
-       _document = document;
+    List<int>? documentJson,
+    this.documentGzipped,
+  }) : assert(
+         document != null || documentJson != null || documentGzipped != null,
+       ),
+       _document = document,
+       _documentJson = documentJson;
 
   final PageRef page;
   final List<AssetRef> assets;
@@ -190,7 +194,16 @@ final class PageFile extends EntityFile {
   /// The document already written as JSON, in UTF-8, as the database
   /// keeps it: put in the file as it is, it is neither written again nor
   /// read until [document] is asked for.
-  final List<int>? documentJson;
+  List<int>? get documentJson => _documentJson ??= switch (documentGzipped) {
+    final gzipped? => gzip.decode(gzipped),
+    null => null,
+  };
+  List<int>? _documentJson;
+
+  /// The document's JSON gzipped, as the database keeps a long page: not
+  /// unpacked until [documentJson] is asked for — as the file is written,
+  /// which a long page is away from the window.
+  final List<int>? documentGzipped;
 
   /// The page's contents.
   PageDocument get document =>

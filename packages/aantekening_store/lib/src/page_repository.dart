@@ -482,10 +482,14 @@ class PageRepository {
       ))
         AssetStore.assetOf(row),
     ];
+    // A long page is unpacked only as its file is written, away from the
+    // window.
+    final gzipped = body?.isGzipped ?? false;
     return PageFile(
       page: page,
       document: body == null ? PageDocument.empty(id: pageId) : null,
-      documentJson: body?.json,
+      documentJson: gzipped ? null : body?.stored,
+      documentGzipped: gzipped ? body?.stored : null,
       assets: assets,
       tags: <String>[
         for (final row in _db.select(
@@ -802,9 +806,12 @@ final class _Body {
       PageDocument.decode(utf8.decode(body.json));
 
   /// The body's JSON, as UTF-8.
-  List<int> get json => switch (encoding) {
-    BodyEncoding.gzippedJson => gzip.decode(stored),
-    BodyEncoding.json => stored,
+  List<int> get json => isGzipped ? gzip.decode(stored) : stored;
+
+  /// Whether [stored] is the JSON gzipped, rather than the JSON itself.
+  bool get isGzipped => switch (encoding) {
+    BodyEncoding.gzippedJson => true,
+    BodyEncoding.json => false,
     _ => throw PageFormatException('Unknown body encoding "$encoding"'),
   };
 }
