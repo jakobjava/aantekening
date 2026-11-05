@@ -225,16 +225,29 @@ abstract final class TikzSource {
   /// [source] with each `\foreach` written out: its body once for each value
   /// in its list, the value in place of its variable.
   static String expandLoops(String source) {
-    var text = source;
+    if (!source.contains(r'\foreach')) return source;
+    final out = StringBuffer();
+    _expandInto(out, source);
+    return out.toString();
+  }
+
+  /// Writes [text] to [out] with each of its loops written out, and the
+  /// loops in each copy of a body before the copy: each part of the picture
+  /// is written once, where writing each loop out in the whole picture
+  /// copied all of it for every loop.
+  static void _expandInto(StringBuffer out, String text) {
     var from = 0;
     while (true) {
       final at = text.indexOf(r'\foreach', from);
-      if (at < 0) return text;
+      if (at < 0) {
+        out.write(text.substring(from));
+        return;
+      }
+      out.write(text.substring(from, at));
       final scanner = TikzScanner(text, at + r'\foreach'.length);
       final (:options, :variables, :list, :body) = _loop(scanner);
       final values = _listValues(list);
       final count = _counter(options);
-      final written = StringBuffer();
       for (var i = 0; i < values.length; i++) {
         final parts = values[i].split('/');
         final copy = substitute(body, <String, String>{
@@ -242,18 +255,13 @@ abstract final class TikzSource {
             variables[v]: parts[math.min(v, parts.length - 1)].trim(),
           if (count != null) count.name: TikzExpression.format(count.from + i),
         });
-        written
-          ..write(copy)
-          ..write(' ');
-        if (written.length > _maxExpanded) {
+        _expandInto(out, copy);
+        out.write(' ');
+        if (out.length > _maxExpanded) {
           throw const FormatException('The loops write out too much');
         }
       }
-      text = text.replaceRange(at, scanner.at, written.toString());
-      if (text.length > _maxExpanded) {
-        throw const FormatException('The loops write out too much');
-      }
-      from = at;
+      from = scanner.at;
     }
   }
 
