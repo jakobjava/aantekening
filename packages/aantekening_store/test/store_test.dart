@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
-import 'package:aantekening_store/src/away.dart' show heavyBytes;
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';

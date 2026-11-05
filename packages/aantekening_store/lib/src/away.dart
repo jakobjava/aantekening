@@ -3,10 +3,7 @@ library;
 
 import 'dart:isolate';
 
-/// How many bytes of a page make reading or writing it heavy: a page of
-/// handwriting past this takes long enough to parse, write out or compress
-/// that the window would stop while it did.
-const int heavyBytes = 128 * 1024;
+export 'package:aantekening_core/aantekening_core.dart' show heavyBytes;
 
 /// Runs [work] on [input] on an isolate of its own when [heavy], so that
 /// the isolate asking — the window's, say — carries on meanwhile; here

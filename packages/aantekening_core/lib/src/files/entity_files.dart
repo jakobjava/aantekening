@@ -18,7 +18,10 @@ import '../util/media_types.dart';
 /// read by what brings an export back.
 const String exportManifestName = 'aantekening-export.json';
 
-import '../away.dart' show heavyBytes;
+/// How many bytes of a page make reading or writing it heavy: a page of
+/// handwriting past this takes long enough to parse, write out or compress
+/// that the window would stop while it did.
+const int heavyBytes = 128 * 1024;
 
 /// A kind of thing the notes folder keeps a file for, and the folder it
 /// keeps them in.
