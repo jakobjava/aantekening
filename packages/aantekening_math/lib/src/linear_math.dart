@@ -3,7 +3,6 @@ library;
 
 import 'package:aantekening_core/aantekening_core.dart';
 
-import 'ast.dart';
 import 'latex_reader.dart';
 import 'lexer.dart';
 import 'linear_writer.dart';
@@ -14,16 +13,12 @@ import 'parser.dart';
 class MathTranslation {
   const MathTranslation({
     required this.latex,
-    required this.tree,
     this.diagnostics = const <MathDiagnostic>[],
   });
 
   /// The LaTeX to render. Always present, even when [diagnostics] is not empty,
   /// so a partially typed formula still previews.
   final String latex;
-
-  /// The parsed expression, for callers that want to inspect or transform it.
-  final MathNode tree;
 
   /// Problems found in the input, each pointing at an offset the editor can
   /// underline.
@@ -44,11 +39,7 @@ abstract final class LinearMath {
     final tokens = lexer.tokenize();
     final diagnostics = List<MathDiagnostic>.of(lexer.diagnostics);
     final tree = MathParser(tokens, diagnostics).parse();
-    return MathTranslation(
-      latex: tree.toLatex(),
-      tree: tree,
-      diagnostics: diagnostics,
-    );
+    return MathTranslation(latex: tree.toLatex(), diagnostics: diagnostics);
   }
 
   /// Translates [input] and returns only its LaTeX.
