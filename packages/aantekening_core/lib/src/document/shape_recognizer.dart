@@ -441,14 +441,8 @@ abstract final class ShapeRecognizer {
     return (index: index, distance: distance);
   }
 
-  static double _distanceToSegment(Vec2 point, Vec2 a, Vec2 b) {
-    final along = b - a;
-    final lengthSquared = along.dot(along);
-    final t = lengthSquared == 0
-        ? 0.0
-        : ((point - a).dot(along) / lengthSquared).clamp(0.0, 1.0);
-    return point.distanceTo(a + along * t);
-  }
+  static double _distanceToSegment(Vec2 point, Vec2 a, Vec2 b) =>
+      math.sqrt(segmentDistanceSquared(point.x, point.y, a.x, a.y, b.x, b.y));
 }
 
 /// A stroke's points, and what is measured of them.

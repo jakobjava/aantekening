@@ -5,6 +5,31 @@ import 'dart:math' as math;
 
 import 'package:meta/meta.dart';
 
+import 'json_read.dart';
+
+/// Squared distance from ([px], [py]) to the segment ([ax], [ay])-([bx], [by]).
+double segmentDistanceSquared(
+  double px,
+  double py,
+  double ax,
+  double ay,
+  double bx,
+  double by,
+) {
+  final abX = bx - ax;
+  final abY = by - ay;
+  final lengthSquared = abX * abX + abY * abY;
+
+  // Projection parameter, clamped so the nearest point stays on the segment.
+  final t = lengthSquared == 0
+      ? 0.0
+      : (((px - ax) * abX + (py - ay) * abY) / lengthSquared).clamp(0.0, 1.0);
+
+  final dx = px - (ax + abX * t);
+  final dy = py - (ay + abY * t);
+  return dx * dx + dy * dy;
+}
+
 /// An immutable 2-D point or vector, in page-space logical pixels.
 @immutable
 class Vec2 {
@@ -286,17 +311,12 @@ class Frame {
   };
 
   static Frame fromJson(Map<String, Object?> json) => Frame(
-    x: _num(json['x']),
-    y: _num(json['y']),
-    width: _num(json['width']),
-    height: _num(json['height']),
-    rotation: _num(json['rotation']),
+    x: readDouble(json, 'x'),
+    y: readDouble(json, 'y'),
+    width: readDouble(json, 'width'),
+    height: readDouble(json, 'height'),
+    rotation: readDouble(json, 'rotation'),
   );
-
-  /// [value] as a double: 0 if it is no number, or infinite, as a number
-  /// too large for a double is read.
-  static double _num(Object? value) =>
-      value is num && value.isFinite ? value.toDouble() : 0;
 
   @override
   bool operator ==(Object other) =>

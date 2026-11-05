@@ -203,7 +203,7 @@ class InkStroke {
     }
 
     for (var i = 0; i < count - 1; i++) {
-      final distanceSquared = _distanceSquaredToSegment(
+      final distanceSquared = segmentDistanceSquared(
         x,
         y,
         xAt(i),
@@ -214,29 +214,6 @@ class InkStroke {
       if (distanceSquared <= thresholdSquared) return true;
     }
     return false;
-  }
-
-  /// Squared distance from ([px], [py]) to the segment ([ax], [ay])-([bx], [by]).
-  static double _distanceSquaredToSegment(
-    double px,
-    double py,
-    double ax,
-    double ay,
-    double bx,
-    double by,
-  ) {
-    final abX = bx - ax;
-    final abY = by - ay;
-    final lengthSquared = abX * abX + abY * abY;
-
-    // Projection parameter, clamped so the nearest point stays on the segment.
-    final t = lengthSquared == 0
-        ? 0.0
-        : (((px - ax) * abX + (py - ay) * abY) / lengthSquared).clamp(0.0, 1.0);
-
-    final dx = px - (ax + abX * t);
-    final dy = py - (ay + abY * t);
-    return dx * dx + dy * dy;
   }
 
   /// Serialises the stroke, rounding coordinates to two decimals.
