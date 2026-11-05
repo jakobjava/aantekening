@@ -33,16 +33,6 @@ class MathParser {
   static const Set<String> _additive = additiveOperators;
   static const Set<String> _multiplicative = multiplicativeOperators;
 
-  /// Operators that may appear as a prefix.
-  static const Set<String> _prefixes = <String>{
-    '+',
-    '-',
-    r'\pm',
-    r'\mp',
-    r'\neg',
-    r'\nabla',
-  };
-
   Token get _current => _tokens[_index];
 
   /// The token at hand, taken; the end of the stream is never taken past.
@@ -202,7 +192,7 @@ class MathParser {
           operator: operator.latex,
           tight: !operator.spaced && !_current.spaced,
         ));
-      } else if (_startsPrimary(_current)) {
+      } else if (_startsPrimary()) {
         // Juxtaposition is multiplication: `2x`, `sin x`, `a(b+c)`.
         joins.add((operator: '', tight: !_current.spaced));
       } else {
@@ -309,10 +299,12 @@ class MathParser {
     _ => null,
   };
 
+  /// The operators that may come before what they apply to: signs. Words
+  /// such as `neg` and `nabla` are symbols, read as operands.
   static const Set<String> _signs = <String>{'+', '-', r'\pm', r'\mp'};
 
   MathNode _parseUnary() {
-    if (_check(TokenType.operator) && _prefixes.contains(_current.latex)) {
+    if (_check(TokenType.operator) && _signs.contains(_current.latex)) {
       final operator = _advance();
       return UnaryNode(operator.latex, _parseUnary());
     }
@@ -405,11 +397,11 @@ class MathParser {
       diagnostics.add(MathDiagnostic(_current.offset, 'Missing script'));
       return const EmptyNode();
     }
-    if (_check(TokenType.operator) && _prefixes.contains(_current.latex)) {
+    if (_check(TokenType.operator) && _signs.contains(_current.latex)) {
       final operator = _advance();
       // A sign with nothing straight after it is the script itself: the
       // charge of `H_3 O^+`, `e^-`.
-      return _startsPrimary(_current) && !_current.spaced
+      return _startsPrimary() && !_current.spaced
           ? UnaryNode(
               operator.latex,
               _parseScriptOperand(
@@ -430,9 +422,7 @@ class MathParser {
     }
 
     final parts = <MathNode>[atom()];
-    while (!_current.spaced &&
-        _startsPrimary(_current) &&
-        !_opensBracket(_current)) {
+    while (!_current.spaced && _startsPrimary() && !_opensBracket(_current)) {
       parts.add(atom());
     }
     if (raised && _atCharge(parts)) {
@@ -927,9 +917,11 @@ class MathParser {
     return false;
   }
 
-  /// Whether [token] could begin a new operand, which is what makes implicit
-  /// multiplication work.
-  bool _startsPrimary(Token token) {
+  /// Whether the token at hand could begin a new operand, which is what
+  /// makes implicit multiplication work. Only the token at hand: whether an
+  /// operator word or a bar is one depends on what is open around it.
+  bool _startsPrimary() {
+    final token = _current;
     if (_atIntervalEnd(token)) return false;
     switch (token.type) {
       case TokenType.number:
@@ -945,7 +937,7 @@ class MathParser {
       case TokenType.bar:
         // Inside `|...|` the next bar closes the fence rather than opening
         // one, and a bar with none to close it divides rather than opens.
-        return _openBars == 0 && !(identical(token, _current) && _atLoneBar);
+        return _openBars == 0 && !_atLoneBar;
       case TokenType.symbol:
         // Operator words are not operands, so `a cup b` stays an operation.
         return !_isOperatorIn(_relations) &&

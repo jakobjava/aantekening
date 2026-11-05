@@ -316,7 +316,6 @@ abstract final class LinearWriter {
   static bool _reaches(MathNode node) => switch (node) {
     ScriptNode(:final subscript, :final superscript) =>
       subscript != null || superscript != null && !_isPrimes(superscript),
-    PostfixNode() => false,
     _ => false,
   };
 
