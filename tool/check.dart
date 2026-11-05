@@ -161,9 +161,18 @@ Future<(int, int)?> _coverageOf(String path, {required bool flutter}) async {
       workingDirectory: path,
       runInShell: Platform.isWindows,
     );
-    if (made.exitCode != 0) return null;
+    if (made.exitCode != 0) {
+      stderr.writeln(
+        'No coverage of $path: coverage:format_coverage failed.\n'
+        '${made.stdout}${made.stderr}',
+      );
+      return null;
+    }
   }
-  if (!lcov.existsSync()) return null;
+  if (!lcov.existsSync()) {
+    stderr.writeln('No coverage of $path: the tests left no ${lcov.path}.');
+    return null;
+  }
   var hit = 0;
   var total = 0;
   var inLib = false;
