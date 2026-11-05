@@ -769,16 +769,13 @@ class CanvasController extends ChangeNotifier {
           : element.frame.containsPoint(page.dx, page.dy, slop: hitSlop);
       if (hit) hits.add(element);
     }
-    // Topmost first; of two at one height, the later.
-    final order = <NoteElement, int>{
-      for (final (i, element) in hits.indexed) element: i,
-    };
-    hits.sort(
-      (a, b) =>
-          a.z != b.z ? b.z.compareTo(a.z) : order[b]!.compareTo(order[a]!),
-    );
+    // Topmost first; of two at one height — which an element added never
+    // is, but one read from elsewhere can be — the one the index found
+    // later, as it is kept in order by a stable sort.
+    final ranked = hits.reversed.toList();
+    mergeSort(ranked, compare: (a, b) => b.z.compareTo(a.z));
     NoteElement? paper;
-    for (final element in hits) {
+    for (final element in ranked) {
       final shows = element is InkElement
           ? null
           : showsAt?.call(element.id, page);
