@@ -11,6 +11,7 @@ import '../ai/ai_state.dart';
 import '../ai/money.dart';
 import '../ai/study_profile_editor.dart';
 import '../look/controls.dart';
+import '../look/glass.dart' show Corners;
 import '../look/tones.dart';
 import 'provider_block.dart';
 import 'settings_view.dart';
@@ -220,6 +221,7 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         border: Border.all(color: widget.active ? tones.emphasis : tones.line),
+        borderRadius: Corners.controlRadius,
       ),
       padding: const EdgeInsets.fromLTRB(14, 10, 10, 12),
       child: Column(
