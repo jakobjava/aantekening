@@ -15,6 +15,7 @@ import 'package:aantekening/src/look/glass.dart';
 import 'package:aantekening/src/modes/key_guide.dart';
 import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening/src/providers.dart';
+import 'package:aantekening/src/search/search_session.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_math/aantekening_math.dart';
@@ -3308,6 +3309,60 @@ void main() {
       ),
     );
     expect(title.center.dx, moreOrLessEquals(box.center.dx, epsilon: 1));
+  });
+
+  testWidgets('the first box down the page holding a search\'s words is '
+      'the one brought into view, as the boxes change', (tester) async {
+    TextElement box(String id, double y, String text) => TextElement(
+      id: id,
+      frame: Frame(x: 40, y: y, width: 300, height: 40),
+      createdAt: 0,
+      updatedAt: 0,
+      blocks: <TextBlock>[TextBlock.plain(text)],
+    );
+    await tester.runAsync(
+      () => store.pages.saveDocument(
+        pageId,
+        PageDocument(
+          id: pageId,
+          elements: <NoteElement>[
+            box('top', 100, 'nothing here'),
+            box('lower', 500, 'a needle'),
+            box('higher', 300, 'the needle'),
+          ],
+        ),
+      ),
+    );
+    await openEditor(
+      tester,
+      store,
+      pageId,
+      overrides: [
+        searchHighlightProvider.overrideWithValue(SearchTerms.parse('needle')),
+      ],
+    );
+    final canvas = tester
+        .widget<InfiniteCanvas>(find.byType(InfiniteCanvas))
+        .controller;
+    String? brought() => tester
+        .widgetList<TextBoxEditor>(find.byType(TextBoxEditor))
+        .where((box) => box.onMatchPlaced != null)
+        .singleOrNull
+        ?.element
+        .id;
+    Future<void> write(String id, String text) async {
+      final box = canvas.elementById(id)! as TextElement;
+      canvas.replaceElement(
+        box.copyWith(blocks: <TextBlock>[TextBlock.plain(text)]),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    expect(brought(), 'higher');
+    await write('top', 'a needle on top');
+    expect(brought(), 'top');
+    await write('top', 'nothing again');
+    expect(brought(), 'higher');
   });
 
   test('lines set closer than the type is tall are set as the typeface '

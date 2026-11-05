@@ -145,6 +145,12 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
   String? _firstMatch;
 
+  /// Whether each text box holds a word [_matchedTerms] finds, as it was
+  /// when it was looked through: a box is looked through again only once
+  /// it has changed.
+  Map<String, (TextElement, bool)> _boxMatches =
+      const <String, (TextElement, bool)>{};
+
   /// What each element's widget was last built from, and the widget.
   ///
   /// The canvas asks for every visible element's widget whenever the view

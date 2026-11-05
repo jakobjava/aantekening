@@ -5,6 +5,10 @@ part of 'page_editor.dart';
 extension _Elements on _PageEditorState {
   /// The text box holding the first word [highlight] finds, reading down the
   /// page: the one brought into view.
+  ///
+  /// It is asked after every change to the page, while a letter is typed
+  /// with the search's words marked, say: only the boxes changed since are
+  /// looked through again.
   String? _firstMatchIn(SearchTerms? highlight) {
     if (highlight == null) return null;
     final document = _controller.document;
@@ -12,21 +16,32 @@ extension _Elements on _PageEditorState {
         identical(highlight, _matchedTerms)) {
       return _firstMatch;
     }
+    final known = identical(highlight, _matchedTerms)
+        ? _boxMatches
+        : const <String, (TextElement, bool)>{};
     _matchedDocument = document;
     _matchedTerms = highlight;
-    final boxes = document.elements.whereType<TextElement>().toList()
-      ..sort((a, b) {
-        final byTop = a.bounds.top.compareTo(b.bounds.top);
-        return byTop != 0 ? byTop : a.bounds.left.compareTo(b.bounds.left);
-      });
-    return _firstMatch = boxes
-        .where(
-          (box) => box.blocks.any(
-            (block) => TextBoxEditor.matchesIn(block, highlight).isNotEmpty,
-          ),
-        )
-        .firstOrNull
-        ?.id;
+    final matches = <String, (TextElement, bool)>{};
+    TextElement? first;
+    for (final box in document.elements.whereType<TextElement>()) {
+      final before = known[box.id];
+      final found = before != null && identical(before.$1, box)
+          ? before.$2
+          : box.blocks.any(
+              (block) => TextBoxEditor.matchesIn(block, highlight).isNotEmpty,
+            );
+      matches[box.id] = (box, found);
+      if (found && (first == null || _readsBefore(box, first))) first = box;
+    }
+    _boxMatches = matches;
+    return _firstMatch = first?.id;
+  }
+
+  /// Whether [a] comes before [b] reading down the page: higher on it, or
+  /// as high and further left.
+  static bool _readsBefore(TextElement a, TextElement b) {
+    final byTop = a.bounds.top.compareTo(b.bounds.top);
+    return byTop != 0 ? byTop < 0 : a.bounds.left < b.bounds.left;
   }
 
   /// Scrolls to [local], where a match lies in [element], in its own units.
