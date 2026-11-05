@@ -33,12 +33,15 @@ final class Rescue {
   /// hold all of that.
   Future<File> keep(PageDocument document, {PageRef? page}) async {
     final file = fileFor(document.id);
-    final json = jsonEncode(<String, Object?>{
+    // The contents go in as they are written out, not read back first.
+    final head = jsonEncode(<String, Object?>{
       'kind': 'aantekening rescued page',
       'rescuedAt': DateTime.now().millisecondsSinceEpoch,
       'page': ?page?.toJson(),
-      'document': jsonDecode(document.encode()),
     });
+    final json =
+        '${head.substring(0, head.length - 1)},'
+        '"document":${document.encode()}}';
     await NotesFolder.writeAtomically(
       file.path,
       pageCompression.encode(utf8.encode(json)),
