@@ -97,12 +97,11 @@ class PdfPageWords {
   late final List<PdfLine> _lines = _linesOf(text, _across);
 
   /// The lines the characters make, in the order the PDF holds them.
+  @visibleForTesting
   late final List<PdfLine> lines = <PdfLine>[
     for (final line in _lines)
       (start: line.start, end: line.end, box: _reading.back(line.box)),
   ];
-
-  bool get isEmpty => lines.isEmpty;
 
   /// The line [at] lies on, a little room left round it, if any.
   PdfLine? lineAt(Offset at) {

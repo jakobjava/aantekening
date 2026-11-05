@@ -546,6 +546,7 @@ class PdfRasters {
       LinkedHashSet<(PageRasters, PdfRaster)>();
 
   /// How many pixels all the pictures held come to.
+  @visibleForTesting
   int get pixels => _pixels;
   int _pixels = 0;
 
