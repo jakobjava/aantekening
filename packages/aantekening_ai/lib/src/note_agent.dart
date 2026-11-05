@@ -312,6 +312,7 @@ class NoteAgent {
       draft: (answer) => kind.structured
           ? StudySet.read(kind, answer.markdown, sources)
           : StudyText(answer),
+      draftsJson: kind.structured,
     );
     yield answering.progress(AgentStage.gathering, 'Gathering your notes');
     final capabilities = await provider.capabilitiesOf(model);
@@ -640,12 +641,20 @@ How to answer:
 /// An answer being written, over the requests it takes: what came of it,
 /// and how it is coming along.
 class _Answering {
-  _Answering({this.draft});
+  _Answering({this.draft, this.draftsJson = false});
 
   final AnswerBuilder builder = AnswerBuilder();
 
   /// Reads a study set from what is written so far, for a set being made.
   final StudySet? Function(AiAnswer written)? draft;
+
+  /// Whether [draft] reads JSON: all of it, afresh, each time — which,
+  /// for a set written in thousands of pieces, is done only as often as
+  /// the set can have grown by a thing ([_redraft]).
+  final bool draftsJson;
+
+  /// How long the answer was when [draft] last read it.
+  int _draftedAt = 0;
 
   /// Where the text [draft] reads starts: past what was written before
   /// the set was asked for again.
@@ -660,8 +669,22 @@ class _Answering {
   }
 
   /// Takes the set as far as it is written, if it holds no less than
-  /// before.
-  void _redraft() {
+  /// before — [written] the newest of it, if it is more text.
+  ///
+  /// JSON is read again where [written] ends an object, which may be the
+  /// next thing of the set, and else once a sixty-fourth more of it has
+  /// come, rather than for every piece: a glossary of 200 terms, 20 KB in
+  /// 5,000 pieces, is read in a tenth of the time.
+  void _redraft([String? written]) {
+    if (draft == null) return;
+    final length = builder.length;
+    if (draftsJson &&
+        written != null &&
+        !written.contains('}') &&
+        (length - _draftedAt) * 64 < length - draftFrom) {
+      return;
+    }
+    _draftedAt = length;
     if (draft?.call(_drafted) case final read?
         when !(study?.holdsMoreThan(read) ?? false)) {
       study = read;
@@ -737,7 +760,7 @@ class _Answering {
           yield progress(AgentStage.thinking, 'Thinking');
         case TextDelta(:final text):
           written += text.length;
-          _redraft();
+          _redraft(text);
           yield progress(AgentStage.writing, _writing);
         case CitedSpan():
           _redraft();

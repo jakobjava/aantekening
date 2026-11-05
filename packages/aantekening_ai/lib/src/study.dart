@@ -406,7 +406,9 @@ sealed class StudySet {
 
   /// LaTeX without the dollars or brackets a model may have put round it.
   static String _bareLatex(String latex) =>
-      latex.replaceAll(RegExp(r'^(\$+|\\[(\[])|(\$+|\\[)\]])$'), '').trim();
+      latex.replaceAll(_latexBounds, '').trim();
+
+  static final RegExp _latexBounds = RegExp(r'^(\$+|\\[(\[])|(\$+|\\[)\]])$');
 }
 
 /// A summary: the gist, the ideas under headings, the formulas, and what
@@ -551,10 +553,8 @@ final class FlashcardSet extends StudySet {
     ]);
   }
 
-  static String _key(String front) => front.toLowerCase().replaceAll(
-    RegExp(r'[^\p{L}\p{N}]+', unicode: true),
-    '',
-  );
+  static String _key(String front) =>
+      front.toLowerCase().replaceAll(_neitherLetterNorDigit, '');
 
   @override
   StudyKind get kind => StudyKind.flashcards;
@@ -699,7 +699,7 @@ List<Citation> _cited(Object? refs, List<Source> sources) {
     null => '',
   };
   final citations = <Citation>[];
-  for (final match in RegExp(r'\d{1,4}(?:\.\d{1,4})?').allMatches(text)) {
+  for (final match in _passageNumber.allMatches(text)) {
     final citation = CitationMarkers.resolve(match[0]!, sources);
     if (citation != null && !citations.contains(citation)) {
       citations.add(citation);
@@ -707,6 +707,12 @@ List<Citation> _cited(Object? refs, List<Source> sources) {
   }
   return citations;
 }
+
+/// A passage's number, as a set names its sources by: `1.2`.
+final RegExp _passageNumber = RegExp(r'\d{1,4}(?:\.\d{1,4})?');
+
+/// What is neither a letter nor a digit, in any script.
+final RegExp _neitherLetterNorDigit = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
 
 /// An object of a study set as it is kept, or as a model wrote it: each
 /// field found by any of the names a model may give it — the back of a
@@ -731,7 +737,7 @@ extension type const _Fields._(Map<String, Object?> _map) {
   };
 
   static String _name(String key) =>
-      key.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
+      key.toLowerCase().replaceAll(_neitherLetterNorDigit, '');
 
   /// The value of the first of [names] it has.
   Object? call(List<String> names) {
@@ -869,12 +875,11 @@ _Choice? _choiceOf(_Fields entry) {
     return null;
   }
   // Letters before the options, "A) …", only where every one has its own.
-  final lettered = RegExp(r'^\(?([A-Ha-h])[).:]\s+');
   if (options.indexed.every(
-    (o) => lettered.firstMatch(o.$2)?[1]?.toUpperCase() == _letter(o.$1),
+    (o) => _lettered.firstMatch(o.$2)?[1]?.toUpperCase() == _letter(o.$1),
   )) {
     options = <String>[
-      for (final option in options) option.replaceFirst(lettered, ''),
+      for (final option in options) option.replaceFirst(_lettered, ''),
     ];
   }
   final answer = marked ?? _answerAmong(entry(_Names.answer), options);
@@ -883,7 +888,15 @@ _Choice? _choiceOf(_Fields entry) {
       : (question: question, options: options, answer: answer);
 }
 
+/// The letter before an option: "A) ", "(b) ", "C. ".
+final RegExp _lettered = RegExp(r'^\(?([A-Ha-h])[).:]\s+');
+
 String _letter(int index) => String.fromCharCode(0x41 + index);
+
+/// An option named by its letter: "B", "b)", "Option B: …".
+final RegExp _answerLetter = RegExp(
+  r'^(?:[Oo]ption\s*)?\(?([A-Ha-h])(?:[).:](?:\s|$)|$)',
+);
 
 /// Which of [options] [answer] names, counted from zero: by its index —
 /// from one, if it names one past the last — its letter, or its words.
@@ -907,9 +920,7 @@ int? _answerAmong(Object? answer, List<String> options) {
       final said = text.trim();
       if (int.tryParse(said) case final n?) return index(n);
       // "B", "b)", "Option B: …" — not the "a" of "a force".
-      final letter = RegExp(
-        r'^(?:[Oo]ption\s*)?\(?([A-Ha-h])(?:[).:](?:\s|$)|$)',
-      ).firstMatch(said);
+      final letter = _answerLetter.firstMatch(said);
       if (letter != null) {
         final n = letter[1]!.toUpperCase().codeUnitAt(0) - 0x41;
         if (n < options.length) return n;

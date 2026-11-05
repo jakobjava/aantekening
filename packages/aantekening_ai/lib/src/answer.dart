@@ -264,6 +264,9 @@ class AnswerBuilder {
   /// Adds [text] of the app's own, such as why an answer stopped short.
   void note(String text) => _markdown.write(text);
 
+  /// How long the answer's Markdown is so far.
+  int get length => _markdown.length;
+
   int _number(Citation citation) {
     final at = _citations.indexOf(citation);
     if (at >= 0) return at + 1;

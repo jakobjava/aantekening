@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:test/test.dart';
 
@@ -301,6 +303,31 @@ Viel Erfolg beim Lernen! {Ende}''';
       expect(asked.tools, isEmpty);
       expect(asked.messages.single.text, contains('[1.1] Speed is distance'));
       expect(asked.answerSchema, StudyKind.terms.schema);
+    });
+
+    test('written a letter at a time, are shown a thing at a time', () async {
+      final terms = <Object?>[
+        for (var i = 0; i < 40; i++)
+          <String, Object?>{'term': 'Term $i', 'meaning': 'What $i means'},
+      ];
+      final text = jsonEncode(<String, Object?>{'terms': terms});
+      final provider = ScriptedProvider(<List<ChatEvent>>[
+        <ChatEvent>[
+          for (final letter in text.split('')) TextDelta(letter),
+          const MessageDone(
+            ChatMessage(ChatRole.assistant, <ChatPart>[]),
+            stop: StopReason.done,
+          ),
+        ],
+      ]);
+      final progress = await NoteAgent(
+        provider: provider,
+        model: 'm',
+        reader: notes,
+      ).make(StudyProfile.original(StudyKind.terms), scope: section).toList();
+      expect(progress.map((p) => p.study?.size).whereType<int>().toSet(), <int>{
+        for (var n = 1; n <= 40; n++) n,
+      });
     });
 
     test('says what they cost as they come, and once made', () async {
