@@ -428,6 +428,14 @@ void main() {
         );
       });
 
+      test('keeping the backslash of a command it starts with', () {
+        expect(fitted(r'x \in \R', r'\R', syntax: MathMode.latex), r'\R');
+        expect(
+          fitted(r'a + b \sqrt{x}', r'\sqrt{x}', syntax: MathMode.latex),
+          r'\sqrt{x}',
+        );
+      });
+
       test('reading LaTeX as it is typeset', () {
         // A reaction, and a command of the person's preamble, read as the
         // formula they are in reads: as they are written out.

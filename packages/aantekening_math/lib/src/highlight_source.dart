@@ -154,13 +154,16 @@ abstract final class HighlightSource {
 
   /// [start]..[end] without the operators joining it to what is beside it:
   /// any at its end, and one at its start that follows something, where it
-  /// is not a sign.
+  /// is not a sign. A backslash it starts with begins a command, and is
+  /// kept: `\R` let go of it would be an R.
   static (int, int) _unjoined(String source, int start, int end) {
     var (s, e) = (start, end);
     while (s < e) {
       if (_joiners.contains(source[e - 1])) {
         (s, e) = _trim(source, s, e - 1);
-      } else if (_joiners.contains(source[s]) && _follows(source, s)) {
+      } else if (_joiners.contains(source[s]) &&
+          !_beginsCommand(source, s) &&
+          _follows(source, s)) {
         (s, e) = _trim(source, s + 1, e);
       } else {
         break;
@@ -168,6 +171,12 @@ abstract final class HighlightSource {
     }
     return (s, e);
   }
+
+  /// Whether a command's name, a letter, follows the backslash at [index].
+  static bool _beginsCommand(String source, int index) =>
+      source[index] == r'\' &&
+      index + 1 < source.length &&
+      _isLetter(source[index + 1]);
 
   /// Whether a term comes before [index], making an operator there one that
   /// joins rather than a sign.
