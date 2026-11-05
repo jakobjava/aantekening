@@ -25,6 +25,7 @@ import '../modes/key_guide.dart';
 import '../modes/mode_keys.dart';
 import '../settings/settings_view.dart';
 import '../shell/tabs.dart';
+import 'ai_common.dart';
 import 'ai_session.dart';
 import 'ai_state.dart';
 import 'answer_progress.dart';

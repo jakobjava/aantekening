@@ -15,8 +15,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
+import '../ai/ai_common.dart' show playbackTrouble;
 import '../ai/ai_state.dart';
-import '../ai/podcast_view.dart' show playbackTrouble;
 import '../ai/study_profile_editor.dart' show settleAiSettings;
 import '../look/controls.dart';
 import '../look/glass.dart';

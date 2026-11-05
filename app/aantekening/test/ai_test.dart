@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:aantekening/src/ai/ai_common.dart';
 import 'package:aantekening/src/ai/ai_session.dart';
 import 'package:aantekening/src/ai/ai_state.dart';
 import 'package:aantekening/src/ai/ai_view.dart';
@@ -49,9 +50,9 @@ class FakeProvider implements ChatProvider {
   /// While set, flashcards are written once it is completed.
   Completer<void>? cardsGate;
 
-  /// While set, the answer is written a word at a time, as each is added,
-  /// until it is closed.
-  StreamController<String>? words;
+  /// While set, the answer is written a word at a time, as each comes,
+  /// until they end.
+  Stream<String>? words;
 
   /// Whether it was closed: what is still being answered then breaks off,
   /// as a closed HTTP client breaks it off.
@@ -127,7 +128,7 @@ class FakeProvider implements ChatProvider {
       if (closed) throw StateError('Client is already closed.');
     }
     if (words case final words?) {
-      await for (final word in words.stream) {
+      await for (final word in words) {
         yield TextDelta(word);
       }
     } else if (question.contains('<part>')) {
@@ -556,7 +557,8 @@ void main() {
       }
     };
     addTearDown(() => debugOnRebuildDirtyWidget = null);
-    final words = model.words = StreamController<String>();
+    final words = StreamController<String>();
+    model.words = words.stream;
     await tester.enterText(
       find.descendant(
         of: find.byType(AiView),

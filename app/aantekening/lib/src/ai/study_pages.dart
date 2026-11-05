@@ -14,10 +14,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../command_menu.dart';
 import '../look/controls.dart';
 import '../look/glass.dart';
-import '../look/motion.dart';
 import '../look/tones.dart';
 import '../modes/key_guide.dart' show KeyCap;
 import '../settings/podcast_settings.dart';
+import 'ai_common.dart';
 import 'ai_session.dart';
 import 'ai_state.dart';
 import 'answer_progress.dart';
@@ -43,20 +43,6 @@ String sizeOf(StudySet set) => switch (set) {
     '${terms.length} ${terms.length == 1 ? 'term' : 'terms'}',
   StudyText(:final size) => '$size ${size == 1 ? 'word' : 'words'}',
 };
-
-/// When [millis] was, as a person says it: "today", "3 days ago".
-String whenOf(int millis) {
-  final then = DateTime.fromMillisecondsSinceEpoch(millis);
-  final days = DateTime.now().difference(then).inDays;
-  return switch (days) {
-    0 => 'today',
-    1 => 'yesterday',
-    < 30 => '$days days ago',
-    _ =>
-      '${then.year}-${then.month.toString().padLeft(2, '0')}-'
-          '${then.day.toString().padLeft(2, '0')}',
-  };
-}
 
 /// Kept set [item], [set], made by [profile], on a page of its own: its
 /// head, and the set as its kind is used.
@@ -166,32 +152,6 @@ class StudySetPage extends ConsumerWidget {
     );
   }
 }
-
-/// Asks whether to go on with what [title] asks, [body] saying what
-/// follows.
-Future<bool> confirmStep(
-  BuildContext context,
-  String title,
-  String body,
-) async =>
-    await showAppDialog<bool>(
-      context: context,
-      builder: (context) => GlassDialog(
-        title: Text(title),
-        content: Text(body),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Go on'),
-          ),
-        ],
-      ),
-    ) ??
-    false;
 
 /// A profile whose set is not made yet: what it makes, and a button to
 /// make it — so looking at it never sets a model to work by itself.
@@ -640,10 +600,6 @@ class _Line extends StatelessWidget {
   );
 }
 
-/// What a conversation is called in the lists: its title, or what it is.
-String threadTitle(AiThread thread) =>
-    thread.title.isEmpty ? 'Conversation' : thread.title;
-
 /// Asks [action]'s question about [scope], as the web is set to be
 /// searched.
 void askReady(WidgetRef ref, NoteLink scope, AiAction action) {
@@ -656,55 +612,5 @@ void askReady(WidgetRef ref, NoteLink scope, AiAction action) {
           searchWeb: searchesWeb(ref, scope),
           action: action,
         ),
-  );
-}
-
-/// Asks for a new name for something kept, [current] to start from.
-Future<String?> askName(BuildContext context, String current) =>
-    showAppDialog<String>(
-      context: context,
-      builder: (context) => _NameDialog(current: current),
-    );
-
-/// The dialog behind [askName]: its field let go of with it, once it has
-/// gone, not as soon as it is answered.
-class _NameDialog extends StatefulWidget {
-  const _NameDialog({required this.current});
-
-  final String current;
-
-  @override
-  State<_NameDialog> createState() => _NameDialogState();
-}
-
-class _NameDialogState extends State<_NameDialog> {
-  late final TextEditingController _name = TextEditingController(
-    text: widget.current,
-  );
-
-  @override
-  void dispose() {
-    _name.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => GlassDialog(
-    title: const Text('Rename'),
-    content: TextField(
-      controller: _name,
-      autofocus: true,
-      onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
-    ),
-    actions: <Widget>[
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: () => Navigator.of(context).pop(_name.text.trim()),
-        child: const Text('Rename'),
-      ),
-    ],
   );
 }

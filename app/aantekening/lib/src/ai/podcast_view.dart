@@ -19,10 +19,10 @@ import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
+import 'ai_common.dart';
 import 'ai_session.dart';
 import 'ai_state.dart';
 import 'money.dart';
-import 'study_pages.dart';
 import 'study_style.dart';
 
 /// How long [duration] runs, as a player shows it: "4:07", "1:02:30".
@@ -34,15 +34,6 @@ String clockOf(Duration duration) {
   final s = seconds % 60;
   return h > 0 ? '$h:${two(m)}:${two(s)}' : '$m:${two(s)}';
 }
-
-/// Why sound could not be played, from [error], and what to do about it:
-/// on Linux, a WAV is read by GStreamer's good plugins, which not every
-/// system has.
-String playbackTrouble(Object error) =>
-    'The sound could not be played'
-    '${Platform.isLinux ? ' — on Linux it needs GStreamer’s good plugins: '
-              'install gst-plugins-good (Arch) or '
-              'gstreamer1.0-plugins-good (Debian, Ubuntu)' : ''}. ($error)';
 
 /// The speaking speeds to choose from.
 const List<double> _rates = <double>[1, 1.25, 1.5, 2];
