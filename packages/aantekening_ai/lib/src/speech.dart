@@ -458,6 +458,8 @@ abstract interface class SpeechProvider {
   /// The most characters it takes at once; longer text is spoken in parts.
   int get maxCharacters;
 
+  /// Stops what it is asking, and closes its client if it made it: a
+  /// client it was given is for the giver to close.
   void close();
 }
 
@@ -529,13 +531,15 @@ class OpenAiSpeech implements SpeechProvider {
     this.apiKey,
     this.knownVoices = const <String>[],
     http.Client? client,
-  }) : _client = client ?? http.Client();
+  }) : _client = client ?? http.Client(),
+       _ownsClient = client == null;
 
   final String baseUrl;
   final String model;
   final String? apiKey;
   final List<String> knownVoices;
   final http.Client _client;
+  final bool _ownsClient;
 
   Map<String, String> get _headers => <String, String>{
     'Content-Type': 'application/json',
@@ -616,7 +620,9 @@ class OpenAiSpeech implements SpeechProvider {
   }
 
   @override
-  void close() => _client.close();
+  void close() {
+    if (_ownsClient) _client.close();
+  }
 }
 
 /// Gemini, asked to answer in sound.
@@ -627,13 +633,15 @@ class GeminiSpeech implements SpeechProvider {
     required this.apiKey,
     this.knownVoices = const <String>[],
     http.Client? client,
-  }) : _client = client ?? http.Client();
+  }) : _client = client ?? http.Client(),
+       _ownsClient = client == null;
 
   final String baseUrl;
   final String model;
   final String apiKey;
   final List<String> knownVoices;
   final http.Client _client;
+  final bool _ownsClient;
 
   @override
   int get maxCharacters => 4000;
@@ -708,7 +716,9 @@ class GeminiSpeech implements SpeechProvider {
   }
 
   @override
-  void close() => _client.close();
+  void close() {
+    if (_ownsClient) _client.close();
+  }
 }
 
 /// ElevenLabs.
@@ -718,12 +728,14 @@ class ElevenLabsSpeech implements SpeechProvider {
     required this.model,
     required this.apiKey,
     http.Client? client,
-  }) : _client = client ?? http.Client();
+  }) : _client = client ?? http.Client(),
+       _ownsClient = client == null;
 
   final String baseUrl;
   final String model;
   final String apiKey;
   final http.Client _client;
+  final bool _ownsClient;
 
   Map<String, String> get _headers => <String, String>{
     'Content-Type': 'application/json',
@@ -774,5 +786,7 @@ class ElevenLabsSpeech implements SpeechProvider {
   }
 
   @override
-  void close() => _client.close();
+  void close() {
+    if (_ownsClient) _client.close();
+  }
 }

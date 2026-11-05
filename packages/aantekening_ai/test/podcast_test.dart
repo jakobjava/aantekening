@@ -444,6 +444,21 @@ void main() {
   });
 
   group('voice providers', () {
+    test('leave a client they were given for the giver to close', () async {
+      for (final preset in <SpeechPreset>[
+        SpeechPreset.openAi,
+        SpeechPreset.gemini,
+        SpeechPreset.elevenLabs,
+      ]) {
+        final given = _Closing();
+        VoiceConfig.of(
+          preset,
+          id: 'v',
+        ).create(apiKey: 'k', client: given).close();
+        expect(given.closed, isFalse, reason: preset.name);
+      }
+    });
+
     test(
       'Requesty is told how to speak by its own name of the model',
       () async {
@@ -609,4 +624,16 @@ Uint8List _wav(
   u32(dataSize ?? data.lengthInBytes);
   out.add(data.buffer.asUint8List());
   return out.toBytes();
+}
+
+/// A client that says whether it was closed.
+class _Closing extends http.BaseClient {
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      throw UnimplementedError();
+
+  @override
+  void close() => closed = true;
 }
