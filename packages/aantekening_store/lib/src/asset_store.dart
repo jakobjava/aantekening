@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
 import 'database.dart';
+import 'files/notes_folder.dart';
 import 'row_read.dart';
 
 /// Stores binary attachments on disk and their metadata in SQLite.
@@ -47,17 +48,10 @@ class AssetStore {
         : fileForHash(digest);
     if (existing != null && file.existsSync()) return existing;
 
-    await file.parent.create(recursive: true);
-    // Whole or not at all under its name: written aside, then moved over,
-    // so neither a crash nor the same bytes imported at once leaves a file
+    // Whole or not at all under its name, as every file of the notes is:
+    // neither a crash nor the same bytes imported at once leaves a file
     // cut short where it is read.
-    final aside = File('${file.path}.${Ulid.generate()}.tmp');
-    try {
-      await aside.writeAsBytes(bytes, flush: true);
-      await aside.rename(file.path);
-    } finally {
-      if (await aside.exists()) await aside.delete();
-    }
+    await NotesFolder.writeAtomically(file.path, bytes);
     if (existing != null) return existing;
 
     final asset = AssetRef(
