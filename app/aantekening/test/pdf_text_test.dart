@@ -218,6 +218,29 @@ void main() {
     },
   );
 
+  test('the pages last asked for are kept, and the rest read again', () {
+    final cache = PdfWordsCache(capacity: 2);
+    var opened = 0;
+    Future<PdfDocument?> open() async {
+      opened++;
+      return null;
+    }
+
+    final first = _words(const <String>['Een']);
+    cache
+      ..keep('pdf', 0, first)
+      ..keep('pdf', 1, _words(const <String>['Twee']));
+    // Asked for again, the first is the last asked for.
+    expect(cache.of('pdf', 0, open: open), same(first));
+    cache.keep('pdf', 2, _words(const <String>['Drie']));
+
+    expect(cache.of('pdf', 0, open: open), same(first));
+    expect(cache.of('pdf', 2, open: open), isNotNull);
+    expect(opened, 0);
+    expect(cache.of('pdf', 1, open: open), isNull, reason: 'let go of');
+    expect(opened, 1, reason: 'read again');
+  });
+
   group('On the page', () {
     late AantekeningStore store;
     late String pageId;

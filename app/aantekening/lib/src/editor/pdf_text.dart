@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -323,16 +324,25 @@ class _Reading {
 /// a page shows does not change. A page that could not be read — its PDF
 /// still opening, say, or let go of as it was read — is read again when
 /// asked for once [retryAfter] has passed.
+///
+/// The [capacity] pages last asked for are kept, so scrolling through a
+/// long PDF does not keep the place of every letter of it.
 class PdfWordsCache {
   @visibleForTesting
-  PdfWordsCache({this.retryAfter = const Duration(seconds: 2)});
+  PdfWordsCache({
+    this.retryAfter = const Duration(seconds: 2),
+    this.capacity = 128,
+  });
 
   /// The one every page shares.
   static final PdfWordsCache shared = PdfWordsCache();
 
   final Duration retryAfter;
+  final int capacity;
 
-  final Map<String, PdfPageWords?> _read = <String, PdfPageWords?>{};
+  /// The pages read, the one least recently asked for first.
+  final LinkedHashMap<String, PdfPageWords?> _read =
+      LinkedHashMap<String, PdfPageWords?>();
   final Set<String> _reading = <String>{};
 
   /// When each page that could not be read last failed to be.
@@ -342,7 +352,16 @@ class PdfWordsCache {
   /// as though it had been read: for tests, where there is no PDFium.
   @visibleForTesting
   void keep(String assetId, int pageIndex, PdfPageWords? words) =>
-      _read['$assetId/$pageIndex'] = words;
+      _keep('$assetId/$pageIndex', words);
+
+  void _keep(String key, PdfPageWords? words) {
+    _read
+      ..remove(key)
+      ..[key] = words;
+    while (_read.length > capacity) {
+      _read.remove(_read.keys.first);
+    }
+  }
 
   /// The text of page [pageIndex] of the PDF [assetId], if it has been
   /// read; else null, and it is read from the PDF [open] gives.
@@ -352,7 +371,10 @@ class PdfWordsCache {
     required Future<PdfDocument?> Function() open,
   }) {
     final key = '$assetId/$pageIndex';
-    if (_read.containsKey(key)) return _read[key];
+    if (_read.containsKey(key)) {
+      final words = _read.remove(key);
+      return _read[key] = words;
+    }
     final failed = _failed[key];
     if (failed != null && DateTime.now().difference(failed) < retryAfter) {
       return null;
@@ -362,7 +384,7 @@ class PdfWordsCache {
         _readPage(open, pageIndex)
             .then(
               (words) {
-                _read[key] = words;
+                _keep(key, words);
                 _failed.remove(key);
               },
               onError: (Object _) {
