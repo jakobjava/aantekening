@@ -152,8 +152,17 @@ class FakeProvider implements ChatProvider {
     );
   }
 
+  /// How often it was asked which models it has.
+  int listed = 0;
+
   @override
-  Future<List<ModelInfo>> listModels() async => const <ModelInfo>[];
+  Future<List<ModelInfo>> listModels() async {
+    listed++;
+    return const <ModelInfo>[
+      ModelInfo(id: 'test-model', capabilities: ModelCapabilities()),
+      ModelInfo(id: 'other-model', capabilities: ModelCapabilities()),
+    ];
+  }
 
   @override
   void close() => closed = true;
@@ -1569,6 +1578,86 @@ void main() {
     await tester.tap(find.text('Save key'));
     await tester.pumpAndSettle();
     expect(trouble, findsOne);
+  });
+
+  testWidgets('a provider’s models are asked for once as its settings '
+      'open, and again when its key is saved or they are looked for again', (
+    tester,
+  ) async {
+    final made = <FakeProvider>[];
+    final container = await openShell(
+      tester,
+      withModel: false,
+      overrides: <Override>[
+        chatMakerProvider.overrideWithValue((config, key) {
+          final provider = FakeProvider();
+          made.add(provider);
+          return provider;
+        }),
+      ],
+    );
+    container
+        .read(aiSettingsProvider.notifier)
+        .change(
+          (s) => s.withProvider(
+            ProviderConfig.of(
+              ProviderPreset.ollama,
+              id: 'local',
+            ).copyWith(model: 'test-model'),
+          ),
+        );
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    int listed() => made.fold(0, (sum, provider) => sum + provider.listed);
+
+    await tester.tap(find.text('test-model'));
+    await tester.pumpAndSettle();
+    expect(find.text('Look again'), findsOneWidget);
+    expect(listed(), 1);
+    expect(
+      made.where((provider) => provider.listed > 0).single.closed,
+      isTrue,
+      reason: 'closed once it has said',
+    );
+
+    // Set otherwise, it is not asked again.
+    await tester.tap(find.text('100k'));
+    await tester.pumpAndSettle();
+    expect(container.read(aiSettingsProvider).active!.notesTokens, 100000);
+    expect(listed(), 1);
+
+    await tester.tap(find.text('Look again'));
+    await tester.pumpAndSettle();
+    expect(listed(), 2);
+
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'API key, if it needs one'),
+      'a key',
+    );
+    await tester.ensureVisible(find.text('Save key'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save key'));
+    await tester.pumpAndSettle();
+    expect(listed(), 3);
+    expect(
+      find.textContaining('A key is kept in this computer’s keychain'),
+      findsOneWidget,
+    );
+    expect(
+      await container.read(aiSecretsProvider).read(providerKeyName('local')),
+      'a key',
+    );
+
+    // Removed, its key goes with it.
+    await tester.tap(find.text('Remove this provider'));
+    await tester.pumpAndSettle();
+    expect(container.read(aiSettingsProvider).providers, isEmpty);
+    expect(
+      await container.read(aiSecretsProvider).read(providerKeyName('local')),
+      isNull,
+    );
   });
 
   testWidgets('a thing kept is renamed, its dialog gone without a fault', (

@@ -136,6 +136,10 @@ class AiSettingsController extends Notifier<AiSettings> {
     state = settings;
     ref.savePreference(_key, settings.toJson());
   }
+
+  /// Changes the settings as [how] says.
+  void change(AiSettings Function(AiSettings settings) how) =>
+      update(how(state));
 }
 
 final aiSettingsProvider = NotifierProvider<AiSettingsController, AiSettings>(

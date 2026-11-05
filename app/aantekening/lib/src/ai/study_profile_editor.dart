@@ -20,6 +20,18 @@ Future<void> editStudyProfile(BuildContext context, {StudyProfile? profile}) =>
       builder: (context) => StudyProfileEditor(profile: profile),
     );
 
+/// Changes the AI settings as [change] says, from the dialog over
+/// [context] that edits them, which it closes: a study profile's, a kind
+/// of podcast's, the speakers'.
+void settleAiSettings(
+  BuildContext context,
+  WidgetRef ref,
+  AiSettings Function(AiSettings settings) change,
+) {
+  ref.read(aiSettingsProvider.notifier).change(change);
+  Navigator.of(context).pop();
+}
+
 /// A study profile's name, the form its set takes, what it should be, and
 /// anything the person adds.
 class StudyProfileEditor extends ConsumerStatefulWidget {
@@ -78,12 +90,6 @@ class _StudyProfileEditorState extends ConsumerState<StudyProfileEditor> {
       idea: idea.isEmpty ? _form.idea : idea,
       details: _details.text.trim(),
     );
-  }
-
-  void _settle(AiSettings Function(AiSettings settings) change) {
-    final controller = ref.read(aiSettingsProvider.notifier);
-    controller.update(change(ref.read(aiSettingsProvider)));
-    Navigator.of(context).pop();
   }
 
   @override
@@ -182,12 +188,20 @@ class _StudyProfileEditorState extends ConsumerState<StudyProfileEditor> {
       actions: <Widget>[
         if (profile != null && !profile.isOriginal)
           TextButton(
-            onPressed: () => _settle((s) => s.withoutProfile(profile.id)),
+            onPressed: () => settleAiSettings(
+              context,
+              ref,
+              (s) => s.withoutProfile(profile.id),
+            ),
             child: const Text('Delete'),
           )
         else if (profile != null && !profile.isAsMade)
           TextButton(
-            onPressed: () => _settle((s) => s.withoutProfile(profile.id)),
+            onPressed: () => settleAiSettings(
+              context,
+              ref,
+              (s) => s.withoutProfile(profile.id),
+            ),
             child: const Text('Reset to the original'),
           ),
         TextButton(
@@ -197,7 +211,11 @@ class _StudyProfileEditorState extends ConsumerState<StudyProfileEditor> {
         FilledButton(
           onPressed: _edited == null
               ? null
-              : () => _settle((s) => s.withProfile(_edited!)),
+              : () => settleAiSettings(
+                  context,
+                  ref,
+                  (s) => s.withProfile(_edited!),
+                ),
           child: const Text('Save'),
         ),
       ],

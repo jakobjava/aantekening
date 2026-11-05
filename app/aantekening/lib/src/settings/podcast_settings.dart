@@ -14,11 +14,13 @@ import 'package:path/path.dart' as p;
 
 import '../ai/ai_state.dart';
 import '../ai/podcast_view.dart' show playbackTrouble;
+import '../ai/study_profile_editor.dart' show settleAiSettings;
 import '../look/controls.dart';
 import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
+import 'provider_block.dart';
 import 'settings_view.dart';
 
 /// Opens the settings at the podcasts' page.
@@ -51,30 +53,12 @@ class PodcastSettingsPage extends ConsumerWidget {
             for (final voice in settings.voices)
               _VoiceBlock(key: ValueKey<String>(voice.id), config: voice),
             const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: MenuAnchor(
-                menuChildren: <Widget>[
-                  const _MenuHeading('On this computer'),
-                  for (final preset in SpeechPreset.values)
-                    if (preset.ownServer)
-                      MenuItemButton(
-                        onPressed: () => add(preset),
-                        child: Text(preset.label),
-                      ),
-                  const _MenuHeading('Online'),
-                  for (final preset in SpeechPreset.values)
-                    if (!preset.ownServer)
-                      MenuItemButton(
-                        onPressed: () => add(preset),
-                        child: Text(preset.label),
-                      ),
-                ],
-                builder: (context, menu, _) => OutlinedButton(
-                  onPressed: () => menu.isOpen ? menu.close() : menu.open(),
-                  child: const Text('Add a voice provider…'),
-                ),
-              ),
+            AddProviderMenu<SpeechPreset>(
+              label: 'Add a voice provider…',
+              presets: SpeechPreset.values,
+              ownServer: (preset) => preset.ownServer,
+              labelOf: (preset) => preset.label,
+              onAdd: add,
             ),
           ],
         ),
@@ -189,18 +173,6 @@ void _editCast(BuildContext context, SpeakerProfile? cast) => unawaited(
   ),
 );
 
-class _MenuHeading extends StatelessWidget {
-  const _MenuHeading(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-    child: SmallCaps(label),
-  );
-}
-
 /// One voice provider: where it is, its model and key — and a way to hear
 /// it.
 class _VoiceBlock extends ConsumerStatefulWidget {
@@ -219,76 +191,20 @@ class _VoiceBlockState extends ConsumerState<_VoiceBlock> {
   late final TextEditingController _model = TextEditingController(
     text: widget.config.model,
   );
-  final TextEditingController _key = TextEditingController();
-  bool _hasKey = false;
   bool _trying = false;
   String? _said;
   AudioPlayer? _player;
 
   @override
-  void initState() {
-    super.initState();
-    unawaited(_readKey());
-  }
-
-  @override
   void dispose() {
     _url.dispose();
     _model.dispose();
-    _key.dispose();
     unawaited(_player?.dispose());
     super.dispose();
   }
 
-  AiSecrets get _secrets => ref.read(aiSecretsProvider);
-
-  /// Why the keychain would not read or keep the key, if it would not.
-  String? _keyTrouble;
-
-  Future<void> _readKey() async {
-    try {
-      final key = await _secrets.read(voiceKeyName(widget.config.id));
-      if (!mounted) return;
-      setState(() {
-        _hasKey = key != null && key.isNotEmpty;
-        _keyTrouble = null;
-      });
-    } on Object catch (error) {
-      if (mounted) setState(() => _keyTrouble = keychainTrouble(error));
-    }
-  }
-
-  void _save(VoiceConfig config) => ref
-      .read(aiSettingsProvider.notifier)
-      .update(ref.read(aiSettingsProvider).withVoice(config));
-
-  Future<void> _saveKey() async {
-    final key = _key.text.trim();
-    try {
-      await _secrets.write(
-        voiceKeyName(widget.config.id),
-        key.isEmpty ? null : key,
-      );
-    } on Object catch (error) {
-      if (mounted) setState(() => _keyTrouble = keychainTrouble(error));
-      return;
-    }
-    if (!mounted) return;
-    _key.clear();
-    await _readKey();
-  }
-
-  Future<void> _remove() async {
-    try {
-      await _secrets.write(voiceKeyName(widget.config.id), null);
-    } on Object {
-      // A keychain not reached keeps no key to forget.
-    }
-    if (!mounted) return;
-    ref
-        .read(aiSettingsProvider.notifier)
-        .update(ref.read(aiSettingsProvider).withoutVoice(widget.config.id));
-  }
+  void _save(VoiceConfig config) =>
+      ref.read(aiSettingsProvider.notifier).change((s) => s.withVoice(config));
 
   /// Speaks a sentence with the first voice, and plays it.
   Future<void> _try() async {
@@ -300,7 +216,7 @@ class _VoiceBlockState extends ConsumerState<_VoiceBlock> {
     SpeechProvider? speech;
     try {
       speech = config.create(
-        apiKey: await _secrets.read(voiceKeyName(config.id)),
+        apiKey: await ref.read(aiSecretsProvider).read(voiceKeyName(config.id)),
       );
       final sound = await speech.speak(
         'Hello! This is how I sound reading your notes.',
@@ -329,8 +245,6 @@ class _VoiceBlockState extends ConsumerState<_VoiceBlock> {
   Widget build(BuildContext context) {
     final tones = context.tones;
     final config = widget.config;
-    final host = Uri.tryParse(config.baseUrl)?.host ?? config.baseUrl;
-    final note = TextStyle(fontSize: 12, height: 1.4, color: tones.muted);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -341,28 +255,12 @@ class _VoiceBlockState extends ConsumerState<_VoiceBlock> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      config.name,
-                      style: const TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      config.local
-                          ? 'On this computer — what is said stays here'
-                          : 'Sends the words to speak to $host',
-                      style: note,
-                    ),
-                  ],
-                ),
-              ),
+          ProviderHeading(
+            name: config.name,
+            where: config.local
+                ? 'On this computer — what is said stays here'
+                : 'Sends the words to speak to ${hostOf(config.baseUrl)}',
+            actions: <Widget>[
               if (_trying)
                 const Busy(width: 32)
               else
@@ -421,41 +319,17 @@ class _VoiceBlockState extends ConsumerState<_VoiceBlock> {
             onSubmitted: (url) => _save(config.copyWith(baseUrl: url.trim())),
           ),
           const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: TextField(
-                  controller: _key,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: config.preset.needsKey
-                        ? 'API key'
-                        : 'API key, if it needs one',
-                    errorText: _keyTrouble,
-                    errorMaxLines: 4,
-                    helperText: _hasKey
-                        ? 'A key is kept in this computer’s keychain. Type a '
-                              'new one to replace it.'
-                        : 'Kept in this computer’s keychain, never in a file.',
-                  ),
-                  onSubmitted: (_) => _saveKey(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: _saveKey,
-                child: const Text('Save key'),
-              ),
-            ],
+          ProviderKeyField(
+            name: voiceKeyName(config.id),
+            needsKey: config.preset.needsKey,
           ),
           const SizedBox(height: 6),
-          Align(
-            alignment: Alignment.centerRight,
-            child: SmallButton(
-              'Remove this voice provider',
-              onPressed: () => unawaited(_remove()),
-            ),
+          RemoveProviderButton(
+            label: 'Remove this voice provider',
+            keyName: voiceKeyName(config.id),
+            onRemoved: () => ref
+                .read(aiSettingsProvider.notifier)
+                .change((s) => s.withoutVoice(config.id)),
           ),
         ],
       ),
@@ -525,13 +399,6 @@ class _EpisodeEditorState extends ConsumerState<_EpisodeEditor> {
       outline: _outline,
       transcript: _transcript,
     );
-  }
-
-  void _settle(AiSettings Function(AiSettings settings) change) {
-    ref
-        .read(aiSettingsProvider.notifier)
-        .update(change(ref.read(aiSettingsProvider)));
-    Navigator.of(context).pop();
   }
 
   @override
@@ -643,7 +510,11 @@ class _EpisodeEditorState extends ConsumerState<_EpisodeEditor> {
       actions: <Widget>[
         if (episode != null)
           TextButton(
-            onPressed: () => _settle((s) => s.withoutEpisode(episode.id)),
+            onPressed: () => settleAiSettings(
+              context,
+              ref,
+              (s) => s.withoutEpisode(episode.id),
+            ),
             child: const Text('Delete'),
           ),
         TextButton(
@@ -653,7 +524,11 @@ class _EpisodeEditorState extends ConsumerState<_EpisodeEditor> {
         FilledButton(
           onPressed: _edited == null
               ? null
-              : () => _settle((s) => s.withEpisode(_edited!)),
+              : () => settleAiSettings(
+                  context,
+                  ref,
+                  (s) => s.withEpisode(_edited!),
+                ),
           child: const Text('Save'),
         ),
       ],
@@ -682,8 +557,6 @@ class _ModelChoiceFieldState extends ConsumerState<_ModelChoiceField> {
   late final TextEditingController _model = TextEditingController(
     text: widget.choice.model,
   );
-  Future<List<ModelInfo>>? _models;
-  String? _listed;
 
   @override
   void dispose() {
@@ -691,29 +564,11 @@ class _ModelChoiceFieldState extends ConsumerState<_ModelChoiceField> {
     super.dispose();
   }
 
-  /// Asks the provider chosen for its models, once for each provider.
-  void _list(ProviderConfig? config) {
-    if (config == null || config.id == _listed) return;
-    _listed = config.id;
-    _models = () async {
-      final key = await ref
-          .read(aiSecretsProvider)
-          .read(providerKeyName(config.id));
-      final provider = config.create(apiKey: key);
-      try {
-        return await provider.listModels();
-      } finally {
-        provider.close();
-      }
-    }();
-  }
-
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(aiSettingsProvider);
     final choice = widget.choice;
     final config = choice.isInUse ? null : settings.providerOf(choice);
-    _list(config);
     const inUse = '';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -748,49 +603,26 @@ class _ModelChoiceFieldState extends ConsumerState<_ModelChoiceField> {
         if (config != null)
           Padding(
             padding: const EdgeInsets.only(top: 8, left: 16),
-            child: FutureBuilder<List<ModelInfo>>(
-              future: _models,
-              builder: (context, snapshot) {
-                final models = snapshot.data ?? const <ModelInfo>[];
-                void choose(String model) => widget.onChanged(
+            child: ModelMenu(
+              models:
+                  ref.watch(providerModelsProvider(config.id)).value ??
+                  const <ModelInfo>[],
+              selected: choice.model.isEmpty ? config.model : choice.model,
+              onSelected: (model) => widget.onChanged(
+                ModelChoice(providerId: config.id, model: model.trim()),
+              ),
+              typed: TextField(
+                controller: _model,
+                decoration: InputDecoration(
+                  labelText: 'Model',
+                  hintText: config.model.isEmpty
+                      ? 'The model’s id'
+                      : '${config.model}, as the provider is set',
+                ),
+                onChanged: (model) => widget.onChanged(
                   ModelChoice(providerId: config.id, model: model.trim()),
-                );
-                if (models.isEmpty) {
-                  return TextField(
-                    controller: _model,
-                    decoration: InputDecoration(
-                      labelText: 'Model',
-                      hintText: config.model.isEmpty
-                          ? 'The model’s id'
-                          : '${config.model}, as the provider is set',
-                    ),
-                    onChanged: choose,
-                  );
-                }
-                return DropdownMenu<String>(
-                  key: ValueKey<int>(models.length),
-                  initialSelection: choice.model.isEmpty
-                      ? config.model
-                      : choice.model,
-                  label: const Text('Model'),
-                  expandedInsets: EdgeInsets.zero,
-                  enableFilter: true,
-                  requestFocusOnTap: true,
-                  menuHeight: 320,
-                  trailingIcon: const Mark(MarkShape.chevronDown),
-                  selectedTrailingIcon: const Mark(MarkShape.chevronUp),
-                  dropdownMenuEntries: <DropdownMenuEntry<String>>[
-                    for (final model in models)
-                      DropdownMenuEntry<String>(
-                        value: model.id,
-                        label: model.name,
-                      ),
-                  ],
-                  onSelected: (model) {
-                    if (model != null) choose(model);
-                  },
-                );
-              },
+                ),
+              ),
             ),
           ),
       ],
@@ -904,13 +736,6 @@ class _CastEditorState extends ConsumerState<_CastEditor> {
       voiceId: _voiceId,
       voiceModel: _voiceModel.text.trim(),
     );
-  }
-
-  void _settle(AiSettings Function(AiSettings settings) change) {
-    ref
-        .read(aiSettingsProvider.notifier)
-        .update(change(ref.read(aiSettingsProvider)));
-    Navigator.of(context).pop();
   }
 
   @override
@@ -1058,7 +883,8 @@ class _CastEditorState extends ConsumerState<_CastEditor> {
       actions: <Widget>[
         if (cast != null)
           TextButton(
-            onPressed: () => _settle((s) => s.withoutCast(cast.id)),
+            onPressed: () =>
+                settleAiSettings(context, ref, (s) => s.withoutCast(cast.id)),
             child: const Text('Delete'),
           ),
         TextButton(
@@ -1068,7 +894,8 @@ class _CastEditorState extends ConsumerState<_CastEditor> {
         FilledButton(
           onPressed: _edited == null
               ? null
-              : () => _settle((s) => s.withCast(_edited!)),
+              : () =>
+                    settleAiSettings(context, ref, (s) => s.withCast(_edited!)),
           child: const Text('Save'),
         ),
       ],

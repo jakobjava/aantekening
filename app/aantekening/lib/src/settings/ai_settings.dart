@@ -2,8 +2,6 @@
 /// study from, and how the web is searched.
 library;
 
-import 'dart:async';
-
 import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
@@ -13,8 +11,8 @@ import '../ai/ai_state.dart';
 import '../ai/money.dart';
 import '../ai/study_profile_editor.dart';
 import '../look/controls.dart';
-import '../look/marks.dart';
 import '../look/tones.dart';
+import 'provider_block.dart';
 import 'settings_view.dart';
 
 /// The AI page of the settings: the providers set up — each saying plainly
@@ -57,30 +55,12 @@ class AiSettingsPage extends ConsumerWidget {
                     controller.update(settings.copyWith(activeId: config.id)),
               ),
             const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: MenuAnchor(
-                menuChildren: <Widget>[
-                  const _MenuHeading('On this computer'),
-                  for (final preset in ProviderPreset.values)
-                    if (preset.ownServer)
-                      MenuItemButton(
-                        onPressed: () => add(preset),
-                        child: Text(preset.label),
-                      ),
-                  const _MenuHeading('Online'),
-                  for (final preset in ProviderPreset.values)
-                    if (!preset.ownServer)
-                      MenuItemButton(
-                        onPressed: () => add(preset),
-                        child: Text(preset.label),
-                      ),
-                ],
-                builder: (context, menu, _) => OutlinedButton(
-                  onPressed: () => menu.isOpen ? menu.close() : menu.open(),
-                  child: const Text('Add a model provider…'),
-                ),
-              ),
+            AddProviderMenu<ProviderPreset>(
+              label: 'Add a model provider…',
+              presets: ProviderPreset.values,
+              ownServer: (preset) => preset.ownServer,
+              labelOf: (preset) => preset.label,
+              onAdd: add,
             ),
           ],
         ),
@@ -128,12 +108,9 @@ class _AboutYouState extends ConsumerState<_AboutYou> {
               'I am in Q13 at a Gymnasium in Bavaria, with physics and maths '
               'as my Abitur subjects.',
         ),
-        onChanged: (about) {
-          final settings = ref.read(aiSettingsProvider);
-          ref
-              .read(aiSettingsProvider.notifier)
-              .update(settings.copyWith(about: about.trim()));
-        },
+        onChanged: (about) => ref
+            .read(aiSettingsProvider.notifier)
+            .change((s) => s.copyWith(about: about.trim())),
       ),
     ],
   );
@@ -185,18 +162,6 @@ class _StudyProfiles extends ConsumerWidget {
   }
 }
 
-class _MenuHeading extends StatelessWidget {
-  const _MenuHeading(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-    child: SmallCaps(label),
-  );
-}
-
 /// One provider: whether it is the one asked, where the notes go, its
 /// model, and — opened — its address and key.
 class _ProviderBlock extends ConsumerStatefulWidget {
@@ -219,97 +184,27 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
   late final TextEditingController _url = TextEditingController(
     text: widget.config.baseUrl,
   );
-  final TextEditingController _key = TextEditingController();
   late final TextEditingController _model = TextEditingController(
     text: widget.config.model,
   );
   bool _open = false;
-  bool _hasKey = false;
-  Future<List<ModelInfo>>? _models;
 
   @override
   void initState() {
     super.initState();
     _open = widget.config.model.isEmpty;
-    unawaited(_readKey());
-    _loadModels();
   }
 
   @override
   void dispose() {
     _url.dispose();
-    _key.dispose();
     _model.dispose();
     super.dispose();
   }
 
-  AiSecrets get _secrets => ref.read(aiSecretsProvider);
-
-  /// Why the keychain would not read or keep the key, if it would not.
-  String? _keyTrouble;
-
-  Future<void> _readKey() async {
-    try {
-      final key = await _secrets.read(providerKeyName(widget.config.id));
-      if (!mounted) return;
-      setState(() {
-        _hasKey = key != null && key.isNotEmpty;
-        _keyTrouble = null;
-      });
-    } on Object catch (error) {
-      if (mounted) setState(() => _keyTrouble = keychainTrouble(error));
-    }
-  }
-
-  void _loadModels() {
-    setState(() {
-      _models = () async {
-        final key = await _secrets.read(providerKeyName(widget.config.id));
-        final provider = widget.config.create(apiKey: key);
-        try {
-          return await provider.listModels();
-        } finally {
-          provider.close();
-        }
-      }();
-    });
-  }
-
-  void _save(ProviderConfig config) {
-    final settings = ref.read(aiSettingsProvider);
-    ref.read(aiSettingsProvider.notifier).update(settings.withProvider(config));
-  }
-
-  Future<void> _saveKey() async {
-    final key = _key.text.trim();
-    try {
-      await _secrets.write(
-        providerKeyName(widget.config.id),
-        key.isEmpty ? null : key,
-      );
-    } on Object catch (error) {
-      if (mounted) setState(() => _keyTrouble = keychainTrouble(error));
-      return;
-    }
-    if (!mounted) return;
-    _key.clear();
-    ref.invalidate(aiModelProvider);
-    await _readKey();
-    _loadModels();
-  }
-
-  Future<void> _remove() async {
-    try {
-      await _secrets.write(providerKeyName(widget.config.id), null);
-    } on Object {
-      // A keychain not reached keeps no key to forget.
-    }
-    if (!mounted) return;
-    final settings = ref.read(aiSettingsProvider);
-    ref
-        .read(aiSettingsProvider.notifier)
-        .update(settings.withoutProvider(widget.config.id));
-  }
+  void _save(ProviderConfig config) => ref
+      .read(aiSettingsProvider.notifier)
+      .change((s) => s.withProvider(config));
 
   void _chooseModel(String model) {
     _model.text = model;
@@ -320,7 +215,6 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
   Widget build(BuildContext context) {
     final tones = context.tones;
     final config = widget.config;
-    final host = Uri.tryParse(config.baseUrl)?.host ?? config.baseUrl;
     final note = TextStyle(fontSize: 12, height: 1.4, color: tones.muted);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -331,28 +225,12 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      config.name,
-                      style: const TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      config.local
-                          ? 'On this computer — your notes stay here'
-                          : 'Sends the notes you ask about to $host',
-                      style: note,
-                    ),
-                  ],
-                ),
-              ),
+          ProviderHeading(
+            name: config.name,
+            where: config.local
+                ? 'On this computer — your notes stay here'
+                : 'Sends the notes you ask about to ${hostOf(config.baseUrl)}',
+            actions: <Widget>[
               if (widget.active)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -378,48 +256,25 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
             TextField(
               controller: _url,
               decoration: const InputDecoration(labelText: 'Address'),
-              onSubmitted: (url) {
-                _save(config.copyWith(baseUrl: url.trim()));
-                _loadModels();
-              },
+              onSubmitted: (url) => _save(config.copyWith(baseUrl: url.trim())),
             ),
             const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(
-                  child: TextField(
-                    controller: _key,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: config.preset.needsKey
-                          ? 'API key'
-                          : 'API key, if it needs one',
-                      errorText: _keyTrouble,
-                      errorMaxLines: 4,
-                      helperText: _hasKey
-                          ? 'A key is kept in this computer’s keychain. '
-                                'Type a new one to replace it.'
-                          : 'Kept in this computer’s keychain, never in a '
-                                'file.',
-                    ),
-                    onSubmitted: (_) => _saveKey(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: _saveKey,
-                  child: const Text('Save key'),
-                ),
-              ],
+            ProviderKeyField(
+              name: providerKeyName(config.id),
+              needsKey: config.preset.needsKey,
+              onSaved: () {
+                ref
+                  ..invalidate(aiModelProvider)
+                  ..invalidate(providerModelsProvider(config.id));
+              },
             ),
             const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerRight,
-              child: SmallButton(
-                'Remove this provider',
-                onPressed: () => unawaited(_remove()),
-              ),
+            RemoveProviderButton(
+              label: 'Remove this provider',
+              keyName: providerKeyName(config.id),
+              onRemoved: () => ref
+                  .read(aiSettingsProvider.notifier)
+                  .change((s) => s.withoutProvider(config.id)),
             ),
           ],
         ],
@@ -542,91 +397,70 @@ class _ProviderBlockState extends ConsumerState<_ProviderBlock> {
     );
   }
 
-  Widget _modelPicker(Tones tones) => FutureBuilder<List<ModelInfo>>(
-    future: _models,
-    builder: (context, snapshot) {
-      final models = snapshot.data ?? const <ModelInfo>[];
-      final error = snapshot.error;
-      final looking = snapshot.connectionState == ConnectionState.waiting;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: models.isEmpty
-                    ? TextField(
-                        controller: _model,
-                        decoration: const InputDecoration(labelText: 'Model'),
-                        onSubmitted: (model) => _chooseModel(model.trim()),
-                      )
-                    : DropdownMenu<String>(
-                        key: ValueKey<int>(models.length),
-                        initialSelection: widget.config.model.isEmpty
-                            ? null
-                            : widget.config.model,
-                        label: const Text('Model'),
-                        expandedInsets: EdgeInsets.zero,
-                        enableFilter: true,
-                        requestFocusOnTap: true,
-                        menuHeight: 320,
-                        trailingIcon: const Mark(MarkShape.chevronDown),
-                        selectedTrailingIcon: const Mark(MarkShape.chevronUp),
-                        dropdownMenuEntries: <DropdownMenuEntry<String>>[
-                          for (final model in models)
-                            DropdownMenuEntry<String>(
-                              value: model.id,
-                              label: model.capabilities.reasoning
-                                  ? '${model.name}  · thinks first'
-                                  : model.name,
-                              trailingIcon: switch (model.capabilities.price) {
-                                final price? when !price.isFree => Text(
-                                  '${dollars(price.input)} / '
-                                  '${dollars(price.output)}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: tones.faint,
-                                  ),
-                                ),
-                                _ => null,
-                              },
-                            ),
-                        ],
-                        onSelected: (model) {
-                          if (model != null) _chooseModel(model);
-                        },
+  Widget _modelPicker(Tones tones) {
+    final listed = ref.watch(providerModelsProvider(widget.config.id));
+    final models = listed.value ?? const <ModelInfo>[];
+    final error = listed.error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: ModelMenu(
+                models: models,
+                selected: widget.config.model.isEmpty
+                    ? null
+                    : widget.config.model,
+                onSelected: _chooseModel,
+                labelOf: (model) => model.capabilities.reasoning
+                    ? '${model.name}  · thinks first'
+                    : model.name,
+                trailingOf: (model) => switch (model.capabilities.price) {
+                  final price? when !price.isFree => Text(
+                    '${dollars(price.input)} / ${dollars(price.output)}',
+                    style: TextStyle(fontSize: 12, color: tones.faint),
+                  ),
+                  _ => null,
+                },
+                typed: TextField(
+                  controller: _model,
+                  decoration: const InputDecoration(labelText: 'Model'),
+                  onSubmitted: (model) => _chooseModel(model.trim()),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 84,
+              child: listed.isLoading
+                  ? const Center(child: Busy(width: 32))
+                  : SmallButton(
+                      'Look again',
+                      tooltip: 'Ask for the models again',
+                      onPressed: () => ref.invalidate(
+                        providerModelsProvider(widget.config.id),
                       ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 84,
-                child: looking
-                    ? const Center(child: Busy(width: 32))
-                    : SmallButton(
-                        'Look again',
-                        tooltip: 'Ask for the models again',
-                        onPressed: _loadModels,
-                      ),
-              ),
-            ],
-          ),
-          if (error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                error is AiException ? error.message : '$error',
-                style: TextStyle(fontSize: 12, color: tones.text),
-              ),
-            )
-          else if (models
-                  .where((model) => model.id == widget.config.model)
-                  .firstOrNull
-              case final chosen?)
-            ?_priceNote(chosen.capabilities.price, tones),
-        ],
-      );
-    },
-  );
+                    ),
+            ),
+          ],
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              error is AiException ? error.message : '$error',
+              style: TextStyle(fontSize: 12, color: tones.text),
+            ),
+          )
+        else if (models
+                .where((model) => model.id == widget.config.model)
+                .firstOrNull
+            case final chosen?)
+          ?_priceNote(chosen.capabilities.price, tones),
+      ],
+    );
+  }
 
   /// What the chosen model costs, as its provider lists it; nothing for a
   /// model that costs nothing.
@@ -674,9 +508,8 @@ class _WebSettingsState extends ConsumerState<_WebSettings> {
     super.dispose();
   }
 
-  void _update(AiSettings Function(AiSettings settings) change) => ref
-      .read(aiSettingsProvider.notifier)
-      .update(change(ref.read(aiSettingsProvider)));
+  void _update(AiSettings Function(AiSettings settings) change) =>
+      ref.read(aiSettingsProvider.notifier).change(change);
 
   @override
   Widget build(BuildContext context) {
@@ -717,10 +550,8 @@ class _WebSettingsState extends ConsumerState<_WebSettings> {
                 helperText:
                     'A SearXNG you run yourself, with its JSON output on.',
               ),
-              onSubmitted: (url) {
-                _update((s) => s.copyWith(searxngUrl: url.trim()));
-                ref.invalidate(webSearchProvider);
-              },
+              onSubmitted: (url) =>
+                  _update((s) => s.copyWith(searxngUrl: url.trim())),
             ),
           ),
         if (settings.webBackend == WebSearchBackend.brave)
