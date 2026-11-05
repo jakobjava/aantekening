@@ -157,9 +157,9 @@ final class RevisionStore {
     for (final node in file.rootList) {
       switch (node.id) {
         case NodeId.objectSpaceManifestRoot:
-          rootId = ExGuid.read(node.fields);
+          rootId = ExGuid.read(node.readFields());
         case NodeId.objectSpaceManifestListReference:
-          final id = ExGuid.read(node.fields);
+          final id = ExGuid.read(node.readFields());
           final space = _SpaceReader(
             id,
             files,
@@ -188,7 +188,7 @@ final class RevisionStore {
       (node) => node.children ?? const <FileNode>[],
     )) {
       if (reference.id != NodeId.fileDataStoreObjectReference) continue;
-      final guid = reference.fields.guid();
+      final guid = reference.readFields().guid();
       final chunk = _chunk(reference);
       final object = ByteReader(file.bytes).at(chunk.offset, chunk.length);
       object.skip(16);
@@ -253,10 +253,11 @@ final class _SpaceReader {
           index = next;
         case NodeId.revisionRoleDeclaration ||
             NodeId.revisionRoleAndContextDeclaration:
-          final rid = ExGuid.read(node.fields);
-          final role = node.fields.u32();
+          final fields = node.readFields();
+          final rid = ExGuid.read(fields);
+          final role = fields.u32();
           final context = node.id == NodeId.revisionRoleAndContextDeclaration
-              ? ExGuid.read(node.fields)
+              ? ExGuid.read(fields)
               : ExGuid.nil;
           if (_revisions.containsKey(rid)) labels[(context, role)] = rid;
           index++;
@@ -294,14 +295,15 @@ final class _SpaceReader {
   /// the index after its end.
   (_Revision, int) _readRevision(List<FileNode> nodes, int start) {
     final head = nodes[start];
-    final rid = ExGuid.read(head.fields);
-    final dependsOn = ExGuid.read(head.fields);
-    if (head.id == NodeId.revisionManifestStart4) head.fields.skip(8);
-    final role = head.fields.u32();
+    final header = head.readFields();
+    final rid = ExGuid.read(header);
+    final dependsOn = ExGuid.read(header);
+    if (head.id == NodeId.revisionManifestStart4) header.skip(8);
+    final role = header.u32();
     var context = ExGuid.nil;
     if (head.id == NodeId.revisionManifestStart7) {
-      head.fields.skip(2);
-      context = ExGuid.read(head.fields);
+      header.skip(2);
+      context = ExGuid.read(header);
     }
     final revision = _Revision(rid, dependsOn, context, role);
     final parent = dependsOn.isNil ? null : _revisions[dependsOn];
@@ -328,11 +330,13 @@ final class _SpaceReader {
         case NodeId.objectGroupListReference:
           _readObjectGroup(node.children ?? const [], revision);
         case NodeId.rootObjectReference3:
-          final root = ExGuid.read(node.fields);
-          revision.roots[node.fields.u32()] = root;
+          final fields = node.readFields();
+          final root = ExGuid.read(fields);
+          revision.roots[fields.u32()] = root;
         case NodeId.rootObjectReference2:
-          final root = _resolve(node.fields.u32(), table ?? revision.ids);
-          final role = node.fields.u32();
+          final fields = node.readFields();
+          final root = _resolve(fields.u32(), table ?? revision.ids);
+          final role = fields.u32();
           if (root != null) revision.roots[role] = root;
         case NodeId.objectRevisionWithRefCount ||
             NodeId.objectRevisionWithRefCount2:
@@ -360,7 +364,7 @@ final class _SpaceReader {
     var index = start + 1;
     for (; index < nodes.length; index++) {
       final node = nodes[index];
-      final fields = node.fields;
+      final fields = node.readFields();
       switch (node.id) {
         case NodeId.globalIdTableEnd:
           return (table, index + 1);
@@ -410,7 +414,7 @@ final class _SpaceReader {
     Map<int, Guid> table,
     Map<ExGuid, StoreObject> objects,
   ) {
-    final fields = node.fields;
+    final fields = node.readFields();
     switch (node.id) {
       case NodeId.objectDeclaration2RefCount ||
           NodeId.objectDeclaration2LargeRefCount ||
@@ -475,7 +479,7 @@ final class _SpaceReader {
     Map<int, Guid> table,
     _Revision revision,
   ) {
-    final id = _resolve(node.fields.u32(), table);
+    final id = _resolve(node.readFields().u32(), table);
     if (id == null) return;
     StoreObject? earlier = revision.objects[id];
     // A revision declared again, on a later one, makes the revisions loop.

@@ -28,13 +28,18 @@ final class FileChunk {
 /// One file node: its type, the bytes of its fields, and, for a node that
 /// points at more of the file, what it points at.
 final class FileNode {
-  FileNode(this.id, this.fields, {this.chunk, this.children});
+  FileNode(this.id, this._fields, {this.chunk, this.children});
 
   /// The FileNodeID, which says what the node is.
   final int id;
 
   /// The node's own fields, after any chunk reference.
-  final ByteReader fields;
+  final Uint8List _fields;
+
+  /// A reader over the node's own fields, at their start: a new one each
+  /// time, so however often and in whatever order the node is read, it
+  /// reads the same.
+  ByteReader readFields() => ByteReader(_fields);
 
   /// The chunk a node of base type 1 points at.
   final FileChunk? chunk;
@@ -306,7 +311,12 @@ final class _ListReader {
       chunk = _readChunk(body, offsetFormat, lengthFormat);
       if (baseType == 2 && !chunk.isEmpty) children = read(chunk);
     }
-    return FileNode(id, body, chunk: chunk, children: children);
+    return FileNode(
+      id,
+      Uint8List.sublistView(body.bytes, body.position),
+      chunk: chunk,
+      children: children,
+    );
   }
 
   /// A FileNodeChunkReference, in whichever of its compact forms the node
