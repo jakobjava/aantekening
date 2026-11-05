@@ -44,6 +44,13 @@ extension _TextEditing on _PageEditorState {
     );
   }
 
+  /// The text box being typed in, if one is.
+  TextElement? get _editingBox {
+    final id = _editingId;
+    final box = id == null ? null : _controller.elementById(id);
+    return box is TextElement ? box : null;
+  }
+
   /// Whether the box [id] holds nothing: a caret placed, or a box whose
   /// text has all been deleted.
   bool _holdsNothing(String id) {

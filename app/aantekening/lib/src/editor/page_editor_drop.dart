@@ -52,17 +52,13 @@ extension _Drop on _PageEditorState {
       return;
     }
     final point = _controller.viewport.toPage(at);
-    final editingId = _editingId;
-    final editing = editingId == null
-        ? null
-        : _controller.elementById(editingId);
+    final editing = _editingBox;
     await _bringIn(
       paths: _isDraggedText(paths, text) ? const <String>[] : paths,
       text: text,
       at: point,
       intoBox:
-          editing is TextElement &&
-          editing.bounds.containsPoint(point.dx, point.dy),
+          editing != null && editing.bounds.containsPoint(point.dx, point.dy),
     );
   }
 
@@ -117,14 +113,11 @@ extension _Drop on _PageEditorState {
     }
 
     final point = at;
-    final editingId = _editingId;
-    final editing = editingId == null
-        ? null
-        : _controller.elementById(editingId);
+    final editing = _editingBox;
     intoBox =
         intoBox &&
         _textController.isActive &&
-        editing is TextElement &&
+        editing != null &&
         !TextBoxEditor.isEmpty(editing.blocks);
     if (!intoBox) _stopEditing();
 

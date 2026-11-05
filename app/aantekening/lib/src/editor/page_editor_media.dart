@@ -39,15 +39,12 @@ extension _Media on _PageEditorState {
     final pageId = widget.pageId;
     // At a bare caret the pictures go onto the paper where the caret is, as
     // in OneNote; in a box with text they go into the box.
-    final editingId = _editingId;
-    final editing = editingId == null
-        ? null
-        : _controller.elementById(editingId);
+    final editing = _editingBox;
     final atBareCaret =
-        editing is TextElement && TextBoxEditor.isEmpty(editing.blocks);
+        editing != null && TextBoxEditor.isEmpty(editing.blocks);
     // Into the box only while it is typed in: one whose typing has just
     // ended is still active until it is built again.
-    if (_textController.isActive && editing is TextElement && !atBareCaret) {
+    if (_textController.isActive && editing != null && !atBareCaret) {
       _textController.insertEmbeds(items);
       return;
     }

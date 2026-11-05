@@ -80,9 +80,8 @@ extension _Clipboard on _PageEditorState {
   /// take into its text: pasted at its caret, in place of the box, where it
   /// is a bare caret on the paper, else a step on from what they copy.
   void _pasteFromBox(List<NoteElement> elements) {
-    final id = _editingId;
-    final box = id == null ? null : _controller.elementById(id);
-    if (box is! TextElement || !TextBoxEditor.isEmpty(box.blocks)) {
+    final box = _editingBox;
+    if (box == null || !TextBoxEditor.isEmpty(box.blocks)) {
       _pasteElements(elements);
       return;
     }
@@ -97,9 +96,8 @@ extension _Clipboard on _PageEditorState {
   /// What was copied in another program, pasted while a box is typed in:
   /// into its text, if it holds any; at its caret on the page, if not.
   Future<void> _pasteCopiedFromBox(SystemClip copied) async {
-    final id = _editingId;
-    final box = id == null ? null : _controller.elementById(id);
-    if (box is! TextElement) {
+    final box = _editingBox;
+    if (box == null) {
       await _pasteCopied(copied);
       return;
     }
