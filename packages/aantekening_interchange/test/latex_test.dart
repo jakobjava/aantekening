@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:aantekening_core/aantekening_core.dart';
@@ -77,6 +78,21 @@ void main() {
       r'\left\lVert v \right\rVert',
     ], reason: 'commands the document defines, written out');
     expect(runs.last.text, ' – und mehr.');
+  });
+
+  test('ends a paragraph at a line with nothing on it, however lines end', () {
+    for (final source in <String>[
+      'One line\nand the next.\n\nTwo.',
+      'One line\r\nand the next.\r\n\r\nTwo.',
+      'One line\nand the next.\n \t\nTwo.',
+      'One line\r\nand the next.\r\n  \r\nTwo.',
+    ]) {
+      expect(
+        LatexText.read(source).blocks.map((block) => block.plainText),
+        <String>['One line and the next.', 'Two.'],
+        reason: jsonEncode(source),
+      );
+    }
   });
 
   test('sets display formulas apart, centred, environments whole', () {

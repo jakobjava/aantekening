@@ -340,8 +340,13 @@ final class _Reader {
           _text('\u00A0');
         case '\n':
           final next = LatexSource.skipSpaces(source, _at);
-          if (source.substring(_at, next).contains('\n\n') ||
-              RegExp(r'\n[ \t]*\n').hasMatch(source.substring(_at, next))) {
+          // A line with nothing on it ends the paragraph, its line ended as
+          // Windows ends it or not.
+          var lines = 0;
+          for (var i = _at; i < next; i++) {
+            if (source.codeUnitAt(i) == 0x0A) lines++;
+          }
+          if (lines > 1) {
             _endParagraph();
           } else {
             _text(' ');
