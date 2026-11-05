@@ -188,6 +188,35 @@ void main() {
     expect(await ai.reviewsOf(set.id), isEmpty);
   });
 
+  test('forgets the cards of a set not kept, however many are, by one '
+      'statement', () async {
+    final set = await ai.addItem(
+      const NoteLink.page('p'),
+      kind: 'flashcards',
+      title: 'Cards',
+      body: const <String, Object?>{'cards': <Object?>[]},
+      provider: 'p',
+      model: 'm',
+    );
+    final cards = <String>[for (var i = 0; i < 12; i++) 'card $i'];
+    for (final card in cards) {
+      await ai.saveReview(set.id, card, state: const {'due': 1}, dueAt: 1);
+    }
+    final database = workspace.store.database;
+
+    await ai.forgetReviews(set.id, keep: cards.take(11).toSet());
+    expect(await ai.reviewsOf(set.id), hasLength(11));
+    final kept = database.statementsKept;
+    for (var keep = 10; keep >= 1; keep--) {
+      await ai.forgetReviews(set.id, keep: cards.take(keep).toSet());
+      expect((await ai.reviewsOf(set.id)).keys, cards.take(keep));
+    }
+    expect(database.statementsKept, kept);
+
+    await ai.forgetReviews(set.id, keep: const <String>{});
+    expect(await ai.reviewsOf(set.id), isEmpty);
+  });
+
   test(
     'a workspace from before the AI kept anything is brought up to date',
     () {

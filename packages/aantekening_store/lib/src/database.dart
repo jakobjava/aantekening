@@ -87,6 +87,11 @@ class AantekeningDatabase {
   PreparedStatement statement(String sql) =>
       _statements[sql] ??= _db.prepare(sql, persistent: true);
 
+  /// How many prepared statements are kept: each one, once asked for,
+  /// until the connection closes.
+  @visibleForTesting
+  int get statementsKept => _statements.length;
+
   /// Runs a query and returns its rows.
   ResultSet select(
     String sql, [

@@ -400,12 +400,14 @@ class AiRepository {
 
   /// Forgets how the cards of set [itemId] not among [keep] were learnt,
   /// once they are no longer in it.
+  ///
+  /// One statement for any number of cards, given as a JSON list: a
+  /// statement for each number would each be kept until the notes close.
   Future<void> forgetReviews(String itemId, {required Set<String> keep}) async {
-    final kept = keep.toList();
     _db.run(
       'DELETE FROM ai_reviews WHERE item_id = ? AND card_id NOT IN '
-      '(${List<String>.filled(kept.length, '?').join(', ')})',
-      <Object?>[itemId, ...kept],
+      '(SELECT value FROM json_each(?))',
+      <Object?>[itemId, jsonEncode(keep.toList())],
     );
   }
 
