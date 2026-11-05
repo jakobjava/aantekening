@@ -11,7 +11,7 @@ import 'word_table.dart';
 /// A spelling dictionary in Hunspell's format — an affix file and a word
 /// list — as LibreOffice, Firefox and most spell checkers use them.
 final class HunspellDictionary {
-  HunspellDictionary._(this.rules, WordTable words) {
+  HunspellDictionary._(AffixRules rules, WordTable words) {
     final affixes = AffixIndex(rules);
     _checker = Checker(rules, words, affixes);
     _suggester = Suggester(_checker, rules, words, affixes);
@@ -38,7 +38,6 @@ final class HunspellDictionary {
     return HunspellDictionary._(rules, words);
   }
 
-  final AffixRules rules;
   late final Checker _checker;
   late final Suggester _suggester;
 
@@ -51,7 +50,4 @@ final class HunspellDictionary {
 
   /// Likely spellings of [word], best first.
   List<String> suggest(String word) => _suggester.suggest(word);
-
-  /// Characters this language counts as part of a word, besides letters.
-  String get wordCharacters => rules.wordCharacters;
 }
