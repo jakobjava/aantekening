@@ -239,6 +239,15 @@ void main() {
       });
     });
 
+    test('numbered through aliases given before how flags are written', () {
+      final dictionary = HunspellDictionary.parse(
+        'AF 2\nAF 101,7\nAF 7\nSET UTF-8\nSFX 101 Y 1\nSFX 101 0 s .\n'
+            'FLAG num\n',
+        '2\ncat/1\ndog/2\n',
+      );
+      _expectVerdicts(dictionary, <String, bool>{'cats': true, 'dogs': false});
+    });
+
     test('compound rules with quantifiers', () {
       final dictionary = HunspellDictionary.parse(
         'SET UTF-8\nCOMPOUNDMIN 1\nONLYINCOMPOUND c\n'

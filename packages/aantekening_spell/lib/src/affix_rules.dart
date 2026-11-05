@@ -255,6 +255,7 @@ final class AffixRules {
     }
     // How flags are written, and their aliases, are needed before any rule
     // using them is read, wherever in the file they are.
+    int? aliases;
     for (var i = 0; i < lines.length; i++) {
       final fields = _fields(lines[i]);
       if (fields.isEmpty) continue;
@@ -272,20 +273,18 @@ final class AffixRules {
           rules.complexPrefixes = true;
         case 'IGNORE' when fields.length > 1:
           rules.ignoredCharacters = fields[1];
+        case 'AF' when fields.length > 1:
+          aliases ??= i;
       }
     }
-    for (var i = 0; i < lines.length; i++) {
-      final fields = _fields(lines[i]);
-      if (fields.length > 1 && fields.first == 'AF') {
-        final count = int.tryParse(fields[1]) ?? 0;
-        for (final entry in _table(lines, i, count, 'AF').$1) {
-          rules.flagAliases.add(
-            FlagSet.of(
-              Flags.decode(entry.length > 1 ? entry[1] : '', rules.flagMode),
-            ),
-          );
-        }
-        break;
+    if (aliases != null) {
+      final count = int.tryParse(_fields(lines[aliases])[1]) ?? 0;
+      for (final entry in _table(lines, aliases, count, 'AF').$1) {
+        rules.flagAliases.add(
+          FlagSet.of(
+            Flags.decode(entry.length > 1 ? entry[1] : '', rules.flagMode),
+          ),
+        );
       }
     }
 
@@ -492,8 +491,12 @@ final class AffixRules {
       }
       return FlagSet.empty;
     }
-    return FlagSet.of(Flags.decode(text, flagMode));
+    return _flagSets[text] ??= FlagSet.of(Flags.decode(text, flagMode));
   }
+
+  /// The flags each text names, read once: the hundreds of thousands of
+  /// words in a word list share a few hundred of them.
+  final Map<String, FlagSet> _flagSets = <String, FlagSet>{};
 
   /// [text] without the characters IGNORE lists.
   String removeIgnored(String text) {
@@ -510,8 +513,10 @@ final class AffixRules {
   static List<String> _fields(String line) {
     final trimmed = line.trim();
     if (trimmed.isEmpty || trimmed.startsWith('#')) return const <String>[];
-    return trimmed.split(RegExp(r'[ \t]+'));
+    return trimmed.split(_blanks);
   }
+
+  static final RegExp _blanks = RegExp(r'[ \t]+');
 
   /// The [count] lines that follow line [header] and begin with [name], and
   /// the index of the line after the last of them.
