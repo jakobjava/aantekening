@@ -245,17 +245,13 @@ class AnthropicProvider implements ChatProvider {
           part.content.every((p) => p is! SourcesPart),
       'a tool result gives sources alone, or no sources',
     );
-    return _toolResultBlock(part);
+    return <String, Object?>{
+      'type': 'tool_result',
+      'tool_use_id': part.callId,
+      'content': <Object?>[for (final inner in part.content) ...?_block(inner)],
+      if (part.isError) 'is_error': true,
+    };
   }
-
-  Map<String, Object?> _toolResultBlock(
-    ToolResultPart part,
-  ) => <String, Object?>{
-    'type': 'tool_result',
-    'tool_use_id': part.callId,
-    'content': <Object?>[for (final inner in part.content) ...?_block(inner)],
-    if (part.isError) 'is_error': true,
-  };
 
   List<Map<String, Object?>>? _block(ChatPart part) => switch (part) {
     TextPart(:final text) when text.isNotEmpty => <Map<String, Object?>>[

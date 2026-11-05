@@ -6,7 +6,6 @@
 /// when the person asks it something, and only to the model they chose.
 library;
 
-import 'aantekening_ai.dart' show ChatProvider;
 import 'src/provider.dart' show ChatProvider;
 
 export 'src/ai_settings.dart';
