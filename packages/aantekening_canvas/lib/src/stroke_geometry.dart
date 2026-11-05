@@ -283,7 +283,6 @@ abstract final class StrokeGeometry {
       return path;
     }
 
-    final corners = List<Offset>.filled(8, Offset.zero);
     // Samples nearer together than the nib is thick are passed over: the
     // nib's sweep between those either side covers them.
     var x0 = stroke.xAt(0);
@@ -296,49 +295,72 @@ abstract final class StrokeGeometry {
           (y1 - y0).abs() < halfThickness) {
         continue;
       }
-      corners[0] = Offset(x0 - halfThickness, y0 - halfHeight);
-      corners[1] = Offset(x0 + halfThickness, y0 - halfHeight);
-      corners[2] = Offset(x0 + halfThickness, y0 + halfHeight);
-      corners[3] = Offset(x0 - halfThickness, y0 + halfHeight);
-      corners[4] = Offset(x1 - halfThickness, y1 - halfHeight);
-      corners[5] = Offset(x1 + halfThickness, y1 - halfHeight);
-      corners[6] = Offset(x1 + halfThickness, y1 + halfHeight);
-      corners[7] = Offset(x1 - halfThickness, y1 + halfHeight);
-      path.addPolygon(_convexHull(corners), true);
+      path.addPolygon(_sweep(x0, y0, x1, y1, halfThickness, halfHeight), true);
       x0 = x1;
       y0 = y1;
     }
     return path;
   }
 
-  /// The convex hull of [points], counter-clockwise (Andrew's monotone chain).
-  static List<Offset> _convexHull(List<Offset> points) {
-    final sorted = List<Offset>.of(points)
-      ..sort(
-        (a, b) => a.dx != b.dx ? a.dx.compareTo(b.dx) : a.dy.compareTo(b.dy),
-      );
-    double cross(Offset o, Offset a, Offset b) =>
-        (a.dx - o.dx) * (b.dy - o.dy) - (a.dy - o.dy) * (b.dx - o.dx);
-
-    final lower = <Offset>[];
-    for (final point in sorted) {
-      while (lower.length >= 2 &&
-          cross(lower[lower.length - 2], lower.last, point) <= 0) {
-        lower.removeLast();
-      }
-      lower.add(point);
-    }
-    final upper = <Offset>[];
-    for (final point in sorted.reversed) {
-      while (upper.length >= 2 &&
-          cross(upper[upper.length - 2], upper.last, point) <= 0) {
-        upper.removeLast();
-      }
-      upper.add(point);
-    }
-    return <Offset>[
-      ...lower.sublist(0, lower.length - 1),
-      ...upper.sublist(0, upper.length - 1),
-    ];
+  /// What a nib [halfWidth] by [halfHeight] about its middle sweeps from
+  /// ([x0], [y0]) to ([x1], [y1]): the hull of the nib at either end, six
+  /// corners wound as the nib's own are, top left to top right and round.
+  ///
+  /// Which corners of each end it runs through is the way the nib went:
+  /// going down and to the right, from the top right of the first to that
+  /// of the second, and from the bottom left of the second back to that of
+  /// the first. Worked out by sorting the eight corners, it was most of
+  /// what a highlighter's stroke cost to draw as it was being drawn.
+  static List<Offset> _sweep(
+    double x0,
+    double y0,
+    double x1,
+    double y1,
+    double halfWidth,
+    double halfHeight,
+  ) {
+    Offset topLeft(double x, double y) => Offset(x - halfWidth, y - halfHeight);
+    Offset topRight(double x, double y) =>
+        Offset(x + halfWidth, y - halfHeight);
+    Offset bottomRight(double x, double y) =>
+        Offset(x + halfWidth, y + halfHeight);
+    Offset bottomLeft(double x, double y) =>
+        Offset(x - halfWidth, y + halfHeight);
+    final right = x1 >= x0;
+    final down = y1 >= y0;
+    return switch ((right, down)) {
+      (true, true) => <Offset>[
+        topLeft(x0, y0),
+        topRight(x0, y0),
+        topRight(x1, y1),
+        bottomRight(x1, y1),
+        bottomLeft(x1, y1),
+        bottomLeft(x0, y0),
+      ],
+      (true, false) => <Offset>[
+        bottomLeft(x0, y0),
+        topLeft(x0, y0),
+        topLeft(x1, y1),
+        topRight(x1, y1),
+        bottomRight(x1, y1),
+        bottomRight(x0, y0),
+      ],
+      (false, true) => <Offset>[
+        topLeft(x0, y0),
+        topRight(x0, y0),
+        bottomRight(x0, y0),
+        bottomRight(x1, y1),
+        bottomLeft(x1, y1),
+        topLeft(x1, y1),
+      ],
+      (false, false) => <Offset>[
+        topLeft(x1, y1),
+        topRight(x1, y1),
+        topRight(x0, y0),
+        bottomRight(x0, y0),
+        bottomLeft(x0, y0),
+        bottomLeft(x1, y1),
+      ],
+    };
   }
 }

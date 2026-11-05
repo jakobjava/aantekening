@@ -1080,5 +1080,78 @@ void main() {
         closeTo(10 * StrokeGeometry.maxPressureScale, 1e-6),
       );
     });
+
+    test('a chisel covers what its nib sweeps, going every way', () {
+      final random = math.Random(7);
+      const width = 18.0;
+      const halfHeight = width / 2;
+      const halfThickness = width * StrokeGeometry.chiselThicknessRatio / 2;
+      for (var run = 0; run < 40; run++) {
+        // A stroke wandering every way, some steps along an axis, each
+        // longer than the nib is thick, so that none is passed over.
+        double step() =>
+            (random.nextBool() ? 1 : -1) * (3 + random.nextDouble() * 12);
+        final xs = <double>[100];
+        final ys = <double>[100];
+        for (var i = 0; i < 12; i++) {
+          final kind = random.nextInt(4);
+          xs.add(xs.last + (kind == 0 ? 0 : step()));
+          ys.add(ys.last + (kind == 1 ? 0 : step()));
+        }
+        final stroke = InkStroke.fromPoints(
+          tool: InkTool.highlighter,
+          color: 0x80FFE000,
+          width: width,
+          xs: xs,
+          ys: ys,
+        );
+        final chisel = StrokeGeometry.chiselPath(stroke);
+
+        /// Whether the nib, [grown] larger, passes over ([x], [y]) on its
+        /// way between any two samples.
+        bool swept(double x, double y, double grown) {
+          final w = halfThickness + grown;
+          final h = halfHeight + grown;
+          for (var i = 0; i + 1 < xs.length; i++) {
+            // When along the step from one sample to the next the nib is
+            // over the point, across and down: if those times meet.
+            (double, double) within(
+              double from,
+              double to,
+              double at,
+              double r,
+            ) {
+              final step = to - from;
+              if (step == 0) {
+                return (at - from).abs() <= r
+                    ? (0, 1)
+                    : (double.infinity, double.negativeInfinity);
+              }
+              final a = (at - r - from) / step;
+              final b = (at + r - from) / step;
+              return (math.min(a, b), math.max(a, b));
+            }
+
+            final (ax, bx) = within(xs[i], xs[i + 1], x, w);
+            final (ay, by) = within(ys[i], ys[i + 1], y, h);
+            if (math.max(0, math.max(ax, ay)) <=
+                math.min(1, math.min(bx, by))) {
+              return true;
+            }
+          }
+          return false;
+        }
+
+        for (var probe = 0; probe < 300; probe++) {
+          final x = 40 + random.nextDouble() * 120;
+          final y = 40 + random.nextDouble() * 120;
+          if (swept(x, y, -0.01)) {
+            expect(chisel.contains(Offset(x, y)), isTrue, reason: '($x, $y)');
+          } else if (!swept(x, y, 0.01)) {
+            expect(chisel.contains(Offset(x, y)), isFalse, reason: '($x, $y)');
+          }
+        }
+      }
+    });
   });
 }
