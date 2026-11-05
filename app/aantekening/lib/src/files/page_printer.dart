@@ -1,6 +1,7 @@
 /// Drawing a page as it is printed: on its paper, a sheet of it at a time.
 library;
 
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -101,23 +102,15 @@ class PagePrinter {
         height: tall,
         paper: false,
       );
+      // Millions of points to a strip are counted away from the window,
+      // so the progress shown goes on smoothly.
+      final counted = await _countAway(pixels, width, tall);
       for (var row = 0; row < tall; row++) {
-        var count = 0;
-        var first = -1;
-        var last = -1;
-        for (var x = 0, at = row * width * 4; x < width; x++, at += 4) {
-          if (pixels[at] < _blank ||
-              pixels[at + 1] < _blank ||
-              pixels[at + 2] < _blank) {
-            count++;
-            if (first < 0) first = x;
-            last = x;
-          }
-        }
+        final count = counted.count[row];
         if (count == 0) continue;
         marked[from + row] = count;
-        left[from + row] = bounds.left + first / scale;
-        right[from + row] = bounds.left + (last + 1) / scale;
+        left[from + row] = bounds.left + counted.first[row] / scale;
+        right[from + row] = bounds.left + (counted.last[row] + 1) / scale;
       }
     }
     return ContentProfile(
@@ -501,4 +494,44 @@ class _Layer {
       object.dispose();
     }
   }
+}
+
+/// [_countMarked] on an isolate of its own.
+///
+/// Apart from where it is called, so that what is sent there is the
+/// pixels alone.
+Future<({Uint32List count, Int32List first, Int32List last})> _countAway(
+  Uint8List pixels,
+  int width,
+  int rows,
+) => Isolate.run(() => _countMarked(pixels, width, rows));
+
+/// How many points of each of the [rows] of [pixels], [width] to a row,
+/// are darker than white, and the first and last of them across.
+({Uint32List count, Int32List first, Int32List last}) _countMarked(
+  Uint8List pixels,
+  int width,
+  int rows,
+) {
+  final count = Uint32List(rows);
+  final first = Int32List(rows);
+  final last = Int32List(rows);
+  for (var row = 0; row < rows; row++) {
+    var marked = 0;
+    var from = -1;
+    var to = -1;
+    for (var x = 0, at = row * width * 4; x < width; x++, at += 4) {
+      if (pixels[at] < PagePrinter._blank ||
+          pixels[at + 1] < PagePrinter._blank ||
+          pixels[at + 2] < PagePrinter._blank) {
+        marked++;
+        if (from < 0) from = x;
+        to = x;
+      }
+    }
+    count[row] = marked;
+    first[row] = from;
+    last[row] = to;
+  }
+  return (count: count, first: first, last: last);
 }
