@@ -305,7 +305,7 @@ class PageRepository {
       if (page == null) {
         throw ArgumentError.value(pageId, 'pageId', 'no such page');
       }
-      if (parentId != null && _subtree(pageId).contains(parentId)) {
+      if (_db.closesLoop('pages', pageId, parentId)) {
         throw ArgumentError.value(
           parentId,
           'parentId',

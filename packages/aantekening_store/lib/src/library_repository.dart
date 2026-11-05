@@ -258,7 +258,7 @@ class LibraryRepository {
       if (section == null) {
         throw ArgumentError.value(sectionId, 'sectionId', 'no such section');
       }
-      if (parentId != null && _isDescendantOrSelf(parentId, sectionId)) {
+      if (_db.closesLoop('sections', sectionId, parentId)) {
         throw ArgumentError.value(
           parentId,
           'parentId',
@@ -289,7 +289,7 @@ class LibraryRepository {
     String? parentId,
     double? position,
   }) async {
-    if (parentId != null && _isDescendantOrSelf(parentId, sectionId)) {
+    if (_db.closesLoop('sections', sectionId, parentId)) {
       throw ArgumentError.value(
         parentId,
         'parentId',
@@ -324,7 +324,7 @@ class LibraryRepository {
     required String notebookId,
     String? parentId,
   }) async => _db.transaction(() {
-    if (parentId != null && _isDescendantOrSelf(parentId, sectionId)) {
+    if (_db.closesLoop('sections', sectionId, parentId)) {
       throw ArgumentError.value(
         parentId,
         'parentId',
@@ -471,10 +471,6 @@ class LibraryRepository {
     }
     return top;
   }
-
-  /// Whether [candidate] is [ancestor] or sits anywhere beneath it.
-  bool _isDescendantOrSelf(String candidate, String ancestor) =>
-      _subtree(ancestor).contains(candidate);
 
   double _nextSectionPosition(String notebookId, String? parentId) =>
       _db.nextPosition('sections', _siblings, <Object?>[notebookId, parentId]);
