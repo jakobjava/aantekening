@@ -29,7 +29,8 @@ final storeProvider = FutureProvider<AantekeningStore>(
         : null;
     // The notes open before are closed first: they may be these notes, moved
     // to another folder, and only one store at a time may work on them.
-    await _storeClosing;
+    final closing = ref.read(_storeClosingProvider);
+    await closing.done;
     // Notes left while that was waited for — their folder changed — are
     // not opened at all.
     if (!ref.mounted) throw StateError('The notes were left unopened');
@@ -41,7 +42,7 @@ final storeProvider = FutureProvider<AantekeningStore>(
     // Closed when they are left, if that is while they are still opening
     // too; waited on by the next store, whatever went wrong closing this one.
     ref.onDispose(
-      () => _storeClosing = opening
+      () => closing.done = opening
           .then((store) => store.close())
           .then<void>((_) {}, onError: (Object _) {}),
     );
@@ -73,8 +74,14 @@ Future<void> startNewNotes(WidgetRef ref) async {
   ref.invalidate(storeProvider);
 }
 
-/// The store last open closing, or done closing.
-Future<void> _storeClosing = Future<void>.value();
+/// The store last open closing, or done closing: kept for as long as the
+/// providers are, and no longer, so a window, or a test, opened afresh
+/// waits on nothing an earlier one left.
+final _storeClosingProvider = Provider<_Closing>((ref) => _Closing());
+
+class _Closing {
+  Future<void> done = Future<void>.value();
+}
 
 /// A count bumped after a kind of change, to refresh what depends on it.
 ///
