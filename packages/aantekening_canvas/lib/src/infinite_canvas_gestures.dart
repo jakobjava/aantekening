@@ -128,14 +128,12 @@ extension _Gestures on _InfiniteCanvasState {
     // A second finger means the user wants to navigate, so whatever the first
     // finger started is abandoned rather than finished.
     if (_action == _PointerAction.draw) _controller.cancelStroke();
-    _update(() {
-      _action = _PointerAction.pinch;
-      _activePointer = null;
-      _marquee = null;
-      _marqueeAnchor = null;
-      _lasso = null;
-      _transform = null;
-    });
+    _action = _PointerAction.pinch;
+    _activePointer = null;
+    _marquee.value = null;
+    _marqueeAnchor = null;
+    _lasso.value = null;
+    _transform = null;
     _syncZooming();
   }
 

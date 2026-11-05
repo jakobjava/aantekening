@@ -259,10 +259,6 @@ class _TrackpadGesture {
 
 class _InfiniteCanvasState extends State<InfiniteCanvas>
     with SingleTickerProviderStateMixin {
-  /// Rebuilds the canvas after [change], for the parts of it kept in other
-  /// files of this library, which cannot call [setState] themselves.
-  void _update(VoidCallback change) => setState(change);
-
   _PointerAction _action = _PointerAction.none;
   int? _activePointer;
   Offset _pressPosition = Offset.zero;
@@ -276,7 +272,11 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   _TransformGesture? _transform;
 
   Offset? _marqueeAnchor;
-  Aabb? _marquee;
+
+  /// The band being dragged to select, in page space. It is drawn by
+  /// itself as it is dragged, the page not built again for it; the loop
+  /// of the lasso, and the cursor, alike.
+  final ValueNotifier<Aabb?> _marquee = ValueNotifier<Aabb?>(null);
 
   /// What a press on text would have picked up, without the text: picked
   /// up if it is let go of where it was.
@@ -288,7 +288,7 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   /// When and where text was last pressed and let go of, for a second
   /// press there to select a word.
   ({Duration at, Offset page})? _textTap;
-  Lasso? _lasso;
+  final ValueNotifier<Lasso?> _lasso = ValueNotifier<Lasso?>(null);
 
   /// The pointer last pressed on [InfiniteCanvas.afterSheets] or
   /// [InfiniteCanvas.overlay], whose press it is alone.
@@ -330,7 +330,10 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
   /// does.
   Offset _caught = Offset.zero;
 
-  MouseCursor _hoverCursor = MouseCursor.defer;
+  /// The cursor what the mouse hovers over asks for, or none of its own.
+  final ValueNotifier<MouseCursor> _hoverCursor = ValueNotifier<MouseCursor>(
+    MouseCursor.defer,
+  );
 
   /// Where the mouse pointer is, which a trackpad pinch zooms about. Linux
   /// reports a pinch at the last place clicked rather than at the pointer.
@@ -380,6 +383,9 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
     widget.touchpadFingers?.removeListener(_onTouchpadFingers);
     _zooming.dispose();
     _nib.dispose();
+    _marquee.dispose();
+    _lasso.dispose();
+    _hoverCursor.dispose();
     _hold?.cancel();
     _motion.dispose();
     _stopListening(_controller);
@@ -432,11 +438,15 @@ class _InfiniteCanvasState extends State<InfiniteCanvas>
             onPointerPanZoomUpdate: _onPanZoomUpdate,
             onPointerPanZoomEnd: _onPanZoomEnd,
             behavior: HitTestBehavior.opaque,
-            child: MouseRegion(
-              onExit: (_) => _nib.value = null,
-              cursor: _hoverCursor == MouseCursor.defer
-                  ? _cursorFor(controller.tool)
-                  : _hoverCursor,
+            child: ValueListenableBuilder<MouseCursor>(
+              valueListenable: _hoverCursor,
+              builder: (context, hovered, page) => MouseRegion(
+                onExit: (_) => _nib.value = null,
+                cursor: hovered == MouseCursor.defer
+                    ? _cursorFor(controller.tool)
+                    : hovered,
+                child: page,
+              ),
               child: ClipRect(
                 // Only the element layer takes pointers. The painted
                 // layers would otherwise count as hit everywhere — a

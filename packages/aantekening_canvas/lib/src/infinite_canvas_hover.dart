@@ -7,8 +7,7 @@ extension _Hover on _InfiniteCanvasState {
     if (event.kind == PointerDeviceKind.mouse) {
       _mousePosition = event.localPosition;
     }
-    final cursor = _cursorAt(event.localPosition);
-    if (cursor != _hoverCursor) _update(() => _hoverCursor = cursor);
+    _hoverCursor.value = _cursorAt(event.localPosition);
   }
 
   /// Puts the nib where [event] is, if a mouse or a pen: a finger has no

@@ -84,12 +84,12 @@ extension _Pointer on _InfiniteCanvasState {
         );
       case _PointerAction.marquee:
         _marqueeAnchor = page;
-        _marquee = Aabb(page.dx, page.dy, page.dx, page.dy);
+        _marquee.value = Aabb(page.dx, page.dy, page.dx, page.dy);
         if (!HardwareKeyboard.instance.isShiftPressed) {
           _controller.clearSelection();
         }
       case _PointerAction.lasso:
-        _lasso = Lasso(page);
+        _lasso.value = Lasso(page);
         if (!HardwareKeyboard.instance.isShiftPressed) {
           _controller.clearSelection();
         }
@@ -191,23 +191,21 @@ extension _Pointer on _InfiniteCanvasState {
       case _PointerAction.marquee:
         final anchor = _marqueeAnchor;
         if (anchor == null) break;
-        _update(() {
-          _marquee = Aabb(
-            math.min(anchor.dx, page.dx),
-            math.min(anchor.dy, page.dy),
-            math.max(anchor.dx, page.dx),
-            math.max(anchor.dy, page.dy),
-          );
-        });
+        _marquee.value = Aabb(
+          math.min(anchor.dx, page.dx),
+          math.min(anchor.dy, page.dy),
+          math.max(anchor.dx, page.dx),
+          math.max(anchor.dy, page.dy),
+        );
       case _PointerAction.lasso:
-        final lasso = _lasso;
+        final lasso = _lasso.value;
         // A point for every couple of pixels the loop goes round.
         if (lasso == null ||
             (page - lasso.points.last).distance <
                 _controller.viewport.toPageDistance(2)) {
           break;
         }
-        _update(() => _lasso = lasso.extendedTo(page));
+        _lasso.value = lasso.extendedTo(page);
       case _PointerAction.text:
         final from = _textFrom;
         if (_dragged && from != null) widget.text?.select(from, page);
@@ -235,7 +233,7 @@ extension _Pointer on _InfiniteCanvasState {
       case _PointerAction.draw:
         _controller.endStroke();
       case _PointerAction.marquee:
-        final band = _marquee;
+        final band = _marquee.value;
         if (!_dragged) {
           widget.onEmptyTap?.call(page);
         } else if (band != null) {
@@ -246,7 +244,7 @@ extension _Pointer on _InfiniteCanvasState {
         }
       case _PointerAction.lasso:
         final additive = HardwareKeyboard.instance.isShiftPressed;
-        final lasso = _lasso;
+        final lasso = _lasso.value;
         if (_dragged && lasso != null) {
           _controller.selectWithin(lasso, additive: additive);
         } else if (_controller.hitTest(page) case final hit?) {
@@ -335,17 +333,15 @@ extension _Pointer on _InfiniteCanvasState {
     _hold?.cancel();
     _hold = null;
     _motion.settle();
-    _update(() {
-      _action = _PointerAction.none;
-      _activePointer = null;
-      _marquee = null;
-      _marqueeAnchor = null;
-      _lasso = null;
-      _transform = null;
-      _textHit = null;
-      _textFrom = null;
-      _touchVelocity = null;
-    });
+    _action = _PointerAction.none;
+    _activePointer = null;
+    _marquee.value = null;
+    _marqueeAnchor = null;
+    _lasso.value = null;
+    _transform = null;
+    _textHit = null;
+    _textFrom = null;
+    _touchVelocity = null;
     _syncZooming();
   }
 

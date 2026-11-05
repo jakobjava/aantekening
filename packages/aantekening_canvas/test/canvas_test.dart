@@ -184,6 +184,36 @@ void main() {
       expect(controller.isDirty, isFalse);
     });
 
+    test('tells what shows the page only of what changes it: not of a '
+        'save, a pen put down with nothing picked, or a pick made again', () {
+      final controller = CanvasController()..addElement(_text('box'));
+      var told = 0;
+      var toldAtAll = 0;
+      controller
+        ..contents.addListener(() => told++)
+        ..addListener(() => toldAtAll++);
+
+      controller.markSaved(controller.document);
+      expect(controller.isDirty, isFalse);
+      expect((told, toldAtAll), (0, 1), reason: 'saved');
+
+      controller.select('box');
+      expect(told, 1);
+      controller.select('box');
+      controller.selectIn(const Aabb(0, 0, 50, 50));
+      controller.selectIn(const Aabb(500, 500, 600, 600), additive: true);
+      expect(told, 1, reason: 'picked as it was');
+
+      controller.beginStroke(const Offset(300, 300));
+      expect(told, 2, reason: 'what was picked is let go of');
+      controller.cancelStroke();
+      told = 0;
+      controller.beginStroke(const Offset(300, 300));
+      controller.beginShape(const Offset(300, 300));
+      expect(told, 0, reason: 'nothing was picked');
+      controller.cancelStroke();
+    });
+
     test('appends consecutive strokes to the same element', () {
       final controller = CanvasController();
 

@@ -939,7 +939,7 @@ class SelectionPainter extends CustomPainter {
     this.marquee,
     this.lasso,
     this.showHandles = true,
-  }) : super(repaint: view);
+  }) : super(repaint: Listenable.merge(<Listenable?>[view, marquee, lasso]));
 
   final List<NoteElement> selected;
 
@@ -949,11 +949,12 @@ class SelectionPainter extends CustomPainter {
   CanvasViewport get viewport => view.value;
   final Color accent;
 
-  /// The rubber-band rectangle being dragged, in page space.
-  final Aabb? marquee;
+  /// The rubber-band rectangle being dragged, in page space, which the
+  /// painter follows by itself.
+  final ValueListenable<Aabb?>? marquee;
 
-  /// The loop being drawn round what to select.
-  final Lasso? lasso;
+  /// The loop being drawn round what to select, followed alike.
+  final ValueListenable<Lasso?>? lasso;
 
   /// Whether to draw the box and its handles, or only the outlines.
   final bool showHandles;
@@ -995,7 +996,7 @@ class SelectionPainter extends CustomPainter {
       if (showHandles) _drawHandles(canvas, frame);
     }
 
-    final band = marquee;
+    final band = marquee?.value;
     if (band != null) {
       final rect = Rect.fromPoints(
         viewport.toScreen(Offset(band.left, band.top)),
@@ -1007,7 +1008,7 @@ class SelectionPainter extends CustomPainter {
         ..drawRRect(rounded, outline);
     }
 
-    if (lasso case final lasso?) {
+    if (lasso?.value case final lasso?) {
       final loop = _polygon(<Offset>[
         for (final point in lasso.points) viewport.toScreen(point),
       ]);
@@ -1051,7 +1052,7 @@ class SelectionPainter extends CustomPainter {
   bool shouldRepaint(SelectionPainter old) =>
       old.view != view ||
       old.marquee != marquee ||
-      !identical(old.lasso, lasso) ||
+      old.lasso != lasso ||
       old.accent != accent ||
       old.showHandles != showHandles ||
       !_sameElements(old.selected, selected);

@@ -800,6 +800,113 @@ void main() {
       expect(built.values, everyElement(1));
       expect(built.length, greaterThan(8));
     });
+
+    testWidgets('a band dragged, a loop drawn round, a line begun and the '
+        'pointer hovering build nothing on the page again', (tester) async {
+      final controller = CanvasController()
+        ..addElements(<NoteElement>[
+          for (var i = 0; i < 10; i++)
+            _image('$i', x: 20 + (i % 2) * 300.0, y: 20 + (i ~/ 2) * 110.0),
+        ]);
+      var built = 0;
+      await tester.pumpWidget(
+        _host(
+          controller,
+          elementBuilder: (context, element) {
+            built++;
+            return const ColoredBox(color: Colors.blue);
+          },
+        ),
+      );
+      expect(built, 10);
+
+      /// How many elements were built again for [gesture].
+      Future<int> rebuiltFor(Future<void> Function() gesture) async {
+        built = 0;
+        await gesture();
+        return built;
+      }
+
+      // A band dragged from the paper beside them, up across them.
+      final mouse = TestPointer(1, PointerDeviceKind.mouse);
+      expect(
+        await rebuiltFor(() async {
+          await tester.sendEventToBinding(mouse.down(const Offset(760, 580)));
+          for (var i = 1; i <= 20; i++) {
+            await tester.sendEventToBinding(
+              mouse.move(Offset(760 - i * 5.0, 580 - i * 5.0)),
+            );
+            await tester.pump();
+          }
+          await tester.sendEventToBinding(mouse.up());
+          await tester.pump();
+        }),
+        0,
+        reason: 'the band is drawn by itself, and takes in nothing',
+      );
+      expect(controller.selection, isEmpty);
+
+      // Hovering on and off a picture, its cursor changing.
+      expect(
+        await rebuiltFor(() async {
+          for (final at in const <Offset>[
+            Offset(100, 50),
+            Offset(700, 580),
+            Offset(100, 50),
+            Offset(700, 580),
+          ]) {
+            await tester.sendEventToBinding(mouse.hover(at));
+            await tester.pump();
+          }
+        }),
+        0,
+        reason: 'the cursor changes by itself',
+      );
+
+      // A loop drawn round nothing, with the lasso.
+      controller.setTool(CanvasTool.lasso);
+      await tester.pump();
+      final pen = TestPointer(2, PointerDeviceKind.stylus);
+      expect(
+        await rebuiltFor(() async {
+          await tester.sendEventToBinding(pen.down(const Offset(700, 500)));
+          for (var i = 1; i <= 20; i++) {
+            final turn = i / 20 * 2 * math.pi;
+            await tester.sendEventToBinding(
+              pen.move(
+                Offset(700 + 40 * math.sin(turn), 540 - 40 * math.cos(turn)),
+              ),
+            );
+            await tester.pump();
+          }
+          await tester.sendEventToBinding(pen.up());
+          await tester.pump();
+        }),
+        0,
+        reason: 'the loop is drawn by itself, and takes in nothing',
+      );
+
+      // A line written beside them, until the pen lifts and it is on the
+      // page.
+      controller.setTool(CanvasTool.pen);
+      await tester.pump();
+      expect(
+        await rebuiltFor(() async {
+          await tester.sendEventToBinding(pen.down(const Offset(650, 450)));
+          for (var i = 1; i <= 20; i++) {
+            await tester.sendEventToBinding(
+              pen.move(Offset(650 + i * 4.0, 450)),
+            );
+            await tester.pump();
+          }
+        }),
+        0,
+        reason: 'the line in progress is drawn by itself',
+      );
+      await tester.sendEventToBinding(pen.up());
+      await tester.pump();
+      expect(controller.document.elements, hasLength(11));
+    });
   });
 
   group('InfiniteCanvas zooming', () {

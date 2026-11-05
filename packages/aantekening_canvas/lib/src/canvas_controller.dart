@@ -231,7 +231,8 @@ class CanvasController extends ChangeNotifier {
   void markSaved(PageDocument saved) {
     if (!_dirty || !identical(saved, _document)) return;
     _dirty = false;
-    _changed();
+    // Nothing that shows the page changes with it: it is not built again.
+    notifyListeners();
   }
 
   /// Shows [document] in place of the page: the same page, as it was just
@@ -260,6 +261,16 @@ class CanvasController extends ChangeNotifier {
   void _changed() {
     _contents.signal();
     notifyListeners();
+  }
+
+  /// Tells what listens that the selection changed, if it is no longer
+  /// [before]: what shows the page is built again only for a change.
+  void _selectionChanged(Set<String> before) {
+    if (setEquals(before, _selection)) {
+      notifyListeners();
+    } else {
+      _changed();
+    }
   }
 
   @override
@@ -847,13 +858,14 @@ class CanvasController extends ChangeNotifier {
 
   /// Selects [id], replacing the selection unless [additive] is set.
   void select(String id, {bool additive = false}) {
+    final before = Set<String>.of(_selection);
     if (!additive) _selection.clear();
     if (additive && _selection.contains(id)) {
       _selection.remove(id);
     } else {
       _selection.add(id);
     }
-    _changed();
+    _selectionChanged(before);
   }
 
   /// Selects everything the marquee [region] takes in.
@@ -887,6 +899,7 @@ class CanvasController extends ChangeNotifier {
     required bool Function(NoteElement element) takesWhole,
     required bool additive,
   }) {
+    final before = Set<String>.of(_selection);
     if (!additive) _selection.clear();
     var next = _document;
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -925,7 +938,7 @@ class CanvasController extends ChangeNotifier {
     }
 
     if (identical(next, _document)) {
-      _changed();
+      _selectionChanged(before);
     } else {
       // Splitting changes nothing that can be seen, so it is not an undo step
       // of its own; it is kept with whatever the selection is used for next.
@@ -1112,6 +1125,7 @@ class CanvasController extends ChangeNotifier {
   /// Begins a stroke at a page-space point, letting go of what was picked
   /// — with a pen's button, say.
   void beginStroke(Offset page, {double pressure = 1, double tilt = 0}) {
+    final before = Set<String>.of(_selection);
     _selection.clear();
     _drawing = true;
     _draft = null;
@@ -1121,19 +1135,22 @@ class CanvasController extends ChangeNotifier {
       ..clear()
       ..addAll(<double>[page.dx, page.dy, _pressure(pressure), tilt]);
     _wetInk.signal();
-    _changed();
+    // Nothing is built again as the pen touches the page, unless it lets
+    // go of what was picked.
+    _selectionChanged(before);
   }
 
   /// Begins dragging out a [shapeKind] from a page-space point.
   void beginShape(Offset page) {
     final at = Vec2(page.dx, page.dy);
     final shape = InkShape.begin(_shapeKind, at);
+    final before = Set<String>.of(_selection);
     _selection.clear();
     _drawing = true;
     _wetPoints.clear();
     _draft = _ShapeDraft(shape, shape.draggedHandle, at, dragged: true);
     _wetInk.signal();
-    _changed();
+    _selectionChanged(before);
   }
 
   /// Makes the stroke in progress the shape it was drawn as, if it clearly
