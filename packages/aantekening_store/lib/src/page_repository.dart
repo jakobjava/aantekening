@@ -412,8 +412,12 @@ class PageRepository {
         return copy;
       });
 
-  /// Moves a page and its subpages to the recycle bin and drops them out of
+  /// Moves a page and its subpages to the recycle bin, and so out of
   /// search results. Returns the pages it deleted.
+  ///
+  /// Their entries in the search index stay, as a section's and a
+  /// notebook's pages' do when they are deleted: search passes over what is
+  /// in the bin, and a page restored is found again without being read.
   Future<List<String>> deletePage(String pageId) async => _db.transaction(() {
     // Subpages deleted earlier keep their own time, so restoring this page
     // does not bring them back with it.
@@ -424,16 +428,12 @@ class PageRepository {
         now,
         id,
       ]);
-      final rowId = _rowIdOf(id);
-      if (rowId != null) {
-        _db.run('DELETE FROM page_search WHERE rowid = ?', <Object?>[rowId]);
-      }
     }
     return deleted;
   });
 
   /// Restores a page from the recycle bin, with the subpages deleted along
-  /// with it, and puts them back in the index.
+  /// with it, to be found by search again.
   Future<void> restorePage(String pageId) async {
     final page = _findPage(pageId);
     final deletedAt = page?.deletedAt;
@@ -446,27 +446,25 @@ class PageRepository {
           'UPDATE pages SET deleted_at = NULL, updated_at = ? WHERE id = ?',
           <Object?>[now, id],
         );
-        final restored = _findPage(id)!;
-        _reindex(
-          id,
-          restored.title,
-          _readDocument(id)?.extractSearchText() ?? '',
-        );
+        // A page deleted by a version that took it out of the index then
+        // is put back in it.
+        if (!_isIndexed(id)) {
+          _reindex(
+            id,
+            _findPage(id)!.title,
+            _readDocument(id)?.extractSearchText() ?? '',
+          );
+        }
       }
     });
   }
 
-  /// Permanently removes a page and everything derived from it.
-  Future<void> purgePage(String pageId) async {
-    _db.transaction(() {
-      final rowId = _rowIdOf(pageId);
-      if (rowId != null) {
-        _db.run('DELETE FROM page_search WHERE rowid = ?', <Object?>[rowId]);
-      }
-      // page_bodies, page_assets, page_tags and embeddings cascade.
-      _db.run('DELETE FROM pages WHERE id = ?', <Object?>[pageId]);
-    });
-  }
+  /// Whether page [pageId] has an entry in the search index.
+  bool _isIndexed(String pageId) => _db.select(
+    'SELECT 1 FROM page_search WHERE rowid = '
+    '(SELECT rowid FROM pages WHERE id = ?)',
+    <Object?>[pageId],
+  ).isNotEmpty;
 
   // ------------------------------------------------------------- as files
 
@@ -573,14 +571,8 @@ class PageRepository {
         ],
       );
       _writeBody(page.id, document);
-      if (page.isDeleted) {
-        final rowId = _rowIdOf(page.id);
-        if (rowId != null) {
-          _db.run('DELETE FROM page_search WHERE rowid = ?', <Object?>[rowId]);
-        }
-      } else {
-        _reindex(page.id, page.title, document.extractSearchText());
-      }
+      // In the bin or not, as [deletePage] has it: search passes over it.
+      _reindex(page.id, page.title, document.extractSearchText());
       _syncAssets(page.id, document.referencedAssetIds);
       _db.run('DELETE FROM page_tags WHERE page_id = ?', <Object?>[page.id]);
       for (final name in file.tags) {

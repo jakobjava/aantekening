@@ -1095,6 +1095,35 @@ void main() {
       expect(await store.search.search('ephemeral'), isNotEmpty);
     });
 
+    test('restores a page to search without reading it again', () async {
+      final page = await addPage('Notes', 'ephemeral content');
+      await store.pages.deletePage(page.id);
+      // What it holds is not read: it could not be.
+      store.database.run(
+        "UPDATE page_bodies SET body = x'00' WHERE page_id = ?",
+        <Object?>[page.id],
+      );
+
+      await store.pages.restorePage(page.id);
+
+      expect((await store.search.search('ephemeral')).single.pageId, page.id);
+    });
+
+    test('restores to search a page whose deleting took it out', () async {
+      final page = await addPage('Notes', 'ephemeral content');
+      await store.pages.deletePage(page.id);
+      // As earlier versions deleted a page, out of the index too.
+      store.database.run(
+        'DELETE FROM page_search WHERE rowid = '
+        '(SELECT rowid FROM pages WHERE id = ?)',
+        <Object?>[page.id],
+      );
+
+      await store.pages.restorePage(page.id);
+
+      expect((await store.search.search('ephemeral')).single.pageId, page.id);
+    });
+
     test('excludes pages whose notebook is deleted', () async {
       final page = await addPage('Notes', 'hidden by its notebook');
       final section = await store.library.findSection(page.sectionId);
@@ -1298,7 +1327,7 @@ void main() {
         reason: 'the asset is still referenced',
       );
 
-      await store.pages.purgePage(page.id);
+      store.bin.purgePage(page.id);
 
       expect(await store.assets.collectGarbage(), 1);
       expect(await store.assets.find(asset.id), isNull);
