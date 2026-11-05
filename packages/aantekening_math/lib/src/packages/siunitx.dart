@@ -255,9 +255,8 @@ String _number(String source) {
 /// [text], a number, with its digits grouped in threes where there are
 /// five or more of them, and a comma for its decimal point read as a point.
 String _digits(String text) {
-  final parts = RegExp(
-    r'^([-+]?)(\d*)(?:[.,](\d*))?(\(\d+\))?$',
-  ).firstMatch(text);
+  final parts = RegExp(r'^([-+]?)(\d*)(?:[.,](\d*))?(\(\d+\))?$')
+      .firstMatch(text);
   if (parts == null) return text;
   String group(String digits, {required bool fromLeft}) {
     if (digits.length < 5) return digits;

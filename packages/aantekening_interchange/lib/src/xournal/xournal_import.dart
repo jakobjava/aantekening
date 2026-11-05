@@ -199,9 +199,8 @@ final class _Reader {
   /// before it: "2025-10-24 15-15 - Beispiele".
   static String _title(File file) {
     final name = p.basenameWithoutExtension(file.path);
-    final dated = RegExp(
-      r'^\d{4}-\d{2}-\d{2} \d{2}-\d{2} - (.+)$',
-    ).firstMatch(name);
+    final dated = RegExp(r'^\d{4}-\d{2}-\d{2} \d{2}-\d{2} - (.+)$')
+        .firstMatch(name);
     return dated?.group(1) ?? name;
   }
 

@@ -176,9 +176,8 @@ class _Reader {
       final value = variables[name];
       return value ?? (throw FormatException('Nothing is called \\$name'));
     }
-    final number = RegExp(
-      r'(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?',
-    ).matchAsPrefix(source, at);
+    final number = RegExp(r'(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?')
+        .matchAsPrefix(source, at);
     if (number != null) {
       at = number.end;
       return double.parse(number.group(0)!);

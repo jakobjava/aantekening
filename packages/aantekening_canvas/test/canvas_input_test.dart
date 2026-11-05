@@ -30,9 +30,8 @@ TextElement _textBox(String id, {double x = 0, double y = 0}) => TextElement(
 /// A page with a picture far down and to the right, which it scrolls to.
 CanvasController _farReaching() => CanvasController()
   ..loadDocument(
-    PageDocument.empty(
-      id: 'p',
-    ).withElementAdded(_image('far', x: 20000, y: 20000)),
+    PageDocument.empty(id: 'p')
+        .withElementAdded(_image('far', x: 20000, y: 20000)),
   );
 
 /// Hosts a canvas filling an 800×600 view, or the part of it below and to

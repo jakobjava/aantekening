@@ -89,9 +89,8 @@ A wave $y = A \sin(kx - \omega t)$ travels, and
         );
         if (outcome == 'timeout') {
           // Kept, to be read again under a debugger.
-          File(
-            path,
-          ).copySync(p.join(Directory.systemTemp.path, 'hung.$extension'));
+          File(path)
+              .copySync(p.join(Directory.systemTemp.path, 'hung.$extension'));
         }
         outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
         File(path).deleteSync();
@@ -155,10 +154,9 @@ Future<String> _readBounded(String name, String path, String work) async {
   final isolate = await Isolate.spawn(_read, (port.sendPort, name, path, work));
   try {
     return await port.first.timeout(
-          const Duration(seconds: 20),
-          onTimeout: () => 'timeout',
-        )
-        as String;
+      const Duration(seconds: 20),
+      onTimeout: () => 'timeout',
+    ) as String;
   } finally {
     isolate.kill(priority: Isolate.immediate);
     port.close();

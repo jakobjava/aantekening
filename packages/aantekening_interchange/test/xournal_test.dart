@@ -91,9 +91,12 @@ void main() {
           r'<teximage text="\(\vcenter{\halign{#\cr 1\cr}}\)" left="0" top="0" right="10" bottom="10">'
           '$pixel</teximage></layer></page>',
     );
-    final element = read(<String>[
-      file.path,
-    ]).pages.single.document.elements.single;
+    final element = read(<String>[file.path])
+        .pages
+        .single
+        .document
+        .elements
+        .single;
     expect(element, isA<ImageElement>());
   });
 

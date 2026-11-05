@@ -275,9 +275,8 @@ abstract final class TikzSource {
     final variables = <String>[];
     while (true) {
       scanner.skipSpaces();
-      final match = RegExp(
-        r'\\([a-zA-Z]+)',
-      ).matchAsPrefix(scanner.source, scanner.at);
+      final match = RegExp(r'\\([a-zA-Z]+)')
+          .matchAsPrefix(scanner.source, scanner.at);
       if (match == null) break;
       variables.add(match.group(1)!);
       scanner.at = match.end;
@@ -320,9 +319,8 @@ abstract final class TikzSource {
   static ({String name, double from})? _counter(String options) {
     for (final option in TikzSource.options(options)) {
       if (option.key != 'count' || option.value == null) continue;
-      final match = RegExp(
-        r'^\\([a-zA-Z]+)(?:\s+from\s+(.+))?$',
-      ).firstMatch(option.value!.trim());
+      final match = RegExp(r'^\\([a-zA-Z]+)(?:\s+from\s+(.+))?$')
+          .firstMatch(option.value!.trim());
       if (match == null) continue;
       final from = match.group(2);
       return (

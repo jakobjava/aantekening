@@ -297,9 +297,8 @@ void main() {
   group('Anthropic', () {
     test('gives notes as search results, and asks with tools, search and '
         'a fallback', () {
-      final body = AnthropicProvider(
-        apiKey: 'k',
-      ).body(question('How fast?', tools: const <ToolSpec>[readTool]));
+      final body = AnthropicProvider(apiKey: 'k')
+          .body(question('How fast?', tools: const <ToolSpec>[readTool]));
       final content =
           ((body['messages']! as List).single as Map)['content']! as List;
       expect(content.first, <String, Object?>{
@@ -455,9 +454,8 @@ void main() {
         final opus = (await provider.capabilitiesOf('claude-opus-5')).price!;
         expect((opus.input, opus.output, opus.cacheRead), (5, 25, 0.5));
         expect(opus.cacheWrite, 6.25);
-        final fable = (await provider.capabilitiesOf(
-          'claude-fable-5-1',
-        )).price!;
+        final fable = (await provider.capabilitiesOf('claude-fable-5-1'))
+            .price!;
         expect(fable.cacheRead, 0.25, reason: 'not the price of Fable 5');
         expect((await provider.capabilitiesOf('claude-2')).price, isNull);
       },
@@ -1619,9 +1617,8 @@ void main() {
 
   group('citation markers', () {
     test('leave numbers that name no source as they are', () {
-      final events = MarkerReader(const <Source>[
-        lecture,
-      ]).add('see [7] and [1]');
+      final events = MarkerReader(const <Source>[lecture])
+          .add('see [7] and [1]');
       final builder = AnswerBuilder();
       events.forEach(builder.add);
       expect(builder.answer.markdown, 'see [7] and⟦1⟧');

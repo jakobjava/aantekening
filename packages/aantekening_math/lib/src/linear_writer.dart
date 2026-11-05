@@ -328,9 +328,8 @@ abstract final class LinearWriter {
   static String _scriptPart(MathNode node) {
     if (node is FencedNode && node.isRoundParen) return '(${write(node)})';
     // A charge, `O^+`, is a sign alone.
-    if (node case SymbolNode(
-      :final latex,
-    ) when const <String>{'+', '-', r'\pm', r'\mp'}.contains(latex)) {
+    if (node case SymbolNode(:final latex)
+        when const <String>{'+', '-', r'\pm', r'\mp'}.contains(latex)) {
       return _spelling(latex);
     }
     // A charge of a number or a letter and a sign, `O^2-`, as it is typed.

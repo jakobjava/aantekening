@@ -365,10 +365,8 @@ class OpenAiCompatibleProvider implements ChatProvider {
   static String conversationKey(ChatRequest request) {
     final first = request.messages.firstOrNull;
     if (first != null) {
-      if (_keys[first] case (
-        final system,
-        final key,
-      ) when system == request.system) {
+      if (_keys[first] case (final system, final key)
+          when system == request.system) {
         return key;
       }
     }

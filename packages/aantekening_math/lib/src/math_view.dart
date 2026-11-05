@@ -160,15 +160,14 @@ class MathView extends StatefulWidget {
         ? only.children
         : null;
     return EnclosureNode(
-          base: marked == null ? base : base.updateChildren(marked),
-          hasBorder: true,
-          bordercolor: updated.backgroundcolor,
-          backgroundcolor: updated.backgroundcolor,
-          notation: updated.notation,
-          horizontalPadding: updated.horizontalPadding,
-          verticalPadding: updated.verticalPadding,
-        )
-        as T;
+      base: marked == null ? base : base.updateChildren(marked),
+      hasBorder: true,
+      bordercolor: updated.backgroundcolor,
+      backgroundcolor: updated.backgroundcolor,
+      notation: updated.notation,
+      horizontalPadding: updated.horizontalPadding,
+      verticalPadding: updated.verticalPadding,
+    ) as T;
   }
 }
 

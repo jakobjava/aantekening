@@ -60,9 +60,9 @@ void main() {
       );
       expect(Directory(p.join(notes, 'assets')).existsSync(), isTrue);
       expect(
-        Directory(
-          p.join(directory.path, 'index'),
-        ).listSync().where((file) => file.path.endsWith('.sqlite')),
+        Directory(p.join(directory.path, 'index'))
+            .listSync()
+            .where((file) => file.path.endsWith('.sqlite')),
         hasLength(1),
       );
 
@@ -534,9 +534,9 @@ void main() {
       expect(await titles(), <String>['A', 'C', 'B']);
       await store.pages.arrangePage(pages[1].id, parentId: pages[0].id);
       expect(
-        PageRef.hierarchy(
-          await store.pages.listPages(sectionId),
-        ).childrenOf(pages[0].id).map((page) => page.title),
+        PageRef.hierarchy(await store.pages.listPages(sectionId))
+            .childrenOf(pages[0].id)
+            .map((page) => page.title),
         <String>['B'],
       );
 
@@ -947,9 +947,8 @@ void main() {
             ).encode(),
           );
           expect(
-            (await store.search.search(
-              'w${words - 1}',
-            )).map((hit) => hit.pageId),
+            (await store.search.search('w${words - 1}'))
+                .map((hit) => hit.pageId),
             contains(copy.id),
           );
           expect(store.pages.pageFile(copy.id)!.assets.single.id, picture.id);
@@ -965,17 +964,15 @@ void main() {
         documentWithText(page.id, 'by hand'),
       );
       // The same contents, written as no build here writes them.
-      final json =
-          jsonDecode(
-                utf8.decode(
-                  store.database.select(
-                        'SELECT body FROM page_bodies WHERE page_id = ?',
-                        <Object?>[page.id],
-                      ).first['body']
-                      as List<int>,
-                ),
-              )
-              as Map<String, Object?>;
+      final json = jsonDecode(
+        utf8.decode(
+          store.database.select(
+                'SELECT body FROM page_bodies WHERE page_id = ?',
+                <Object?>[page.id],
+              ).first['body']
+              as List<int>,
+        ),
+      ) as Map<String, Object?>;
       store.database.run(
         'UPDATE page_bodies SET body = ? WHERE page_id = ?',
         <Object?>[

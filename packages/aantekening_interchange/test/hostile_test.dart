@@ -396,10 +396,9 @@ Future<String> bounded(void Function() read) async {
   }, port.sendPort);
   try {
     return await port.first.timeout(
-          const Duration(seconds: 20),
-          onTimeout: () => 'timeout',
-        )
-        as String;
+      const Duration(seconds: 20),
+      onTimeout: () => 'timeout',
+    ) as String;
   } finally {
     isolate.kill(priority: Isolate.immediate);
     port.close();

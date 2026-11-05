@@ -11,9 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 const double cm = TikzExpression.pointsPerCm;
 
-TikzDrawing drawn(String body, {List<Size>? labelSizes}) => TikzPicture.read(
-  '\\begin{tikzpicture}$body\\end{tikzpicture}',
-).draw(labelSizes: labelSizes);
+TikzDrawing drawn(String body, {List<Size>? labelSizes}) =>
+    TikzPicture.read('\\begin{tikzpicture}$body\\end{tikzpicture}')
+        .draw(labelSizes: labelSizes);
 
 /// Where [path] starts and ends, by its outline.
 Rect boundsOf(TikzMark mark) => mark.path.getBounds();
@@ -162,9 +162,9 @@ void main() {
     });
 
     test('a plot follows its function', () {
-      final plot = drawn(
-        r'\draw[domain=0:2, samples=11] plot (\x, {\x*\x});',
-      ).marks.single;
+      final plot = drawn(r'\draw[domain=0:2, samples=11] plot (\x, {\x*\x});')
+          .marks
+          .single;
       expect(boundsOf(plot).width, closeTo(2 * cm, 1e-3));
       expect(boundsOf(plot).height, closeTo(4 * cm, 1e-3));
     });
@@ -192,9 +192,9 @@ void main() {
         'on 2 pt off 3 pt',
         'on 2pt off 3pt on 1pt off 3pt',
       ]) {
-        final dashed = drawn(
-          '\\draw[dash pattern=$pattern] (0,0) -- (1,0);',
-        ).marks.single;
+        final dashed = drawn('\\draw[dash pattern=$pattern] (0,0) -- (1,0);')
+            .marks
+            .single;
         expect(dashed.path.computeMetrics().length, greaterThan(3));
       }
     });

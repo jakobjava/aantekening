@@ -70,9 +70,8 @@ Widget _host(
 (CanvasController, _Text) _page({bool background = true}) {
   final controller = CanvasController()
     ..loadDocument(
-      PageDocument.empty(
-        id: 'p',
-      ).withElementAdded(_printout('sheet', locked: background)),
+      PageDocument.empty(id: 'p')
+          .withElementAdded(_printout('sheet', locked: background)),
     );
   return (
     controller,

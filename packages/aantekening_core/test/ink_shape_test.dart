@@ -360,12 +360,10 @@ void main() {
       expect(moved.handles[2], const Vec2(110, 60));
       expect(moved.handles[0], const Vec2(-10, 0));
       // A square stays square, whichever way it is pulled.
-      final square =
-          InkShape.begin(
-                ShapeKind.square,
-                const Vec2(0, 0),
-              ).withHandle(2, const Vec2(40, 90))
-              as BoxShape;
+      final square = InkShape.begin(
+        ShapeKind.square,
+        const Vec2(0, 0),
+      ).withHandle(2, const Vec2(40, 90)) as BoxShape;
       expect(square.size, const Vec2(90, 90));
     });
 

@@ -21,7 +21,6 @@ linter:
     - prefer_final_locals
     - prefer_relative_imports
     - unawaited_futures
-    - unnecessary_await_in_return
     - use_super_parameters
     - avoid_bool_literals_in_conditional_expressions
     - avoid_equals_and_hash_code_on_mutable_classes

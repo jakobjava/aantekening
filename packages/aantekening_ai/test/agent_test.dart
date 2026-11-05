@@ -598,9 +598,9 @@ void main() {
       ),
       title: 'Arbeitsblatt',
     );
-    final texts = NoteContext.pageSource(
-      digest,
-    ).passages.map((p) => p.text).toList();
+    final texts = NoteContext.pageSource(digest).passages
+        .map((p) => p.text)
+        .toList();
     expect(texts.where((t) => t.startsWith('[Visual v1')), hasLength(1));
     expect(texts, contains('v = 12 m/s'));
     expect(texts.last, contains('typed onto page 1 of a PDF'));

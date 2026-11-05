@@ -317,9 +317,8 @@ class NoteAgent {
     yield answering.progress(AgentStage.gathering, 'Gathering your notes');
     final capabilities = await provider.capabilitiesOf(model);
     answering.price = capabilities.price;
-    final given = await NoteContext(
-      reader,
-    ).build(scope, budget: _budget(capabilities));
+    final given = await NoteContext(reader)
+        .build(scope, budget: _budget(capabilities));
     sources = given.sources;
     if (sources.isEmpty) {
       throw AiException(

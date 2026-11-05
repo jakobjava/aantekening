@@ -353,10 +353,9 @@ sealed class StudySet {
               in set
                   .list(_Names.itemsOf(kind), bare: 'front', value: 'back')
                   .indexed)
-            if ((card.text(_Names.front), card.text(_Names.back)) case (
-              final front,
-              final back,
-            ) when front.isNotEmpty && back.isNotEmpty)
+            if ((card.text(_Names.front), card.text(_Names.back))
+                case (final front, final back)
+                when front.isNotEmpty && back.isNotEmpty)
               StudyCard(
                 id: id(card, i),
                 front: front,

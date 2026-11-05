@@ -42,9 +42,8 @@ void main() {
 
   test('an answer is cut into the blocks it would be written again by', () {
     expect(
-      AnswerSection.blocksOf(
-        answer.markdown,
-      ).map((b) => answer.markdown.substring(b.start, b.end)),
+      AnswerSection.blocksOf(answer.markdown)
+          .map((b) => answer.markdown.substring(b.start, b.end)),
       <String>[
         '## Motion',
         'Speed is distance over time⟦1⟧. It is measured in metres a second.',

@@ -470,9 +470,8 @@ Viel Erfolg beim Lernen! {Ende}''';
     });
 
     test('keep only what was changed, the app’s own first', () {
-      final quiz = StudyProfile.original(
-        StudyKind.quiz,
-      ).copyWith(details: 'I am in Q13 in Bavaria.', form: StudyKind.text);
+      final quiz = StudyProfile.original(StudyKind.quiz)
+          .copyWith(details: 'I am in Q13 in Bavaria.', form: StudyKind.text);
       expect(quiz.form, StudyKind.quiz, reason: 'the app’s own keep theirs');
       var settings = const AiSettings()
           .withProfile(abitur)

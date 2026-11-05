@@ -403,9 +403,8 @@ void main() {
     });
 
     test('replacing an absent element is a no-op', () {
-      final page = PageDocument.empty(
-        id: 'PAGE04',
-      ).withElementAdded(_text('a', 'first'));
+      final page = PageDocument.empty(id: 'PAGE04')
+          .withElementAdded(_text('a', 'first'));
       final same = page.withElementReplaced(_text('ghost', 'nope'));
 
       expect(identical(same, page), isTrue);
@@ -442,9 +441,8 @@ void main() {
     });
 
     test('a page whose content is on it is left as it is', () {
-      final page = PageDocument.empty(
-        id: 'PAGE08',
-      ).withElementAdded(_text('a', 'first', y: 12));
+      final page = PageDocument.empty(id: 'PAGE08')
+          .withElementAdded(_text('a', 'first', y: 12));
 
       expect(identical(page.withContentOnPage(), page), isTrue);
     });

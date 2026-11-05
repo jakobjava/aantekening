@@ -92,14 +92,11 @@ class _ZoomSnapshot extends SingleChildRenderObjectWidget {
 /// Paints its child in a layer of its own, and keeps a picture of that.
 class RenderZoomSnapshot extends RenderProxyBox {
   RenderZoomSnapshot({
-    required double pixelsPerUnit,
-    required bool zooming,
-    bool enabled = true,
-    ValueListenable<CanvasViewport>? view,
-  }) : _pixelsPerUnit = pixelsPerUnit,
-       _zooming = zooming,
-       _enabled = enabled,
-       _view = view;
+    required this._pixelsPerUnit,
+    required this._zooming,
+    this._enabled = true,
+    this._view,
+  });
 
   /// The view of the page it is on, which taking pictures waits on to rest.
   ValueListenable<CanvasViewport>? _view;

@@ -50,9 +50,8 @@ void main() {
 
   group('reading OneNote files', () {
     test('reads a section, and the file attached in it', () {
-      final bytes = File(
-        'test/fixtures/onenote-2016/OneWithFileData.one',
-      ).readAsBytesSync();
+      final bytes = File('test/fixtures/onenote-2016/OneWithFileData.one')
+          .readAsBytesSync();
       final section = readSection(RevisionStore.read(bytes), 'Fallback');
       expect(section.pages, hasLength(1));
       final page = section.pages.single;
@@ -67,9 +66,8 @@ void main() {
 
     test('orders sections as the table of contents lists them', () {
       final notebook = Directory(p.join(work.path, 'Notebook'))..createSync();
-      File(
-        'test/fixtures/toc/Open Notebook.onetoc2',
-      ).copySync(p.join(notebook.path, 'Open Notebook.onetoc2'));
+      File('test/fixtures/toc/Open Notebook.onetoc2')
+          .copySync(p.join(notebook.path, 'Open Notebook.onetoc2'));
       for (final name in <String>[
         'Ink',
         'New Section 3',
@@ -115,9 +113,8 @@ void main() {
     });
 
     test('reads several files at once, each a notebook of its own', () {
-      final section = File(
-        'test/fixtures/onenote-2016/OneWithFileData.one',
-      ).readAsBytesSync();
+      final section = File('test/fixtures/onenote-2016/OneWithFileData.one')
+          .readAsBytesSync();
       String file(String path, List<int> bytes) {
         final file = File(p.join(work.path, 'chosen', path))
           ..parent.createSync(recursive: true)
@@ -170,9 +167,8 @@ void main() {
     });
 
     test('converts each section of a notebook before reading the next', () {
-      final section = File(
-        'test/fixtures/onenote-2016/OneWithFileData.one',
-      ).readAsBytesSync();
+      final section = File('test/fixtures/onenote-2016/OneWithFileData.one')
+          .readAsBytesSync();
       final package = File(p.join(work.path, 'Courses.onepkg'))
         ..writeAsBytesSync(
           writeCabinet(

@@ -34,8 +34,10 @@ part 'infinite_canvas_pointer.dart';
 /// Supplied by the host application so that the canvas does not depend on the
 /// maths renderer, the PDF renderer or the text editor: it owns layout and
 /// input, they own their own content.
-typedef CanvasElementBuilder =
-    Widget? Function(BuildContext context, NoteElement element);
+typedef CanvasElementBuilder = Widget? Function(
+  BuildContext context,
+  NoteElement element,
+);
 
 /// Decides whether an element's own widget handles a press at a page-space
 /// point, in which case the canvas leaves that press alone.

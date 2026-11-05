@@ -94,12 +94,10 @@ class PageSpace extends SingleChildRenderObjectWidget {
 class RenderPageSpace extends RenderBox
     with RenderObjectWithChildMixin<RenderBox> {
   RenderPageSpace({
-    required ValueListenable<CanvasViewport> view,
-    required Aabb region,
-    double devicePixelRatio = 1,
-  }) : _view = view,
-       _region = region,
-       _devicePixelRatio = devicePixelRatio;
+    required this._view,
+    required this._region,
+    this._devicePixelRatio = 1,
+  });
 
   double _devicePixelRatio;
   set devicePixelRatio(double value) {

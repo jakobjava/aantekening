@@ -64,9 +64,8 @@ abstract final class LatexText {
 
   /// The braced argument of the first [command] in [source], if any.
   static String? _argumentOf(String source, String command) {
-    final at = RegExp(
-      '${RegExp.escape(command)}(?![A-Za-z])',
-    ).firstMatch(source);
+    final at = RegExp('${RegExp.escape(command)}(?![A-Za-z])')
+        .firstMatch(source);
     if (at == null) return null;
     final open = LatexSource.skipSpaces(source, at.end);
     if (open >= source.length || source[open] != '{') return null;

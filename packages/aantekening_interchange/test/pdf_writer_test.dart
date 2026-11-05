@@ -145,9 +145,9 @@ void main() {
         RegExp(r'startxref\n(\d+)\n').firstMatch(text)!.group(1)!,
       );
       expect(text.substring(start), startsWith('xref\n'));
-      final entries = RegExp(
-        r'(\d{10}) (\d{5}) ([nf]) \n',
-      ).allMatches(text.substring(start)).toList();
+      final entries = RegExp(r'(\d{10}) (\d{5}) ([nf]) \n')
+          .allMatches(text.substring(start))
+          .toList();
       final size = int.parse(
         RegExp(r'/Size (\d+)').firstMatch(text)!.group(1)!,
       );

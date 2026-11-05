@@ -2,6 +2,7 @@
 library;
 
 import 'package:meta/meta.dart';
+
 import 'rich_text.dart';
 
 /// A table among a text box's blocks: the blocks from [start] up to, but not

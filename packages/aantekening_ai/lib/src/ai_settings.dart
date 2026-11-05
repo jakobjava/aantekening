@@ -268,10 +268,9 @@ class AiSettings {
     this.about = '',
     this.profiles = const <StudyProfile>[],
     this.voices = const <VoiceConfig>[],
-    List<EpisodeProfile>? episodes,
-    List<SpeakerProfile>? casts,
-  }) : _episodes = episodes,
-       _casts = casts;
+    this._episodes,
+    this._casts,
+  });
 
   final List<ProviderConfig> providers;
 

@@ -71,9 +71,9 @@ void main() {
     expect(store.mirror!.status.pending, 0);
     // Nothing is left of the writes but the files.
     expect(
-      Directory(
-        notes,
-      ).listSync(recursive: true).where((file) => file.path.endsWith('.tmp')),
+      Directory(notes)
+          .listSync(recursive: true)
+          .where((file) => file.path.endsWith('.tmp')),
       isEmpty,
     );
   });
@@ -304,9 +304,8 @@ void main() {
       page: file.page,
       document: documentWithText(pageId, 'written on the laptop'),
     );
-    File(
-      p.join(notes, 'pages', '$pageId-LAPTOP.json.gz'),
-    ).writeAsBytesSync(copy.encode());
+    File(p.join(notes, 'pages', '$pageId-LAPTOP.json.gz'))
+        .writeAsBytesSync(copy.encode());
 
     await store.mirror!.scan();
     final pages = await store.pages.listPages(sectionId);
@@ -415,9 +414,8 @@ void main() {
       addTearDown(again.close);
       final file =
           EntityFile.decode(
-                File(
-                  p.join(notes, 'pages', '$pageId.json.gz'),
-                ).readAsBytesSync(),
+                File(p.join(notes, 'pages', '$pageId.json.gz'))
+                    .readAsBytesSync(),
               )!
               as PageFile;
       expect(file.document.extractSearchText(), 'unwritten');
@@ -728,9 +726,9 @@ Future<void> main() async {
         addTearDown(again.close);
         expect(await textOf(again, pageId), 'F = ma');
         expect(
-          Directory(
-            indexFolder,
-          ).listSync().any((file) => file.path.contains('.damaged-')),
+          Directory(indexFolder)
+              .listSync()
+              .any((file) => file.path.contains('.damaged-')),
           isTrue,
         );
       },

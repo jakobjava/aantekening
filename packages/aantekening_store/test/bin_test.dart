@@ -267,9 +267,8 @@ void main() {
           top.createdAt,
           DateTime.utc(2025, 9, 17, 12).millisecondsSinceEpoch,
         );
-        final beneath = (await store.pages.listPages(
-          first.sectionId,
-        )).firstWhere((page) => page.parentId == top.id);
+        final beneath = (await store.pages.listPages(first.sectionId))
+            .firstWhere((page) => page.parentId == top.id);
         expect(beneath.title, 'Beneath');
         final shown =
             (await store.pages.loadDocument(top.id))!.elements.single

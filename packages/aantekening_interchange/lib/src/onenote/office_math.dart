@@ -105,9 +105,8 @@ List<String?> _pieces(List<_Node> nodes) {
   var piece = <_Node>[];
   void finish() {
     // Spaces around a piece are the gaps between the formulas.
-    final latex = _latex(
-      piece,
-    ).replaceAll(RegExp(r'^(\\ |\s)+|(\\ |\s)+$'), '');
+    final latex = _latex(piece)
+        .replaceAll(RegExp(r'^(\\ |\s)+|(\\ |\s)+$'), '');
     if (latex.isNotEmpty) pieces.add(latex);
     piece = <_Node>[];
   }
@@ -248,9 +247,9 @@ String _numbered(String row) {
   return number.isEmpty ? equation : '$equation\\qquad $number';
 }
 
-bool _isLimitOperator(String latex) => RegExp(
-  r'^\\(lim|max|min|sup|inf|limsup|liminf|sum|prod|bigcup|bigcap)\s*$',
-).hasMatch(latex.trim());
+bool _isLimitOperator(String latex) =>
+    RegExp(r'^\\(lim|max|min|sup|inf|limsup|liminf|sum|prod|bigcup|bigcap)\s*$')
+        .hasMatch(latex.trim());
 
 String _accent(int? char, String body) {
   final command = switch (char) {

@@ -69,9 +69,8 @@ Future<void> _simulate(int seed) async {
       final text = 'words${words++}';
       // Writing over words seen here, whoever wrote them, is meant: they
       // go.
-      final seen = (await store.pages.loadDocument(
-        page.id,
-      ))?.extractSearchText();
+      final seen = (await store.pages.loadDocument(page.id))
+          ?.extractSearchText();
       for (final written in last.values) {
         written.removeWhere((_, words) => words == seen);
       }
@@ -108,9 +107,8 @@ Future<void> _simulate(int seed) async {
       if (deleted.isNotEmpty) {
         final entry = deleted[random.nextInt(deleted.length)];
         // Deleting for good what is seen here is meant: it goes.
-        final seen = (await store.pages.loadDocument(
-          entry.id,
-        ))?.extractSearchText();
+        final seen = (await store.pages.loadDocument(entry.id))
+            ?.extractSearchText();
         for (final written in last.values) {
           written.removeWhere((_, words) => words == seen);
         }
@@ -165,9 +163,8 @@ Future<void> _simulate(int seed) async {
     ...mine.values,
     for (final computer in computers)
       for (final row in computer.database.select('SELECT id FROM pages'))
-        (await computer.pages.loadDocument(
-              row['id']! as String,
-            ))?.extractSearchText() ??
+        (await computer.pages.loadDocument(row['id']! as String))
+                ?.extractSearchText() ??
             '',
   };
   for (final MapEntry(key: who, value: written) in last.entries) {

@@ -228,13 +228,12 @@ final class PageFile extends EntityFile {
     final json = documentJson;
     if (json == null) return super.encode();
     return pageCompression.encode(
-          (BytesBuilder(copy: false)
-                ..add(utf8.encode(_head()))
-                ..add(json)
-                ..addByte(0x7D))
-              .takeBytes(),
-        )
-        as Uint8List;
+      (BytesBuilder(copy: false)
+            ..add(utf8.encode(_head()))
+            ..add(json)
+            ..addByte(0x7D))
+          .takeBytes(),
+    ) as Uint8List;
   }
 
   @override
