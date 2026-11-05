@@ -2,6 +2,7 @@
 library;
 
 import 'package:aantekening_core/aantekening_core.dart';
+import 'package:meta/meta.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'schema.dart';
@@ -109,21 +110,34 @@ class AantekeningDatabase {
     bool live = false,
     int? deletedAt,
   }) {
-    final condition = live
-        ? 'AND t.deleted_at IS NULL'
-        : deletedAt != null
-        ? 'AND t.deleted_at = ?2'
-        : '';
     final rows = select(
-      'WITH RECURSIVE subtree(id, depth) AS ('
-      '  SELECT ?1, 0'
-      '  UNION ALL'
-      '  SELECT t.id, s.depth + 1 FROM $table t '
-      '  JOIN subtree s ON t.parent_id = s.id WHERE t.id != ?1 $condition'
-      ') SELECT id FROM subtree ORDER BY depth',
+      subtreeQuery(table, live: live, deleted: deletedAt != null),
       <Object?>[id, ?deletedAt],
     );
     return <String>[for (final row in rows) row['id'] as String];
+  }
+
+  /// The query [subtree] asks, of `?1` and the rows beneath it — those
+  /// deleted at `?2` with [deleted].
+  @visibleForTesting
+  static String subtreeQuery(
+    String table, {
+    bool live = false,
+    bool deleted = false,
+  }) {
+    // Looked up by parent, not by when it was deleted, which nearly every
+    // page shares: `+` keeps SQLite from reaching for that index instead.
+    final condition = live
+        ? 'AND +t.deleted_at IS NULL'
+        : deleted
+        ? 'AND +t.deleted_at = ?2'
+        : '';
+    return 'WITH RECURSIVE subtree(id, depth) AS ('
+        '  SELECT ?1, 0'
+        '  UNION ALL'
+        '  SELECT t.id, s.depth + 1 FROM $table t '
+        '  JOIN subtree s ON t.parent_id = s.id WHERE t.id != ?1 $condition'
+        ') SELECT id FROM subtree ORDER BY depth';
   }
 
   /// Whether [parentId], as the parent of [id] in [table], would close a

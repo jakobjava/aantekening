@@ -215,6 +215,27 @@ void main() {
         ),
       );
     });
+
+    test('walks down a tree by parent, those not in the bin and those '
+        'deleted at once alike, not by when they were deleted', () {
+      for (final table in const <String>['pages', 'sections']) {
+        for (final (live, deleted) in const <(bool, bool)>[
+          (false, false),
+          (true, false),
+          (false, true),
+        ]) {
+          final plan = store.database
+              .select(
+                'EXPLAIN QUERY PLAN '
+                '${AantekeningDatabase.subtreeQuery(table, live: live, deleted: deleted)}',
+                <Object?>['x', if (deleted) 1],
+              )
+              .map((row) => row['detail'])
+              .join('; ');
+          expect(plan, contains('idx_${table}_parent'), reason: plan);
+        }
+      }
+    });
   });
 
   group('notebooks and sections', () {
