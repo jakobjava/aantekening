@@ -61,7 +61,7 @@ void main() {
 
     test('names an untitled page as the page list does', () {
       final graph = _graph(pageTitle: '');
-      expect(graph.nodes[graph.indexOf('p1')!].label, 'Untitled page');
+      expect(graph.nodes[graph.indexOf('p1')!].label, 'Untitled');
     });
 
     test('is the same shape when only names differ', () {

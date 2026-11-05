@@ -25,7 +25,7 @@ String displayTitle(TreeNode node) =>
 
 /// A page's title, or a stand-in for a page without one.
 String pageTitleOrPlaceholder(String title) =>
-    title.trim().isEmpty ? 'Untitled page' : title;
+    title.trim().isEmpty ? 'Untitled' : title;
 
 /// Shows what can be done to a notebook, section or page.
 ///

@@ -241,7 +241,7 @@ class NoteContext {
     }
     return Source(
       uri: digest.link.toString(),
-      title: digest.title.isEmpty ? 'Untitled page' : digest.title,
+      title: digest.title.isEmpty ? 'Untitled' : digest.title,
       origin: SourceOrigin.notes,
       context: context,
       passages: passages,
@@ -268,7 +268,7 @@ class NoteContext {
     final chosen = (keep.toList()..sort()).take(limit * 3).toList();
     return Source(
       uri: digest.link.toString(),
-      title: digest.title.isEmpty ? 'Untitled page' : digest.title,
+      title: digest.title.isEmpty ? 'Untitled' : digest.title,
       origin: SourceOrigin.notes,
       context: context,
       passages: <SourcePassage>[

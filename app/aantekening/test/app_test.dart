@@ -685,7 +685,7 @@ void main() {
       expect(title.controller.text, isEmpty);
       expect(title.focusNode.hasFocus, isTrue);
       expect(find.byType(Picker), findsNothing, reason: 'its page is open');
-      expect(tabNamed('Untitled page'), findsOneWidget);
+      expect(tabNamed('Untitled'), findsOneWidget);
     });
   });
 
@@ -721,7 +721,7 @@ void main() {
         SheetOrientation.landscape,
       ]);
       expect(sheets.width, greaterThan(sheets.heightOf(0)));
-      expect(tabNamed('Untitled page'), findsOneWidget);
+      expect(tabNamed('Untitled'), findsOneWidget);
 
       await showPanes(tester);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
@@ -729,11 +729,7 @@ void main() {
       expect(find.text('Squared'), findsOneWidget, reason: 'pages, as before');
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(
-        inPanes(find.text('Untitled page')),
-        findsOneWidget,
-        reason: 'one',
-      );
+      expect(inPanes(find.text('Untitled')), findsOneWidget, reason: 'one');
     });
   });
 
