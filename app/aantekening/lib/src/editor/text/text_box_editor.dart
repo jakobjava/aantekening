@@ -383,6 +383,15 @@ class TextBoxEditorState extends State<TextBoxEditor>
   final List<GlobalKey> _rowKeys = <GlobalKey>[];
   final List<GlobalKey> _contentKeys = <GlobalKey>[];
 
+  /// Each block's row as it was last built, and what it was built from: a
+  /// row is built again only once something it shows has changed, so a
+  /// letter typed builds the paragraph it is typed into and no other.
+  final List<(_RowBuild, Widget)?> _builtRows = <(_RowBuild, Widget)?>[];
+
+  /// How many times verdicts on the spelling have come in, each of which
+  /// every row is built again for.
+  int _proofreadings = 0;
+
   final UndoSteps _undoSteps = UndoSteps();
 
   int? _dragPointer;
@@ -484,7 +493,7 @@ class TextBoxEditorState extends State<TextBoxEditor>
   }
 
   /// Verdicts on the spelling of words in the box have come in.
-  void _onProofread() => setState(() {});
+  void _onProofread() => setState(() => _proofreadings++);
 
   void _beginEditing() {
     widget.controller?.attach(this);
@@ -783,6 +792,8 @@ class TextBoxEditorState extends State<TextBoxEditor>
       _rowKeys.add(GlobalKey());
       _contentKeys.add(GlobalKey());
     }
+    // Rows of blocks since deleted are let go of.
+    if (_builtRows.length > _blocks.length) _builtRows.length = _blocks.length;
   }
 
   @override
@@ -806,24 +817,18 @@ class TextBoxEditorState extends State<TextBoxEditor>
     );
 
     final ordinals = ListNumbering.ordinals(_blocks);
-    // Each row, and where across the box it sits in a box as wide as its
-    // text: a paragraph by its alignment, a table at the start.
-    final rows = <(Widget, double)>[];
+    // Each row: in a box as wide as its text, placed across it, a
+    // paragraph by its alignment and a table at the start.
+    final rows = <Widget>[];
     var i = 0;
     while (i < _blocks.length) {
       final table = TextTables.tableAt(_blocks, i);
       if (table == null) {
-        rows.add((
-          _buildBlock(i, base, paint, ordinals[i], focused, autoWidth),
-          switch (_blocks[i].align) {
-            BlockAlign.start => 0,
-            BlockAlign.center => 0.5,
-            BlockAlign.end => 1,
-          },
-        ));
+        rows.add(_buildBlock(i, base, paint, ordinals[i], focused, autoWidth));
         i++;
       } else {
-        rows.add((_buildTable(table, base, paint, ordinals, focused), 0));
+        final grid = _buildTable(table, base, paint, ordinals, focused);
+        rows.add(autoWidth ? AlignedRow(across: 0, child: grid) : grid);
         i = table.end;
       }
     }
@@ -852,15 +857,12 @@ class TextBoxEditorState extends State<TextBoxEditor>
                             ? TextBoxEditor.minAutoWidth
                             : TextBoxEditor.formulaWidth) -
                         TextBoxEditor.padding.horizontal,
-                    children: <Widget>[
-                      for (final (row, across) in rows)
-                        AlignedRow(across: across, child: row),
-                    ],
+                    children: rows,
                   )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[for (final (row, _) in rows) row],
+                    children: rows,
                   ),
           ),
         ),

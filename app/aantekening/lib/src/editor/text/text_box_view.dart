@@ -260,7 +260,68 @@ extension _View on TextBoxEditorState {
     );
   }
 
+  /// Block [index]'s row, placed across a box as wide as its text
+  /// ([autoWidth]) by its alignment: as it was last built, where nothing
+  /// it shows has changed since, which the framework then passes over.
   Widget _buildBlock(
+    int index,
+    TextStyle base,
+    BlockPaint paint,
+    int ordinal,
+    bool focused,
+    bool autoWidth,
+  ) {
+    final editing = widget.isEditing;
+    final caret = _selection.extent;
+    final here = editing && caret.block == index;
+    final mark = widget.mark;
+    final formula = _formula;
+    final openRun = formula?.block == index ? formula!.run : null;
+    final inputs = _RowBuild(
+      block: _blocks[index],
+      ordinal: ordinal,
+      focused: focused,
+      autoWidth: autoWidth,
+      base: base,
+      paint: paint,
+      emphasis: context.tones.paperEmphasis,
+      editing: editing,
+      selected: widget.selected,
+      highlight: widget.highlight,
+      mark: mark?.block == index ? mark : null,
+      proofreader: widget.proofreader,
+      proofreadings: _proofreadings,
+      openRun: openRun,
+      shown: openRun == null ? '' : _shown,
+      inFormula: formula != null,
+      covered: editing ? _covering[index] : null,
+      caret: here ? caret.offset : null,
+      collapsed: here && _selection.isCollapsed,
+      composing: here ? _input.composing : null,
+      affinity: _affinity,
+      pendingMarks: _pendingMarks,
+    );
+    while (_builtRows.length <= index) {
+      _builtRows.add(null);
+    }
+    final built = _builtRows[index];
+    if (built != null && built.$1 == inputs) return built.$2;
+    final row = _rowOf(index, base, paint, ordinal, focused, autoWidth);
+    final placed = autoWidth
+        ? AlignedRow(
+            across: switch (_blocks[index].align) {
+              BlockAlign.start => 0,
+              BlockAlign.center => 0.5,
+              BlockAlign.end => 1,
+            },
+            child: row,
+          )
+        : row;
+    _builtRows[index] = (inputs, placed);
+    return placed;
+  }
+
+  Widget _rowOf(
     int index,
     TextStyle base,
     BlockPaint paint,
@@ -380,4 +441,122 @@ extension _View on TextBoxEditorState {
       ),
     );
   }
+}
+
+/// All a block's row is drawn by: a row built from the same is the same.
+@immutable
+class _RowBuild {
+  const _RowBuild({
+    required this.block,
+    required this.ordinal,
+    required this.focused,
+    required this.autoWidth,
+    required this.base,
+    required this.paint,
+    required this.emphasis,
+    required this.editing,
+    required this.selected,
+    required this.highlight,
+    required this.mark,
+    required this.proofreader,
+    required this.proofreadings,
+    required this.openRun,
+    required this.shown,
+    required this.inFormula,
+    required this.covered,
+    required this.caret,
+    required this.collapsed,
+    required this.composing,
+    required this.affinity,
+    required this.pendingMarks,
+  });
+
+  /// The block, the same only if it is the same one: an edit makes a new
+  /// block of the one it changes, and leaves the others as they were.
+  final TextBlock block;
+  final int ordinal;
+  final bool focused;
+  final bool autoWidth;
+  final TextStyle base;
+  final BlockPaint paint;
+  final Color emphasis;
+  final bool editing;
+  final bool selected;
+  final SearchTerms? highlight;
+
+  /// The words marked in this block, if any are.
+  final WordsMark? mark;
+  final Proofreader? proofreader;
+  final int proofreadings;
+
+  /// The formula being edited, where it is in this block, and how it is
+  /// typeset meanwhile.
+  final int? openRun;
+  final String shown;
+
+  /// Whether a formula is being edited anywhere in the box.
+  final bool inFormula;
+
+  /// What the selection takes in of the block.
+  final Covered? covered;
+
+  /// Where the caret is in the block, if it is in it, whether nothing is
+  /// selected there, and what the input method is composing there.
+  final int? caret;
+  final bool collapsed;
+  final TextRange? composing;
+  final TextAffinity affinity;
+  final TextMarks? pendingMarks;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _RowBuild &&
+      identical(other.block, block) &&
+      other.ordinal == ordinal &&
+      other.focused == focused &&
+      other.autoWidth == autoWidth &&
+      other.base == base &&
+      other.paint == paint &&
+      other.emphasis == emphasis &&
+      other.editing == editing &&
+      other.selected == selected &&
+      identical(other.highlight, highlight) &&
+      other.mark == mark &&
+      identical(other.proofreader, proofreader) &&
+      other.proofreadings == proofreadings &&
+      other.openRun == openRun &&
+      other.shown == shown &&
+      other.inFormula == inFormula &&
+      other.covered == covered &&
+      other.caret == caret &&
+      other.collapsed == collapsed &&
+      other.composing == composing &&
+      other.affinity == affinity &&
+      other.pendingMarks == pendingMarks;
+
+  @override
+  int get hashCode => Object.hashAll(<Object?>[
+    identityHashCode(block),
+    ordinal,
+    focused,
+    autoWidth,
+    base,
+    paint,
+    emphasis,
+    editing,
+    selected,
+    identityHashCode(highlight),
+    mark,
+    identityHashCode(proofreader),
+    proofreadings,
+    openRun,
+    shown,
+    inFormula,
+    covered,
+    caret,
+    collapsed,
+    composing,
+    affinity,
+    pendingMarks,
+  ]);
 }

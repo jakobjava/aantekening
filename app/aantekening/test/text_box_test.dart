@@ -1549,6 +1549,33 @@ void main() {
     expect(textBox(tester).element.frame.height, greaterThan(before + 60));
   });
 
+  testWidgets('a letter typed builds again only the paragraph it is typed '
+      'into', (tester) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    for (final (index, line) in <String>['one', 'two', 'three'].indexed) {
+      if (index > 0) await press(tester, LogicalKeyboardKey.enter);
+      await type(tester, line);
+    }
+    await tester.pumpAndSettle();
+    List<BlockParagraph> paragraphs() =>
+        tester.widgetList<BlockParagraph>(find.byType(BlockParagraph)).toList();
+    final before = paragraphs();
+
+    await type(tester, 'e');
+    // The box widens to fit, and is built again for it.
+    await tester.pumpAndSettle();
+
+    expect(textOf(tester), 'one\ntwo\nthreee');
+    final after = paragraphs();
+    expect(
+      <bool>[
+        for (var i = 0; i < after.length; i++) identical(before[i], after[i]),
+      ],
+      <bool>[true, true, false],
+    );
+  });
+
   testWidgets('an abandoned empty box is removed', (tester) async {
     await openEditor(tester, store, pageId);
     await startTextBox(tester);
