@@ -49,6 +49,10 @@ class FakeProvider implements ChatProvider {
   /// While set, flashcards are written once it is completed.
   Completer<void>? cardsGate;
 
+  /// While set, the answer is written a word at a time, as each is added,
+  /// until it is closed.
+  StreamController<String>? words;
+
   /// Whether it was closed: what is still being answered then breaks off,
   /// as a closed HTTP client breaks it off.
   bool closed = false;
@@ -122,7 +126,11 @@ class FakeProvider implements ChatProvider {
       await gate.future;
       if (closed) throw StateError('Client is already closed.');
     }
-    if (question.contains('<part>')) {
+    if (words case final words?) {
+      await for (final word in words.stream) {
+        yield TextDelta(word);
+      }
+    } else if (question.contains('<part>')) {
       yield const TextDelta('Force is what makes a mass accelerate');
       yield CitedSpan(<Citation>[citation]);
       yield const TextDelta(', simply put.');
@@ -501,6 +509,49 @@ void main() {
     await askReady();
     expect(model.asked, hasLength(2));
     expect(searched(), isFalse, reason: 'turned off on the ask line');
+  });
+
+  testWidgets('the answers given before are not built again for each word '
+      'of the one coming', (tester) async {
+    final container = await openShell(tester);
+    container.read(tabsProvider.notifier).toggleAi();
+    await tester.pumpAndSettle();
+    await ask(tester, 'What is force?');
+    await ask(tester, 'And mass?');
+    expect(find.byType(AnswerView), findsNWidgets(2));
+
+    // How often an answer given before is built while the next comes.
+    var built = 0;
+    debugOnRebuildDirtyWidget = (element, _) {
+      if (element.widget case AnswerView(:final answer)
+          when answer.markdown.contains('Newton')) {
+        built++;
+      }
+    };
+    addTearDown(() => debugOnRebuildDirtyWidget = null);
+    final words = model.words = StreamController<String>();
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AiView),
+        matching: find.byType(TextField),
+      ),
+      'And its unit?',
+    );
+    await tester.tap(find.byTooltip('Ask (Enter)'));
+    await tester.pump(const Duration(milliseconds: 50));
+    built = 0;
+    for (var i = 0; i < 20; i++) {
+      words.add('word$i ');
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(find.textContaining('word19', findRichText: true), findsOneWidget);
+    expect(built, 0, reason: 'nothing of them changed');
+    debugOnRebuildDirtyWidget = null;
+
+    await words.close();
+    model.words = null;
+    await tester.pumpAndSettle();
+    expect(find.byType(AnswerView), findsNWidgets(3));
   });
 
   testWidgets('an answer comes from the notes, cites them, and says what '

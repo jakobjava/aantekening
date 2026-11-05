@@ -384,7 +384,14 @@ class StudyOverview extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tones = context.tones;
-    final state = ref.watch(aiSessionProvider(scope));
+    // Not how far what is being made has got: each line follows its own.
+    final (:threads, :items, :answering) = ref.watch(
+      aiSessionProvider(scope).select(
+        (s) =>
+            (threads: s.threads, items: s.items, answering: s.pending != null),
+      ),
+    );
+    final savedAnswers = items.savedAnswers;
     final session = ref.read(aiSessionProvider(scope).notifier);
 
     Widget heading(String label, {Widget? action}) => Padding(
@@ -410,13 +417,13 @@ class StudyOverview extends ConsumerWidget {
             onPressed: () => editStudyProfile(context),
           ),
         ),
-        for (final (index, profile) in studyProfilesOf(ref, state).indexed)
+        for (final (index, profile) in studyProfilesOf(ref, items).indexed)
           _StudyRow(
             key: ValueKey<String>(profile.id),
+            scope: scope,
             digit: index < 9 ? '${index + 1}' : null,
             profile: profile,
-            item: state.setOf(profile.id),
-            making: state.making.containsKey(profile.id),
+            item: items.setOf(profile.id),
             onShow: () => session.openProfile(profile.id),
             onMake: () => unawaited(session.make(profile)),
           ),
@@ -439,21 +446,21 @@ class StudyOverview extends ConsumerWidget {
               for (final action in AiAction.values)
                 PillButton(
                   action.label,
-                  onPressed: state.pending != null
+                  onPressed: answering
                       ? null
                       : () => askReady(ref, scope, action),
                 ),
             ],
           ),
         ),
-        if (state.threads.isNotEmpty) ...<Widget>[
+        if (threads.isNotEmpty) ...<Widget>[
           heading(
             'Conversations',
-            action: state.threads.length > _listed
-                ? KeyHint('c  all ${state.threads.length}')
+            action: threads.length > _listed
+                ? KeyHint('c  all ${threads.length}')
                 : null,
           ),
-          for (final thread in state.threads.take(_listed))
+          for (final thread in threads.take(_listed))
             _Line(
               title: threadTitle(thread),
               trailing: whenOf(thread.updatedAt),
@@ -463,9 +470,9 @@ class StudyOverview extends ConsumerWidget {
               ],
             ),
         ],
-        if (state.savedAnswers.isNotEmpty) ...<Widget>[
+        if (savedAnswers.isNotEmpty) ...<Widget>[
           heading('Kept answers'),
-          for (final item in state.savedAnswers)
+          for (final item in savedAnswers)
             _Line(
               title: item.title,
               trailing: whenOf(item.createdAt),
@@ -479,7 +486,7 @@ class StudyOverview extends ConsumerWidget {
               ],
             ),
         ],
-        if (state.threads.isEmpty && state.savedAnswers.isEmpty)
+        if (threads.isEmpty && savedAnswers.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(6, 14, 6, 0),
             child: Text(
@@ -499,22 +506,21 @@ class StudyOverview extends ConsumerWidget {
 /// made.
 class _StudyRow extends ConsumerWidget {
   const _StudyRow({
+    required this.scope,
     required this.digit,
     required this.profile,
     required this.item,
-    required this.making,
     required this.onShow,
     required this.onMake,
     super.key,
   });
 
+  final NoteLink scope;
+
   /// The key it is opened by, if it has one.
   final String? digit;
   final StudyProfile profile;
   final AiItem? item;
-
-  /// Whether this set is being made now.
-  final bool making;
 
   /// Shows its page: the set, it being made, or what it would be.
   final VoidCallback onShow;
@@ -524,7 +530,11 @@ class _StudyRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tones = context.tones;
     final item = this.item;
-    final set = item == null ? null : StudySet.fromJson(item.body);
+    // Whether this set is being made now.
+    final making = ref.watch(
+      aiSessionProvider(scope).select((s) => s.making.containsKey(profile.id)),
+    );
+    final set = item?.studySet;
     final due = cardsToStudy(ref, item);
     final digit = this.digit;
     return Tooltip(

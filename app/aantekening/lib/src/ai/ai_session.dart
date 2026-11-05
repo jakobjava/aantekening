@@ -106,41 +106,13 @@ class AiSessionState {
       pending == null;
 
   /// The kept set of profile [id], if one was made.
-  AiItem? setOf(String id) => items
-      .where((item) => item.kind == id && StudySet.fromJson(item.body) != null)
-      .firstOrNull;
-
-  /// The profiles to study by: [configured], then one for each set kept
-  /// whose own profile is gone, to see it and make it again by.
-  List<StudyProfile> profilesWith(List<StudyProfile> configured) {
-    final ids = <String>{for (final profile in configured) profile.id};
-    return <StudyProfile>[
-      ...configured,
-      for (final item in items)
-        if (StudySet.fromJson(item.body) case final set?
-            when ids.add(item.kind))
-          StudyProfile(
-            id: item.kind,
-            name: item.title,
-            form: set.kind,
-            idea: set.kind.idea,
-          ),
-    ];
-  }
+  AiItem? setOf(String id) => items.setOf(id);
 
   /// The answers kept from conversations.
-  List<AiItem> get savedAnswers => <AiItem>[
-    for (final item in items)
-      if (StudySet.fromJson(item.body) == null &&
-          PodcastEpisode.fromJson(item.body) == null)
-        item,
-  ];
+  List<AiItem> get savedAnswers => items.savedAnswers;
 
   /// The podcasts kept, the latest first.
-  List<AiItem> get episodes => <AiItem>[
-    for (final item in items)
-      if (PodcastEpisode.fromJson(item.body) != null) item,
-  ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  List<AiItem> get episodes => items.episodes;
 
   AiSessionState copyWith({
     bool? loaded,
@@ -169,6 +141,58 @@ class AiSessionState {
     shownPodcast: shownPodcast == null ? this.shownPodcast : shownPodcast(),
     error: error == null ? this.error : error(),
   );
+}
+
+/// What a thing kept holds, read from its JSON once however often it is
+/// asked for: a study set, a podcast, or else an answer.
+extension KeptItem on AiItem {
+  static final Expando<(StudySet?, PodcastEpisode?)> _read =
+      Expando<(StudySet?, PodcastEpisode?)>('kept');
+
+  (StudySet?, PodcastEpisode?) get _held =>
+      _read[this] ??= (StudySet.fromJson(body), PodcastEpisode.fromJson(body));
+
+  /// The study set it holds, if it holds one.
+  StudySet? get studySet => _held.$1;
+
+  /// The podcast it holds, if it holds one.
+  PodcastEpisode? get episode => _held.$2;
+}
+
+/// The things kept about a scope, sorted by what they hold.
+extension KeptItems on List<AiItem> {
+  /// The kept set of profile [id], if one was made.
+  AiItem? setOf(String id) =>
+      where((item) => item.kind == id && item.studySet != null).firstOrNull;
+
+  /// The profiles to study by: [configured], then one for each set kept
+  /// whose own profile is gone, to see it and make it again by.
+  List<StudyProfile> profilesWith(List<StudyProfile> configured) {
+    final ids = <String>{for (final profile in configured) profile.id};
+    return <StudyProfile>[
+      ...configured,
+      for (final item in this)
+        if (item.studySet case final set? when ids.add(item.kind))
+          StudyProfile(
+            id: item.kind,
+            name: item.title,
+            form: set.kind,
+            idea: set.kind.idea,
+          ),
+    ];
+  }
+
+  /// The answers kept from conversations.
+  List<AiItem> get savedAnswers => <AiItem>[
+    for (final item in this)
+      if (item.studySet == null && item.episode == null) item,
+  ];
+
+  /// The podcasts kept, the latest first.
+  List<AiItem> get episodes => <AiItem>[
+    for (final item in this)
+      if (item.episode != null) item,
+  ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 }
 
 /// The AI of the notebook, section or page [scope].
@@ -253,8 +277,7 @@ class AiSession extends _AiSessionCore
     // speaking left it.
     if (state.podcasts.containsKey(id)) await stopPodcast(id);
     final item = state.items.where((item) => item.id == id).firstOrNull;
-    if (PodcastEpisode.fromJson(item?.body) case final episode?
-        when episode.spoken) {
+    if (item?.episode case final episode? when episode.spoken) {
       await deletePodcastAudio(ref, episode.audio);
     }
     await (await _store).ai.deleteItem(id);
@@ -420,7 +443,7 @@ typedef _Ready = ({AiModel model, WorkspaceReader reader, ScopeInfo info});
 final aiSessionProvider =
     NotifierProvider.family<AiSession, AiSessionState, NoteLink>(AiSession.new);
 
-/// The profiles to study the scope of [state] by, as [AiSessionState.
-/// profilesWith] has them.
-List<StudyProfile> studyProfilesOf(WidgetRef ref, AiSessionState state) =>
-    state.profilesWith(ref.watch(aiSettingsProvider).studyProfiles);
+/// The profiles to study a scope by whose kept things are [items], as
+/// [KeptItems.profilesWith] has them.
+List<StudyProfile> studyProfilesOf(WidgetRef ref, List<AiItem> items) =>
+    items.profilesWith(ref.watch(aiSettingsProvider).studyProfiles);

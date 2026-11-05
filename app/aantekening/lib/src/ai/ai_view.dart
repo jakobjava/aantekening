@@ -238,7 +238,7 @@ class _AiViewState extends ConsumerState<AiView> {
   /// The AI mode's keys.
   KeyLayer _layer() {
     final state = ref.read(aiSessionProvider(widget.scope));
-    final profiles = studyProfilesOf(ref, state);
+    final profiles = studyProfilesOf(ref, state.items);
     return KeyLayer('AI mode', <KeyGroup>[
       KeyGroup(<KeyAction>[
         KeyAction('o', 'Overview', run: _session.newThread),
@@ -427,7 +427,9 @@ class _Head extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tones = context.tones;
-    final state = ref.watch(aiSessionProvider(scope));
+    final atOverview = ref.watch(
+      aiSessionProvider(scope).select((s) => s.atOverview),
+    );
     final info = ref.watch(aiScopeInfoProvider(scope)).value;
     final colour = EditorMode.ai.colourOn(tones);
     // At least as tall as its words, however large they are.
@@ -462,7 +464,7 @@ class _Head extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  if (!state.atOverview) ...<Widget>[
+                  if (!atOverview) ...<Widget>[
                     const SizedBox(width: 10),
                     PillButton(
                       'Overview',
@@ -537,20 +539,37 @@ class _MainState extends ConsumerState<_Main> {
   void _open(Citation citation) =>
       unawaited(ref.read(noteLinksProvider).open(citation.uri, newTab: true));
 
+  /// What of [s] decides the page shown: not how far an answer has got,
+  /// which the conversation follows itself, nor a set or a podcast being
+  /// made while another page shows.
+  static _Showing _showingOf(AiSessionState s) => (
+    loaded: s.loaded,
+    items: s.items,
+    itemId: s.itemId,
+    atOverview: s.atOverview,
+    shownProfile: s.shownProfile,
+    shownPodcast: s.shownPodcast,
+    making: s.making[s.shownProfile],
+    podcast: s.podcasts[s.shownPodcast],
+    error: s.error,
+  );
+
   @override
   Widget build(BuildContext context) {
     final scope = widget.scope;
-    final state = ref.watch(aiSessionProvider(scope));
+    final state = ref.watch(aiSessionProvider(scope).select(_showingOf));
     final model = ref.watch(aiModelProvider);
     ref.listen(aiSessionProvider(scope), (_, _) => _follow());
 
-    final item = state.item;
-    final profiles = studyProfilesOf(ref, state);
+    final item = state.items
+        .where((item) => item.id == state.itemId)
+        .firstOrNull;
+    final profiles = studyProfilesOf(ref, state.items);
     StudyProfile? profileOf(String? id) =>
         profiles.where((profile) => profile.id == id).firstOrNull;
     final shown = profileOf(state.shownProfile);
-    final set = item == null ? null : StudySet.fromJson(item.body);
-    final podcast = item == null ? null : PodcastEpisode.fromJson(item.body);
+    final set = item?.studySet;
+    final podcast = item?.episode;
     final episodeProfile = ref
         .watch(aiSettingsProvider)
         .episodes
@@ -565,12 +584,11 @@ class _MainState extends ConsumerState<_Main> {
         scope: scope,
         item: item,
       );
-    } else if (episodeProfile != null &&
-        state.podcasts[episodeProfile.id] != null) {
+    } else if (episodeProfile != null && state.podcast != null) {
       page = PodcastDraftPage(
         scope: scope,
         profile: episodeProfile,
-        progress: state.podcasts[episodeProfile.id]!,
+        progress: state.podcast!,
       );
     } else if (item != null && set != null) {
       page = StudySetPage(
@@ -583,7 +601,7 @@ class _MainState extends ConsumerState<_Main> {
     } else if (item != null) {
       page = _ItemReader(scope: scope, item: item, onOpen: _open);
     } else if (shown != null) {
-      page = switch (state.making[shown.id]) {
+      page = switch (state.making) {
         final making? => StudyDraftPage(
           scope: scope,
           pending: making,
@@ -599,12 +617,7 @@ class _MainState extends ConsumerState<_Main> {
       // The overview, too, where the profile shown was deleted.
       page = StudyOverview(scope: scope);
     } else {
-      page = _Conversation(
-        scope: scope,
-        state: state,
-        scroll: _scroll,
-        onOpen: _open,
-      );
+      page = _Conversation(scope: scope, scroll: _scroll, onOpen: _open);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -625,6 +638,21 @@ class _MainState extends ConsumerState<_Main> {
     );
   }
 }
+
+/// What of an AI session [_Main] shows by: what is kept, and which of it,
+/// or of the profiles, is open; and how far the set or the podcast open is
+/// along, if it is being made.
+typedef _Showing = ({
+  bool loaded,
+  List<AiItem> items,
+  String? itemId,
+  bool atOverview,
+  String? shownProfile,
+  String? shownPodcast,
+  PendingTurn? making,
+  PodcastProgress? podcast,
+  String? error,
+});
 
 /// Before a model is chosen: what the AI does, and where to choose one.
 class _ChooseModel extends StatelessWidget {
@@ -681,29 +709,31 @@ class _ChooseModel extends StatelessWidget {
 }
 
 /// The questions of a conversation and their answers, and the one being
-/// answered.
+/// answered — which alone is built again as it comes.
 class _Conversation extends ConsumerWidget {
   const _Conversation({
     required this.scope,
-    required this.state,
     required this.scroll,
     required this.onOpen,
   });
 
   final NoteLink scope;
-  final AiSessionState state;
   final ScrollController scroll;
   final void Function(Citation citation) onOpen;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.read(aiSessionProvider(scope).notifier);
-    final pending = state.pending;
+    final (:turns, :items, :answering) = ref.watch(
+      aiSessionProvider(scope).select(
+        (s) => (turns: s.turns, items: s.items, answering: s.pending != null),
+      ),
+    );
     return ListView(
       controller: scroll,
       padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
       children: <Widget>[
-        for (final turn in state.turns)
+        for (final turn in turns)
           _Exchange(
             question: turn.question,
             answer: AiAnswer.fromJson(turn.answer),
@@ -714,25 +744,43 @@ class _Conversation extends ConsumerWidget {
               ?costNote(AiSession.costOf(turn.usage)),
             ].join(' · '),
             onOpen: onOpen,
-            kept: session.isKept(turn),
+            kept: items.any((item) => item.turnId == turn.id),
             onKeep: () => unawaited(session.keep(turn)),
             onAddCards: (cards) => unawaited(session.addCards(cards)),
             // One thing at a time: not while another is being answered.
-            onRewrite: pending != null
+            onRewrite: answering
                 ? null
                 : (section) =>
                       unawaited(_rewrite(context, ref, session, turn, section)),
           ),
-        // In the conversation it was asked in, not another opened meanwhile.
-        if (pending != null &&
-            (state.threadId == null || state.threadId == pending.threadId))
-          _Exchange(
-            question: pending.question,
-            answer: pending.answer,
-            pending: pending,
-            onOpen: onOpen,
-          ),
+        if (answering) _Answering(scope: scope, onOpen: onOpen),
       ],
+    );
+  }
+}
+
+/// The question being answered, as far as its answer has got.
+class _Answering extends ConsumerWidget {
+  const _Answering({required this.scope, required this.onOpen});
+
+  final NoteLink scope;
+  final void Function(Citation citation) onOpen;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (:pending, :threadId) = ref.watch(
+      aiSessionProvider(scope)
+          .select((s) => (pending: s.pending, threadId: s.threadId)),
+    );
+    // In the conversation it was asked in, not another opened meanwhile.
+    if (pending == null || (threadId != null && threadId != pending.threadId)) {
+      return const SizedBox.shrink();
+    }
+    return _Exchange(
+      question: pending.question,
+      answer: pending.answer,
+      pending: pending,
+      onOpen: onOpen,
     );
   }
 }
@@ -1064,8 +1112,8 @@ class _AskLineState extends ConsumerState<_AskLine> {
   @override
   Widget build(BuildContext context) {
     final tones = context.tones;
-    final pending = ref.watch(
-      aiSessionProvider(widget.scope).select((s) => s.pending),
+    final answering = ref.watch(
+      aiSessionProvider(widget.scope).select((s) => s.pending != null),
     );
     final info = ref.watch(aiScopeInfoProvider(widget.scope)).value;
     final model = ref.watch(aiModelProvider).value;
@@ -1184,7 +1232,7 @@ class _AskLineState extends ConsumerState<_AskLine> {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  if (pending != null)
+                  if (answering)
                     Tooltip(
                       message: 'Stop',
                       child: OutlinedButton(

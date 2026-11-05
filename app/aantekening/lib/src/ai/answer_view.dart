@@ -19,7 +19,9 @@ import 'sources_view.dart';
 /// small numbers for the sentences it cites, what comes from neither the
 /// notes nor the web ruled grey down its side, and what it cites listed
 /// beneath, quoted.
-class AnswerView extends StatelessWidget {
+///
+/// Its Markdown is read once, and again only when it changes.
+class AnswerView extends StatefulWidget {
   const AnswerView({
     required this.answer,
     required this.onOpen,
@@ -43,22 +45,40 @@ class AnswerView extends StatelessWidget {
   final ValueChanged<List<StudyCard>>? onAddCards;
 
   @override
+  State<AnswerView> createState() => _AnswerViewState();
+}
+
+class _AnswerViewState extends State<AnswerView> {
+  /// The answer's Markdown, read.
+  late List<md.Node> _nodes = _read(widget.answer.markdown);
+
+  static List<md.Node> _read(String markdown) => md.Document(
+    extensionSet: md.ExtensionSet.gitHubFlavored,
+    inlineSyntaxes: <md.InlineSyntax>[
+      _CitationSyntax(),
+      _MathSyntax(),
+      _HighlightSyntax(),
+    ],
+    encodeHtml: false,
+  ).parse(markdown);
+
+  @override
+  void didUpdateWidget(AnswerView old) {
+    super.didUpdateWidget(old);
+    if (widget.answer.markdown != old.answer.markdown) {
+      _nodes = _read(widget.answer.markdown);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final AnswerView(:answer, :onOpen, :showSources, :onAddCards) = widget;
     final footnotes = Footnotes();
-    final nodes = md.Document(
-      extensionSet: md.ExtensionSet.gitHubFlavored,
-      inlineSyntaxes: <md.InlineSyntax>[
-        _CitationSyntax(),
-        _MathSyntax(),
-        _HighlightSyntax(),
-      ],
-      encodeHtml: false,
-    ).parse(answer.markdown);
     final builder = _Blocks(context, answer, footnotes, onOpen, onAddCards);
-    final blocks = builder.blocks(nodes);
+    final blocks = builder.blocks(_nodes);
     return _Selectable(
       answer: answer,
-      onRewrite: onRewrite,
+      onRewrite: widget.onRewrite,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

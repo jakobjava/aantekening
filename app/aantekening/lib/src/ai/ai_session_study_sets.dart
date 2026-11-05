@@ -131,7 +131,7 @@ mixin _StudySets on _AiSessionCore {
       await _shown(profile.id, item.id);
       return;
     }
-    if ((set, StudySet.fromJson(earlier.body)) case (
+    if ((set, earlier.studySet) case (
       final FlashcardSet made,
       final FlashcardSet before,
     )) {
@@ -170,7 +170,7 @@ mixin _StudySets on _AiSessionCore {
         .studyProfiles
         .firstWhere((profile) => profile.id == StudyKind.flashcards.name);
     final earlier = state.setOf(profile.id);
-    final before = earlier == null ? null : StudySet.fromJson(earlier.body);
+    final before = earlier?.studySet;
     final set = FlashcardSet(cards);
     if (earlier == null || before is! FlashcardSet) {
       await _keepSet(
@@ -248,9 +248,8 @@ const int newCardsPerSession = 20;
 /// due, and new ones up to [newCardsPerSession] — or 0 for a set that is
 /// not flashcards.
 int cardsToStudy(WidgetRef ref, AiItem? item) {
-  if (item == null) return 0;
-  final set = StudySet.fromJson(item.body);
-  if (set is! FlashcardSet) return 0;
+  final set = item?.studySet;
+  if (item == null || set is! FlashcardSet) return 0;
   final status = deckStatus(
     set.cards,
     ref.watch(cardReviewsProvider(item.id)).value ??

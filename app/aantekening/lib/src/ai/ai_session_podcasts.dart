@@ -325,7 +325,7 @@ mixin _Podcasts on _AiSessionCore {
   Future<void> speakPodcast(String itemId) async {
     if (state.podcasts.containsKey(itemId)) return;
     final item = state.items.where((item) => item.id == itemId).firstOrNull;
-    final episode = PodcastEpisode.fromJson(item?.body);
+    final episode = item?.episode;
     if (episode == null) return;
     final settings = ref.read(aiSettingsProvider);
     final voice = settings.voiceOf(episode.voiceId);

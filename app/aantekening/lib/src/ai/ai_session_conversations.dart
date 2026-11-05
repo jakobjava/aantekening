@@ -305,9 +305,6 @@ mixin _Conversations on _AiSessionCore {
     state = state.copyWith(itemId: () => item.id);
   }
 
-  /// Whether the answer to [turn] is kept already.
-  bool isKept(AiTurn turn) => state.items.any((item) => item.turnId == turn.id);
-
   /// Where a turn's answer says which [AiAction] asked it.
   static const String _actionKey = 'action';
 
