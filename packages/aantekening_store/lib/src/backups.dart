@@ -3,10 +3,10 @@ library;
 
 import 'dart:io';
 
+import 'package:aantekening_core/aantekening_core.dart';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
-import 'files/entity_files.dart';
 import 'files/notes_folder.dart';
 
 /// Making, listing, pruning and restoring backups of a notes folder.

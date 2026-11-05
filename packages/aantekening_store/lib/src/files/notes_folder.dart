@@ -11,8 +11,6 @@ import 'dart:typed_data';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:path/path.dart' as p;
 
-import 'entity_files.dart';
-
 /// A file in the notes folder: what it keeps, and whether it is the file
 /// for that thing or a copy a sync service made of it.
 final class FolderEntry {

@@ -1,12 +1,21 @@
 /// The files the notes folder keeps: one for each notebook, section, page,
-/// conversation with the AI and thing kept from one.
+/// conversation with the AI and thing kept from one. They are here, beside
+/// the page format, rather than in the store that keeps them, so that what
+/// reads them from an export needs nothing of the store.
 library;
 
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:aantekening_core/aantekening_core.dart';
+import '../document/page_document.dart';
+import '../tree/tree.dart';
+import '../util/json_read.dart';
+
+/// The name of the list of what an export holds, beside the files of the
+/// notes folder it is made of: written by the store's `ArchiveExport`,
+/// read by what brings an export back.
+const String exportManifestName = 'aantekening-export.json';
 
 /// A kind of thing the notes folder keeps a file for, and the folder it
 /// keeps them in.

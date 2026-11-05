@@ -5,11 +5,11 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:aantekening_core/aantekening_core.dart';
 import 'package:archive/archive_io.dart';
 
 import 'asset_store.dart';
 import 'database.dart';
-import 'files/entity_files.dart';
 import 'library_repository.dart';
 import 'page_repository.dart';
 import 'row_read.dart';
@@ -33,7 +33,7 @@ final class ArchiveExport {
   final PageRepository _pages;
   final AssetStore _assets;
 
-  static const String manifestName = 'aantekening-export.json';
+  static const String manifestName = exportManifestName;
 
   /// Writes the notebooks [notebooks], sections [sections] and pages
   /// [pages] — each with everything in it that is not in the bin — to the

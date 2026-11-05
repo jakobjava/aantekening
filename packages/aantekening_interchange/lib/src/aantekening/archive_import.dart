@@ -5,15 +5,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
-import 'package:aantekening_store/aantekening_store.dart';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
 import '../bytes.dart';
 import '../importer.dart';
 
-/// Reads an export of this app's ([ArchiveExport]): what was exported, as
-/// it was, pages keeping their identity where they can.
+/// Reads an export of this app's, as the store writes them: what was
+/// exported, as it was, pages keeping their identity where they can.
 final class AantekeningImporter implements NotesImporter {
   const AantekeningImporter();
 
@@ -70,7 +69,7 @@ final class AantekeningImporter implements NotesImporter {
         return bytes;
       }
 
-      final manifest = archive.findFile(ArchiveExport.manifestName);
+      final manifest = archive.findFile(exportManifestName);
       if (manifest == null) {
         throw FormatDamage('${p.basename(path)} is not an export of notes');
       }

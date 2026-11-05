@@ -18,6 +18,7 @@ export 'src/document/shape_recognizer.dart';
 export 'src/document/sheets.dart';
 export 'src/document/table_editing.dart';
 export 'src/document/text_tables.dart';
+export 'src/files/entity_files.dart';
 export 'src/interchange/drafts.dart';
 export 'src/latex/latex_preamble.dart';
 export 'src/latex/latex_source.dart';

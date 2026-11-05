@@ -7,7 +7,6 @@ import 'package:aantekening_core/aantekening_core.dart';
 
 import 'asset_store.dart';
 import 'database.dart';
-import 'files/entity_files.dart';
 import 'library_repository.dart';
 import 'page_repository.dart';
 

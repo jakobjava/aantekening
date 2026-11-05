@@ -12,16 +12,17 @@ packages. Dependencies point in one direction only.
      ▼           │       ▼        ▼          ▼          ▼
  _canvas         │     _math     _ai      _spell   _interchange   feature
      │           ▼       │        │                     │          packages
-     │        _store ◄───┼────────┼─────────────────────┘
-     └───────────┴───┬───┴────────┘
+     │        _store     │        │                     │
+     └───────────┴───┬───┴────────┴─────────────────────┘
                      ▼
                   _core                     pure Dart: model + page format
 ```
 
 * **`aantekening_core`** — pure Dart, no Flutter. The page document, the element
   hierarchy, ink, rich text, the organisational tree, geometry and identifiers,
-  links to notes, pages taken apart for machines to read (`PageDigest`), and
-  pages laid out on paper to be printed (`PrintLayout`, ADR 46).
+  links to notes, pages taken apart for machines to read (`PageDigest`),
+  pages laid out on paper to be printed (`PrintLayout`, ADR 46), and the
+  files the notes folder and its exports are made of (`EntityFile`).
   It runs anywhere: in the UI, in the store, in a background isolate, in tests,
   and in any future command-line importer.
 * **`aantekening_store`** — the notes folder (a file for each notebook,
@@ -30,10 +31,10 @@ packages. Dependencies point in one direction only.
   asset store, the bin, backups, exports, and what the AI makes, in tables
   of its own.
 * **`aantekening_interchange`** — pure Dart: reading notes kept by other
-  programs into drafts the store keeps whole (ADR 20). OneNote's `.onepkg`
-  cabinets (LZX), its revision store and object model, OfficeMath as LaTeX;
-  Xournal++ documents; this app's own exports. And writing PDFs
-  (`PdfWriter`).
+  programs into drafts the store keeps whole (ADR 20), needing nothing of
+  the store itself. OneNote's `.onepkg` cabinets (LZX), its revision store
+  and object model, OfficeMath as LaTeX; Xournal++ documents; this app's
+  own exports. And writing PDFs (`PdfWriter`).
 * **`aantekening_canvas`** — the infinite canvas, running right and down from
   a page's top-left corner: viewport, spatial index, ink capture and the
   painted layers; and the same page folded into sheets on a desk, as pages

@@ -12,7 +12,6 @@ import 'package:sqlite3/sqlite3.dart';
 import 'asset_store.dart';
 import 'away.dart';
 import 'database.dart';
-import 'files/entity_files.dart';
 import 'row_read.dart';
 
 /// How a page body is stored in the `page_bodies` table.

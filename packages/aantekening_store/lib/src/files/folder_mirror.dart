@@ -18,7 +18,6 @@ import '../library_repository.dart';
 import '../page_repository.dart';
 import '../rescue.dart';
 import '../row_read.dart';
-import 'entity_files.dart';
 import 'notes_folder.dart';
 
 part 'folder_mirror_reading.dart';

@@ -8,7 +8,6 @@ import 'dart:io';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:path/path.dart' as p;
 
-import 'files/entity_files.dart';
 import 'files/notes_folder.dart';
 import 'library_repository.dart';
 import 'page_repository.dart';

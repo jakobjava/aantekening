@@ -9,12 +9,13 @@ environment:
 
 dependencies:
   aantekening_core: ^0.1.0
-  aantekening_store: ^0.1.0
   archive: ^4.3.0
   meta: ^1.16.0
   path: ^1.9.1
   xml: ^7.0.1
 
 dev_dependencies:
+  # Exports to read back are written by the store, as the app writes them.
+  aantekening_store: ^0.1.0
   lints: ^6.0.0
   test: ^1.25.0

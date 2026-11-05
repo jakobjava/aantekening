@@ -7,6 +7,20 @@
 /// that navigation and search are index lookups rather than directory walks.
 library;
 
+// The files of the notes folder are read and written by more than the
+// store, and defined beside the page format; the store's callers still
+// find them here.
+export 'package:aantekening_core/aantekening_core.dart'
+    show
+        EntityFile,
+        EntityKind,
+        NotebookFile,
+        PageFile,
+        RowsFile,
+        SectionFile,
+        Tombstone,
+        pageCompression;
+
 export 'src/ai_repository.dart';
 export 'src/archive_export.dart';
 export 'src/asset_store.dart';
@@ -14,7 +28,6 @@ export 'src/backups.dart';
 export 'src/bin_repository.dart';
 export 'src/database.dart';
 export 'src/draft_storing.dart';
-export 'src/files/entity_files.dart';
 export 'src/files/folder_mirror.dart';
 export 'src/files/notes_folder.dart';
 export 'src/fts_query.dart';
