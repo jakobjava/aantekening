@@ -571,8 +571,7 @@ class _MainState extends ConsumerState<_Main> {
     final set = item?.studySet;
     final podcast = item?.episode;
     final episodeProfile = ref
-        .watch(aiSettingsProvider)
-        .episodes
+        .watch(aiSettingsProvider.select((s) => s.episodes))
         .where((profile) => profile.id == state.shownPodcast)
         .firstOrNull;
     final Widget page;

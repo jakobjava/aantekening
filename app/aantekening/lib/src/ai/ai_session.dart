@@ -445,5 +445,9 @@ final aiSessionProvider =
 
 /// The profiles to study a scope by whose kept things are [items], as
 /// [KeptItems.profilesWith] has them.
-List<StudyProfile> studyProfilesOf(WidgetRef ref, List<AiItem> items) =>
-    items.profilesWith(ref.watch(aiSettingsProvider).studyProfiles);
+List<StudyProfile> studyProfilesOf(WidgetRef ref, List<AiItem> items) {
+  // Built again as the profiles change, not as anything else set does:
+  // what one says of oneself, typed in, say.
+  ref.watch(aiSettingsProvider.select((s) => s.profiles));
+  return items.profilesWith(ref.read(aiSettingsProvider).studyProfiles);
+}
