@@ -113,7 +113,10 @@ class Chooser extends ConsumerStatefulWidget {
 
 class _ChooserState extends ConsumerState<Chooser> {
   late final TextEditingController _query;
-  int _highlight = 0;
+
+  /// The choice the arrow keys are on. Moving it builds only the rows
+  /// again, not what is offered, which is found by matching every name.
+  final ValueNotifier<int> _highlight = ValueNotifier<int>(0);
 
   /// Whether Enter was typed as it opened, to take the first of what was
   /// typed for once there is any — what it offers may still be being read —
@@ -142,6 +145,7 @@ class _ChooserState extends ConsumerState<Chooser> {
   @override
   void dispose() {
     _query.dispose();
+    _highlight.dispose();
     super.dispose();
   }
 
@@ -154,7 +158,7 @@ class _ChooserState extends ConsumerState<Chooser> {
 
   void _move(int by, int count) {
     if (count == 0) return;
-    setState(() => _highlight = (_highlight + by).clamp(0, count - 1));
+    _highlight.value = (_highlight.value + by).clamp(0, count - 1);
   }
 
   KeyEventResult _onKey(KeyEvent event, List<Choice> choices) {
@@ -170,8 +174,8 @@ class _ChooserState extends ConsumerState<Chooser> {
       _move(-8, choices.length);
     } else if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter) {
-      if (_highlight < choices.length) {
-        final choice = choices[_highlight];
+      if (_highlight.value < choices.length) {
+        final choice = choices[_highlight.value];
         final aside = choice.runAside;
         if (HardwareKeyboard.instance.isControlPressed && aside != null) {
           _close(aside);
@@ -191,7 +195,7 @@ class _ChooserState extends ConsumerState<Chooser> {
   Widget build(BuildContext context) {
     final typed = _query.text;
     final choices = widget.choicesFor(ref, typed);
-    if (_highlight >= choices.length) _highlight = 0;
+    if (_highlight.value >= choices.length) _highlight.value = 0;
     _takeAhead(choices);
 
     return Padding(
@@ -228,7 +232,7 @@ class _ChooserState extends ConsumerState<Chooser> {
                     ),
                   ),
                   onChanged: (_) => setState(() {
-                    _highlight = 0;
+                    _highlight.value = 0;
                     _enterAhead = false;
                   }),
                 ),
@@ -242,22 +246,25 @@ class _ChooserState extends ConsumerState<Chooser> {
                           typed.isEmpty ? 'Nothing here yet' : 'No match',
                         ),
                       )
-                    : CursorList(
-                        cursor: _highlight,
-                        shrinkWrap: true,
-                        padding: const EdgeInsets.all(4),
-                        itemExtent: Chooser._rowHeight,
-                        itemCount: choices.length,
-                        itemBuilder: (context, index) {
-                          final choice = choices[index];
-                          return _ChoiceRow(
-                            choice: choice,
-                            highlighted: index == _highlight,
-                            onTap: choice.enabled
-                                ? () => _close(choice.run)
-                                : null,
-                          );
-                        },
+                    : ValueListenableBuilder<int>(
+                        valueListenable: _highlight,
+                        builder: (context, highlight, _) => CursorList(
+                          cursor: highlight,
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.all(4),
+                          itemExtent: Chooser._rowHeight,
+                          itemCount: choices.length,
+                          itemBuilder: (context, index) {
+                            final choice = choices[index];
+                            return _ChoiceRow(
+                              choice: choice,
+                              highlighted: index == highlight,
+                              onTap: choice.enabled
+                                  ? () => _close(choice.run)
+                                  : null,
+                            );
+                          },
+                        ),
                       ),
               ),
               PaneDragArea(

@@ -361,6 +361,51 @@ void main() {
       expect(taken, <String>['beta']);
       expect(find.byType(Chooser), findsNothing);
     });
+
+    testWidgets('matches what is typed once, however far the arrows move', (
+      tester,
+    ) async {
+      var matched = 0;
+      final taken = <String>[];
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => unawaited(
+                  showChooser(
+                    context,
+                    choicesFor: (ref, typed) {
+                      matched++;
+                      return <Choice>[
+                        for (final title in <String>['alpha', 'beta', 'gamma'])
+                          if (title.contains(typed))
+                            Choice(title: title, run: () => taken.add(title)),
+                      ];
+                    },
+                    hintFor: (_) => '',
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      final before = matched;
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(matched, before);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(taken, <String>['gamma']);
+    });
   });
 
   group('FloatingIn', () {
