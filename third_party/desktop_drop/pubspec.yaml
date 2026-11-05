@@ -11,10 +11,7 @@ dependencies:
   dbus: ^0.7.10
   flutter:
     sdk: flutter
-  flutter_web_plugins:
-    sdk: flutter
   cross_file: ^0.3.4+2
-  web: ^1.1.1
   universal_platform: ^1.1.0
 
 dev_dependencies:
@@ -25,8 +22,6 @@ dev_dependencies:
 flutter:
   plugin:
     platforms:
-      macos:
-        pluginClass: DesktopDropPlugin
       linux:
         pluginClass: DesktopDropPlugin
       windows:
@@ -34,6 +29,3 @@ flutter:
       android:
         package: one.mixin.desktop.drop
         pluginClass: DesktopDropPlugin
-      web:
-        pluginClass: DesktopDropWeb
-        fileName: desktop_drop_web.dart

@@ -38,5 +38,11 @@ made. The workspace uses it through `dependency_overrides` in its
   source allowed, so dragged within a drive in Explorer the pointer said
   Move; it is a copy now, from entering to the drop.
 
+* **Only the platforms the app is built for** (`pubspec.yaml`,
+  `lib/src/channel.dart`). macOS's code and the web's — `macos/`,
+  `lib/desktop_drop_web.dart`, `lib/src/web_drop_item.dart`, and the
+  channel's drops and security-scoped bookmarks for them — are left out,
+  with the web's dependencies; Linux, Windows and Android are kept.
+
 Only `lib`, the platforms' code, the licence, the change log and the
 pubspec are kept.

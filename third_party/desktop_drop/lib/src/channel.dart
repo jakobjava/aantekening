@@ -7,7 +7,6 @@ import 'package:flutter/widgets.dart';
 import 'package:universal_platform/universal_platform.dart';
 
 import 'events.dart';
-import 'web_drop_item.dart';
 
 typedef RawDropListener = void Function(DropEvent);
 
@@ -36,39 +35,6 @@ class DesktopDrop {
         debugPrint('_handleMethodChannel: $e $s');
       }
     });
-  }
-
-  /// macOS: Attempt to start security-scoped access for a bookmarked URL.
-  ///
-  /// Pass the [DropItem.extraAppleBookmark] bytes from a dropped file that
-  /// originated outside the app container. Returns `true` if access began.
-  ///
-  /// If [bookmark] is empty, this function returns `false` and does not
-  /// invoke the platform call. Promise files written under your container do
-  /// not require security-scoped access.
-  Future<bool> startAccessingSecurityScopedResource(
-      {required Uint8List bookmark}) async {
-    if (bookmark.isEmpty) return false;
-    Map<String, dynamic> resultMap = {};
-    resultMap["apple-bookmark"] = bookmark;
-    final bool? result = await _channel.invokeMethod(
-        "startAccessingSecurityScopedResource", resultMap);
-    if (result == null) return false;
-    return result;
-  }
-
-  /// macOS: Stop security-scoped access previously started.
-  ///
-  /// If [bookmark] is empty, this function returns `true` and does not
-  /// invoke the platform call, acting as a no-op.
-  Future<bool> stopAccessingSecurityScopedResource(
-      {required Uint8List bookmark}) async {
-    if (bookmark.isEmpty) return true;
-    Map<String, dynamic> resultMap = {};
-    resultMap["apple-bookmark"] = bookmark;
-    final bool result = await _channel.invokeMethod(
-        "stopAccessingSecurityScopedResource", resultMap);
-    return result;
   }
 
   Future<void> _handleMethodChannel(MethodCall call) async {
@@ -103,35 +69,6 @@ class DesktopDrop {
         );
         _offset = null;
         break;
-      case "performOperation_macos":
-        final items = (call.arguments as List).cast<Map>();
-        _notifyEvent(
-          DropDoneEvent(
-            location: _offset ?? Offset.zero,
-            files: items.map((raw) {
-              final path = raw["path"] as String;
-              final bookmark = raw["apple-bookmark"] as Uint8List?;
-              final isDir = (raw["isDirectory"] as bool?) ?? false;
-              final fromPromise = (raw["fromPromise"] as bool?) ?? false;
-              if (isDir) {
-                return DropItemDirectory(
-                  path,
-                  const [],
-                  extraAppleBookmark: bookmark,
-                  fromPromise: fromPromise,
-                );
-              }
-              return DropItemFile(
-                path,
-                extraAppleBookmark: bookmark,
-                fromPromise: fromPromise,
-              );
-            }).toList(),
-          ),
-        );
-        _offset = null;
-        break;
-
       case "performOperation_linux":
         // gtk notify 'exit' before 'performOperation'.
         final text = (call.arguments as List<dynamic>)[0] as String;
@@ -175,17 +112,6 @@ class DesktopDrop {
           location: Offset(portalOffset[0], portalOffset[1]),
           files: paths.map((e) => DropItemFile(e)).toList(),
         ));
-        break;
-      case "performOperation_web":
-        final results = (call.arguments as List)
-            .cast<Map>()
-            .map((e) => WebDropItem.fromJson(e.cast<String, dynamic>()))
-            .map((e) => e.toDropItem())
-            .toList();
-        _notifyEvent(
-          DropDoneEvent(location: _offset ?? Offset.zero, files: results),
-        );
-        _offset = null;
         break;
       default:
         throw UnimplementedError('${call.method} not implement.');
