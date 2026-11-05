@@ -1111,13 +1111,21 @@ class CanvasController extends ChangeNotifier {
       delta.dy + math.min(back.y, math.max(0, -delta.dy)),
     );
     if (moved == Offset.zero) return;
-    var next = _document;
-    for (final element in selectedElements) {
-      next = next.withElementReplaced(
-        element.withFrame(element.frame.translate(moved.dx, moved.dy)),
-      );
-    }
-    _apply(next, recordUndo: recordUndo);
+    // Moved in one pass over the page, rather than the page copied once
+    // for each element moved: a step of a drag of everything on a page of
+    // a thousand things copied a million.
+    _apply(
+      _document.copyWith(
+        revision: _document.revision + 1,
+        elements: <NoteElement>[
+          for (final element in _document.elements)
+            _selection.contains(element.id)
+                ? element.withFrame(element.frame.translate(moved.dx, moved.dy))
+                : element,
+        ],
+      ),
+      recordUndo: recordUndo,
+    );
   }
 
   // ------------------------------------------------------------ ink capture
