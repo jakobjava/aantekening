@@ -226,8 +226,11 @@ class _Reader {
         if (_hex.matchAsPrefix(text, from + 1) case final hex?) {
           return String.fromCharCode(int.parse(hex[0]!, radix: 16));
         }
-        final rest = text.substring(from + 1);
-        return rest.length < 4 && _hexStart.hasMatch(rest) ? '' : null;
+        // Not copied out unless it is short enough to be the start of one.
+        return text.length - from - 1 < 4 &&
+                _hexStart.hasMatch(text.substring(from + 1))
+            ? ''
+            : null;
       case 'b' || 'f' || 'n' || 'r' || 't':
         final word = _letters.matchAsPrefix(text, from)![0]!;
         if (from + word.length >= text.length) return '';

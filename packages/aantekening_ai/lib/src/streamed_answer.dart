@@ -42,8 +42,9 @@ class StreamedAnswer {
 
 /// [text] of a model's reasoning without the tags some runtimes leave in
 /// it.
-String withoutThinkTags(String text) =>
-    text.replaceAll(RegExp(r'</?think>\n?'), '');
+String withoutThinkTags(String text) => text.replaceAll(_thinkTag, '');
+
+final RegExp _thinkTag = RegExp(r'</?think>\n?');
 
 /// Reads the reasoning some models write at the start of their answer,
 /// between `<think>` and `</think>`, out of it as it streams: the reasoning

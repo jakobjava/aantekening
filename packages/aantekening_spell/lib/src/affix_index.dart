@@ -65,8 +65,11 @@ final class AffixIndex {
       list.sort((a, b) => _reversed(a.append).compareTo(_reversed(b.append)));
     }
     // By flag, the last defined first, as Hunspell chains them.
-    for (final affix in <Affix>[...rules.prefixes, ...rules.suffixes]) {
-      (_byFlag[affix.flag] ??= <Affix>[]).insert(0, affix);
+    for (final affix in <Affix>[
+      ...rules.prefixes,
+      ...rules.suffixes,
+    ].reversed) {
+      (_byFlag[affix.flag] ??= <Affix>[]).add(affix);
     }
   }
 
