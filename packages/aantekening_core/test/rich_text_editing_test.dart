@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:test/test.dart';
 
@@ -118,6 +120,52 @@ void main() {
         'bulleted:c',
       ]);
       expect(edit.selection, at(2, 1));
+    });
+
+    test('pasted lines are as if each were typed and Enter pressed between '
+        'them, wherever they go', () {
+      final random = math.Random(11);
+      const kinds = TextBlockKind.values;
+      for (var round = 0; round < 400; round++) {
+        final blocks = <TextBlock>[
+          for (var i = 0; i < 1 + random.nextInt(5); i++)
+            if (random.nextInt(4) == 0)
+              const TextBlock.embedded(picture)
+            else
+              p(
+                'block $i'.substring(0, random.nextInt(8)),
+                kind: kinds[random.nextInt(kinds.length)],
+              ),
+        ];
+        final block = random.nextInt(blocks.length);
+        final caret = at(block, random.nextInt(blocks[block].length + 1));
+        final lines = <String>[
+          for (var i = 0; i < random.nextInt(7); i++)
+            random.nextInt(3) == 0 ? '' : 'line $i',
+        ];
+        final text = lines.join(random.nextBool() ? '\n' : '\r\n');
+
+        var typed = RichTextEditing.deleteRange(blocks, caret);
+        final split = text.replaceAll('\r\n', '\n').split('\n');
+        for (var i = 0; i < split.length; i++) {
+          if (i > 0) {
+            typed = RichTextEditing.splitBlock(
+              typed.blocks,
+              typed.selection.extent,
+            );
+          }
+          if (split[i].isEmpty) continue;
+          typed = RichTextEditing.insertText(
+            typed.blocks,
+            typed.selection,
+            split[i],
+          );
+        }
+        final pasted = RichTextEditing.insertText(blocks, caret, text);
+
+        expect(pasted.blocks, typed.blocks, reason: '$blocks $caret "$text"');
+        expect(pasted.selection, typed.selection, reason: text);
+      }
     });
 
     test('text typed beside an embed gets a line of its own', () {

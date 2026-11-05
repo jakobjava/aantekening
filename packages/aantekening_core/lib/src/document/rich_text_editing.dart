@@ -629,21 +629,44 @@ abstract final class RichTextEditing {
     String text, {
     TextMarks marks = TextMarks.none,
   }) {
-    var edit = deleteRange(blocks, selection);
+    final edit = deleteRange(blocks, selection);
     final lines = text
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n')
         .split('\n');
-    for (var i = 0; i < lines.length; i++) {
-      if (i > 0) edit = splitBlock(edit.blocks, edit.selection.extent);
-      if (lines[i].isEmpty) continue;
-      edit = _insertInline(
-        edit.blocks,
-        edit.selection.extent,
-        TextRun(lines[i], marks),
-      );
+    if (lines.length == 1 && lines.single.isEmpty) return edit;
+
+    // Each line is typed into a window of the blocks about the caret
+    // alone, rather than into all of them, so pasting many lines is not a
+    // copy of every block for each: what goes before the caret's block is
+    // never touched again, and leaves the window as it is passed.
+    final at = clamp(edit.blocks, edit.selection.extent);
+    final passed = <TextBlock>[];
+    var window = <TextBlock>[edit.blocks[at.block]];
+    var caret = RichPosition(0, at.offset);
+    void step(RichEdit made) {
+      final extent = made.selection.extent;
+      passed.addAll(made.blocks.take(extent.block));
+      window = made.blocks.sublist(extent.block);
+      caret = RichPosition(0, extent.offset);
     }
-    return edit;
+
+    for (var i = 0; i < lines.length; i++) {
+      if (i > 0) step(splitBlock(window, caret));
+      if (lines[i].isEmpty) continue;
+      step(_insertInline(window, caret, TextRun(lines[i], marks)));
+    }
+    return (
+      blocks: <TextBlock>[
+        ...edit.blocks.take(at.block),
+        ...passed,
+        ...window,
+        ...edit.blocks.skip(at.block + 1),
+      ],
+      selection: RichSelection.collapsed(
+        RichPosition(at.block + passed.length, caret.offset),
+      ),
+    );
   }
 
   /// Inserts [run] at [at] without breaking the line.
