@@ -93,13 +93,14 @@ extension _Elements on _PageEditorState {
   ) {
     final id = element.id;
     final isEditing = id == _editingId;
+    // A copy of what is picked, asked for once.
+    final selection = _controller.selection;
+    final selected = selection.contains(id);
     final built = (
       element: element,
       isEditing: isEditing,
-      selected: _controller.selection.contains(id),
-      grouped:
-          _controller.selection.length > 1 &&
-          _controller.selection.contains(id),
+      selected: selected,
+      grouped: selected && selection.length > 1,
       caretOnly: _onlyCaret(id),
       startsInFormula: isEditing && _editingStartsInFormula,
       interactive: _controller.tool == CanvasTool.select,
