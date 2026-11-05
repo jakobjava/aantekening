@@ -87,7 +87,11 @@ class NotesLocation {
     if (!destination.isEmpty) {
       throw FileSystemException('The folder is not empty', target);
     }
-    for (final entity in Directory(source).listSync(recursive: true)) {
+    // Listed whole before any is copied — the folder chosen may lie in
+    // this one — but not waited for by the window, as thousands of files
+    // would make it.
+    final entities = await Directory(source).list(recursive: true).toList();
+    for (final entity in entities) {
       if (entity is! File) continue;
       final relative = p.relative(entity.path, from: source);
       final parts = p.split(relative);
