@@ -752,6 +752,23 @@ void main() {
         ..endStroke();
       expect(painter(ink()).shouldRepaint(before), isTrue);
     });
+
+    test('works out the shape of each stroke once, however often the ink '
+        'it joins is written on', () {
+      final controller = CanvasController();
+      final before = InkPainter.shapesWorkedOut;
+      for (var i = 0; i < 30; i++) {
+        controller
+          ..beginStroke(Offset(i * 12.0, 0), pressure: 0.3)
+          ..extendStroke(Offset(i * 12.0 + 4, 6), pressure: 0.8)
+          ..extendStroke(Offset(i * 12.0 + 8, 12), pressure: 0.5)
+          ..endStroke();
+        InkPainter.record(controller.document.elements.single as InkElement);
+      }
+      expect(controller.document.elements, hasLength(1), reason: 'joined');
+      // Recorded anew with each stroke, it was 1 + 2 + … + 30 = 465.
+      expect(InkPainter.shapesWorkedOut - before, 30);
+    });
   });
 
   group('InkTiles', () {
@@ -845,6 +862,38 @@ void main() {
       await draw(ink, tiles: tiles, scale: 2);
       expect(tiles.drawn, greaterThan(first + 1), reason: 'a new zoom');
       tiles.clear();
+    });
+
+    test('draws again only the tiles a stroke added to ink is on', () async {
+      final tiles = InkTiles(InkLayer.above);
+      // One element of ink, from a tile at the top left to one at the
+      // bottom right: over four tiles.
+      final both = ink.first.withStrokes(<InkStroke>[
+        ...ink.first.strokes,
+        ...ink.last.strokes,
+      ]);
+      await draw(<InkElement>[both], tiles: tiles);
+      expect(tiles.drawn, 4);
+
+      // A line written beneath the first, on its tile alone.
+      final written = both.withStrokes(<InkStroke>[
+        ...both.strokes,
+        ...handwriting('line', const Offset(20, 120)).strokes,
+      ]);
+      final pixels = await draw(<InkElement>[written], tiles: tiles);
+      expect(tiles.drawn, 5, reason: 'only the tile the line is on');
+      final fresh = InkTiles(InkLayer.above);
+      expect(pixels, await draw(<InkElement>[written], tiles: fresh));
+
+      // A stroke taken away draws again the tiles left inked: the one.
+      final erased = written.withStrokes(<InkStroke>[
+        written.strokes.first,
+        written.strokes.last,
+      ]);
+      await draw(<InkElement>[erased], tiles: tiles);
+      expect(tiles.drawn, 6);
+      tiles.clear();
+      fresh.clear();
     });
 
     testWidgets('draws the tiles seen first, and a few of the rest each time', (

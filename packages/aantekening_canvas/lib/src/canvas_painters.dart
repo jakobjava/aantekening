@@ -232,12 +232,26 @@ class InkPainter extends CustomPainter {
   /// The most pixels the ink is kept in; beyond that it is drawn as strokes.
   static const int _maxPixels = 4096 * 4096;
 
-  /// Each element's strokes on each layer, recorded once.
-  static final Map<InkLayer, Expando<ui.Picture>> _pictures =
-      <InkLayer, Expando<ui.Picture>>{
-        for (final layer in InkLayer.values)
-          layer: Expando<ui.Picture>(layer.name),
+  /// Each element's strokes on each layer, recorded once; or [_none], for
+  /// an element with no strokes on it.
+  static final Map<InkLayer, Expando<Object>> _pictures =
+      <InkLayer, Expando<Object>>{
+        for (final layer in InkLayer.values) layer: Expando<Object>(layer.name),
       };
+
+  /// What an element with no strokes on a layer is recorded as there.
+  static final Object _none = Object();
+
+  /// Each stroke's shape, worked out once. Strokes written one after
+  /// another join one element, which is a new element with each of them:
+  /// recorded again, it works out the shape of the new stroke alone, and
+  /// every version of it the history keeps shares the shapes of the rest.
+  static final Expando<Path> _shapes = Expando<Path>('shapes');
+
+  /// How many strokes' shapes have been worked out for the ink on the page.
+  @visibleForTesting
+  static int get shapesWorkedOut => _shapesWorkedOut;
+  static int _shapesWorkedOut = 0;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -362,14 +376,26 @@ class InkPainter extends CustomPainter {
   static ui.Picture? _recorded(InkLayer layer, InkElement element) {
     final cache = _pictures[layer]!;
     final cached = cache[element];
-    if (cached != null) return cached;
-    if (!element.strokes.any(layer.accepts)) return null;
+    if (cached is ui.Picture) return cached;
+    if (cached != null) return null;
+    if (!element.strokes.any(layer.accepts)) {
+      cache[element] = _none;
+      return null;
+    }
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     for (final stroke in element.strokes) {
-      if (layer.accepts(stroke)) paintStroke(canvas, stroke);
+      if (!layer.accepts(stroke)) continue;
+      var shape = _shapes[stroke];
+      if (shape == null) {
+        _shapesWorkedOut++;
+        shape = _shapes[stroke] = _shapeOf(stroke);
+      }
+      paintStroke(canvas, stroke, shape: shape);
     }
-    return cache[element] = recorder.endRecording();
+    final picture = recorder.endRecording();
+    cache[element] = picture;
+    return picture;
   }
 
   /// The elements whose strokes are recorded on every layer.
@@ -387,12 +413,14 @@ class InkPainter extends CustomPainter {
     _recordedWhole[element] = true;
   }
 
-  /// Paints one stroke in page space. Inverting ink is painted white, to
+  /// Paints one stroke in page space, its [shape] given if it has been
+  /// worked out already ([_shapeOf]). Inverting ink is painted white, to
   /// be laid on what is beneath with [InkLayer.inverting]'s blend.
-  static void paintStroke(Canvas canvas, InkStroke stroke) {
+  static void paintStroke(Canvas canvas, InkStroke stroke, {Path? shape}) {
+    shape ??= _shapeOf(stroke);
     if (stroke.tool == InkTool.highlighter) {
       canvas.drawPath(
-        StrokeGeometry.chiselPath(stroke),
+        shape,
         Paint()
           ..color = onWhite(stroke.color)
           ..style = PaintingStyle.fill
@@ -410,14 +438,13 @@ class InkPainter extends CustomPainter {
           : Color(stroke.color)
       ..isAntiAlias = true;
 
-    if (stroke.tool != InkTool.marker &&
-        StrokeGeometry.hasPressureVariation(stroke)) {
-      canvas.drawPath(StrokeGeometry.pressurePath(stroke), paint);
+    if (_isOutline(stroke)) {
+      canvas.drawPath(shape, paint);
       return;
     }
 
     canvas.drawPath(
-      StrokeGeometry.smoothPath(stroke),
+      shape,
       paint
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
@@ -425,6 +452,21 @@ class InkPainter extends CustomPainter {
         ..strokeWidth = stroke.width,
     );
   }
+
+  /// Whether [stroke] is drawn as an outline filled, its width varying with
+  /// the pressure on the pen; otherwise it is a line drawn [InkStroke.width]
+  /// wide.
+  static bool _isOutline(InkStroke stroke) =>
+      stroke.tool != InkTool.marker &&
+      StrokeGeometry.hasPressureVariation(stroke);
+
+  /// The shape [stroke] is drawn as: the highlighter's chisel, an outline
+  /// filled, or the line the pen took.
+  static Path _shapeOf(InkStroke stroke) => stroke.tool == InkTool.highlighter
+      ? StrokeGeometry.chiselPath(stroke)
+      : _isOutline(stroke)
+      ? StrokeGeometry.pressurePath(stroke)
+      : StrokeGeometry.smoothPath(stroke);
 
   /// Translucent [argb] laid on white, opaque: multiplied by what is
   /// beneath, as [BlendMode.modulate] does, it gives what [argb] itself
@@ -633,7 +675,7 @@ class InkTiles {
         place.bottom - region.top,
       );
       var tile = _tiles[key];
-      if (tile == null || !_sameElements(tile.elements, inked)) {
+      if (tile == null || !_drawsAsBefore(tile, inked, place)) {
         if (!making.takes(drawn)) continue;
         tile?.image.dispose();
         tile = _tiles[key] = _InkTile(inked, _draw(place, inked, pictureOf));
@@ -646,6 +688,39 @@ class InkTiles {
         paint,
       );
     }
+  }
+
+  /// Whether [inked] draws [tile], over [place] of the page, as it was
+  /// drawn: of the same ink, or of the same but for strokes added since
+  /// that lie elsewhere — so that a page written on line by line draws
+  /// again only the tiles each line is on, not every tile its ink covers.
+  /// Kept, the tile is of [inked] from now on.
+  bool _drawsAsBefore(_InkTile tile, List<InkElement> inked, Aabb place) {
+    final before = tile.elements;
+    if (_sameElements(before, inked)) return true;
+    if (before.length != inked.length) return false;
+    // A pixel's width about the tile, for the edges of what is drawn.
+    final about = place.inflate(1 / _scale);
+    for (var i = 0; i < inked.length; i++) {
+      final was = before[i];
+      final now = inked[i];
+      if (identical(was, now)) continue;
+      if (was.id != now.id) return false;
+      final had = was.strokes;
+      final has = now.strokes;
+      if (has.length <= had.length) return false;
+      for (var j = 0; j < had.length; j++) {
+        if (!identical(had[j], has[j])) return false;
+      }
+      for (var j = had.length; j < has.length; j++) {
+        final stroke = has[j];
+        if (layer.accepts(stroke) && stroke.bounds.intersects(about)) {
+          return false;
+        }
+      }
+    }
+    tile.elements = inked;
+    return true;
   }
 
   ui.Image _draw(
@@ -709,8 +784,8 @@ class _Making {
 class _InkTile {
   _InkTile(this.elements, this.image);
 
-  /// The ink on it, which it was drawn from.
-  final List<InkElement> elements;
+  /// The ink on it, which it was drawn from, or which draws it as it was.
+  List<InkElement> elements;
   final ui.Image image;
 }
 
