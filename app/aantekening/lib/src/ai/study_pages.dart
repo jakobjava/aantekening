@@ -22,6 +22,7 @@ import 'ai_session.dart';
 import 'ai_state.dart';
 import 'answer_progress.dart';
 import 'answer_view.dart';
+import 'card_reviews.dart';
 import 'flashcards_view.dart';
 import 'glossary_view.dart';
 import 'money.dart';

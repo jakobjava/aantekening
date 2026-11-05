@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
 import 'ai_state.dart';
+import 'card_reviews.dart';
 import 'workspace_reader.dart';
 
 part 'ai_session_conversations.dart';

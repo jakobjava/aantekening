@@ -17,7 +17,7 @@ import '../look/glass.dart';
 import '../look/marks.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
-import 'ai_session.dart';
+import 'card_reviews.dart';
 import 'math_text.dart';
 import 'sources_view.dart';
 
