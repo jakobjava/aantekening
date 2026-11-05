@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:aantekening_ai/aantekening_ai.dart';
 import 'package:aantekening_core/aantekening_core.dart';
@@ -101,13 +102,17 @@ Future<File> podcastFile(Ref ref, String audio) async =>
 
 /// Keeps [sound] as a podcast's, returning the name it is kept by.
 ///
-/// Written at once rather than in the background: it is written once, at
-/// the end of making a podcast, and is a few megabytes.
+/// Made a WAV and written on an isolate of its own: forty minutes of an
+/// episode are over a hundred megabytes, which would hold the window
+/// still while they are.
 Future<String> savePodcastAudio(Ref ref, Sound sound) async {
   final name = '${Ulid.generate()}.wav';
-  final file = await podcastFile(ref, name);
-  file.parent.createSync(recursive: true);
-  file.writeAsBytesSync(sound.toWav(), flush: true);
+  final path = (await podcastFile(ref, name)).path;
+  await Isolate.run(() {
+    final file = File(path);
+    file.parent.createSync(recursive: true);
+    file.writeAsBytesSync(sound.toWav(), flush: true);
+  }, debugName: 'podcast sound');
   return name;
 }
 

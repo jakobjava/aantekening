@@ -298,6 +298,24 @@ void main() {
     return container;
   }
 
+  /// Waits for the podcast about [link] to be spoken: its sound is
+  /// written on an isolate of its own, as time really passes.
+  Future<void> untilSpoken(
+    WidgetTester tester,
+    ProviderContainer container,
+    NoteLink link,
+  ) async {
+    for (var i = 0; i < 250; i++) {
+      final kept = container.read(aiSessionProvider(link)).episodes;
+      if (kept.firstOrNull?.episode?.spoken ?? false) break;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+  }
+
   Future<void> pressControl(WidgetTester tester, LogicalKeyboardKey key) async {
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(key);
@@ -1087,6 +1105,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await untilSpoken(tester, container, link);
 
     // Planned by the model in use, the notes with it, then written part by
     // part, each in its turn.
@@ -1164,6 +1183,7 @@ void main() {
     unawaited(session.makePodcast(profile));
     unawaited(session.makePodcast(profile));
     await tester.pumpAndSettle();
+    await untilSpoken(tester, container, link);
     expect(model.asked, hasLength(3), reason: 'planned, and two parts');
     expect(speech.spoken, hasLength(3));
     expect(
