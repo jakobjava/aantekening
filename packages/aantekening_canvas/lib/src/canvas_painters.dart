@@ -386,20 +386,13 @@ class InkPainter extends CustomPainter {
   void _drawStrokes(Canvas canvas, Aabb visible) {
     final ink = _inkIn(visible);
     if (ink == null) return;
-    canvas
-      ..save()
-      ..transform(viewport.toMatrix().storage);
-    // Inverting ink is drawn as one, so where two strokes cross the
-    // crossing is inverted once, as the rest of them is.
-    if (layer == InkLayer.inverting) {
-      canvas.saveLayer(
-        Rect.fromLTRB(visible.left, visible.top, visible.right, visible.bottom),
-        Paint()..blendMode = layer.blendMode,
-      );
-    }
-    canvas.drawPicture(ink);
-    if (layer == InkLayer.inverting) canvas.restore();
-    canvas.restore();
+    _drawInk(
+      canvas,
+      viewport,
+      visible,
+      inverting: layer == InkLayer.inverting,
+      draw: () => canvas.drawPicture(ink),
+    );
     ink.dispose();
   }
 
@@ -702,12 +695,7 @@ class InkTiles {
         (column + 1) * unit,
         (row + 1) * unit,
       );
-      final drawn = Rect.fromLTRB(
-        place.left - region.left,
-        place.top - region.top,
-        place.right - region.left,
-        place.bottom - region.top,
-      );
+      final drawn = InkPainter._rectIn(place, region);
       var tile = _tiles[key];
       if (tile == null || !_drawsAsBefore(tile, inked, place)) {
         if (!making.takes(drawn)) continue;
@@ -899,23 +887,17 @@ class WetInkPainter extends CustomPainter {
     }
   }
 
-  void _paint(Canvas canvas, List<InkStroke> strokes, Aabb visible) {
-    final inverting = strokes.first.color == NoteColors.inverse;
-    canvas
-      ..save()
-      ..transform(viewport.toMatrix().storage);
-    if (inverting) {
-      canvas.saveLayer(
-        Rect.fromLTRB(visible.left, visible.top, visible.right, visible.bottom),
-        Paint()..blendMode = InkLayer.inverting.blendMode,
-      );
-    }
-    for (final stroke in strokes) {
-      InkPainter.paintStroke(canvas, stroke);
-    }
-    if (inverting) canvas.restore();
-    canvas.restore();
-  }
+  void _paint(Canvas canvas, List<InkStroke> strokes, Aabb visible) => _drawInk(
+    canvas,
+    viewport,
+    visible,
+    inverting: strokes.first.color == NoteColors.inverse,
+    draw: () {
+      for (final stroke in strokes) {
+        InkPainter.paintStroke(canvas, stroke);
+      }
+    },
+  );
 
   @override
   bool shouldRepaint(WetInkPainter old) =>
@@ -1165,6 +1147,31 @@ class SelectionPainter extends CustomPainter {
       old.accent != accent ||
       old.showHandles != showHandles ||
       !_sameElements(old.selected, selected);
+}
+
+/// Draws ink with [draw] in page space, seen from [viewport], over
+/// [visible] of the page. Ink [inverting] what is beneath it is drawn as
+/// one and laid on it at once, so that where two strokes cross the
+/// crossing is inverted once, as the rest of them is.
+void _drawInk(
+  Canvas canvas,
+  CanvasViewport viewport,
+  Aabb visible, {
+  required bool inverting,
+  required VoidCallback draw,
+}) {
+  canvas
+    ..save()
+    ..transform(viewport.toMatrix().storage);
+  if (inverting) {
+    canvas.saveLayer(
+      Rect.fromLTRB(visible.left, visible.top, visible.right, visible.bottom),
+      Paint()..blendMode = InkLayer.inverting.blendMode,
+    );
+  }
+  draw();
+  if (inverting) canvas.restore();
+  canvas.restore();
 }
 
 /// Whether [a] and [b] hold the very same elements in the same order: a
