@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:aantekening_store/src/away.dart' show heavyBytes;
+import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -1244,6 +1245,54 @@ void main() {
       expect(await store.search.search('  '), isEmpty);
       expect(await store.search.count('  '), 0);
     });
+  });
+
+  test('an export holds each page once, a long one whole', () async {
+    final sectionId = await workspace.seedSection();
+    final section = await store.library.findSection(sectionId);
+    final long = await store.pages.createPage(sectionId: sectionId);
+    final words = <String>[for (var i = 0; i < 60000; i++) 'word$i'];
+    await store.pages.saveDocument(
+      long.id,
+      documentWithText(long.id, words.join(' ')),
+    );
+    expect(store.pages.pageFile(long.id)!.isHeavy, isTrue);
+    final short = await store.pages.createPage(
+      sectionId: sectionId,
+      parentId: long.id,
+    );
+    await store.pages.saveDocument(
+      short.id,
+      documentWithText(short.id, 'beneath'),
+    );
+    final folder = Directory.systemTemp.createTempSync('aantekening_export_');
+    addTearDown(() => folder.deleteSync(recursive: true));
+    final target = p.join(folder.path, 'Maths.aantekening');
+
+    await store.exports.write(
+      target,
+      notebooks: <String>[section!.notebookId],
+      pages: <String>[short.id],
+    );
+
+    final archive = ZipDecoder().decodeBytes(File(target).readAsBytesSync());
+    final pages = <String, PageFile>{
+      for (final file in archive.files)
+        if (file.name.startsWith('pages/'))
+          file.name: EntityFile.decode(file.content)! as PageFile,
+    };
+    expect(pages.keys, <String>[
+      'pages/${short.id}.json.gz',
+      'pages/${long.id}.json.gz',
+    ]);
+    expect(
+      pages['pages/${long.id}.json.gz']!.document.extractSearchText(),
+      words.join(' '),
+    );
+    expect(
+      pages['pages/${short.id}.json.gz']!.document.extractSearchText(),
+      'beneath',
+    );
   });
 
   test('an export that cannot be put where it was asked to go leaves '

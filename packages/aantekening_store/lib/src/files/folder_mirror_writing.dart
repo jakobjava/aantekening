@@ -108,7 +108,11 @@ extension _Writing on FolderMirror {
 
   Future<void> _write(EntityKind kind, String id) async {
     final file = _current(kind, id);
-    final (bytes, digest) = await away(_encode, file, heavy: _isHeavy(file));
+    final (bytes, digest) = await away(
+      _encode,
+      file,
+      heavy: file is PageFile && file.isHeavy,
+    );
     final path = folder.pathFor(kind, id);
     final record = _record(path);
     final disk = File(path);
@@ -178,16 +182,6 @@ extension _Writing on FolderMirror {
         gzipped[at + 3] << 24;
     return size == json.length & 0xFFFFFFFF;
   }
-
-  /// Whether [file] takes long enough to write out that it is written away
-  /// from the window: a page past [heavyBytes] of JSON, or a quarter of
-  /// that gzipped, as reading one is.
-  static bool _isHeavy(EntityFile file) =>
-      file is PageFile &&
-      switch (file.documentGzipped) {
-        final gzipped? => gzipped.length >= heavyBytes ~/ 4,
-        null => (file.documentJson?.length ?? 0) >= heavyBytes,
-      };
 
   /// Keeps [theirs], a page another copy of the notes wrote that is about
   /// to be written over by [ours], as a page of its own if they differ —

@@ -18,6 +18,8 @@ import '../util/media_types.dart';
 /// read by what brings an export back.
 const String exportManifestName = 'aantekening-export.json';
 
+import '../away.dart' show heavyBytes;
+
 /// A kind of thing the notes folder keeps a file for, and the folder it
 /// keeps them in.
 enum EntityKind {
@@ -204,6 +206,14 @@ final class PageFile extends EntityFile {
   /// unpacked until [documentJson] is asked for — as the file is written,
   /// which a long page is away from the window.
   final List<int>? documentGzipped;
+
+  /// Whether writing the file takes long enough that it is written away
+  /// from the window: past [heavyBytes] of JSON, or a quarter of that
+  /// gzipped, as reading a page is.
+  bool get isHeavy => switch (documentGzipped) {
+    final gzipped? => gzipped.length >= heavyBytes ~/ 4,
+    null => (_documentJson?.length ?? 0) >= heavyBytes,
+  };
 
   /// The page's contents.
   PageDocument get document =>

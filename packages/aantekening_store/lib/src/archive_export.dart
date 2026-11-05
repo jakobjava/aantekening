@@ -4,11 +4,13 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:archive/archive_io.dart';
 
 import 'asset_store.dart';
+import 'away.dart';
 import 'database.dart';
 import 'library_repository.dart';
 import 'page_repository.dart';
@@ -82,15 +84,13 @@ final class ArchiveExport {
         ]);
       }
     }
+    // Pages are read and written one at a time, a long one away from the
+    // window: all of them at once could be more than there is memory for.
+    final exportedPages = <String>{
+      for (final root in <String>[...pages, ...pageIds])
+        ..._db.subtree('pages', root, live: true),
+    };
     final assets = <String>{};
-    for (final root in <String>[...pages, ...pageIds]) {
-      for (final id in _db.subtree('pages', root, live: true)) {
-        final file = _pages.pageFile(id);
-        if (file == null) continue;
-        files['pages/${EntityKind.page.fileName(id)}'] = file;
-        assets.addAll(file.assets.map((asset) => asset.sha256));
-      }
-    }
 
     final partial = File('$target.tmp');
     final encoder = ZipFileEncoder()..create(partial.path);
@@ -111,6 +111,17 @@ final class ArchiveExport {
       for (final entry in files.entries) {
         encoder.addArchiveFile(
           ArchiveFile.bytes(entry.key, entry.value.encode()),
+        );
+      }
+      for (final id in exportedPages) {
+        final file = _pages.pageFile(id);
+        if (file == null) continue;
+        assets.addAll(file.assets.map((asset) => asset.sha256));
+        encoder.addArchiveFile(
+          ArchiveFile.bytes(
+            'pages/${EntityKind.page.fileName(id)}',
+            await away(_encoded, file, heavy: file.isHeavy),
+          ),
         );
       }
       for (final sha in assets) {
@@ -139,4 +150,6 @@ final class ArchiveExport {
       }
     }
   }
+
+  static Uint8List _encoded(EntityFile file) => file.encode();
 }
