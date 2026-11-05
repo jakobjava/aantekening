@@ -10,6 +10,7 @@ import 'package:meta/meta.dart';
 
 import 'citation_markers.dart';
 import 'conversation.dart';
+import 'http_answers.dart';
 import 'provider.dart';
 import 'sse.dart';
 import 'streamed_answer.dart';
@@ -489,7 +490,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
     // Whether the answer came to its end: `[DONE]`, or a reason it
     // finished, which a server may send without the other.
     var ended = false;
-    try {
+    Stream<ChatEvent> read() async* {
       await for (final event in serverEvents(response.stream)) {
         if (event.data.trim() == '[DONE]') {
           ended = true;
@@ -544,14 +545,10 @@ class OpenAiCompatibleProvider implements ChatProvider {
         };
         if (choice['finish_reason'] != null) ended = true;
       }
-    } on AiException {
-      rethrow;
-    } on Object catch (error) {
-      throw brokenOff(name, error);
     }
-    if (!ended) throw brokenOff(name);
+
+    yield* wholeAnswer(name, read(), ended: () => ended);
     yield* Stream<ChatEvent>.fromIterable(answer.close());
-    yield const CitedSpan(<Citation>[]);
 
     final toolCalls = <ToolCallPart>[
       for (final entry in calls.entries)
@@ -573,10 +570,10 @@ class OpenAiCompatibleProvider implements ChatProvider {
       ChatMessage.assistant(<ChatPart>[
         if (answer.text.isNotEmpty) TextPart(answer.text),
         ...toolCalls,
-        if (reasoningKey != null)
+        if (reasoningKey case final key?)
           NativePart(providerId, <String, Object?>{
             'model': request.model,
-            reasoningKey: '$reasoned',
+            key: '$reasoned',
           }),
       ]),
       stop: stop,
@@ -637,21 +634,15 @@ class OpenAiCompatibleProvider implements ChatProvider {
     Uri uri,
     Map<String, Object?> body, {
     Future<void>? stop,
-  }) async {
-    final request = http.AbortableRequest('POST', uri, abortTrigger: stop)
-      ..headers.addAll(headers)
-      ..body = jsonEncode(body);
-    final http.StreamedResponse response;
-    try {
-      response = await client.send(request);
-    } on Object catch (error) {
-      throw unreachable(error);
-    }
-    if (response.statusCode != 200) {
-      refuse(response.statusCode, await response.stream.bytesToString());
-    }
-    return response;
-  }
+  }) => postForStream(
+    client,
+    uri,
+    name: name,
+    headers: headers,
+    body: body,
+    unreachable: unreachable,
+    stop: stop,
+  );
 
   /// Why [baseUrl] could not be reached, from [error].
   @protected
@@ -665,34 +656,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
   /// unless it did not.
   @protected
   void refuse(int status, String body) {
-    if (status == 200) return;
-    String? message;
-    try {
-      final error = (jsonDecode(body) as Map)['error'];
-      message = error is Map ? error['message'] as String? : error?.toString();
-    } on Object {
-      // The status says enough.
-    }
-    throw switch (status) {
-      401 || 403 => AiException(
-        '$name refused the API key. Check it in the AI settings.',
-      ),
-      404 => AiException(
-        '$name does not have that model${message == null ? '' : ': $message'}',
-      ),
-      429 => AiException(
-        'Too many requests to $name just now. Try again in a moment.',
-        retryable: true,
-      ),
-      >= 500 => AiException(
-        '$name had a problem${message == null ? '' : ': $message'}',
-        retryable: true,
-      ),
-      _ => AiException(
-        '$name refused the request: ${message ?? status}',
-        status: status,
-      ),
-    };
+    if (status != 200) throw refusal(name, status, body);
   }
 
   @override

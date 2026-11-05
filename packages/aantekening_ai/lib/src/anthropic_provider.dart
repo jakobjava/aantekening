@@ -9,6 +9,7 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:http/http.dart' as http;
 
 import 'conversation.dart';
+import 'http_answers.dart';
 import 'provider.dart';
 import 'sse.dart';
 
@@ -52,10 +53,17 @@ class AnthropicProvider implements ChatProvider {
 
   @override
   Future<List<ModelInfo>> listModels() async {
-    final response = await _http
-        .get(_uri('/v1/models?limit=100'), headers: _headers())
-        .timeout(const Duration(seconds: 20));
-    _check(response.statusCode, response.body);
+    final http.Response response;
+    try {
+      response = await _http
+          .get(_uri('/v1/models?limit=100'), headers: _headers())
+          .timeout(const Duration(seconds: 20));
+    } on Object catch (error) {
+      throw _unreachable(error);
+    }
+    if (response.statusCode != 200) {
+      throw refusal(name, response.statusCode, response.body);
+    }
     final body = jsonDecode(response.body) as Map<String, Object?>;
     return <ModelInfo>[
       for (final entry in (body['data'] as List<Object?>?) ?? const [])
@@ -297,27 +305,15 @@ class AnthropicProvider implements ChatProvider {
   @override
   Stream<ChatEvent> chat(ChatRequest request) async* {
     final sources = sourcesIn(request.messages);
-    final httpRequest =
-        http.AbortableRequest(
-            'POST',
-            _uri('/v1/messages'),
-            abortTrigger: request.stop,
-          )
-          ..headers.addAll(_headers(fallbacks: _refuses(request.model)))
-          ..body = jsonEncode(body(request));
-    final http.StreamedResponse response;
-    try {
-      response = await _http.send(httpRequest);
-    } on Object catch (error) {
-      throw AiException(
-        'Anthropic could not be reached. Check the connection.',
-        retryable: true,
-        cause: error,
-      );
-    }
-    if (response.statusCode != 200) {
-      _check(response.statusCode, await response.stream.bytesToString());
-    }
+    final response = await postForStream(
+      _http,
+      _uri('/v1/messages'),
+      name: name,
+      headers: _headers(fallbacks: _refuses(request.model)),
+      body: body(request),
+      unreachable: _unreachable,
+      stop: request.stop,
+    );
 
     final blocks = <Map<String, Object?>>[];
     // What streams into each block, by its index, written into it once the
@@ -340,7 +336,7 @@ class AnthropicProvider implements ChatProvider {
     // Whether the answer came to its end: a stream that ends before
     // `message_stop` was cut off, whatever it holds by then.
     var ended = false;
-    try {
+    Stream<ChatEvent> read() async* {
       await for (final event in serverEvents(response.stream)) {
         final data = jsonDecode(event.data) as Map<String, Object?>;
         switch (data['type']) {
@@ -421,12 +417,9 @@ class AnthropicProvider implements ChatProvider {
             ended = true;
         }
       }
-    } on AiException {
-      rethrow;
-    } on Object catch (error) {
-      throw brokenOff(name, error);
     }
-    if (!ended) throw brokenOff(name);
+
+    yield* wholeAnswer(name, read(), ended: () => ended);
     // Any block the answer ended without saying it was done.
     <int>{...texts.keys, ...thoughts.keys, ...partialJson.keys}.forEach(finish);
 
@@ -571,30 +564,11 @@ class AnthropicProvider implements ChatProvider {
     );
   }
 
-  static void _check(int status, String body) {
-    if (status == 200) return;
-    String? message;
-    try {
-      final error = (jsonDecode(body) as Map)['error'];
-      if (error is Map) message = error['message'] as String?;
-    } on Object {
-      // The status says enough.
-    }
-    throw switch (status) {
-      401 || 403 => const AiException(
-        'Anthropic refused the API key. Check it in the AI settings.',
-      ),
-      429 => const AiException(
-        'Too many requests to Anthropic just now. Try again in a moment.',
-        retryable: true,
-      ),
-      529 || >= 500 => const AiException(
-        'Anthropic is busy just now. Try again in a moment.',
-        retryable: true,
-      ),
-      _ => AiException('Anthropic refused the request: ${message ?? status}'),
-    };
-  }
+  static AiException _unreachable(Object error) => AiException(
+    'Anthropic could not be reached. Check the connection.',
+    retryable: true,
+    cause: error,
+  );
 
   @override
   void close() {

@@ -608,6 +608,55 @@ void main() {
         ),
       );
     });
+
+    test('says why it refused, or could not be reached, as the other '
+        'providers do', () async {
+      Future<AiException> failing(Future<Object?> asked) async {
+        try {
+          await asked;
+        } on AiException catch (error) {
+          return error;
+        }
+        fail('it did not fail');
+      }
+
+      final busy = await failing(
+        AnthropicProvider(
+          apiKey: 'k',
+          client: server(
+            '{"error":{"message":"Overloaded"}}',
+            status: 529,
+          ).client,
+        ).chat(question('?')).toList(),
+      );
+      expect(busy.message, contains('busy'));
+      expect((busy.retryable, busy.status), (true, 529));
+
+      final missing = await failing(
+        AnthropicProvider(
+          apiKey: 'k',
+          client: server(
+            '{"error":{"message":"model: claude-none"}}',
+            status: 404,
+          ).client,
+        ).chat(question('?')).toList(),
+      );
+      expect(
+        missing.message,
+        'Anthropic does not have that model: model: '
+        'claude-none',
+      );
+      expect((missing.retryable, missing.status), (false, 404));
+
+      final away = await failing(
+        AnthropicProvider(
+          apiKey: 'k',
+          client: MockClient((request) async => throw Exception('no route')),
+        ).listModels(),
+      );
+      expect(away.message, contains('could not be reached'));
+      expect(away.retryable, isTrue);
+    });
   });
 
   group('OpenAI-compatible', () {

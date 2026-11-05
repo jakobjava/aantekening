@@ -4,8 +4,6 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'provider.dart';
-
 /// One event: its name, if it has one, and its data.
 typedef ServerEvent = ({String? event, String data});
 
@@ -36,12 +34,3 @@ Stream<ServerEvent> serverEvents(Stream<List<int>> bytes) async* {
     }
   }
 }
-
-/// That the answer [name] was streaming broke off before its end — the
-/// connection lost, or cut by something between, or what came unreadable
-/// ([cause]) — which another try may get whole.
-AiException brokenOff(String name, [Object? cause]) => AiException(
-  'The answer from $name broke off part way. Try again.',
-  retryable: true,
-  cause: cause,
-);

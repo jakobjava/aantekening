@@ -7,9 +7,9 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'conversation.dart';
+import 'http_answers.dart';
 import 'openai_compatible_provider.dart';
 import 'provider.dart';
-import 'sse.dart';
 import 'streamed_answer.dart';
 
 /// Talks to Ollama through its own chat API rather than its OpenAI one,
@@ -277,7 +277,6 @@ class OllamaProvider extends OpenAiCompatibleProvider {
       );
     }
     yield* Stream<ChatEvent>.fromIterable(answer.close());
-    yield const CitedSpan(<Citation>[]);
     yield MessageDone(
       ChatMessage.assistant(<ChatPart>[
         if (answer.text.isNotEmpty) TextPart(answer.text),
@@ -304,7 +303,7 @@ class OllamaProvider extends OpenAiCompatibleProvider {
     // Whether the answer came to its end, said by `done`: a stream that
     // ends without it was cut off, whatever it holds by then.
     var ended = false;
-    try {
+    Stream<ChatEvent> read() async* {
       // Leaving the loop early closes the connection, which stops the model.
       await for (final line
           in response.stream
@@ -367,12 +366,10 @@ class OllamaProvider extends OpenAiCompatibleProvider {
                 );
         }
       }
-    } on AiException {
-      rethrow;
-    } on Object catch (error) {
-      throw brokenOff(name, error);
     }
-    if (!ended) throw brokenOff(name);
+
+    // Its thinking stopped, it has not ended, nor is it cut off.
+    yield* wholeAnswer(name, read(), ended: () => ended || reply.stopped);
   }
 }
 

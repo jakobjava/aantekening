@@ -22,10 +22,12 @@ class StreamedAnswer {
   /// The events [piece] of the answer makes.
   Iterable<ChatEvent> add(String piece) => _read(_tags.add(piece));
 
-  /// The events of what is held back, once the answer is all there.
+  /// The events of what is held back, once the answer is all there, and
+  /// the end of the last span cited.
   Iterable<ChatEvent> close() sync* {
     yield* _read(_tags.close());
     yield* _markers.close();
+    yield const CitedSpan(<Citation>[]);
   }
 
   Iterable<ChatEvent> _read(List<ChatEvent> events) sync* {
