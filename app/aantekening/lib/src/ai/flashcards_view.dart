@@ -344,23 +344,26 @@ class _SessionState extends ConsumerState<_Session> {
                         },
                         child: MouseRegion(
                           cursor: SystemMouseCursors.click,
-                          child: FlipCard(
-                            turned: _turned,
-                            front: CardFace(
-                              label: 'Question',
-                              text: card.front,
-                              hint: 'Click, or press Space, to turn it over',
-                            ),
-                            back: CardFace(
-                              label: 'Answer',
-                              text: card.back,
-                              above: card.front,
-                              footer: SourceLine(
-                                sources: card.sources,
-                                onOpen: widget.onOpen,
-                              ),
-                            ),
-                          ),
+                          // Turned over, it is another face, not this one
+                          // changed.
+                          child: _turned
+                              ? CardFace(
+                                  key: const ValueKey<bool>(true),
+                                  label: 'Answer',
+                                  text: card.back,
+                                  above: card.front,
+                                  footer: SourceLine(
+                                    sources: card.sources,
+                                    onOpen: widget.onOpen,
+                                  ),
+                                )
+                              : CardFace(
+                                  key: const ValueKey<bool>(false),
+                                  label: 'Question',
+                                  text: card.front,
+                                  hint:
+                                      'Click, or press Space, to turn it over',
+                                ),
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -389,24 +392,6 @@ class _SessionState extends ConsumerState<_Session> {
       ),
     );
   }
-}
-
-/// A card showing its [front], or its [back] once [turned] over.
-class FlipCard extends StatelessWidget {
-  const FlipCard({
-    required this.turned,
-    required this.front,
-    required this.back,
-    super.key,
-  });
-
-  final bool turned;
-  final Widget front;
-  final Widget back;
-
-  @override
-  Widget build(BuildContext context) =>
-      KeyedSubtree(key: ValueKey<bool>(turned), child: turned ? back : front);
 }
 
 /// One side of a card, as an index card is: what it is, the text large in
