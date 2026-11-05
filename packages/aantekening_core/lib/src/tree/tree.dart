@@ -1,7 +1,6 @@
 /// The organisational hierarchy: notebooks, nested sections and pages.
 library;
 
-import '../../aantekening_core.dart' show PageDocument;
 import '../document/page_document.dart' show PageDocument;
 import '../util/json_read.dart';
 import 'hierarchy.dart';
