@@ -697,6 +697,21 @@ void main() {
       expect(canvas.selection, <String>{'beside'});
     });
 
+    testWidgets('u undoes and U redoes in select mode, as in the others', (
+      tester,
+    ) async {
+      final canvas = await openBoxes(tester);
+      await typeKeys(tester, 'jvd');
+      expect(_mode(tester), EditorMode.select);
+      expect(canvas.elementById('first'), isNull, reason: 'deleted');
+
+      await typeKeys(tester, 'u');
+      expect(canvas.elementById('first'), isNotNull, reason: 'undone');
+      await typeKeys(tester, 'U');
+      expect(canvas.elementById('first'), isNull, reason: 'redone');
+      expect(_mode(tester), EditorMode.select);
+    });
+
     testWidgets('m moves what is picked, a step or ten at a time', (
       tester,
     ) async {

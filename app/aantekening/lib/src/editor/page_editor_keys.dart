@@ -118,6 +118,18 @@ extension _Keys on _PageEditorState {
     KeyAction('m', 'Formulas', layer: _layers.math),
   ];
 
+  /// Undo and redo, by the same keys in every mode that has them.
+  List<KeyAction> _undoKeys() => <KeyAction>[
+    KeyAction('u', 'Undo', run: _controller.undo, enabled: _controller.canUndo),
+    KeyAction(
+      'U',
+      'Redo',
+      run: _controller.redo,
+      also: const <String>['Ctrl+r'],
+      enabled: _controller.canRedo,
+    ),
+  ];
+
   /// The keys of the mode the page is in.
   KeyLayer _modeKeys() => switch (_mode) {
     EditorMode.draw => _drawKeys(),
@@ -350,19 +362,7 @@ extension _Keys on _PageEditorState {
           'Paste text only',
           run: () => unawaited(_paste(textOnly: true)),
         ),
-        KeyAction(
-          'u',
-          'Undo',
-          run: _controller.undo,
-          enabled: _controller.canUndo,
-        ),
-        KeyAction(
-          'U',
-          'Redo',
-          run: _controller.redo,
-          also: const <String>['Ctrl+r'],
-          enabled: _controller.canRedo,
-        ),
+        ..._undoKeys(),
       ]),
       KeyGroup(title: 'Go', <KeyAction>[
         KeyAction('g', 'Go', layer: _goKeys, waits: true),
@@ -412,11 +412,11 @@ extension _Keys on _PageEditorState {
   /// Draw mode: the tools, the palette's first colours by number, and the
   /// width.
   KeyLayer _drawKeys() {
-    final layers = _layers;
+    final draw = _layers.draw();
     final ink = _commands.ink;
     final colours = NotePalette.presets.take(9).toList();
     return KeyLayer('Draw mode', <KeyGroup>[
-      layers.draw().groups.first,
+      draw.groups.first,
       KeyGroup(title: 'Ink', <KeyAction>[
         for (final (index, colour) in colours.indexed)
           KeyAction(
@@ -427,25 +427,13 @@ extension _Keys on _PageEditorState {
             ),
             checked: ink.color == colour.color,
           ),
-        ...layers.draw().groups.last.actions,
+        ...draw.groups.last.actions,
       ]),
       KeyGroup(title: 'Modes', <KeyAction>[
         KeyAction(ModeKey.escape, 'Back to normal', run: _toNormal),
         KeyAction('v', 'Select', run: () => _selectTool(CanvasTool.lasso)),
         KeyAction(ModeKey.space, 'Menu', layer: _menu),
-        KeyAction(
-          'u',
-          'Undo',
-          run: _controller.undo,
-          enabled: _controller.canUndo,
-        ),
-        KeyAction(
-          'U',
-          'Redo',
-          run: _controller.redo,
-          also: const <String>['Ctrl+r'],
-          enabled: _controller.canRedo,
-        ),
+        ..._undoKeys(),
         KeyAction('?', 'These keys', layer: _drawKeys),
       ]),
     ]);
@@ -488,12 +476,7 @@ extension _Keys on _PageEditorState {
         enabled: some,
       ),
       KeyAction('p', 'Paste', run: () => unawaited(_paste())),
-      KeyAction(
-        'u',
-        'Undo',
-        run: _controller.undo,
-        enabled: _controller.canUndo,
-      ),
+      ..._undoKeys(),
       KeyAction(ModeKey.space, 'Menu', layer: _menu),
       KeyAction('?', 'These keys', layer: _selectKeys),
     ]);
