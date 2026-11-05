@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'dictionary.dart';
 import 'spell_checker.dart';
@@ -17,7 +18,10 @@ typedef DictionaryFiles = ({String affixFile, String wordList});
 ///
 /// Requests are carried out one at a time, in the order they are made, so a
 /// check made straight after [use] is answered with the new dictionaries.
-final class BackgroundSpellChecker {
+///
+/// An interface as well, for what uses it to be tried with a checker that
+/// says what it is told to.
+interface class BackgroundSpellChecker {
   BackgroundSpellChecker._(this._responses) {
     _responses.listen(_onResponse);
   }
@@ -59,9 +63,12 @@ final class BackgroundSpellChecker {
     Iterable<String> personalWords = const <String>[],
   }) => _ask(_Use(dictionaries, personalWords.toList()));
 
-  /// Whether each of [words] is spelled correctly.
-  Future<List<bool>> check(List<String> words) async =>
-      (await _ask(_Check(words)))! as List<bool>;
+  /// What the dictionaries say of each of [words]: right, wrong, or
+  /// unsure — wrong as far as one could tell in the time it had.
+  Future<List<Verdict>> check(List<String> words) async => <Verdict>[
+    for (final index in (await _ask(_Check(words)))! as List<int>)
+      Verdict.values[index],
+  ];
 
   /// Likely spellings of [word], at most [limit], best first.
   Future<List<String>> suggest(String word, {int limit = 8}) async =>
@@ -187,7 +194,10 @@ final class _Worker {
         ], personalWords: personalWords);
         return null;
       case _Check(:final words):
-        return <bool>[for (final word in words) _checker.isCorrect(word)];
+        // By index, which is the same in either isolate.
+        return Uint8List.fromList(<int>[
+          for (final word in words) _checker.verdictOn(word).index,
+        ]);
       case _Suggest(:final word, :final limit):
         return _checker.suggest(word, limit: limit);
       case _AddWord(:final word):

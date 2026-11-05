@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:aantekening/src/editor/text/block_paragraph.dart';
 import 'package:aantekening/src/spelling/dictionaries.dart';
@@ -180,6 +181,100 @@ void main() {
       expect(wrongIn(text), isEmpty);
       expect(wrongIn('Aantekening'), isEmpty, reason: 'capitalised, too');
     });
+
+    test('marks a word the checker ran out of time on, asks again, and '
+        'stops asking', () async {
+      // Words made of any number of others, so that ruling out a long word
+      // not among them takes longer than a check is given.
+      final affixFile = File('${directory.path}/endless.aff')
+        ..writeAsStringSync('SET UTF-8\nCOMPOUNDFLAG X\nCOMPOUNDMIN 1\n');
+      final wordList = File('${directory.path}/endless.dic')
+        ..writeAsStringSync('4\na/X\naa/X\naaa/X\naaaa/X\n');
+      final hard = Proofreader(
+        checker,
+        <DictionaryFiles>[
+          writeDictionary(directory),
+          (affixFile: affixFile.path, wordList: wordList.path),
+        ],
+        onWordAdded: added.add,
+        askAgainAfter: const Duration(milliseconds: 10),
+      );
+      addTearDown(hard.dispose);
+      var answers = 0;
+      hard.addListener(() => answers++);
+      final text = 'the ${'a' * 40}b sat';
+      List<String> wrong() => <String>[
+        for (final word in hard.misspellingsIn(text))
+          text.substring(word.start, word.end),
+      ];
+
+      wrong();
+      while (answers < Proofreader.tries) {
+        await notified(hard);
+        expect(wrong(), <String>['${'a' * 40}b'], reason: 'as it says');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(answers, Proofreader.tries, reason: 'asked no more');
+      expect(wrong(), <String>['${'a' * 40}b']);
+    });
+
+    test('unmarks a word the checker ran out of time on once it is sure of '
+        'it', () async {
+      final hesitant = _Hesitant();
+      final unsure = Proofreader(
+        hesitant,
+        const <DictionaryFiles>[],
+        onWordAdded: added.add,
+        askAgainAfter: const Duration(milliseconds: 10),
+      );
+      addTearDown(unsure.dispose);
+      List<String> wrong(String text) => <String>[
+        for (final word in unsure.misspellingsIn(text))
+          text.substring(word.start, word.end),
+      ];
+
+      expect(wrong('Donaudampfschifffahrt'), isEmpty);
+      await notified(unsure);
+      expect(wrong('Donaudampfschifffahrt'), <String>['Donaudampfschifffahrt']);
+      await notified(unsure);
+      expect(wrong('Donaudampfschifffahrt'), isEmpty);
+      expect(hesitant.asked, <List<String>>[
+        <String>['Donaudampfschifffahrt'],
+        <String>['Donaudampfschifffahrt'],
+      ]);
+      wrong('Donaudampfschifffahrt');
+      await pumpEventQueue();
+      expect(hesitant.asked, hasLength(2), reason: 'sure, it is kept');
+    });
+
+    test('keeps the verdicts it remembers, the newest', () async {
+      final sure = _Hesitant(hesitating: false);
+      final reader = Proofreader(
+        sure,
+        const <DictionaryFiles>[],
+        onWordAdded: added.add,
+      );
+      addTearDown(reader.dispose);
+      // Words of letters alone, as many as are remembered, and one more.
+      String word(int n) => String.fromCharCodes(<int>[
+        for (var i = 0; i < 4; i++) 0x61 + n ~/ math.pow(26, i) % 26,
+      ]);
+      reader.misspellingsIn(
+        <String>[for (var n = 0; n <= Proofreader.remembered; n++) word(n)]
+            .join(' '),
+      );
+      await notified(reader);
+      sure.asked.clear();
+
+      reader.misspellingsIn(word(Proofreader.remembered));
+      await pumpEventQueue();
+      expect(sure.asked, isEmpty, reason: 'the newest are kept');
+      reader.misspellingsIn(word(0));
+      await pumpEventQueue();
+      expect(sure.asked, <List<String>>[
+        <String>[word(0)],
+      ], reason: 'the oldest are asked about again');
+    });
   });
 
   group('in a text box', () {
@@ -289,4 +384,39 @@ void main() {
       expect(inFormula(tester), isFalse);
     });
   });
+}
+
+/// A checker that runs out of time on each word the first time it is asked,
+/// if [hesitating], and is sure of it the next: it is right.
+class _Hesitant implements BackgroundSpellChecker {
+  _Hesitant({this.hesitating = true});
+
+  final bool hesitating;
+  final List<List<String>> asked = <List<String>>[];
+  final Set<String> _seen = <String>{};
+
+  @override
+  Future<void> use(
+    List<DictionaryFiles> dictionaries, {
+    Iterable<String> personalWords = const <String>[],
+  }) async {}
+
+  @override
+  Future<List<Verdict>> check(List<String> words) async {
+    asked.add(words);
+    return <Verdict>[
+      for (final word in words)
+        _seen.add(word) && hesitating ? Verdict.unsure : Verdict.right,
+    ];
+  }
+
+  @override
+  Future<List<String>> suggest(String word, {int limit = 8}) async =>
+      const <String>[];
+
+  @override
+  Future<void> addWord(String word) async {}
+
+  @override
+  void close() {}
 }

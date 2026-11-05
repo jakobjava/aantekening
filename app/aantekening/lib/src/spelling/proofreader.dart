@@ -12,6 +12,11 @@ import 'package:flutter/foundation.dart';
 /// The text is drawn at once; a word not yet checked counts as right until
 /// the checker has said, asked about together with the other words drawn in
 /// the same frame. Listeners hear when verdicts come back, and draw again.
+///
+/// The verdicts are kept here alone, the [remembered] newest of them. A
+/// word the checker ran out of time on is marked, as it says, but not kept
+/// so: it is asked about again a little later, up to [tries] times in all,
+/// and kept as wrong only then.
 class Proofreader extends ChangeNotifier {
   /// Checks against [dictionaries] and [personalWords] with [checker], and
   /// tells [onWordAdded] of each word added, to be remembered.
@@ -20,16 +25,36 @@ class Proofreader extends ChangeNotifier {
     List<DictionaryFiles> dictionaries, {
     Iterable<String> personalWords = const <String>[],
     required this.onWordAdded,
+    @visibleForTesting this.askAgainAfter = const Duration(seconds: 1),
   }) {
     // Awaited before each request; failing, it is reported to each.
     _ready = _checker.use(dictionaries, personalWords: personalWords)..ignore();
   }
 
+  /// How many verdicts are kept, the oldest let go first: far more words
+  /// than a screen shows, and a megabyte or two.
+  static const int remembered = 20000;
+
+  /// How many times a word is asked about before the checker running out
+  /// of time on it is taken as its verdict.
+  static const int tries = 3;
+
   final BackgroundSpellChecker _checker;
   final ValueChanged<String> onWordAdded;
   late final Future<void> _ready;
 
+  /// How long after the checker was unsure of a word it is asked again: a
+  /// check runs out of time when the isolate is busy, as well as on a word
+  /// that is hard to rule out.
+  final Duration askAgainAfter;
+
+  /// Whether each word asked about is right, in the order they came.
   final Map<String, bool> _verdicts = <String, bool>{};
+
+  /// Words the checker ran out of time on, and how often it has.
+  final Map<String, int> _unsure = <String, int>{};
+  final List<String> _again = <String>[];
+  Timer? _askingAgain;
 
   /// Words being asked about, or which could not be.
   final Set<String> _asked = <String>{};
@@ -74,6 +99,7 @@ class Proofreader extends ChangeNotifier {
     final wrong = <String>[
       for (final MapEntry(key: word, value: right) in _verdicts.entries)
         if (!right) word,
+      ..._unsure.keys,
     ];
     await _check(wrong);
   }
@@ -87,6 +113,8 @@ class Proofreader extends ChangeNotifier {
     if (_ignored.contains(word)) return true;
     final verdict = _verdicts[word];
     if (verdict != null) return verdict;
+    // Wrong, as the checker said, until it has said again.
+    if (_unsure.containsKey(word)) return false;
     if (_asked.add(word)) {
       _waiting.add(word);
       if (_waiting.length == 1) scheduleMicrotask(_askWaiting);
@@ -102,7 +130,7 @@ class Proofreader extends ChangeNotifier {
 
   Future<void> _check(List<String> words) async {
     if (words.isEmpty) return;
-    final List<bool> verdicts;
+    final List<Verdict> verdicts;
     try {
       await _ready;
       verdicts = await _checker.check(words);
@@ -113,14 +141,44 @@ class Proofreader extends ChangeNotifier {
     }
     if (_disposed) return;
     for (var i = 0; i < words.length; i++) {
-      _verdicts[words[i]] = verdicts[i];
+      final word = words[i];
+      if (verdicts[i] == Verdict.unsure) {
+        final times = _unsure[word] = (_unsure[word] ?? 0) + 1;
+        if (times < tries) {
+          _askAgain(word);
+          continue;
+        }
+      }
+      _unsure.remove(word);
+      _asked.remove(word);
+      _verdicts[word] = verdicts[i].isRight;
     }
+    if (_verdicts.length > remembered) _forgetOldest();
     notifyListeners();
+  }
+
+  /// Lets go of the oldest quarter of the verdicts, a word of which is
+  /// asked about again when it is next drawn.
+  void _forgetOldest() {
+    final oldest = _verdicts.keys.take(remembered ~/ 4).toList();
+    oldest.forEach(_verdicts.remove);
+  }
+
+  /// Asks about [word] again in a while, with any others by then.
+  void _askAgain(String word) {
+    if (!_again.contains(word)) _again.add(word);
+    _askingAgain ??= Timer(askAgainAfter, () {
+      _askingAgain = null;
+      final words = List<String>.of(_again);
+      _again.clear();
+      unawaited(_check(words));
+    });
   }
 
   @override
   void dispose() {
     _disposed = true;
+    _askingAgain?.cancel();
     super.dispose();
   }
 }

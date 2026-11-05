@@ -49,23 +49,41 @@ void main() {
       'SET UTF-8\nTRY enrtaioslkdgumvhbpjcfwzyxq\n',
       '2\nkat\nhond\n',
     );
+    // Words made of any number of others, so that ruling out a long word
+    // not among them takes longer than a check is given.
+    final endless = HunspellDictionary.parse(
+      'SET UTF-8\nCOMPOUNDFLAG X\nCOMPOUNDMIN 1\n',
+      '4\na/X\naa/X\naaa/X\naaaa/X\n',
+    );
+
+    List<String> misspelt(SpellChecker checker, String text) => <String>[
+      for (final span in SpellChecker.misspellingsWith(text, checker.isCorrect))
+        text.substring(span.start, span.end),
+    ];
 
     test('finds the words no language has', () {
       final checker = SpellChecker(<HunspellDictionary>[english, dutch]);
-      const text = 'the cat and the kat, hond en dogs';
-      expect(
-        <String>[
-          for (final span in checker.misspellingsIn(text))
-            text.substring(span.start, span.end),
-        ],
-        <String>['and', 'en'],
-      );
+      expect(misspelt(checker, 'the cat and the kat, hond en dogs'), <String>[
+        'and',
+        'en',
+      ]);
     });
 
     test('takes an abbreviation with its full stop', () {
       final checker = SpellChecker(<HunspellDictionary>[english]);
-      expect(checker.misspellingsIn('the etc. cat'), isEmpty);
-      expect(checker.misspellingsIn('the etc cat'), hasLength(1));
+      expect(misspelt(checker, 'the etc. cat'), isEmpty);
+      expect(misspelt(checker, 'the etc cat'), hasLength(1));
+    });
+
+    test('is unsure of a word a language ran out of time on, each time it '
+        'is asked', () {
+      final checker = SpellChecker(<HunspellDictionary>[english, endless]);
+      final word = 'a' * 40 + 'b';
+      expect(checker.verdictOn(word), Verdict.unsure);
+      expect(checker.isCorrect(word), isFalse);
+      expect(checker.verdictOn(word), Verdict.unsure, reason: 'not kept');
+      expect(checker.verdictOn('cat'), Verdict.right);
+      expect(checker.verdictOn('dgo'), Verdict.wrong);
     });
 
     test('takes words added to it, capitalised as a word may be', () {
@@ -82,8 +100,6 @@ void main() {
       expect(checker.isCorrect('Utrecht'), isTrue);
       expect(checker.isCorrect('UTRECHT'), isTrue);
       expect(checker.isCorrect('utrecht'), isFalse);
-      checker.removeWord('Utrecht');
-      expect(checker.isCorrect('Utrecht'), isFalse);
     });
 
     test('suggests from every language, best first', () {

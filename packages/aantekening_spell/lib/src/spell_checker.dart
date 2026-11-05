@@ -5,6 +5,22 @@ import 'casing.dart';
 import 'dictionary.dart';
 import 'word_splitter.dart';
 
+/// What a checker says of a word.
+enum Verdict {
+  /// Spelled correctly.
+  right,
+
+  /// Spelled wrongly.
+  wrong,
+
+  /// Said to be wrong, as Hunspell says, by a dictionary that ran out of
+  /// time before it was sure: it may be right, and is worth checking again.
+  unsure;
+
+  /// Whether the word counts as spelled correctly.
+  bool get isRight => this == right;
+}
+
 /// Checks text against any number of dictionaries, and against words the
 /// person has added: a word is right if any of them has it.
 final class SpellChecker {
@@ -12,36 +28,30 @@ final class SpellChecker {
     : _personal = personalWords.toSet();
 
   final List<HunspellDictionary> dictionaries;
-  final Set<String> _personal;
-
-  final Map<String, bool> _verdicts = <String, bool>{};
 
   /// Words added by the person, checked as a dictionary word is: `word`
   /// also as `Word` and `WORD`, and `Word` also as `WORD`.
-  Set<String> get personalWords => Set<String>.unmodifiable(_personal);
+  final Set<String> _personal;
 
   /// Adds [word] to the words that are right.
-  void addWord(String word) {
-    if (_personal.add(word)) _verdicts.clear();
-  }
+  void addWord(String word) => _personal.add(word);
 
-  void removeWord(String word) {
-    if (_personal.remove(word)) _verdicts.clear();
-  }
+  /// Whether [word] is spelled correctly in any of the languages.
+  bool isCorrect(String word) => verdictOn(word).isRight;
 
-  /// Whether [word] is spelled correctly in any of the languages. A word
-  /// a dictionary ran out of time on is said to be wrong, as Hunspell
-  /// says, but is not remembered so: it is checked again next time.
-  bool isCorrect(String word) {
-    if (_verdicts[word] case final verdict?) return verdict;
-    if (_isPersonal(word)) return _verdicts[word] = true;
-    var sure = true;
+  /// What the languages say of [word]: right if any of them has it, and
+  /// unsure, rather than wrong, if one that has not ran out of time.
+  ///
+  /// Nothing is remembered here: who asks keeps the verdicts it wants
+  /// kept, and asks again about those it was unsure of.
+  Verdict verdictOn(String word) {
+    if (_isPersonal(word)) return Verdict.right;
+    var verdict = Verdict.wrong;
     for (final dictionary in dictionaries) {
-      if (dictionary.check(word)) return _verdicts[word] = true;
-      if (dictionary.timedOut) sure = false;
+      if (dictionary.check(word)) return Verdict.right;
+      if (dictionary.timedOut) verdict = Verdict.unsure;
     }
-    if (sure) _verdicts[word] = false;
-    return false;
+    return verdict;
   }
 
   bool _isPersonal(String word) {
@@ -55,10 +65,6 @@ final class SpellChecker {
       _ => false,
     };
   }
-
-  /// The words of [text] spelled wrongly.
-  List<WordSpan> misspellingsIn(String text) =>
-      misspellingsWith(text, isCorrect);
 
   /// The words of [text] that [isCorrect] says are spelled wrongly. A word
   /// followed by a full stop is right if it is an abbreviation written with
