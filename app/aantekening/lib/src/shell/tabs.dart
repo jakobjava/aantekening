@@ -58,6 +58,26 @@ class NoteTab {
     pageId: choice == TabChoice.page ? id : pageId,
   );
 
+  /// This tab with [notebookId], [sectionId] and [pageId] chosen, all at
+  /// once, and showing the AI of them if [ai] says so, or as it was.
+  NoteTab choosingAll({
+    String? notebookId,
+    String? sectionId,
+    String? pageId,
+    bool? ai,
+  }) =>
+      notebookId == this.notebookId &&
+          sectionId == this.sectionId &&
+          pageId == this.pageId &&
+          (ai ?? this.ai) == this.ai
+      ? this
+      : _copy(
+          notebookId: notebookId,
+          sectionId: sectionId,
+          pageId: pageId,
+          ai: ai,
+        );
+
   NoteTab searching(String search) => _copy(search: search);
 
   NoteTab inAi(bool ai) => ai == this.ai ? this : _copy(ai: ai);

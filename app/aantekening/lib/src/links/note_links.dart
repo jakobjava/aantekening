@@ -86,18 +86,18 @@ class NoteLinks {
     } else if (newTab) {
       tabs.open(notebookId: notebookId, sectionId: sectionId, pageId: pageId);
     } else {
-      tabs.updateCurrent((tab) => tab.inAi(false));
       final actions = _ref.read(libraryActionsProvider);
       if (pageId != null) {
         actions.openPage(
           notebookId: notebookId,
           sectionId: sectionId!,
           pageId: pageId,
+          ai: false,
         );
       } else if (sectionId != null) {
-        actions.openSection(notebookId, sectionId);
+        actions.openSection(notebookId, sectionId, ai: false);
       } else {
-        actions.openNotebook(notebookId);
+        actions.openNotebook(notebookId, ai: false);
       }
     }
     if (link.elementId != null) {

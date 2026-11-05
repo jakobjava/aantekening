@@ -75,12 +75,25 @@ class LibraryActions {
 
   void _changed() => _ref.read(libraryRevisionProvider.notifier).bump();
 
-  /// Selects what is opened, and expands the rows above it in the panes so
-  /// it shows there, wherever it was opened from.
-  void _select({String? notebookId, String? sectionId, String? pageId}) {
-    _ref.read(selectedNotebookProvider.notifier).select(notebookId);
-    _ref.read(selectedSectionProvider.notifier).select(sectionId);
-    _ref.read(selectedPageProvider.notifier).select(pageId);
+  /// Selects what is opened, in one change of the tab showing — the AI of
+  /// it shown, or the page, if [ai] says which — and expands the rows above
+  /// it in the panes so it shows there, wherever it was opened from.
+  void _select({
+    String? notebookId,
+    String? sectionId,
+    String? pageId,
+    bool? ai,
+  }) {
+    _ref
+        .read(tabsProvider.notifier)
+        .updateCurrent(
+          (tab) => tab.choosingAll(
+            notebookId: notebookId,
+            sectionId: sectionId,
+            pageId: pageId,
+            ai: ai,
+          ),
+        );
     unawaited(
       _reveal(notebookId: notebookId, sectionId: sectionId, pageId: pageId),
     );
@@ -106,10 +119,15 @@ class LibraryActions {
 
   // ---------------------------------------------------------------- opening
 
-  void openNotebook(String notebookId) => _select(notebookId: notebookId);
+  // Each opens what it is given in the tab showing: the AI of it in place
+  // of the page if [ai] is true, the page if it is false, and as the tab
+  // was otherwise.
 
-  void openSection(String notebookId, String sectionId) =>
-      _select(notebookId: notebookId, sectionId: sectionId);
+  void openNotebook(String notebookId, {bool? ai}) =>
+      _select(notebookId: notebookId, ai: ai);
+
+  void openSection(String notebookId, String sectionId, {bool? ai}) =>
+      _select(notebookId: notebookId, sectionId: sectionId, ai: ai);
 
   /// Opens a page, and the notebook and section it is in with it, so the
   /// panes show where it lives.
@@ -117,27 +135,30 @@ class LibraryActions {
     required String notebookId,
     required String sectionId,
     required String pageId,
-  }) => _select(notebookId: notebookId, sectionId: sectionId, pageId: pageId);
+    bool? ai,
+  }) => _select(
+    notebookId: notebookId,
+    sectionId: sectionId,
+    pageId: pageId,
+    ai: ai,
+  );
 
   /// Shows the AI of [node] — a notebook, section or page — in the tab
   /// showing, in place of the page.
   Future<void> openAi(TreeNode node) async {
     switch (node) {
       case Notebook(:final id):
-        openNotebook(id);
+        openNotebook(id, ai: true);
       case Section(:final id, :final notebookId):
-        openSection(notebookId, id);
+        openSection(notebookId, id, ai: true);
       case PageRef(:final id):
-        if (!await openPageId(id)) return;
-      default:
-        return;
+        await openPageId(id, ai: true);
     }
-    _ref.read(tabsProvider.notifier).updateCurrent((tab) => tab.inAi(true));
   }
 
   /// Opens the page [pageId], wherever it is, saying whether it could be:
   /// not if it has since been deleted.
-  Future<bool> openPageId(String pageId) async {
+  Future<bool> openPageId(String pageId, {bool? ai}) async {
     final page = await _ref.read(pageProvider(pageId).future);
     if (page == null || page.isDeleted) return false;
     final section = await _ref.read(sectionProvider(page.sectionId).future);
@@ -146,6 +167,7 @@ class LibraryActions {
       notebookId: section.notebookId,
       sectionId: section.id,
       pageId: page.id,
+      ai: ai,
     );
     return true;
   }

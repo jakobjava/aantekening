@@ -227,19 +227,20 @@ class _PanesState extends ConsumerState<_Panes> {
 
   @override
   Widget build(BuildContext context) {
-    final tabs = ref.watch(tabsProvider);
+    // Only which tabs show, and how; what each shows is its pane's.
+    final (active, beside, stacked) = ref.watch(
+      tabsProvider.select((tabs) => (tabs.active, tabs.beside, tabs.stacked)),
+    );
     final under = widget.top
         ? const EdgeInsets.only(top: StatusLine.reach)
         : const EdgeInsets.only(bottom: StatusLine.reach);
-    final beside = tabs.beside;
     if (beside == null) {
-      return _Pane(slot: _Slot.first, index: tabs.active, obscured: under);
+      return _Pane(slot: _Slot.first, index: active, obscured: under);
     }
-    final first = math.min(tabs.active, beside);
-    final second = math.max(tabs.active, beside);
+    final first = math.min(active, beside);
+    final second = math.max(active, beside);
     // Side by side, both lie under the status line; one above the other,
     // only the one at its edge does.
-    final stacked = tabs.stacked;
     EdgeInsets obscured(_Slot slot) => !stacked
         ? under
         : (slot == _Slot.first) == widget.top
@@ -431,15 +432,22 @@ class _Pane extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tabs = ref.watch(tabsProvider);
-    final tab = tabs.tabs[index];
-    final active = index == tabs.active;
+    // Only what the editor is given: a search, or another tab changing,
+    // builds it no more.
+    final (pageId, aiScope, active) = ref.watch(
+      tabsProvider.select((tabs) {
+        // Watched until the panes are built again for fewer tabs.
+        if (index >= tabs.tabs.length) return (null, null, false);
+        final tab = tabs.tabs[index];
+        return (tab.pageId, _aiScope(tab), index == tabs.active);
+      }),
+    );
     // The same page may be open in both panes, each looking at a part of
     // it: what is done to it in one is done in the other.
     final editor = PageEditor(
       key: ValueKey<_Slot>(slot),
-      pageId: tab.pageId,
-      aiScope: _aiScope(tab),
+      pageId: pageId,
+      aiScope: aiScope,
       active: active,
       obscured: obscured,
     );

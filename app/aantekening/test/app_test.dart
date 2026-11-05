@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:aantekening/src/editor/page_editor.dart';
 import 'package:aantekening/src/editor/page_title.dart';
 import 'package:aantekening/src/editor/text/block_paragraph.dart';
 import 'package:aantekening/src/files/bin_view.dart';
@@ -1213,6 +1214,44 @@ void main() {
         tester.getRect(tabNamed(long)).right,
         lessThan(tester.getRect(find.byType(StatusLine)).right),
       );
+    });
+
+    testWidgets('a search leaves the page showing as it was built, and a '
+        'page opens in one change of the tabs', (tester) async {
+      final first = await openPage(tester);
+      final second = await store.pages.createPage(
+        sectionId: first.sectionId,
+        title: 'Lecture 2',
+      );
+      final container = containerOf(tester);
+      final built = tester.widget<PageEditor>(find.byType(PageEditor));
+
+      container.read(searchQueryProvider.notifier).set('Newtons');
+      await tester.pump();
+      expect(tabsOf(tester).current.search, 'Newtons');
+      expect(
+        tester.widget<PageEditor>(find.byType(PageEditor)),
+        same(built),
+        reason: 'not built again for a search',
+      );
+
+      final changes = <TabsState>[];
+      final listening = container.listen<TabsState>(
+        tabsProvider,
+        (_, next) => changes.add(next),
+      );
+      addTearDown(listening.close);
+      final section = (await store.library.findSection(first.sectionId))!;
+      container
+          .read(libraryActionsProvider)
+          .openPage(
+            notebookId: section.notebookId,
+            sectionId: section.id,
+            pageId: second.id,
+          );
+      await tester.pumpAndSettle();
+      expect(changes, hasLength(1));
+      expect(changes.single.current.pageId, second.id);
     });
 
     testWidgets('each tab has a search of its own', (tester) async {
