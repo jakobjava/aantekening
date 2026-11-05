@@ -729,6 +729,50 @@ void main() {
     });
   });
 
+  group('BackgroundPainter', () {
+    test(
+      'draws the dots of dotted paper in one call, each where it was',
+      () async {
+        // 24 units apart, twice as large: from the dot 7 and 7 units before
+        // the view's corner, a dot every 48 pixels from (34, 34).
+        final view = ValueNotifier<CanvasViewport>(
+          const CanvasViewport(origin: Offset(7, 31), zoom: 2),
+        );
+        addTearDown(view.dispose);
+        final painter = BackgroundPainter(
+          background: const PageBackground(kind: PageBackgroundKind.dotted),
+          view: view,
+        );
+        const size = Size(200, 150);
+        void paint(Canvas canvas) => painter.paint(canvas, size);
+
+        expect(paint, paintsExactlyCountTimes(#drawCircle, 0));
+        expect(paint, paintsExactlyCountTimes(#drawRawPoints, 1));
+
+        final recorder = ui.PictureRecorder();
+        paint(Canvas(recorder));
+        final image = await recorder.endRecording().toImage(200, 150);
+        final bytes = (await image.toByteData())!.buffer.asUint8List();
+        image.dispose();
+        int red(int x, int y) => bytes[(y * 200 + x) * 4];
+        for (final (x, y) in const <(int, int)>[
+          (34, 34),
+          (82, 34),
+          (130, 82),
+        ]) {
+          expect(red(x, y), lessThan(240), reason: 'a dot at ($x, $y)');
+        }
+        for (final (x, y) in const <(int, int)>[
+          (58, 58),
+          (106, 34),
+          (10, 10),
+        ]) {
+          expect(red(x, y), 255, reason: 'paper at ($x, $y)');
+        }
+      },
+    );
+  });
+
   group('InkPainter', () {
     test('repaints only when the ink itself changed', () {
       final controller = CanvasController()

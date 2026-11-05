@@ -116,10 +116,11 @@ class BackgroundPainter extends CustomPainter {
     }
   }
 
+  /// Draws the dots in one call, of a grid of them worked out once for a
+  /// view of its size and their spacing, and moved to where they lie.
+  /// Drawn one by one, a view of dots seen small was a hundred thousand
+  /// calls at every frame of a scroll.
   void _drawDots(Canvas canvas, Size size, double spacing, Paint paint) {
-    final dot = Paint()
-      ..color = Color(background.lineColor)
-      ..style = PaintingStyle.fill;
     final radius = (viewport.zoom).clamp(0.6, 1.6);
 
     final firstX = _firstLine(viewport.origin.dx, background.spacing);
@@ -127,12 +128,45 @@ class BackgroundPainter extends CustomPainter {
     final startX = viewport.toScreen(Offset(firstX, 0)).dx;
     final startY = viewport.toScreen(Offset(0, firstY)).dy;
 
-    for (var y = startY; y < size.height; y += spacing) {
-      for (var x = startX; x < size.width; x += spacing) {
-        canvas.drawCircle(Offset(x, y), radius, dot);
+    // The first dot lies within a spacing before the view's corner: as
+    // many again as fit in the view after it, and one more.
+    final across = (size.width / spacing).floor() + 2;
+    final down = (size.height / spacing).floor() + 2;
+    final grid = _dots;
+    final Float32List dots;
+    if (grid != null &&
+        grid.across == across &&
+        grid.down == down &&
+        grid.spacing == spacing) {
+      dots = grid.points;
+    } else {
+      dots = Float32List(across * down * 2);
+      var i = 0;
+      for (var row = 0; row < down; row++) {
+        for (var column = 0; column < across; column++) {
+          dots[i++] = column * spacing;
+          dots[i++] = row * spacing;
+        }
       }
+      _dots = (across: across, down: down, spacing: spacing, points: dots);
     }
+    canvas
+      ..save()
+      ..translate(startX, startY)
+      ..drawRawPoints(
+        ui.PointMode.points,
+        dots,
+        Paint()
+          ..color = Color(background.lineColor)
+          ..strokeWidth = radius * 2
+          ..strokeCap = StrokeCap.round,
+      )
+      ..restore();
   }
+
+  /// The grid of dots last drawn, by how many across and down, and how
+  /// far apart, on screen.
+  static ({int across, int down, double spacing, Float32List points})? _dots;
 
   /// Draws the optional right-hand margin that marks the printable width.
   void _drawPaperGuide(Canvas canvas, Size size) {
