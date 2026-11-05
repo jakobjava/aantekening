@@ -17,7 +17,8 @@ import '../shell/tabs.dart';
 const String notesFolderKey = 'notesFolder';
 
 /// This computer's own folder for the app, which the notes are kept in
-/// until another folder is chosen for them.
+/// until another folder is chosen for them, and its preferences and
+/// dictionaries always.
 final supportFolderProvider = FutureProvider<String>(
   (ref) async => (await getApplicationSupportDirectory()).path,
 );

@@ -48,7 +48,7 @@ Future<void> importNotes(
   if (paths.isEmpty || !window.mounted) return;
   final tab = container.read(tabsProvider).current;
   if (importer.target == ImportTarget.section && tab.sectionId == null) {
-    _say(window, 'Open the section the pages should go into first.');
+    window.say('Open the section the pages should go into first.');
     return;
   }
 
@@ -68,7 +68,7 @@ Future<void> importNotes(
     }
     if (draft.sections.isNotEmpty && tab.notebookId == null ||
         draft.pages.isNotEmpty && tab.sectionId == null) {
-      _say(window, 'Open the notebook or section they should go into first.');
+      window.say('Open the notebook or section they should go into first.');
       return;
     }
     final store = await container.read(storeProvider.future);
@@ -122,9 +122,6 @@ Future<List<String>> _choose(NotesImporter importer) async {
   };
 }
 
-void _say(BuildContext context, String message) =>
-    ScaffoldMessenger.maybeOf(context)?.showMessage(message);
-
 /// Says how an import went, listing what could not be brought over.
 Future<void> _report(
   BuildContext context,
@@ -132,7 +129,7 @@ Future<void> _report(
   List<String> warnings,
 ) {
   if (warnings.isEmpty) {
-    _say(context, outcome);
+    context.say(outcome);
     return Future<void>.value();
   }
   return showAppDialog<void>(

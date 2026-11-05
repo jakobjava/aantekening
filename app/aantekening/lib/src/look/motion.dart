@@ -159,6 +159,14 @@ class _FloatingInState extends State<FloatingIn> {
   );
 }
 
+/// Saying something along the foot of the window [context] is in.
+extension SayInWindow on BuildContext {
+  /// Says [message] along the foot of the window, if there is one to say
+  /// it in.
+  void say(String message) =>
+      ScaffoldMessenger.maybeOf(this)?.showMessage(message);
+}
+
 /// Messages along the foot of the window, on glass.
 extension AppMessages on ScaffoldMessengerState {
   /// Says [message] along the foot of the window, with [action], if given,

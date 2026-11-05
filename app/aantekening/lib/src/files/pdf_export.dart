@@ -325,7 +325,7 @@ Future<void> exportPdf(BuildContext context, TreeNode node) async {
   final contents = await PdfContents.of(store, node);
   if (!window.mounted) return;
   if (contents.pages.isEmpty) {
-    _say(window, 'There are no pages in ${contents.title} to save.');
+    window.say('There are no pages in ${contents.title} to save.');
     return;
   }
   // A page shown as sheets is printed as it is: nothing to choose of how.
@@ -381,12 +381,9 @@ Future<void> exportPdf(BuildContext context, TreeNode node) async {
     case false || null:
       break;
     case final Object error:
-      _say(window, 'The PDF could not be saved: $error');
+      window.say('The PDF could not be saved: $error');
   }
 }
-
-void _say(BuildContext context, String message) =>
-    ScaffoldMessenger.maybeOf(context)?.showMessage(message);
 
 /// What a PDF is to be made as, asked before it is.
 class _PdfChoicesDialog extends StatefulWidget {

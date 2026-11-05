@@ -9,8 +9,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
+import '../files/notes_location.dart';
 import '../preferences.dart';
 import 'dictionaries.dart';
 import 'proofreader.dart';
@@ -110,8 +110,8 @@ final spellingProvider = NotifierProvider<SpellingController, SpellingSettings>(
 /// Where the dictionaries are kept: beside the preferences, as they belong
 /// to this machine rather than to the notes.
 final dictionaryFolderProvider = FutureProvider<DictionaryFolder>((ref) async {
-  final support = await getApplicationSupportDirectory();
-  return DictionaryFolder(Directory(p.join(support.path, 'dictionaries')));
+  final support = await ref.watch(supportFolderProvider.future);
+  return DictionaryFolder(Directory(p.join(support, 'dictionaries')));
 });
 
 /// What dictionaries are downloaded with.

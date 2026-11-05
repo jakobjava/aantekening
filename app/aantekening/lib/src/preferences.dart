@@ -9,7 +9,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+
+import 'files/notes_location.dart';
 
 /// A few values kept in a small JSON file outside the workspace, so copying
 /// a workspace to another machine carries notes and nothing else.
@@ -144,10 +145,8 @@ extension EnumPreferenceAccess on Ref {
 /// the notes.
 final preferencesProvider = FutureProvider<Preferences>((ref) async {
   try {
-    final directory = await getApplicationSupportDirectory();
-    return await Preferences.open(
-      File(p.join(directory.path, 'preferences.json')),
-    );
+    final support = await ref.watch(supportFolderProvider.future);
+    return await Preferences.open(File(p.join(support, 'preferences.json')));
   } on Object {
     return Preferences.inMemory();
   }
