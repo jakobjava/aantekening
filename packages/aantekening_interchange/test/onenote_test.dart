@@ -169,6 +169,60 @@ void main() {
       );
     });
 
+    test('converts each section of a notebook before reading the next', () {
+      final section = File(
+        'test/fixtures/onenote-2016/OneWithFileData.one',
+      ).readAsBytesSync();
+      final package = File(p.join(work.path, 'Courses.onepkg'))
+        ..writeAsBytesSync(
+          writeCabinet(
+            <String, Uint8List>{'Algebra.one': section, 'Physics.one': section},
+            compression: 0,
+            encode: (all) => <(Uint8List, int)>[
+              for (var i = 0; i < all.length; i += 32768)
+                (
+                  all.sublist(i, math.min(i + 32768, all.length)),
+                  math.min(32768, all.length - i),
+                ),
+            ],
+          ),
+        );
+      final stages = <String>[];
+      final out = Directory(p.join(work.path, 'work'))..createSync();
+      final draft = const OneNoteImporter().read(
+        <String>[package.path],
+        ImportWork(
+          out,
+          onProgress: (stage, _) {
+            if (!stage.startsWith('Unpacking')) stages.add(stage);
+          },
+        ),
+      );
+      expect(
+        draft.notebooks.single.sections.map((section) => section.title),
+        <String>['Algebra', 'Physics'],
+      );
+      expect(stages, hasLength(4));
+      expect(stages[0], 'Reading Algebra');
+      expect(stages[1], startsWith('Converting Algebra: '));
+      expect(stages[2], 'Reading Physics');
+      expect(stages[3], startsWith('Converting Physics: '));
+    });
+
+    test('finds the files a section keeps beside itself by their names', () {
+      final notebook = Directory(p.join(work.path, 'Notebook'));
+      File(p.join(notebook.path, 'onefiles', 'Lecture.pdf'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      final beside = FilesBeside(notebook);
+      expect(beside(r'C:\Users\someone\onefiles\Lecture.pdf'), <int>[1, 2, 3]);
+      expect(beside('Lecture.pdf'), <int>[1, 2, 3]);
+      expect(beside('Missing.pdf'), isNull);
+      // The folder is gone through once, as it was when first asked.
+      File(p.join(notebook.path, 'Later.pdf')).writeAsBytesSync(<int>[4]);
+      expect(beside('Later.pdf'), isNull);
+    });
+
     test('decodes ink paths as the Ink Serialized Format writes numbers', () {
       // Four values: 1, -1, 64, -300.
       final bytes = Uint8List.fromList(<int>[8, 2, 3, 0x80, 0x01, 0xD9, 0x04]);

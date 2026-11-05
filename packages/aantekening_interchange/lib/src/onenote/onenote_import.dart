@@ -45,27 +45,32 @@ final class OneNoteImporter implements NotesImporter {
   ImportTarget get target => ImportTarget.newNotebook;
 
   /// Each path is read into a folder of its own, and becomes a notebook
-  /// of its own, however alike two of their names are.
+  /// of its own, however alike two of their names are. Each section is
+  /// converted as soon as it is read, so a notebook is never held whole.
   @override
-  NotesDraft read(List<String> paths, ImportWork work) =>
-      convertOneNote(<(String, List<OneEntry>)>[
-        for (final (index, path) in paths.indexed)
-          (
-            p.basenameWithoutExtension(path),
-            p.extension(path).toLowerCase() == '.onepkg'
-                ? _readPackage(
-                    path,
-                    Directory(p.join(work.directory.path, 'notebook-$index')),
-                    work,
-                  )
-                : <OneEntry>[readSectionFile(File(path))],
-          ),
-      ], work);
+  NotesDraft read(List<String> paths, ImportWork work) {
+    final converter = _Converter(work);
+    return converter.draft(<NotebookDraft>[
+      for (final (index, path) in paths.indexed)
+        NotebookDraft(
+          title: p.basenameWithoutExtension(path),
+          sections: p.extension(path).toLowerCase() == '.onepkg'
+              ? _readPackage(
+                  path,
+                  Directory(p.join(work.directory.path, 'notebook-$index')),
+                  work,
+                  converter,
+                )
+              : <SectionDraft>[converter.entry(readSectionFile(File(path)))],
+        ),
+    ]);
+  }
 
-  static List<OneEntry> _readPackage(
+  static List<SectionDraft> _readPackage(
     String path,
     Directory folder,
     ImportWork work,
+    _Converter converter,
   ) {
     folder.createSync(recursive: true);
     final file = File(path).openSync();
@@ -87,8 +92,10 @@ final class OneNoteImporter implements NotesImporter {
             !contents.any((entry) => entry.path.endsWith('.onetoc2'))
         ? contents.single as Directory
         : folder;
-    return readNotebookFolder(
+    return foldNotebookFolder<SectionDraft>(
       root,
+      section: converter.entry,
+      group: converter.group,
       onSection: (name) => work.progress('Reading $name'),
     );
   }
@@ -101,14 +108,10 @@ NotesDraft convertOneNote(
   ImportWork work,
 ) {
   final converter = _Converter(work);
-  return NotesDraft(
-    notebooks: <NotebookDraft>[
-      for (final (title, entries) in notebooks)
-        NotebookDraft(title: title, sections: converter.sections(entries)),
-    ],
-    assets: converter.assets,
-    warnings: converter.warnings,
-  );
+  return converter.draft(<NotebookDraft>[
+    for (final (title, entries) in notebooks)
+      NotebookDraft(title: title, sections: converter.sections(entries)),
+  ]);
 }
 
 /// Turns OneNote's model into drafts, keeping the pictures and files it
@@ -127,22 +130,31 @@ final class _Converter {
   /// The page being converted, for warnings.
   String _page = '';
 
+  /// The notebooks [notebooks], with what was kept and said converting
+  /// them.
+  NotesDraft draft(List<NotebookDraft> notebooks) =>
+      NotesDraft(notebooks: notebooks, assets: assets, warnings: warnings);
+
   List<SectionDraft> sections(List<OneEntry> entries) => <SectionDraft>[
-    for (final entry in entries)
-      switch (entry) {
-        OneSection() => _section(entry),
-        OneSectionGroup() => SectionDraft(
-          title: entry.name,
-          sections: sections(entry.entries),
-        ),
-        OneUnreadableSection() => () {
-          warnings.add('The section “${entry.name}”: ${entry.reason}');
-          return SectionDraft(title: entry.name);
-        }(),
-      },
+    for (final entry in entries) this.entry(entry),
   ];
 
+  SectionDraft entry(OneEntry entry) => switch (entry) {
+    OneSection() => _section(entry),
+    OneSectionGroup() => group(entry.name, sections(entry.entries)),
+    OneUnreadableSection() => () {
+      warnings.add('The section “${entry.name}”: ${entry.reason}');
+      return SectionDraft(title: entry.name);
+    }(),
+  };
+
+  SectionDraft group(String name, List<SectionDraft> sections) =>
+      SectionDraft(title: name, sections: sections);
+
   SectionDraft _section(OneSection section) {
+    // A printout is the same bytes only within the section that holds it;
+    // let go, they would keep the whole of its file.
+    _printouts.clear();
     // A page's level puts it beneath the page before it of a lower level.
     final top = <PageDraft>[];
     final open = <(int, List<PageDraft>)>[];

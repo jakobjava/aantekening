@@ -26,6 +26,22 @@ const String _recycleBin = 'OneNote_RecycleBin';
 List<OneEntry> readNotebookFolder(
   Directory directory, {
   void Function(String section)? onSection,
+}) => foldNotebookFolder<OneEntry>(
+  directory,
+  section: (section) => section,
+  group: OneSectionGroup.new,
+  onSection: onSection,
+);
+
+/// Reads the notebook in [directory] as [readNotebookFolder] does, a
+/// section at a time: each is made into what [section] makes of it as
+/// soon as it is read, and let go, so that no more than one section's file
+/// is held at once. A group is what [group] makes of its name and entries.
+List<T> foldNotebookFolder<T>(
+  Directory directory, {
+  required T Function(OneEntry section) section,
+  required T Function(String name, List<T> entries) group,
+  void Function(String section)? onSection,
 }) {
   final entries = directory.listSync()
     ..sort((a, b) => a.path.compareTo(b.path));
@@ -49,16 +65,25 @@ List<OneEntry> readNotebookFolder(
     if (!order.contains(name)) order.add(name);
   }
 
-  final notebook = <OneEntry>[];
+  final beside = FilesBeside(directory);
+  final notebook = <T>[];
   for (final name in order) {
-    final section = sections[name];
-    final group = groups[name];
-    if (section != null) {
+    final file = sections[name];
+    final folder = groups[name];
+    if (file != null) {
       onSection?.call(p.basenameWithoutExtension(name));
-      notebook.add(readSectionFile(section, notebook: directory));
-    } else if (group != null) {
+      notebook.add(section(_readSection(file, beside)));
+    } else if (folder != null) {
       notebook.add(
-        OneSectionGroup(name, readNotebookFolder(group, onSection: onSection)),
+        group(
+          name,
+          foldNotebookFolder<T>(
+            folder,
+            section: section,
+            group: group,
+            onSection: onSection,
+          ),
+        ),
       );
     }
   }
@@ -67,14 +92,15 @@ List<OneEntry> readNotebookFolder(
 
 /// Reads the section in [file], the files it keeps beside itself found in
 /// [notebook] — or, a section read on its own, nowhere.
-OneEntry readSectionFile(File file, {Directory? notebook}) {
+OneEntry readSectionFile(File file, {Directory? notebook}) =>
+    _readSection(file, notebook == null ? null : FilesBeside(notebook));
+
+OneEntry _readSection(File file, FilesBeside? beside) {
   final name = p.basenameWithoutExtension(file.path);
   try {
     final store = RevisionStore.read(
       file.readAsBytesSync(),
-      externalFile: notebook == null
-          ? null
-          : (reference) => _externalFile(notebook, reference),
+      externalFile: beside?.call,
     );
     return readSection(store, name);
   } on FormatDamage catch (damage) {
@@ -90,16 +116,34 @@ OneEntry readSectionFile(File file, {Directory? notebook}) {
   }
 }
 
-/// A file a section keeps beside itself rather than in itself, found by
-/// its name anywhere in the notebook's folder.
-Uint8List? _externalFile(Directory notebook, String reference) {
-  final name = p.basename(reference.replaceAll(r'\', '/'));
-  for (final entity in notebook.listSync(recursive: true)) {
-    if (entity is File && p.basename(entity.path) == name) {
-      return entity.readAsBytesSync();
-    }
+/// The files the sections of a notebook keep beside themselves rather than
+/// in themselves, found by their names anywhere in its folder: the folder
+/// is gone through once, the first time one is asked for, however many
+/// files its sections refer to.
+@visibleForTesting
+final class FilesBeside {
+  FilesBeside(this._folder);
+
+  final Directory _folder;
+  Map<String, File>? _byName;
+
+  /// The bytes of the file [reference] names, if the folder holds one of
+  /// that name: the first it lists, if it holds several.
+  Uint8List? call(String reference) {
+    final byName = _byName ??= _list();
+    return byName[p.basename(reference.replaceAll(r'\', '/'))]
+        ?.readAsBytesSync();
   }
-  return null;
+
+  Map<String, File> _list() {
+    final files = <String, File>{};
+    for (final entity in _folder.listSync(recursive: true)) {
+      if (entity is File) {
+        files.putIfAbsent(p.basename(entity.path), () => entity);
+      }
+    }
+    return files;
+  }
 }
 
 /// The names of the sections and groups the table of contents in [file]
