@@ -6,6 +6,7 @@ import 'package:flutter_math_fork/tex.dart' show TexParser, TexParserSettings;
 
 import 'ast.dart';
 import 'linear_math.dart';
+import 'math_view.dart';
 import 'symbols.dart';
 
 /// Where a highlight lies in a formula's source: the whole of it, from its
@@ -104,14 +105,17 @@ abstract final class HighlightSource {
   /// left hanging at either end is let go. Where that is still not a part of
   /// the formula that reads on its own and leaves the rest reading as before,
   /// the smallest bracketed part around the selection is taken, or else the
-  /// whole formula.
+  /// whole formula. A part reads in LaTeX as the formula is typeset, with
+  /// [preamble] and [packages] as for [MathView.prepared].
   static ({int start, int end})? fit(
     String source,
     int start,
     int end,
-    MathMode syntax,
-  ) {
-    final reads = _Reading(source, syntax);
+    MathMode syntax, {
+    LatexPreamble? preamble,
+    bool packages = false,
+  }) {
+    final reads = _Reading(source, syntax, preamble, packages);
     var (s, e) = _trim(source, start, end);
     if (s >= e) return null;
     (s, e) = _widen(source, s, e, syntax);
@@ -362,11 +366,13 @@ abstract final class HighlightSource {
 /// Whether a part of a formula's source reads, measured against how the whole
 /// of it reads as it is.
 class _Reading {
-  _Reading(this.source, this.syntax) : _before = _problems(source, syntax);
+  _Reading(this.source, this.syntax, this.preamble, this.packages);
 
   final String source;
   final MathMode syntax;
-  final int _before;
+  final LatexPreamble? preamble;
+  final bool packages;
+  late final int _before = _problems(source);
 
   /// Whether [start]..[end] of the source reads on its own, and highlighting
   /// it leaves the formula reading no worse than before.
@@ -377,18 +383,22 @@ class _Reading {
       end,
       HighlightSource.wrap(part, syntax, HighlightNode.defaultColor).text,
     );
-    return _problems(part, syntax) == 0 && _problems(marked, syntax) <= _before;
+    return _problems(part) == 0 && _problems(marked) <= _before;
   }
 
   /// How many things are wrong with [source]: the complaints about it in
-  /// the linear syntax, and in LaTeX whether the typesetter reads it at all.
-  static int _problems(String source, MathMode syntax) {
+  /// the linear syntax, and in LaTeX whether the typesetter reads it at all,
+  /// as it is given it: `\ce{…}` and the preamble's commands written out.
+  int _problems(String source) {
     switch (syntax) {
       case MathMode.linear:
         return LinearMath.translate(source).diagnostics.length;
       case MathMode.latex:
         try {
-          TexParser(source, const TexParserSettings()).parse();
+          TexParser(
+            MathView.prepared(source, preamble: preamble, packages: packages),
+            const TexParserSettings(),
+          ).parse();
           return 0;
         } on Object {
           return 1;

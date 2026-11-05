@@ -585,6 +585,8 @@ extension _Formulas on TextBoxEditorState {
               from == to ? 0 : from,
               from == to ? source.length : to,
               syntax,
+              preamble: MathPreamble.read(context),
+              packages: _blocks[formula.block].runs[formula.run].imported,
             );
       if (fitted == null) return;
       part = fitted;

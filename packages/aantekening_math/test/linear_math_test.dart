@@ -428,6 +428,23 @@ void main() {
         );
       });
 
+      test('reading LaTeX as it is typeset', () {
+        // A reaction, and a command of the person's preamble, read as the
+        // formula they are in reads: as they are written out.
+        expect(
+          fitted(r'\ce{H2O} + x', r'\ce{H2O}', syntax: MathMode.latex),
+          r'\ce{H2O}',
+        );
+        final fit = HighlightSource.fit(
+          r'\vv + x',
+          0,
+          3,
+          MathMode.latex,
+          preamble: LatexPreamble.read(r'\newcommand{\vv}{\vec{v}}'),
+        );
+        expect(fit, (start: 0, end: 3));
+      });
+
       test('keeping what reads already', () {
         expect(fitted('a + b^2 = c', 'b^2'), 'b^2');
         expect(fitted('a + b = c', '='), '=');
