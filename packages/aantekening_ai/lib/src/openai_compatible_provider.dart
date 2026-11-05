@@ -363,14 +363,30 @@ class OpenAiCompatibleProvider implements ChatProvider {
   /// message, which every later request begins with.
   static String conversationKey(ChatRequest request) {
     final first = request.messages.firstOrNull;
+    if (first != null) {
+      if (_keys[first] case (
+        final system,
+        final key,
+      ) when system == request.system) {
+        return key;
+      }
+    }
     final text = jsonEncode(<Object?>[request.system, first?.toJson()]);
     // FNV-1a, 64 bits.
     var hash = 0xcbf29ce484222325;
     for (final unit in utf8.encode(text)) {
       hash = (hash ^ unit) * 0x100000001b3;
     }
-    return 'aantekening-${hash.toUnsigned(64).toRadixString(16)}';
+    final key = 'aantekening-${hash.toUnsigned(64).toRadixString(16)}';
+    if (first != null) _keys[first] = (request.system, key);
+    return key;
   }
+
+  /// The key of each conversation asked about, by its first message — the
+  /// notes given with it, megabytes — and with what instructions.
+  static final Expando<(String, String)> _keys = Expando<(String, String)>(
+    'conversation keys',
+  );
 
   /// The keys reasoning comes under, as services stream it.
   static const List<String> _reasoningKeys = <String>[

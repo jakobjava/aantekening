@@ -904,6 +904,29 @@ void main() {
         reason: 'one conversation, one key',
       );
       expect(body(PromptCache.openAi, 'Why?')['prompt_cache_key'], isNotNull);
+
+      // The same first message, the notes in it, with other instructions,
+      // or another first message as it: another conversation.
+      final first = ChatMessage.user(const <ChatPart>[TextPart('How fast?')]);
+      String key(ChatMessage first, String system) =>
+          OpenAiCompatibleProvider.conversationKey(
+            ChatRequest(
+              model: 'm',
+              system: system,
+              messages: <ChatMessage>[first],
+            ),
+          );
+      expect(key(first, 'Help.'), key(first, 'Help.'));
+      expect(key(first, 'Help.'), isNot(key(first, 'Help more.')));
+      expect(
+        key(ChatMessage.user(const <ChatPart>[TextPart('How far?')]), 'Help.'),
+        isNot(key(first, 'Help.')),
+      );
+      expect(
+        key(ChatMessage.user(const <ChatPart>[TextPart('How fast?')]), 'Help.'),
+        key(first, 'Help.'),
+        reason: 'a conversation read back is the same one',
+      );
       final implicit = body(PromptCache.implicit, 'Why?');
       for (final key in <String>[
         'requesty',

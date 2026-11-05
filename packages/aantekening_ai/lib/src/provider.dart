@@ -198,7 +198,7 @@ class PromptSize {
         case ToolResultPart(:final content):
           content.forEach(count);
         default:
-          characters += jsonEncode(part.toJson()).length;
+          characters += _characters[part] ??= jsonEncode(part.toJson()).length;
       }
     }
 
@@ -210,6 +210,11 @@ class PromptSize {
     }
     return PromptSize(tokens: (characters / 4).ceil(), images: images);
   }
+
+  /// How long each part is written out, once worked out: the notes given
+  /// with a question are megabytes, and counted for each request of every
+  /// question after.
+  static final Expando<int> _characters = Expando<int>('characters');
 
   final int tokens;
   final int images;
