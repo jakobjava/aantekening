@@ -320,7 +320,21 @@ class AnthropicProvider implements ChatProvider {
     }
 
     final blocks = <Map<String, Object?>>[];
+    // What streams into each block, by its index, written into it once the
+    // block is done: a long answer or thought comes in thousands of pieces.
     final partialJson = <int, StringBuffer>{};
+    final texts = <int, StringBuffer>{};
+    final thoughts = <int, StringBuffer>{};
+    void finish(int index) {
+      final block = blocks[index];
+      if (texts.remove(index) case final text?) block['text'] = '$text';
+      if (thoughts.remove(index) case final thought?) {
+        block['thinking'] = '$thought';
+      }
+      final json = partialJson.remove(index)?.toString();
+      if (json != null) block['input'] = ToolCallPart.inputFrom(json);
+    }
+
     var usage = const Usage();
     var stop = StopReason.done;
     // Whether the answer came to its end: a stream that ends before
@@ -351,20 +365,23 @@ class AnthropicProvider implements ChatProvider {
             switch (delta['type']) {
               case 'text_delta':
                 final text = delta['text']! as String;
-                block['text'] = '${block['text'] ?? ''}$text';
+                (texts[index] ??= StringBuffer(
+                  block['text'] ?? '',
+                )).write(text);
                 yield TextDelta(text);
               case 'input_json_delta':
                 (partialJson[index] ??= StringBuffer()).write(
                   delta['partial_json'],
                 );
               case 'citations_delta':
-                block['citations'] = <Object?>[
-                  ...?(block['citations'] as List<Object?>?),
+                ((block['citations'] ??= <Object?>[]) as List<Object?>).add(
                   delta['citation'],
-                ];
+                );
               case 'thinking_delta':
                 final thought = delta['thinking']! as String;
-                block['thinking'] = '${block['thinking'] ?? ''}$thought';
+                (thoughts[index] ??= StringBuffer(
+                  block['thinking'] ?? '',
+                )).write(thought);
                 yield Reasoning(thought);
               case 'signature_delta':
                 block['signature'] = delta['signature'];
@@ -372,8 +389,7 @@ class AnthropicProvider implements ChatProvider {
           case 'content_block_stop':
             final index = data['index']! as int;
             final block = blocks[index];
-            final json = partialJson.remove(index)?.toString();
-            if (json != null) block['input'] = ToolCallPart.inputFrom(json);
+            finish(index);
             switch (block['type']) {
               case 'text':
                 yield CitedSpan(<Citation>[
@@ -411,6 +427,8 @@ class AnthropicProvider implements ChatProvider {
       throw brokenOff(name, error);
     }
     if (!ended) throw brokenOff(name);
+    // Any block the answer ended without saying it was done.
+    <int>{...texts.keys, ...thoughts.keys, ...partialJson.keys}.forEach(finish);
 
     final content = _echoable(blocks);
     yield MessageDone(
