@@ -46,6 +46,30 @@ void main() {
         'Zusammenfassung',
       ]);
     });
+
+    test(
+      'compare numbers by their value, however long, zeros before or not',
+      () {
+        final names = <String>[
+          '12345678901234567891 Laatste',
+          '010 Tiende',
+          '9 Negende',
+          '12345678901234567890 Voorlaatste',
+          '07 b',
+          '2 Tweede',
+          '7 a',
+        ]..sort(compareNames);
+        expect(names, <String>[
+          '2 Tweede',
+          '7 a',
+          '07 b',
+          '9 Negende',
+          '010 Tiende',
+          '12345678901234567890 Voorlaatste',
+          '12345678901234567891 Laatste',
+        ]);
+      },
+    );
   });
 
   group('orders', () {

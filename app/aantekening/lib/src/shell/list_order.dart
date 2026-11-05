@@ -36,39 +36,58 @@ enum ListOrder {
     List<T> items, {
     int Function(T item)? changedAt,
   }) {
-    final changed = changedAt ?? (T item) => item.updatedAt;
-    final int Function(T a, T b)? compare = switch (this) {
+    // Each item's date or name is worked out once, not at every comparison,
+    // and the items compared by where they were.
+    List<int> dates(int Function(T item) of) => <int>[
+      for (final item in items) of(item),
+    ];
+    late final created = dates((item) => item.createdAt);
+    late final changed = dates(changedAt ?? (item) => item.updatedAt);
+    late final names = <String>[for (final item in items) _nameKey(item.title)];
+    final int Function(int a, int b)? compare = switch (this) {
       arranged => null,
-      createdNewest => (a, b) => b.createdAt.compareTo(a.createdAt),
-      createdOldest => (a, b) => a.createdAt.compareTo(b.createdAt),
-      changedNewest => (a, b) => changed(b).compareTo(changed(a)),
-      changedOldest => (a, b) => changed(a).compareTo(changed(b)),
-      nameAscending => (a, b) => compareNames(a.title, b.title),
-      nameDescending => (a, b) => compareNames(b.title, a.title),
+      createdNewest => (a, b) => created[b].compareTo(created[a]),
+      createdOldest => (a, b) => created[a].compareTo(created[b]),
+      changedNewest => (a, b) => changed[b].compareTo(changed[a]),
+      changedOldest => (a, b) => changed[a].compareTo(changed[b]),
+      nameAscending => (a, b) => _compareKeys(names[a], names[b]),
+      nameDescending => (a, b) => _compareKeys(names[b], names[a]),
     };
     if (compare == null) return items;
-    final indexed =
-        <(int, T)>[for (var i = 0; i < items.length; i++) (i, items[i])]
-          ..sort((a, b) {
-            final order = compare(a.$2, b.$2);
-            return order != 0 ? order : a.$1.compareTo(b.$1);
-          });
-    return <T>[for (final (_, item) in indexed) item];
+    final order = List<int>.generate(items.length, (i) => i)
+      ..sort((a, b) {
+        final by = compare(a, b);
+        return by != 0 ? by : a.compareTo(b);
+      });
+    return <T>[for (final i in order) items[i]];
   }
 }
 
 /// [a] before [b] by name, as a person reads a list of names: letters
 /// whatever their case and accents — Ä with A — and numbers by their value,
 /// so "5.3 Waves" comes before "10.1 Optics".
-int compareNames(String a, String b) {
-  final left = _nameKey(a);
-  final right = _nameKey(b);
+int compareNames(String a, String b) => _compareKeys(_nameKey(a), _nameKey(b));
+
+/// Names as they are compared, [_nameKey]s, compared.
+int _compareKeys(String left, String right) {
   var i = 0;
   var j = 0;
   while (i < left.length && j < right.length) {
     final x = left.codeUnitAt(i);
     final y = right.codeUnitAt(j);
     if (_isDigit(x) && _isDigit(y)) {
+      // Numbers by their value: of their digits past any zeros before
+      // them, the more the greater, and as many, the first that differs.
+      while (i < left.length - 1 &&
+          left.codeUnitAt(i) == 0x30 &&
+          _isDigit(left.codeUnitAt(i + 1))) {
+        i++;
+      }
+      while (j < right.length - 1 &&
+          right.codeUnitAt(j) == 0x30 &&
+          _isDigit(right.codeUnitAt(j + 1))) {
+        j++;
+      }
       final startX = i;
       final startY = j;
       while (i < left.length && _isDigit(left.codeUnitAt(i))) {
@@ -77,8 +96,12 @@ int compareNames(String a, String b) {
       while (j < right.length && _isDigit(right.codeUnitAt(j))) {
         j++;
       }
-      final order = BigInt.parse(left.substring(startX, i))
-          .compareTo(BigInt.parse(right.substring(startY, j)));
+      var order = (i - startX).compareTo(j - startY);
+      for (var k = 0; order == 0 && k < i - startX; k++) {
+        order = left
+            .codeUnitAt(startX + k)
+            .compareTo(right.codeUnitAt(startY + k));
+      }
       if (order != 0) return order;
       continue;
     }
