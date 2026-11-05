@@ -7,7 +7,6 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
-import '../aantekening_canvas.dart' show InfiniteCanvas;
 import 'canvas_viewport.dart';
 import 'infinite_canvas.dart' show InfiniteCanvas;
 import 'lasso.dart';

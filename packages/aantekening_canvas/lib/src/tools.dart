@@ -5,8 +5,6 @@ import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 
-import '../aantekening_canvas.dart' show CanvasController;
-
 import 'canvas_controller.dart' show CanvasController;
 
 /// What a pointer press does on the canvas.

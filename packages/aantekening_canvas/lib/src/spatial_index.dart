@@ -98,9 +98,6 @@ class SpatialIndex {
     return matches;
   }
 
-  /// The indexed bounds of [id], or null when it is not present.
-  Aabb? boundsOf(String id) => _bounds[id];
-
   /// Whether [bounds] span more cells than are worth visiting one by one.
   bool _isLarge(Aabb bounds) {
     final width = (bounds.right - bounds.left) / cellSize + 1;

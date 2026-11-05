@@ -7,13 +7,13 @@
 /// real, focusable, editable widgets.
 library;
 
-import 'aantekening_canvas.dart' show CanvasElementBuilder;
 import 'src/infinite_canvas.dart' show CanvasElementBuilder;
 
 export 'src/canvas_controller.dart';
-export 'src/canvas_painters.dart';
+export 'src/canvas_painters.dart'
+    show BackgroundPainter, InkLayer, InkPainter, InkTiles, SelectionPainter;
 export 'src/canvas_scope.dart';
-export 'src/canvas_scroll.dart';
+export 'src/canvas_scroll.dart' show ScrollSpan;
 export 'src/canvas_text.dart';
 export 'src/canvas_viewport.dart';
 export 'src/infinite_canvas.dart';
@@ -22,7 +22,5 @@ export 'src/page_scrollbar.dart';
 export 'src/placed_content.dart';
 export 'src/selection_handles.dart';
 export 'src/sheet_painter.dart' show SheetThumbnail, paintSheet;
-export 'src/spatial_index.dart';
-export 'src/stroke_geometry.dart';
 export 'src/tools.dart';
 export 'src/zoom_snapshot.dart' show ZoomSnapshot;

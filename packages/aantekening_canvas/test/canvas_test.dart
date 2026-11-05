@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_canvas/src/page_space.dart';
+import 'package:aantekening_canvas/src/spatial_index.dart';
+import 'package:aantekening_canvas/src/stroke_geometry.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
