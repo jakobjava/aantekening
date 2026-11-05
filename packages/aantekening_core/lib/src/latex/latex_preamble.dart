@@ -186,8 +186,9 @@ final class LatexPreamble {
   /// Whether [latex] is one thing to TeX: a character, or a command and the
   /// groups it takes.
   static bool _isUnit(String latex) =>
-      latex.length == 1 ||
-      RegExp(r'^\\[A-Za-z]+\*?(\{[^{}]*\})*$').hasMatch(latex);
+      latex.length == 1 || _unit.hasMatch(latex);
+
+  static final RegExp _unit = RegExp(r'^\\[A-Za-z]+\*?(\{[^{}]*\})*$');
 
   /// [source] with every use of a command defined written out, until none
   /// is left — or, for a definition that uses itself, a few rounds on.
@@ -263,7 +264,7 @@ final class LatexPreamble {
         if (macro.arguments == 0 &&
             end < text.length &&
             text[end] == ' ' &&
-            RegExp(r'[A-Za-z]$').hasMatch(match[0]!)) {
+            LatexSource.isLetter(match[0]!.codeUnitAt(match[0]!.length - 1))) {
           end++;
         }
         at = end;

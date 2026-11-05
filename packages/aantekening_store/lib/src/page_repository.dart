@@ -816,11 +816,13 @@ class PageRepository {
 
   /// The start of [text], as the page list shows it.
   static String previewOf(String text) {
-    final collapsed = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final collapsed = text.replaceAll(_spaces, ' ').trim();
     return collapsed.length <= previewLength
         ? collapsed
         : '${collapsed.substring(0, previewLength)}…';
   }
+
+  static final RegExp _spaces = RegExp(r'\s+');
 
   static PageRef _pageRef(Row row) => PageRef(
     id: str(row, 'id'),

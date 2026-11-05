@@ -212,9 +212,15 @@ abstract final class SentenceSplitter {
   /// Whether the full stop at [dot] of [text] ends a sentence, rather than
   /// an abbreviation or a number.
   static bool _endsSentence(String text, int dot) {
-    // A sentence goes on in small letters.
-    final next = text.substring(dot + 1).trimLeft();
-    if (next.isNotEmpty && next[0] != next[0].toUpperCase()) return false;
+    // A sentence goes on in small letters. Looked for from the full stop
+    // on, not in a copy of the rest: a paragraph has many.
+    var next = dot + 1;
+    while (next < text.length && _isTrimmed(text.codeUnitAt(next))) {
+      next++;
+    }
+    if (next < text.length && text[next] != text[next].toUpperCase()) {
+      return false;
+    }
     var from = dot;
     while (from > 0 && _isWordUnit(text.codeUnitAt(from - 1))) {
       from--;
@@ -222,13 +228,34 @@ abstract final class SentenceSplitter {
     final word = text.substring(from, dot).toLowerCase();
     if (word.isEmpty) return true;
     // A unit after a slash, "m/s.", ends a sentence.
-    final after = from > 0 ? text[from - 1] : ' ';
-    if (after == '/' || RegExp(r'\d').hasMatch(after)) return true;
+    final after = from > 0 ? text.codeUnitAt(from - 1) : 0x20;
+    if (after == 0x2F || _isDigit(after)) return true;
     if (_abbreviations.contains(word)) return false;
     // "1." at the start is a list's number.
-    return !(RegExp(r'^\d+$').hasMatch(word) &&
-        text.substring(0, from).trim().isEmpty);
+    if (!word.codeUnits.every(_isDigit)) return true;
+    for (var i = from - 1; i >= 0; i--) {
+      if (!_isTrimmed(text.codeUnitAt(i))) return true;
+    }
+    return false;
   }
+
+  static bool _isDigit(int unit) => unit >= 0x30 && unit <= 0x39;
+
+  /// Whether [String.trim] takes [unit] away: white space, as Unicode has
+  /// it, and the byte order mark.
+  static bool _isTrimmed(int unit) =>
+      (unit >= 0x09 && unit <= 0x0D) ||
+      unit == 0x20 ||
+      unit == 0x85 ||
+      unit == 0xA0 ||
+      unit == 0x1680 ||
+      (unit >= 0x2000 && unit <= 0x200A) ||
+      unit == 0x2028 ||
+      unit == 0x2029 ||
+      unit == 0x202F ||
+      unit == 0x205F ||
+      unit == 0x3000 ||
+      unit == 0xFEFF;
 
   static bool _isSpace(int unit) =>
       unit == 0x20 || unit == 0x0A || unit == 0x09 || unit == 0xA0;
