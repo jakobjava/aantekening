@@ -15,12 +15,6 @@ enum MarkKind { bold, italic, underline, strikethrough, code, highlight }
 
 /// What each [MarkKind] means for a run's [TextMarks].
 extension MarkKinds on MarkKind {
-  /// The kinds of formatting [marks] has.
-  static Set<MarkKind> of(TextMarks marks) => <MarkKind>{
-    for (final kind in MarkKind.values)
-      if (kind.isSetIn(marks)) kind,
-  };
-
   /// Whether [marks] has this formatting.
   bool isSetIn(TextMarks marks) => switch (this) {
     MarkKind.bold => marks.bold,
