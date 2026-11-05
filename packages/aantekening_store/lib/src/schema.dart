@@ -14,7 +14,7 @@ import 'files/folder_mirror.dart' show FolderMirror;
 /// same code path.
 abstract final class Schema {
   /// The schema version this build expects.
-  static const int version = 5;
+  static const int version = 6;
 
   /// Migrations indexed by the version they produce.
   ///
@@ -22,7 +22,7 @@ abstract final class Schema {
   /// self-contained; to change an existing table, create the new one, copy the
   /// rows across and drop the old one within the same migration.
   static final List<void Function(Database db)> _migrations =
-      <void Function(Database db)>[_v1, _v2, _v3, _v4, _v5];
+      <void Function(Database db)>[_v1, _v2, _v3, _v4, _v5, _v6];
 
   /// Brings [db] up to [version], running only the migrations it still needs.
   ///
@@ -373,5 +373,27 @@ abstract final class Schema {
   /// tokens, and the dollars.
   static void _v5(Database db) {
     db.execute('ALTER TABLE ai_items ADD COLUMN usage TEXT;');
+  }
+
+  /// Indexes for what is looked up by itself: the pages and sections
+  /// beneath one, which walking a tree down, moving, copying or deleting it
+  /// for good asks for at every step; the kept items of a turn, which
+  /// deleting the turn clears; and the outbox in the order it is written,
+  /// which every trigger asks the last of. Without them each is a scan of
+  /// the whole table.
+  static void _v6(Database db) {
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent_id);',
+    );
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_sections_parent ON sections(parent_id);',
+    );
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_items_turn ON ai_items(turn_id);',
+    );
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_mirror_outbox_seq '
+      'ON mirror_outbox(seq, kind, id);',
+    );
   }
 }

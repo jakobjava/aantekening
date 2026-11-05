@@ -104,6 +104,117 @@ void main() {
     test('is idempotent on an already-current database', () {
       expect(() => Schema.migrate(store.database.raw), returnsNormally);
     });
+
+    test('a database from before the indexes of trees and the outbox opens '
+        'with them, and keeps all it held', () async {
+      final folder = Directory.systemTemp.createTempSync('aantekening_v5_');
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final path = p.join(folder.path, 'index.sqlite');
+
+      // A database as version 5 of the schema left it: all but what 6 adds.
+      final old = AantekeningDatabase.open(path);
+      final oldPages = PageRepository(old);
+      final oldLibrary = LibraryRepository(old, oldPages);
+      final notebook = await oldLibrary.createNotebook(title: 'Physics');
+      final section = await oldLibrary.createSection(
+        notebookId: notebook.id,
+        title: 'Waves',
+      );
+      final subsection = await oldLibrary.createSection(
+        notebookId: notebook.id,
+        title: 'Standing',
+        parentId: section.id,
+      );
+      final page = await oldPages.createPage(sectionId: section.id);
+      await oldPages.saveDocument(page.id, documentWithText(page.id, 'nodes'));
+      final subpage = await oldPages.createPage(
+        sectionId: section.id,
+        parentId: page.id,
+      );
+      for (final index in const <String>[
+        'idx_pages_parent',
+        'idx_sections_parent',
+        'idx_ai_items_turn',
+        'idx_mirror_outbox_seq',
+      ]) {
+        old.raw.execute('DROP INDEX $index');
+      }
+      old.raw.userVersion = 5;
+      old.close();
+
+      final opened = AantekeningDatabase.open(path);
+      addTearDown(opened.close);
+      final pages = PageRepository(opened);
+      final library = LibraryRepository(opened, pages);
+
+      expect(opened.raw.userVersion, Schema.version);
+      expect(
+        opened
+            .select(
+              "SELECT name FROM sqlite_master WHERE type = 'index' "
+              "AND name IN ('idx_pages_parent', 'idx_sections_parent', "
+              "'idx_ai_items_turn', 'idx_mirror_outbox_seq') ORDER BY name",
+            )
+            .map((row) => row['name']),
+        <String>[
+          'idx_ai_items_turn',
+          'idx_mirror_outbox_seq',
+          'idx_pages_parent',
+          'idx_sections_parent',
+        ],
+      );
+      expect((await library.findNotebook(notebook.id))!.title, 'Physics');
+      expect((await library.findSection(subsection.id))!.parentId, section.id);
+      expect(
+        (await pages.listPages(
+          section.id,
+          parentId: page.id,
+        )).map((ref) => ref.id),
+        <String>[subpage.id],
+      );
+      expect((await pages.loadDocument(page.id))!.extractSearchText(), 'nodes');
+      expect(
+        (await SearchRepository(opened).search('nodes')).single.pageId,
+        page.id,
+      );
+    });
+
+    test('finds what lies beneath a page or a section, and what the outbox '
+        'holds next, by an index', () {
+      String plan(String sql) => store.database
+          .select('EXPLAIN QUERY PLAN $sql', <Object?>[
+            for (var i = 0; i < '?'.allMatches(sql).length; i++) 'x',
+          ])
+          .map((row) => row['detail'])
+          .join('; ');
+
+      expect(
+        plan('SELECT id FROM pages WHERE parent_id = ?'),
+        contains('idx_pages_parent'),
+      );
+      expect(
+        plan('SELECT id FROM sections WHERE parent_id = ?'),
+        contains('idx_sections_parent'),
+      );
+      expect(
+        plan('SELECT id FROM ai_items WHERE turn_id = ?'),
+        contains('idx_ai_items_turn'),
+      );
+      expect(
+        plan('SELECT MAX(seq) FROM mirror_outbox'),
+        contains('idx_mirror_outbox_seq'),
+      );
+      expect(
+        plan(
+          'SELECT kind, id, seq FROM mirror_outbox '
+          'WHERE (seq, kind, id) > (?, ?, ?) ORDER BY seq, kind, id LIMIT 64',
+        ),
+        allOf(
+          contains('idx_mirror_outbox_seq'),
+          isNot(contains('TEMP B-TREE')),
+        ),
+      );
+    });
   });
 
   group('notebooks and sections', () {
