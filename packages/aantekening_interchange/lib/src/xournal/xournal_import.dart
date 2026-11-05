@@ -87,6 +87,10 @@ final class _Reader {
   /// null for a file that is not a PDF.
   final Map<String, String?> _pdfs = <String, String?>{};
 
+  /// What numbers in a stroke, and a picture's base64, are spaced by: made
+  /// once, for documents of tens of thousands of strokes.
+  static final RegExp _spaces = RegExp(r'\s+');
+
   /// The sections a folder of documents makes: documents directly in it
   /// in a section of its name, and a section for each folder in it.
   List<SectionDraft> sections(Directory folder) {
@@ -352,14 +356,14 @@ final class _Reader {
   InkElement? _stroke(XmlElement stroke, double top, int now) {
     final numbers = stroke.innerText
         .trim()
-        .split(RegExp(r'\s+'))
+        .split(_spaces)
         .map(double.tryParse)
         .whereType<double>()
         .toList();
     if (numbers.length < 2) return null;
     final widths = (stroke.getAttribute('width') ?? '1')
         .trim()
-        .split(RegExp(r'\s+'))
+        .split(_spaces)
         .map(double.tryParse)
         .whereType<double>()
         .toList();
@@ -542,7 +546,7 @@ final class _Reader {
 
   static Uint8List? _base64(String text) {
     try {
-      final data = base64.decode(text.replaceAll(RegExp(r'\s'), ''));
+      final data = base64.decode(text.replaceAll(_spaces, ''));
       return data.isEmpty ? null : data;
     } on FormatException {
       return null;

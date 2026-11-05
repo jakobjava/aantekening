@@ -318,6 +318,7 @@ final class LzxDecoder {
   /// after each 0xE8 byte was made absolute, and is made relative again.
   void _undoE8Translation(Uint8List data, int offset) {
     final end = data.length - 10;
+    final view = ByteData.sublistView(data);
     var i = 0;
     while (i < end) {
       if (data[i] != 0xE8) {
@@ -325,13 +326,12 @@ final class LzxDecoder {
         continue;
       }
       final current = offset + i;
-      final view = ByteData.sublistView(data, i + 1, i + 5);
-      final absolute = view.getInt32(0, Endian.little);
+      final absolute = view.getInt32(i + 1, Endian.little);
       if (absolute >= -current && absolute < _translationSize) {
         final relative = absolute >= 0
             ? absolute - current
             : absolute + _translationSize;
-        view.setInt32(0, relative, Endian.little);
+        view.setInt32(i + 1, relative, Endian.little);
       }
       i += 5;
     }

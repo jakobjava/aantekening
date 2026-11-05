@@ -213,10 +213,16 @@ final class Cabinet {
     }
     var done = 0;
     var decoded = 0;
+    // The files of each folder, gathered once rather than looked for
+    // among them all for each.
+    final byFolder = <int, List<CabinetFile>>{};
+    for (final file in files) {
+      (byFolder[file.folder] ??= <CabinetFile>[]).add(file);
+    }
     for (var index = 0; index < _folders.length; index++) {
-      final inFolder = files.where((file) => file.folder == index).toList()
-        ..sort((a, b) => a.offset.compareTo(b.offset));
-      if (inFolder.isEmpty) continue;
+      final inFolder = byFolder[index];
+      if (inFolder == null) continue;
+      inFolder.sort((a, b) => a.offset.compareTo(b.offset));
       var next = 0;
       var position = 0;
       for (final frame in _frames(_folders[index])) {

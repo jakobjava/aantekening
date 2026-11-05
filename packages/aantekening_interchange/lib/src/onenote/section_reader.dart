@@ -271,10 +271,13 @@ final class _PageReader {
     final formats = properties.refs(Prop.textRunFormatting);
     final data = properties.sets(Prop.textRunData);
     final indicesBytes = properties.bytes(Prop.textRunIndex);
+    final indices = indicesBytes == null
+        ? null
+        : ByteData.sublistView(indicesBytes);
     var ends = <int>[
-      if (indicesBytes != null)
-        for (var i = 0; i + 3 < indicesBytes.length; i += 4)
-          ByteData.sublistView(indicesBytes).getUint32(i, Endian.little),
+      if (indices != null)
+        for (var i = 0; i + 3 < indices.lengthInBytes; i += 4)
+          indices.getUint32(i, Endian.little),
     ];
     // A paragraph that starts with a vertical tab can have its run ends
     // counted from after it.
@@ -391,7 +394,8 @@ final class _PageReader {
   ];
 
   OneTable _table(PropertySet properties) {
-    final widths = properties.bytes(Prop.tableColumnWidths);
+    final widthBytes = properties.bytes(Prop.tableColumnWidths);
+    final widths = widthBytes == null ? null : ByteData.sublistView(widthBytes);
     return OneTable(
       rows: <List<OneCell>>[
         for (final rowId in properties.refs(Prop.elementChildNodes))
@@ -410,8 +414,8 @@ final class _PageReader {
       // The first byte is the count; four-byte floats follow.
       columnWidths: <double>[
         if (widths != null)
-          for (var i = 1; i + 3 < widths.length; i += 4)
-            ByteData.sublistView(widths).getFloat32(i, Endian.little),
+          for (var i = 1; i + 3 < widths.lengthInBytes; i += 4)
+            widths.getFloat32(i, Endian.little),
       ],
       bordersVisible:
           properties[Prop.tableBordersVisible] == null ||
@@ -521,12 +525,13 @@ final class _PageReader {
     final brush = _object(node.properties.ref(Prop.inkStrokeProperties));
     final dimensionBytes = brush?.properties.bytes(Prop.inkDimensions);
     if (path == null || brush == null || dimensionBytes == null) return null;
+    final dimensionData = ByteData.sublistView(dimensionBytes);
     final dimensions = <(Guid, int, int)>[
       for (var i = 0; i + 32 <= dimensionBytes.length; i += 32)
         (
           Guid(Uint8List.sublistView(dimensionBytes, i, i + 16)),
-          ByteData.sublistView(dimensionBytes).getInt32(i + 16, Endian.little),
-          ByteData.sublistView(dimensionBytes).getInt32(i + 20, Endian.little),
+          dimensionData.getInt32(i + 16, Endian.little),
+          dimensionData.getInt32(i + 20, Endian.little),
         ),
     ];
     final values = decodeMultiByteSigned(path);
