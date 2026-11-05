@@ -80,7 +80,7 @@ mixin _StudySets on _AiSessionCore {
             profile: profile,
             provider: model.config.name,
             model: model.config.model,
-            usage: _usageOf(progress),
+            usage: _usageOf(progress.usage, progress.cost),
           );
         }
       },

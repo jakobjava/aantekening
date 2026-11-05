@@ -421,16 +421,17 @@ abstract class _AiSessionCore extends Notifier<AiSessionState> {
   }
 }
 
-/// What [progress] took, done — and what it cost, and how long it
-/// [took], where that is known — as a turn or a kept set keeps it.
-Map<String, Object?> _usageOf(AgentProgress progress, {Duration? took}) =>
+/// What an answer, a set or a podcast took, done, as [usage] — and what
+/// it [cost], and how long it [took], where that is known — as a turn or a
+/// thing kept keeps it.
+Map<String, Object?> _usageOf(Usage usage, double? cost, {Duration? took}) =>
     <String, Object?>{
-      'input': progress.usage.input,
-      'output': progress.usage.output,
-      'cacheRead': progress.usage.cacheRead,
-      'cacheWrite': progress.usage.cacheWrite,
-      'webSearches': progress.usage.webSearches,
-      _costKey: ?progress.cost,
+      'input': usage.input,
+      'output': usage.output,
+      'cacheRead': usage.cacheRead,
+      'cacheWrite': usage.cacheWrite,
+      'webSearches': usage.webSearches,
+      _costKey: ?cost,
       if (took != null) _tookKey: took.inMilliseconds,
     };
 

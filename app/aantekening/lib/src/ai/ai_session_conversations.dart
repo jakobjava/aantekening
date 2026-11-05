@@ -21,22 +21,10 @@ mixin _Conversations on _AiSessionCore {
     if (text.isEmpty || state.pending != null || _asking) return;
     // Asked in the conversation showing now, with what was said in it.
     final threadId = state.threadId;
-    final history = <ChatMessage>[
-      for (final turn in state.turns)
-        for (final json in turn.messages)
-          ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
-    ];
-    _asking = true;
-    final _Ready? ready;
-    final WebSearch? web;
-    try {
-      ready = await _ready('Choose a model to ask first.');
-      web = ready == null ? null : await ref.read(webSearchProvider.future);
-    } finally {
-      _asking = false;
-    }
+    final history = _history;
+    final ready = await _readyToAsk();
     if (ready == null) return;
-    final (:model, :reader, :info) = ready;
+    final ((:model, :reader, :info), web) = ready;
 
     state = state.copyWith(
       itemId: () => null,
@@ -72,6 +60,27 @@ mixin _Conversations on _AiSessionCore {
     );
   }
 
+  /// What was said in the conversation showing, to go on from.
+  List<ChatMessage> get _history => <ChatMessage>[
+    for (final turn in state.turns)
+      for (final json in turn.messages)
+        ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
+  ];
+
+  /// The model, the notes and the web search to ask with, or null where
+  /// there is no model: a question being started meanwhile, so that a
+  /// second click asks nothing more.
+  Future<(_Ready, WebSearch?)?> _readyToAsk() async {
+    _asking = true;
+    try {
+      final ready = await _ready('Choose a model to ask first.');
+      if (ready == null) return null;
+      return (ready, await ref.read(webSearchProvider.future));
+    } finally {
+      _asking = false;
+    }
+  }
+
   /// Writes [section] of the answer to [turn] again — as [instruction]
   /// says, where it says anything — in its place, the rest of the answer
   /// as it was. With [searchWeb], the web may be searched.
@@ -88,22 +97,10 @@ mixin _Conversations on _AiSessionCore {
     required bool searchWeb,
   }) async {
     if (state.pending != null || _asking) return;
-    final history = <ChatMessage>[
-      for (final each in state.turns)
-        for (final json in each.messages)
-          ChatMessage.fromJson((json! as Map).cast<String, Object?>()),
-    ];
-    _asking = true;
-    final _Ready? ready;
-    final WebSearch? web;
-    try {
-      ready = await _ready('Choose a model to ask first.');
-      web = ready == null ? null : await ref.read(webSearchProvider.future);
-    } finally {
-      _asking = false;
-    }
+    final history = _history;
+    final ready = await _readyToAsk();
     if (ready == null) return;
-    final (:model, :reader, :info) = ready;
+    final ((:model, :reader, :info), web) = ready;
     final answer = AiAnswer.fromJson(turn.answer);
     final part = answer.textOf(section);
     final how = instruction.trim();
@@ -175,7 +172,7 @@ mixin _Conversations on _AiSessionCore {
       messages: last.id == turn.id
           ? <Object?>[...turn.messages, ...added]
           : null,
-      usage: _added(turn.usage, _usageOf(progress)),
+      usage: _added(turn.usage, _usageOf(progress.usage, progress.cost)),
     );
     if (last.id != turn.id) {
       await store.ai.updateTurn(
@@ -275,7 +272,7 @@ mixin _Conversations on _AiSessionCore {
       messages: <Object?>[for (final m in progress.messages) m.toJson()],
       provider: config.name,
       model: config.model,
-      usage: _usageOf(progress, took: took),
+      usage: _usageOf(progress.usage, progress.cost, took: took),
     );
     final showing = _showingOnceKept(threadId, kept);
     state = state.copyWith(pending: () => null);

@@ -241,11 +241,7 @@ mixin _Podcasts on _AiSessionCore {
             ? (await ref.read(aiModelProvider.future))?.config.name ?? ''
             : settings.providerOf(profile.transcript)?.name ?? '',
         model: writer.model,
-        usage: <String, Object?>{
-          'input': written.usage.input,
-          'output': written.usage.output,
-          _costKey: ?written.cost,
-        },
+        usage: _usageOf(written.usage, written.cost),
       );
       kept = item.id;
       _podcastAlsoAs(id, item.id);
