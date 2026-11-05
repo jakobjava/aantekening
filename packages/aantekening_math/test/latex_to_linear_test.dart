@@ -256,4 +256,16 @@ void main() {
     }
     expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
   });
+
+  test('writes fractions nested deep in Simple syntax quickly', () {
+    final watch = Stopwatch()..start();
+    // Each denominator a root of a fraction again: once twice as long to
+    // write for each.
+    final typed =
+        '${List<String>.filled(60, 'sqrt(1/(a ').join()}'
+        '${List<String>.filled(60, '))').join()}';
+    final latex = LinearMath.toLatex(typed);
+    expect(LinearMath.toLatex(LinearMath.fromLatex(latex)), latex);
+    expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
+  });
 }

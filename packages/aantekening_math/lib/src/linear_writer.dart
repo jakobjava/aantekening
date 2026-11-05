@@ -14,7 +14,22 @@ import 'symbols.dart';
 /// has no spelling for is written as LaTeX: a backslash command as it is, and
 /// anything else in backticks.
 abstract final class LinearWriter {
-  static String write(MathNode node) => _join(_pieces(node));
+  static String write(MathNode node) {
+    final written = _written;
+    if (written != null) return written[node] ??= _join(_pieces(node));
+    _written = Map<MathNode, String>.identity();
+    try {
+      return _join(_pieces(node));
+    } finally {
+      _written = null;
+    }
+  }
+
+  /// What each part of the formula being written was written as. A part
+  /// is written once: a fraction tries its parts written together before it
+  /// brackets them, and writing them again for each fraction inside it took
+  /// twice as long for each.
+  static Map<MathNode, String>? _written;
 
   // ------------------------------------------------------------ vocabulary
 
