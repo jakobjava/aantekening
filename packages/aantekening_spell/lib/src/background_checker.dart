@@ -57,7 +57,9 @@ interface class BackgroundSpellChecker {
 
   /// Checks against [dictionaries] from now on — a word is right if any of
   /// them has it — and against [personalWords]. Each dictionary is read
-  /// once and kept, so going back to one used before is quick.
+  /// once and kept while it is in use, and the last of those used before
+  /// too, so going back to it is quick; one whose files have changed is
+  /// read again.
   Future<void> use(
     List<DictionaryFiles> dictionaries, {
     Iterable<String> personalWords = const <String>[],
@@ -179,11 +181,12 @@ final class _Failure {
   final String error;
 }
 
-/// The isolate's side: the dictionaries read so far, and the checker made
-/// of those in use.
+/// The isolate's side: the dictionaries read, and the checker made of
+/// those in use.
 final class _Worker {
-  final Map<(DictionaryFiles, DateTime, DateTime), HunspellDictionary> _read =
-      <(DictionaryFiles, DateTime, DateTime), HunspellDictionary>{};
+  /// The dictionaries read, each with when its files were changed, the one
+  /// used last at the end: those in use, and the one used before them.
+  final Map<DictionaryFiles, _Read> _read = <DictionaryFiles, _Read>{};
   SpellChecker _checker = SpellChecker(const <HunspellDictionary>[]);
 
   Object? handle(_Request request) {
@@ -192,6 +195,7 @@ final class _Worker {
         _checker = SpellChecker(<HunspellDictionary>[
           for (final files in dictionaries) _dictionary(files),
         ], personalWords: personalWords);
+        _forget(keep: dictionaries.toSet());
         return null;
       case _Check(:final words):
         // By index, which is the same in either isolate.
@@ -210,14 +214,30 @@ final class _Worker {
   HunspellDictionary _dictionary(DictionaryFiles files) {
     final affixFile = File(files.affixFile);
     final wordList = File(files.wordList);
-    final key = (
-      files,
-      affixFile.lastModifiedSync(),
-      wordList.lastModifiedSync(),
-    );
-    return _read[key] ??= HunspellDictionary.fromBytes(
-      affixFile.readAsBytesSync(),
-      wordList.readAsBytesSync(),
-    );
+    final changed = (affixFile.lastModifiedSync(), wordList.lastModifiedSync());
+    final read = _read.remove(files);
+    final dictionary = read != null && read.changed == changed
+        ? read.dictionary
+        : HunspellDictionary.fromBytes(
+            affixFile.readAsBytesSync(),
+            wordList.readAsBytesSync(),
+          );
+    _read[files] = (changed: changed, dictionary: dictionary);
+    return dictionary;
+  }
+
+  /// Lets go of the dictionaries read that are not in [keep], all but the
+  /// last of them used, so that going back to it is quick: a large one
+  /// takes tens of megabytes.
+  void _forget({required Set<DictionaryFiles> keep}) {
+    final others = <DictionaryFiles>[
+      for (final files in _read.keys)
+        if (!keep.contains(files)) files,
+    ];
+    if (others.isNotEmpty) others.removeLast();
+    others.forEach(_read.remove);
   }
 }
+
+/// A dictionary read, and when its two files had last been changed.
+typedef _Read = ({(DateTime, DateTime) changed, HunspellDictionary dictionary});
