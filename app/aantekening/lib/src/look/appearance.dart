@@ -283,20 +283,20 @@ class Appearance {
 }
 
 /// The appearance chosen, saved as it changes.
-class AppearanceController extends Notifier<Appearance> {
-  static const String _key = 'appearance';
+class AppearanceController extends PreferenceNotifier<Appearance> {
+  @override
+  String get key => 'appearance';
 
   @override
-  Appearance build() => Appearance.fromJson(ref.preference(_key));
+  Appearance decode(Object? saved) => Appearance.fromJson(saved);
+
+  @override
+  Object? encode(Appearance appearance) =>
+      appearance == const Appearance() ? null : appearance.toJson();
 
   void update(Appearance Function(Appearance appearance) change) {
     final changed = change(state);
-    if (changed == state) return;
-    state = changed;
-    ref.savePreference(
-      _key,
-      changed == const Appearance() ? null : changed.toJson(),
-    );
+    if (changed != state) save(changed);
   }
 
   /// Switches to dark mode from light, or to light from dark — [showing]

@@ -7,24 +7,29 @@ import '../preferences.dart';
 
 /// The ids of the pages opened lately, the latest first, remembered between
 /// sessions.
-class RecentPages extends Notifier<List<String>> {
-  static const String _key = 'recent.pages';
+class RecentPages extends PreferenceNotifier<List<String>> {
   static const int _kept = 30;
 
   @override
-  List<String> build() => <String>[
-    if (ref.preference(_key) case final List<Object?> ids)
-      ...ids.whereType<String>(),
+  String get key => 'recent.pages';
+
+  @override
+  List<String> decode(Object? saved) => <String>[
+    if (saved case final List<Object?> ids) ...ids.whereType<String>(),
   ];
+
+  @override
+  Object? encode(List<String> ids) => ids;
 
   /// Puts [pageId] first.
   void visit(String pageId) {
     if (state.firstOrNull == pageId) return;
-    state = List<String>.unmodifiable(<String>[
-      pageId,
-      ...state.where((id) => id != pageId).take(_kept - 1),
-    ]);
-    ref.savePreference(_key, state);
+    save(
+      List<String>.unmodifiable(<String>[
+        pageId,
+        ...state.where((id) => id != pageId).take(_kept - 1),
+      ]),
+    );
   }
 }
 

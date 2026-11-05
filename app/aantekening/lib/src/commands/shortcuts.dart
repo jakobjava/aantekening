@@ -99,23 +99,23 @@ class ShortcutBindings {
 }
 
 /// The shortcuts, saved as they are changed.
-class ShortcutsController extends Notifier<ShortcutBindings> {
-  static const String _key = 'shortcuts';
+class ShortcutsController extends PreferenceNotifier<ShortcutBindings> {
+  @override
+  String get key => 'shortcuts';
 
   @override
-  ShortcutBindings build() => ShortcutBindings.fromJson(ref.preference(_key));
+  ShortcutBindings decode(Object? saved) => ShortcutBindings.fromJson(saved);
+
+  @override
+  Object? encode(ShortcutBindings bindings) =>
+      bindings.allDefault ? null : bindings.toJson();
 
   void bind(AppCommand command, List<KeyChord> chords) =>
-      _set(state.binding(command, chords));
+      save(state.binding(command, chords));
 
-  void reset(AppCommand command) => _set(state.resetting(command));
+  void reset(AppCommand command) => save(state.resetting(command));
 
-  void resetAll() => _set(const ShortcutBindings());
-
-  void _set(ShortcutBindings bindings) {
-    state = bindings;
-    ref.savePreference(_key, bindings.allDefault ? null : bindings.toJson());
-  }
+  void resetAll() => save(const ShortcutBindings());
 }
 
 final shortcutsProvider =

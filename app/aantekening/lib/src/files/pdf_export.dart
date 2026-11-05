@@ -74,11 +74,9 @@ class PdfChoicesController extends Notifier<PdfChoices> {
   @override
   PdfChoices build() {
     const start = PdfChoices();
-    T named<T extends Enum>(String key, List<T> values, T fallback) =>
-        values.asNameMap()[ref.preference(key)] ?? fallback;
     return PdfChoices(
-      print: named(_print, CanvasPrint.values, start.print),
-      quality: named(_quality, PdfQuality.values, start.quality),
+      print: ref.enumPreference(_print, CanvasPrint.values, start.print),
+      quality: ref.enumPreference(_quality, PdfQuality.values, start.quality),
     );
   }
 

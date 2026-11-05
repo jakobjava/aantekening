@@ -67,12 +67,14 @@ class NewPageChoiceController extends Notifier<NewPageChoice> {
   @override
   NewPageChoice build() {
     const start = NewPageChoice();
-    T named<T extends Enum>(String key, List<T> values, T fallback) =>
-        values.asNameMap()[ref.preference(key)] ?? fallback;
     return NewPageChoice(
-      layout: named(_layout, NoteLayout.values, start.layout),
-      template: named(_template, SheetTemplate.values, start.template),
-      orientation: named(
+      layout: ref.enumPreference(_layout, NoteLayout.values, start.layout),
+      template: ref.enumPreference(
+        _template,
+        SheetTemplate.values,
+        start.template,
+      ),
+      orientation: ref.enumPreference(
         _orientation,
         SheetOrientation.values,
         start.orientation,

@@ -111,24 +111,23 @@ final defaultBackupFolderProvider = FutureProvider<String>(
       p.join(await ref.watch(supportFolderProvider.future), 'backups'),
 );
 
-class BackupsController extends Notifier<BackupSettings> {
-  static const String _key = 'backups';
+class BackupsController extends PreferenceNotifier<BackupSettings> {
+  @override
+  String get key => 'backups';
 
   @override
-  BackupSettings build() => BackupSettings.fromJson(ref.preference(_key));
+  BackupSettings decode(Object? saved) => BackupSettings.fromJson(saved);
 
-  void _save(BackupSettings settings) {
-    state = settings;
-    ref.savePreference(_key, settings.toJson());
-  }
+  @override
+  Object? encode(BackupSettings settings) => settings.toJson();
 
-  void setFolder(String? folder) => _save(state.copyWith(folder: () => folder));
+  void setFolder(String? folder) => save(state.copyWith(folder: () => folder));
 
   void setInterval(BackupInterval interval) =>
-      _save(state.copyWith(interval: interval));
+      save(state.copyWith(interval: interval));
 
   void setKeep(int keep) {
-    _save(state.copyWith(keep: keep));
+    save(state.copyWith(keep: keep));
   }
 
   /// The folder backups go to.
@@ -159,7 +158,7 @@ class BackupsController extends Notifier<BackupSettings> {
       // The app may have closed while the backup was made, leaving no
       // settings to note it in.
       if (ref.mounted) {
-        _save(state.copyWith(running: false, last: DateTime.now()));
+        save(state.copyWith(running: false, last: DateTime.now()));
       }
       return path;
     } on Object catch (error) {

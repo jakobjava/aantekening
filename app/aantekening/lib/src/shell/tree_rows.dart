@@ -9,19 +9,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../preferences.dart';
 
 /// The ids of some rows, remembered between sessions.
-class RememberedRows extends Notifier<Set<String>> {
-  RememberedRows(this._key);
-
-  final String _key;
+class RememberedRows extends PreferenceNotifier<Set<String>> {
+  RememberedRows(this.key);
 
   @override
-  Set<String> build() => <String>{
-    if (ref.preference(_key) case final List<Object?> ids)
-      ...ids.whereType<String>(),
+  final String key;
+
+  @override
+  Set<String> decode(Object? saved) => <String>{
+    if (saved case final List<Object?> ids) ...ids.whereType<String>(),
   };
 
+  @override
+  Object? encode(Set<String> ids) => ids.isEmpty ? null : ids.toList();
+
   /// Takes [id] out if it is in, and puts it in if it is not.
-  void toggle(String id) => _set(
+  void toggle(String id) => save(
     state.contains(id)
         ? state.difference(<String>{id})
         : <String>{...state, id},
@@ -30,12 +33,7 @@ class RememberedRows extends Notifier<Set<String>> {
   /// Takes [ids] out.
   void remove(Iterable<String> ids) {
     final fewer = state.difference(ids.toSet());
-    if (fewer.length != state.length) _set(fewer);
-  }
-
-  void _set(Set<String> ids) {
-    state = ids;
-    ref.savePreference(_key, ids.isEmpty ? null : ids.toList());
+    if (fewer.length != state.length) save(fewer);
   }
 }
 

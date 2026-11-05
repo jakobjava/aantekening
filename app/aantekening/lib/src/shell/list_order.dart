@@ -158,24 +158,21 @@ const Map<int, String> _unaccented = <int, String>{
 
 /// How the list [OrderedList] names is ordered, remembered between
 /// sessions.
-class ListOrderSetting extends Notifier<ListOrder> {
+class ListOrderSetting extends EnumPreference<ListOrder> {
   ListOrderSetting(this.list);
 
   final OrderedList list;
 
-  String get _key => 'library.order.${list.name}';
+  @override
+  String get key => 'library.order.${list.name}';
 
   @override
-  ListOrder build() => switch (ref.preference(_key)) {
-    final String name =>
-      ListOrder.values.asNameMap()[name] ?? ListOrder.arranged,
-    _ => ListOrder.arranged,
-  };
+  List<ListOrder> get values => ListOrder.values;
 
-  void choose(ListOrder order) {
-    state = order;
-    ref.savePreference(_key, order == ListOrder.arranged ? null : order.name);
-  }
+  @override
+  ListOrder get initial => ListOrder.arranged;
+
+  void choose(ListOrder order) => save(order);
 }
 
 final listOrderProvider =

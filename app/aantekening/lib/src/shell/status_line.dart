@@ -36,18 +36,17 @@ enum StatusLinePlace {
 }
 
 /// Where the status line lies, as chosen in the settings.
-class StatusLinePlacement extends Notifier<StatusLinePlace> {
-  static const String _key = 'statusLine.place';
+class StatusLinePlacement extends EnumPreference<StatusLinePlace> {
+  @override
+  String get key => 'statusLine.place';
 
   @override
-  StatusLinePlace build() =>
-      StatusLinePlace.values.asNameMap()[ref.preference(_key)] ??
-      StatusLinePlace.top;
+  List<StatusLinePlace> get values => StatusLinePlace.values;
 
-  void place(StatusLinePlace place) {
-    state = place;
-    ref.savePreference(_key, place == StatusLinePlace.top ? null : place.name);
-  }
+  @override
+  StatusLinePlace get initial => StatusLinePlace.top;
+
+  void place(StatusLinePlace place) => save(place);
 }
 
 final statusLinePlaceProvider =

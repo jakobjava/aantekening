@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -92,6 +93,50 @@ extension PreferenceAccess on Ref {
     final preferences = read(preferencesProvider).value;
     if (preferences != null) unawaited(preferences.set(key, value));
   }
+}
+
+/// A preference kept under one [key]: what is saved there read back as the
+/// state, and the state saved there as it changes.
+abstract class PreferenceNotifier<T> extends Notifier<T> {
+  /// The key it is kept under.
+  String get key;
+
+  /// What is saved under [key] — null while nothing is — as the state.
+  T decode(Object? saved);
+
+  /// [value] as it is saved, or null to keep nothing, as for the value a
+  /// preference starts at.
+  Object? encode(T value);
+
+  @override
+  T build() => decode(ref.preference(key));
+
+  /// Makes [value] the state, and saves it.
+  @protected
+  void save(T value) {
+    state = value;
+    ref.savePreference(key, encode(value));
+  }
+}
+
+/// A preference that is one of [values], kept by its name: [initial], the
+/// one it starts at, by keeping none.
+abstract class EnumPreference<T extends Enum> extends PreferenceNotifier<T> {
+  List<T> get values;
+  T get initial;
+
+  @override
+  T decode(Object? saved) => values.asNameMap()[saved] ?? initial;
+
+  @override
+  Object? encode(T value) => value == initial ? null : value.name;
+}
+
+/// Reading a preference that is one of an enum's values.
+extension EnumPreferenceAccess on Ref {
+  /// The one of [values] whose name is saved as [key], or [fallback].
+  T enumPreference<T extends Enum>(String key, List<T> values, T fallback) =>
+      values.asNameMap()[preference(key)] ?? fallback;
 }
 
 /// This machine's preferences, in its directory for application support

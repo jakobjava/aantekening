@@ -35,16 +35,16 @@ typedef PanePlacement = ({Offset? at, Size? size});
 const PanePlacement _byItself = (at: null, size: null);
 
 /// Where [pane] was left, remembered between sessions.
-class PanePlacements extends Notifier<PanePlacement> {
+class PanePlacements extends PreferenceNotifier<PanePlacement> {
   PanePlacements(this.pane);
 
   final Pane pane;
 
-  String get _key => 'pane.${pane.name}';
+  @override
+  String get key => 'pane.${pane.name}';
 
   @override
-  PanePlacement build() {
-    final saved = ref.preference(_key);
+  PanePlacement decode(Object? saved) {
     if (saved is! Map) return _byItself;
     double? read(String name) => (saved[name] as num?)?.toDouble();
     final (x, y, width, height) = (
@@ -59,23 +59,24 @@ class PanePlacements extends Notifier<PanePlacement> {
     );
   }
 
-  void place(PanePlacement placement) {
-    state = placement;
+  @override
+  Object? encode(PanePlacement placement) {
+    // Let go to go by itself again, nothing is kept.
+    if (placement == _byItself) return null;
     final (:at, :size) = placement;
-    ref.savePreference(_key, <String, Object?>{
+    return <String, Object?>{
       if (at != null) ...<String, double>{'x': at.dx, 'y': at.dy},
       if (size != null) ...<String, double>{
         'width': size.width,
         'height': size.height,
       },
-    });
+    };
   }
 
+  void place(PanePlacement placement) => save(placement);
+
   /// Lets it go where it goes, as large as it is, by itself again.
-  void reset() {
-    state = _byItself;
-    ref.savePreference(_key, null);
-  }
+  void reset() => save(_byItself);
 }
 
 final panePlacementProvider =
