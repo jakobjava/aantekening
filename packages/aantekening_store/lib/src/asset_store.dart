@@ -70,21 +70,24 @@ class AssetStore {
     );
     // The same bytes imported twice at once are stored once, under the id
     // the first to get here gave them.
-    _db.run(
-      'INSERT INTO assets '
-      '(id, sha256, mime_type, byte_size, original_name, created_at) '
-      'VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (sha256) DO NOTHING',
-      <Object?>[
-        asset.id,
-        asset.sha256,
-        asset.mimeType,
-        asset.byteSize,
-        asset.originalName,
-        asset.createdAt,
-      ],
-    );
+    addRow(_db, asset);
     return (await findByHash(digest))!;
   }
+
+  /// Adds [asset]'s row, unless one of its id or its bytes is there.
+  static void addRow(AantekeningDatabase db, AssetRef asset) => db.run(
+    'INSERT OR IGNORE INTO assets '
+    '(id, sha256, mime_type, byte_size, original_name, created_at) '
+    'VALUES (?, ?, ?, ?, ?, ?)',
+    <Object?>[
+      asset.id,
+      asset.sha256,
+      asset.mimeType,
+      asset.byteSize,
+      asset.originalName,
+      asset.createdAt,
+    ],
+  );
 
   /// Imports the contents of [file], named [name] — its own name, if not.
   Future<AssetRef> importFile(

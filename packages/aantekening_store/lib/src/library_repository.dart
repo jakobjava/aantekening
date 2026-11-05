@@ -58,26 +58,13 @@ class LibraryRepository {
     final notebook = Notebook(
       id: Ulid.generate(),
       title: title,
-      position: _nextNotebookPosition(),
+      position: nextNotebookPosition(),
       createdAt: now,
       updatedAt: now,
       color: color,
       icon: icon,
     );
-    _db.run(
-      'INSERT INTO notebooks '
-      '(id, title, position, color, icon, created_at, updated_at, deleted_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, NULL)',
-      <Object?>[
-        notebook.id,
-        notebook.title,
-        notebook.position,
-        notebook.color,
-        notebook.icon,
-        notebook.createdAt,
-        notebook.updatedAt,
-      ],
-    );
+    putNotebook(notebook);
     return notebook;
   }
 
@@ -224,12 +211,12 @@ class LibraryRepository {
       notebookId: notebookId,
       title: title,
       parentId: parentId,
-      position: _nextSectionPosition(notebookId, parentId),
+      position: nextSectionPosition(notebookId, parentId),
       createdAt: now,
       updatedAt: now,
       color: color,
     );
-    _insertSection(section);
+    _putSection(section);
     return section;
   }
 
@@ -296,7 +283,7 @@ class LibraryRepository {
         'a section cannot be moved inside itself',
       );
     }
-    final target = position ?? _nextSectionPosition(notebookId, parentId);
+    final target = position ?? nextSectionPosition(notebookId, parentId);
     _db.transaction(() {
       _db.run(
         'UPDATE sections SET notebook_id = ?, parent_id = ?, position = ?, '
@@ -339,7 +326,7 @@ class LibraryRepository {
       source,
       notebookId: notebookId,
       parentId: parentId,
-      position: _nextSectionPosition(notebookId, parentId),
+      position: nextSectionPosition(notebookId, parentId),
     );
   });
 
@@ -408,23 +395,6 @@ class LibraryRepository {
     ],
   );
 
-  void _insertSection(Section section) => _db.run(
-    'INSERT INTO sections '
-    '(id, notebook_id, parent_id, title, position, color, created_at, '
-    ' updated_at, deleted_at) '
-    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)',
-    <Object?>[
-      section.id,
-      section.notebookId,
-      section.parentId,
-      section.title,
-      section.position,
-      section.color,
-      section.createdAt,
-      section.updatedAt,
-    ],
-  );
-
   Section? _findSection(String id) {
     final rows = _db.select('SELECT * FROM sections WHERE id = ?', <Object?>[
       id,
@@ -464,7 +434,7 @@ class LibraryRepository {
         createdAt: now,
         updatedAt: now,
       );
-      _insertSection(copy);
+      _putSection(copy);
       _pages.copySectionPages(id, copy.id);
       copies[id] = copy.id;
       if (id == source.id) top = copy;
@@ -472,13 +442,16 @@ class LibraryRepository {
     return top;
   }
 
-  double _nextSectionPosition(String notebookId, String? parentId) =>
+  /// The position after every section of [notebookId] under [parentId],
+  /// for a section added at the end of them.
+  double nextSectionPosition(String notebookId, String? parentId) =>
       _db.nextPosition('sections', _siblings, <Object?>[notebookId, parentId]);
 
   /// The sections of a notebook under one parent, or at its top.
   static const String _siblings = 'notebook_id = ? AND parent_id IS ?';
 
-  double _nextNotebookPosition() =>
+  /// The position after every notebook, for one added at the end.
+  double nextNotebookPosition() =>
       _db.nextPosition('notebooks', '1', const <Object?>[]);
 
   static Notebook notebookOf(Row row) => Notebook(

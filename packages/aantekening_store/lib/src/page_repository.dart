@@ -99,13 +99,13 @@ class PageRepository {
       id: Ulid.generate(),
       sectionId: sectionId,
       title: title,
-      position: _nextPagePosition(sectionId, parentId),
+      position: nextPagePosition(sectionId, parentId),
       createdAt: now,
       updatedAt: now,
       parentId: parentId,
     );
     _db.transaction(() {
-      _insert(page);
+      _put(page);
       _writeBody(page.id, PageDocument(id: page.id, canvas: canvas));
       _reindex(page.id, page.title, '');
     });
@@ -399,7 +399,7 @@ class PageRepository {
           createdAt: page.createdAt,
           updatedAt: _now,
         );
-        _insert(copy);
+        _put(copy);
         _copyContents(pageId, copy.id, copy.title);
         return copy;
       });
@@ -518,19 +518,7 @@ class PageRepository {
           if (id != asset.id) renamed[asset.id] = id;
           continue;
         }
-        _db.run(
-          'INSERT OR IGNORE INTO assets '
-          '(id, sha256, mime_type, byte_size, original_name, created_at) '
-          'VALUES (?, ?, ?, ?, ?, ?)',
-          <Object?>[
-            asset.id,
-            asset.sha256,
-            asset.mimeType,
-            asset.byteSize,
-            asset.originalName,
-            asset.createdAt,
-          ],
-        );
+        AssetStore.addRow(_db, asset);
       }
       final document = renamed.isEmpty
           ? file.document
@@ -541,32 +529,7 @@ class PageRepository {
       final page = _db.closesLoop('pages', file.page.id, file.page.parentId)
           ? file.page.copyWith(clearParentId: true)
           : file.page;
-      _db.run(
-        'INSERT INTO pages '
-        '(id, section_id, parent_id, title, position, preview, revision, '
-        ' color, created_at, updated_at, deleted_at) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
-        'ON CONFLICT(id) DO UPDATE SET section_id = excluded.section_id, '
-        '  parent_id = excluded.parent_id, title = excluded.title, '
-        '  position = excluded.position, preview = excluded.preview, '
-        '  revision = excluded.revision, color = excluded.color, '
-        '  created_at = excluded.created_at, '
-        '  updated_at = excluded.updated_at, '
-        '  deleted_at = excluded.deleted_at',
-        <Object?>[
-          page.id,
-          page.sectionId,
-          page.parentId,
-          page.title,
-          page.position,
-          page.preview,
-          page.revision,
-          page.color,
-          page.createdAt,
-          page.updatedAt,
-          page.deletedAt,
-        ],
-      );
+      _put(page);
       _writeBody(page.id, document);
       // In the bin or not, as [deletePage] has it: search passes over it.
       _reindex(page.id, page.title, text ?? document.extractSearchText());
@@ -588,11 +551,19 @@ class PageRepository {
 
   // ------------------------------------------------------------------ helpers
 
-  void _insert(PageRef page) => _db.run(
+  /// Puts [page]'s row in place of the one it names, or adds it.
+  void _put(PageRef page) => _db.run(
     'INSERT INTO pages '
     '(id, section_id, parent_id, title, position, preview, revision, '
     ' color, created_at, updated_at, deleted_at) '
-    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
+    'ON CONFLICT(id) DO UPDATE SET section_id = excluded.section_id, '
+    '  parent_id = excluded.parent_id, title = excluded.title, '
+    '  position = excluded.position, preview = excluded.preview, '
+    '  revision = excluded.revision, color = excluded.color, '
+    '  created_at = excluded.created_at, '
+    '  updated_at = excluded.updated_at, '
+    '  deleted_at = excluded.deleted_at',
     <Object?>[
       page.id,
       page.sectionId,
@@ -604,6 +575,7 @@ class PageRepository {
       page.color,
       page.createdAt,
       page.updatedAt,
+      page.deletedAt,
     ],
   );
 
@@ -733,7 +705,7 @@ class PageRepository {
       createdAt: source.createdAt,
       updatedAt: _now,
     );
-    _insert(copy);
+    _put(copy);
     _copyContents(source.id, copy.id, copy.title);
     _db.run(
       'INSERT INTO page_tags (page_id, tag_id) '
@@ -811,7 +783,9 @@ class PageRepository {
     return true;
   }
 
-  double _nextPagePosition(String sectionId, String? parentId) =>
+  /// The position after every page of [sectionId] under [parentId], for a
+  /// page added at the end of them.
+  double nextPagePosition(String sectionId, String? parentId) =>
       _db.nextPosition('pages', _siblings, <Object?>[sectionId, parentId]);
 
   /// The start of [text], as the page list shows it.
