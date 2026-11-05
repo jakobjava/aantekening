@@ -5,6 +5,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -399,16 +400,7 @@ class PageRepository {
           updatedAt: _now,
         );
         _insert(copy);
-        final document = _readDocument(pageId) ?? PageDocument.empty();
-        final body = PageDocument(
-          id: copy.id,
-          revision: document.revision,
-          canvas: document.canvas,
-          elements: document.elements,
-        );
-        _writeBody(copy.id, body);
-        _reindex(copy.id, copy.title, body.extractSearchText());
-        _syncAssets(copy.id, body.referencedAssetIds);
+        _copyContents(pageId, copy.id, copy.title);
         return copy;
       });
 
@@ -741,22 +733,81 @@ class PageRepository {
       updatedAt: _now,
     );
     _insert(copy);
-    final document = _readDocument(source.id);
-    final body = PageDocument(
-      id: copy.id,
-      revision: document?.revision ?? 0,
-      canvas: document?.canvas ?? CanvasSettings.defaults,
-      elements: document?.elements ?? const <NoteElement>[],
-    );
-    _writeBody(copy.id, body);
-    _reindex(copy.id, copy.title, body.extractSearchText());
-    _syncAssets(copy.id, body.referencedAssetIds);
+    _copyContents(source.id, copy.id, copy.title);
     _db.run(
       'INSERT INTO page_tags (page_id, tag_id) '
       'SELECT ?, tag_id FROM page_tags WHERE page_id = ?',
       <Object?>[copy.id, source.id],
     );
     return copy;
+  }
+
+  /// Gives page [copyId], titled [title], what page [sourceId] holds: its
+  /// contents, their text for search, and the pictures and files they
+  /// show.
+  ///
+  /// The contents are copied as they are kept, but for the page's id,
+  /// which [PageDocument.encode] writes at their start: read and written
+  /// out again, a page of handwriting would take most of a second. Only
+  /// contents written some other way are.
+  void _copyContents(String sourceId, String copyId, String title) {
+    final rows = _db.select(
+      'SELECT b.revision AS revision, b.encoding AS encoding, b.body AS body, '
+      '  s.body AS text '
+      'FROM page_bodies b JOIN pages p ON p.id = b.page_id '
+      'LEFT JOIN page_search s ON s.rowid = p.rowid '
+      'WHERE b.page_id = ? AND b.format_version = ?',
+      <Object?>[sourceId, PageDocument.currentFormatVersion],
+    );
+    if (rows.isNotEmpty && strOrNull(rows.first, 'text') != null) {
+      final row = rows.first;
+      final json = _Body(str(row, 'encoding'), row['body'] as List<int>).json;
+      final head = _headOf(sourceId);
+      if (_startsWith(json, head)) {
+        _putBody(
+          copyId,
+          integer(row, 'revision'),
+          _Body.ofUtf8(
+            (BytesBuilder(copy: false)
+                  ..add(_headOf(copyId))
+                  ..add(json.sublist(head.length)))
+                .takeBytes(),
+          ),
+        );
+        _reindex(copyId, title, str(row, 'text'));
+        _db.run(
+          'INSERT INTO page_assets (page_id, asset_id) '
+          'SELECT ?, asset_id FROM page_assets WHERE page_id = ?',
+          <Object?>[copyId, sourceId],
+        );
+        return;
+      }
+    }
+    final document = _readDocument(sourceId);
+    final body = PageDocument(
+      id: copyId,
+      revision: document?.revision ?? 0,
+      canvas: document?.canvas ?? CanvasSettings.defaults,
+      elements: document?.elements ?? const <NoteElement>[],
+    );
+    _writeBody(copyId, body);
+    _reindex(copyId, title, body.extractSearchText());
+    _syncAssets(copyId, body.referencedAssetIds);
+  }
+
+  /// How [PageDocument.encode] begins the contents of page [pageId], as
+  /// UTF-8.
+  static List<int> _headOf(String pageId) => utf8.encode(
+    '{"formatVersion":${PageDocument.currentFormatVersion},'
+    '"id":${jsonEncode(pageId)},',
+  );
+
+  static bool _startsWith(List<int> bytes, List<int> start) {
+    if (bytes.length < start.length) return false;
+    for (var i = 0; i < start.length; i++) {
+      if (bytes[i] != start[i]) return false;
+    }
+    return true;
   }
 
   double _nextPagePosition(String sectionId, String? parentId) =>
@@ -791,12 +842,13 @@ final class _Body {
   _Body(this.encoding, this.stored);
 
   /// The body of a page whose JSON is [json].
-  factory _Body.of(String json) {
-    final bytes = utf8.encode(json);
-    return bytes.length >= BodyEncoding.compressionThreshold
-        ? _Body(BodyEncoding.gzippedJson, pageCompression.encode(bytes))
-        : _Body(BodyEncoding.json, bytes);
-  }
+  factory _Body.of(String json) => _Body.ofUtf8(utf8.encode(json));
+
+  /// The body of a page whose JSON, in UTF-8, is [bytes].
+  factory _Body.ofUtf8(List<int> bytes) =>
+      bytes.length >= BodyEncoding.compressionThreshold
+      ? _Body(BodyEncoding.gzippedJson, pageCompression.encode(bytes))
+      : _Body(BodyEncoding.json, bytes);
 
   final String encoding;
   final List<int> stored;

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -902,6 +903,93 @@ void main() {
       expect(document!.id, copy.id);
       expect(document.extractSearchText(), 'Green theorem');
       expect(await store.search.search('green'), hasLength(2));
+    });
+
+    for (final (words, how) in const <(int, String)>[
+      (3, 'a short page'),
+      (3000, 'a long page'),
+    ]) {
+      test('copies $how as it is, but for its identity, and a version of it '
+          'kept', () async {
+        final sectionId = await workspace.seedSection();
+        final page = await store.pages.createPage(sectionId: sectionId);
+        final picture = await store.assets.importBytes(
+          Uint8List.fromList(<int>[4, 5, 6]),
+          mimeType: 'image/png',
+        );
+        final text = <String>[for (var i = 0; i < words; i++) 'w$i'].join(' ');
+        final saved = documentWithText(page.id, text).withElementAdded(
+          ImageElement(
+            id: Ulid.generate(),
+            frame: const Frame(x: 0, y: 0, width: 10, height: 10),
+            createdAt: 1,
+            updatedAt: 1,
+            assetId: picture.id,
+          ),
+        );
+        await store.pages.saveDocument(page.id, saved);
+
+        final copies = <PageRef>[
+          await store.pages.copyPage(page.id, sectionId: sectionId),
+          (await store.pages.keepVersion(page.id, note: 'kept'))!,
+        ];
+
+        for (final copy in copies) {
+          final document = (await store.pages.loadDocument(copy.id))!;
+          expect(document.id, copy.id);
+          expect(document.revision, saved.revision);
+          expect(
+            document.encode(),
+            PageDocument(
+              id: copy.id,
+              revision: saved.revision,
+              canvas: saved.canvas,
+              elements: saved.elements,
+            ).encode(),
+          );
+          expect(
+            (await store.search.search(
+              'w${words - 1}',
+            )).map((hit) => hit.pageId),
+            contains(copy.id),
+          );
+          expect(store.pages.pageFile(copy.id)!.assets.single.id, picture.id);
+        }
+      });
+    }
+
+    test('copies a page kept some other way by reading it', () async {
+      final sectionId = await workspace.seedSection();
+      final page = await store.pages.createPage(sectionId: sectionId);
+      await store.pages.saveDocument(
+        page.id,
+        documentWithText(page.id, 'by hand'),
+      );
+      // The same contents, written as no build here writes them.
+      final json =
+          jsonDecode(
+                utf8.decode(
+                  store.database.select(
+                        'SELECT body FROM page_bodies WHERE page_id = ?',
+                        <Object?>[page.id],
+                      ).first['body']
+                      as List<int>,
+                ),
+              )
+              as Map<String, Object?>;
+      store.database.run(
+        'UPDATE page_bodies SET body = ? WHERE page_id = ?',
+        <Object?>[
+          utf8.encode(jsonEncode(<String, Object?>{'id': json['id'], ...json})),
+          page.id,
+        ],
+      );
+
+      final copy = await store.pages.copyPage(page.id, sectionId: sectionId);
+
+      final document = (await store.pages.loadDocument(copy.id))!;
+      expect(document.id, copy.id);
+      expect(document.extractSearchText(), 'by hand');
     });
 
     test('copies a page beneath one of its own subpages', () async {
