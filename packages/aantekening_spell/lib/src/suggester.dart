@@ -819,6 +819,7 @@ final class Suggester {
     var lowest = _maxRoots - 1;
     var hasRoots = false;
     final german = _rules.language?.startsWith('de') ?? false;
+    final pieces = _Pieces(word);
 
     for (final entry in _words.entries) {
       if ((n - entry.word.length).abs() > 4) continue;
@@ -833,7 +834,7 @@ final class Suggester {
         continue;
       }
       final score =
-          _ngram(3, word, Casing.lower(entry.word), _longerWorse) +
+          _ngram(3, pieces, Casing.lower(entry.word), _longerWorse) +
           _leftCommon(word, entry.word);
       if (score > scores[lowest]) {
         scores[lowest] = score;
@@ -859,7 +860,7 @@ final class Suggester {
       }
       threshold += _ngram(
         n,
-        word,
+        pieces,
         Casing.lower(String.fromCharCodes(mangled)),
         _anyMismatch,
       );
@@ -873,7 +874,7 @@ final class Suggester {
       if (root == null) continue;
       for (final form in _expand(root, word)) {
         final score =
-            _ngram(n, word, Casing.lower(form), _anyMismatch) +
+            _ngram(n, pieces, Casing.lower(form), _anyMismatch) +
             _leftCommon(word, form);
         if (score <= threshold || score <= guessScores[lowest]) continue;
         guessScores[lowest] = score;
@@ -902,10 +903,10 @@ final class Suggester {
         guessScores[i] += 2000;
         break;
       }
-      var weighted = _ngram(2, word, lowered, _anyMismatch | _weighted);
+      var weighted = _ngram(2, pieces, lowered, _anyMismatch | _weighted);
       weighted += _ngram(
         2,
-        lowered,
+        _Pieces(lowered),
         Casing.lower(word),
         _anyMismatch | _weighted,
       );
@@ -916,7 +917,7 @@ final class Suggester {
           _leftCommon(word, lowered) +
           (positions > 0 ? 1 : 0) +
           (swapped ? 10 : 0) +
-          _ngram(4, word, lowered, _anyMismatch) +
+          _ngram(4, pieces, lowered, _anyMismatch) +
           weighted +
           (weighted < (n + length) * factor ? -1000 : 0);
     }
@@ -1032,15 +1033,16 @@ final class Suggester {
   }
 
   /// How many of the pieces of [a], one to [n] long, [b] has.
-  static int _ngram(int n, String a, String b, int options) {
-    final l1 = a.length;
+  static int _ngram(int n, _Pieces a, String b, int options) {
+    final l1 = a.word.length;
     final l2 = b.length;
     if (l2 == 0) return 0;
     var score = 0;
     for (var j = 1; j <= n; j++) {
       var found = 0;
+      final pieces = a.ofLength(j);
       for (var i = 0; i <= l1 - j; i++) {
-        if (b.contains(a.substring(i, i + j))) {
+        if (b.contains(pieces[i])) {
           found++;
         } else if (options & _weighted != 0) {
           found--;
@@ -1107,5 +1109,25 @@ final class Suggester {
       current = kept;
     }
     return previous[b.length];
+  }
+}
+
+/// The pieces of a word, from one letter long to as long as are wanted, cut
+/// once to be looked for in each of many other words.
+final class _Pieces {
+  _Pieces(this.word);
+
+  final String word;
+  final List<List<String>> _byLength = <List<String>>[];
+
+  /// The pieces [length] long, in the order they begin.
+  List<String> ofLength(int length) {
+    while (_byLength.length < length) {
+      final j = _byLength.length + 1;
+      _byLength.add(<String>[
+        for (var i = 0; i <= word.length - j; i++) word.substring(i, i + j),
+      ]);
+    }
+    return _byLength[length - 1];
   }
 }

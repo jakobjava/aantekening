@@ -98,8 +98,18 @@ abstract final class Casing {
     return CapType.mixed;
   }
 
-  static String lower(String word) =>
-      String.fromCharCodes(<int>[for (final u in word.codeUnits) lowerUnit(u)]);
+  /// [word] in lower case: itself, if it is already.
+  static String lower(String word) {
+    for (var i = 0; i < word.length; i++) {
+      final unit = word.codeUnitAt(i);
+      if (lowerUnit(unit) != unit) {
+        return String.fromCharCodes(<int>[
+          for (final u in word.codeUnits) lowerUnit(u),
+        ]);
+      }
+    }
+    return word;
+  }
 
   static String upper(String word) =>
       String.fromCharCodes(<int>[for (final u in word.codeUnits) upperUnit(u)]);
