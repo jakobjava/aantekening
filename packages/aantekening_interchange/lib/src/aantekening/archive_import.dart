@@ -124,16 +124,26 @@ final class AantekeningImporter implements NotesImporter {
       // within itself.
       final building = <String>{};
 
+      // What is in each section and beneath each page, gathered once
+      // rather than looked for among them all for each.
+      final pagesUnder = <(String, String?), List<PageFile>>{};
+      for (final file in pageFiles.values) {
+        (pagesUnder[(file.page.sectionId, file.page.parentId)] ??= <PageFile>[])
+            .add(file);
+      }
+      final sectionsUnder = <String, List<Section>>{};
+      final sectionsAtTop = <String, List<Section>>{};
+      for (final section in sections.values) {
+        final parentId = section.parentId;
+        (parentId == null
+                ? sectionsAtTop[section.notebookId] ??= <Section>[]
+                : sectionsUnder[parentId] ??= <Section>[])
+            .add(section);
+      }
+
       List<PageDraft> pagesIn(String sectionId, String? parentId) {
-        final here =
-            pageFiles.values
-                .where(
-                  (file) =>
-                      file.page.sectionId == sectionId &&
-                      file.page.parentId == parentId,
-                )
-                .toList()
-              ..sort((a, b) => a.page.position.compareTo(b.page.position));
+        final here = <PageFile>[...?pagesUnder[(sectionId, parentId)]]
+          ..sort((a, b) => a.page.position.compareTo(b.page.position));
         final drafts = <PageDraft>[];
         for (final file in here) {
           if (!building.add(file.page.id)) continue;
@@ -158,9 +168,8 @@ final class AantekeningImporter implements NotesImporter {
           pages: pagesIn(section.id, null),
           sections: <SectionDraft>[
             for (final child in _sorted(
-              sections.values.where(
-                (each) =>
-                    each.parentId == section.id && !building.contains(each.id),
+              (sectionsUnder[section.id] ?? const <Section>[]).where(
+                (each) => !building.contains(each.id),
               ),
             ))
               sectionDraft(child),
@@ -184,9 +193,7 @@ final class AantekeningImporter implements NotesImporter {
                 color: notebook.color,
                 sections: <SectionDraft>[
                   for (final top in _sorted(
-                    sections.values.where(
-                      (each) => each.notebookId == id && each.parentId == null,
-                    ),
+                    sectionsAtTop[id] ?? const <Section>[],
                   ))
                     sectionDraft(top),
                 ],
