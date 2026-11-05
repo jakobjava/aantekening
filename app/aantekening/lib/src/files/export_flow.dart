@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../look/motion.dart';
 import '../providers.dart';
+import '../reported.dart';
 import '../shell/library_menu.dart';
 import 'notes_keeper.dart';
 
@@ -33,8 +34,10 @@ Future<void> exportNotes(
       ? location.path
       : '${location.path}.$exportExtension';
   final store = await ref.read(storeProvider.future);
-  String said;
-  try {
+  if (!context.mounted) return;
+  // A disk full, a folder that may not be written to: said, not lost.
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  await runReported(context, 'The export could not be saved', () async {
     // What is still being typed goes too: the export is made from the
     // index, which has a page once it is saved.
     await ref.read(openSavesProvider).saveAll();
@@ -44,13 +47,10 @@ Future<void> exportNotes(
       sections: <String>[if (node is Section) node.id],
       pages: <String>[if (node is PageRef) node.id],
     );
-    said = 'Saved to $path';
-  } on Object catch (error) {
-    // A disk full, a folder that may not be written to: said, not lost.
-    said = 'The export could not be saved: $error';
-  }
-  if (!context.mounted) return;
-  ScaffoldMessenger.maybeOf(context)?.showMessage(said);
+    if (messenger != null && messenger.mounted) {
+      messenger.showMessage('Saved to $path');
+    }
+  });
 }
 
 /// [title] with what a file name may not hold replaced.

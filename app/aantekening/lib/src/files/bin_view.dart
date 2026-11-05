@@ -14,6 +14,7 @@ import '../look/marks.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
 import '../providers.dart';
+import '../reported.dart';
 
 /// Everything in the bin, what was deleted last first.
 final binProvider = FutureProvider<List<BinEntry>>((ref) async {
@@ -73,19 +74,20 @@ Future<bool> confirmPurge(BuildContext context, String what) async =>
 
 /// Empties the bin, once asked, and collects the pictures and files no
 /// page shows any more; says how many pages went.
-Future<void> emptyBin(BuildContext context, WidgetRef ref) async {
-  if (!await confirmPurge(context, 'everything in the bin')) return;
-  final store = await ref.read(storeProvider.future);
-  final pages = await store.bin.empty();
-  await store.assets.collectGarbage();
-  ref.read(libraryRevisionProvider.notifier).bump();
-  if (!context.mounted) return;
-  ScaffoldMessenger.maybeOf(context)?.showMessage(
-    pages == 1
-        ? 'One page deleted for good.'
-        : '$pages pages deleted for good.',
-  );
-}
+Future<void> emptyBin(BuildContext context, WidgetRef ref) =>
+    runReported(context, 'The bin could not be emptied', () async {
+      if (!await confirmPurge(context, 'everything in the bin')) return;
+      final store = await ref.read(storeProvider.future);
+      final pages = await store.bin.empty();
+      await store.assets.collectGarbage();
+      ref.read(libraryRevisionProvider.notifier).bump();
+      if (!context.mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showMessage(
+        pages == 1
+            ? 'One page deleted for good.'
+            : '$pages pages deleted for good.',
+      );
+    });
 
 class BinView extends ConsumerWidget {
   const BinView({super.key});
@@ -177,12 +179,20 @@ class BinView extends ConsumerWidget {
                                   SmallButton(
                                     'Restore',
                                     tooltip: 'Put it back where it was',
-                                    onPressed: () => unawaited(restore(entry)),
+                                    onPressed: reportedly(
+                                      context,
+                                      'It could not be put back',
+                                      () => restore(entry),
+                                    ),
                                   ),
                                   SmallButton(
                                     'Delete',
                                     tooltip: 'Delete it for good',
-                                    onPressed: () => unawaited(purge(entry)),
+                                    onPressed: reportedly(
+                                      context,
+                                      'It could not be deleted for good',
+                                      () => purge(entry),
+                                    ),
                                   ),
                                 ],
                               ),

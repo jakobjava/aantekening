@@ -821,6 +821,26 @@ void main() {
       expect(find.text('“Mechanics” is in the bin.'), findsNothing);
     });
 
+    testWidgets('a page that cannot be pasted says so', (tester) async {
+      final page = await openPage(tester);
+      await showPanes(tester);
+      await rightClick(tester, inPanes(find.text('Lecture 1')));
+      await tester.tap(inMenu('Copy'));
+      await tester.pumpAndSettle();
+      // Deleted for good meanwhile, as another computer sharing the notes
+      // folder may have done.
+      await store.pages.deletePage(page.id);
+      await store.bin.empty();
+
+      await rightClick(tester, inPanes(find.text('Mechanics')));
+      await tester.tap(inMenu('Paste page'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('The page could not be pasted: '),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('the bin restores what was deleted, and deletes it for good '
         'once asked', (tester) async {
       Future<void> deleteMechanics() async {

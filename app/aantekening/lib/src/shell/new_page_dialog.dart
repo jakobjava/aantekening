@@ -12,6 +12,7 @@ import '../look/controls.dart';
 import '../look/glass.dart';
 import '../look/motion.dart';
 import '../look/tones.dart';
+import '../reported.dart';
 import 'library_actions.dart';
 import 'new_page_choice.dart';
 
@@ -24,7 +25,7 @@ Future<void> createChosenPage(
   WidgetRef ref, {
   required String sectionId,
   String? parentId,
-}) async {
+}) => runReported(context, 'The page could not be made', () async {
   final choice = await showAppDialog<NewPageChoice>(
     context: context,
     builder: (context) =>
@@ -39,7 +40,7 @@ Future<void> createChosenPage(
         parentId: parentId,
         canvas: choice.canvas,
       );
-}
+});
 
 /// The dialog behind [createChosenPage].
 class NewPageDialog extends StatefulWidget {

@@ -160,7 +160,6 @@ class _ColumnView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tones = context.tones;
-    final actions = ref.read(libraryActionsProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -214,9 +213,14 @@ class _ColumnView extends ConsumerWidget {
                           item: node,
                           enabled: true,
                           accepts: (moved) => !_beneath(rows[index], moved),
-                          onArrange: (moved, {required above}) => unawaited(
-                            actions.arrange(moved, node, above: above),
-                          ),
+                          onArrange: (moved, {required above}) =>
+                              arrangeReported(
+                                context,
+                                ref,
+                                moved,
+                                node,
+                                above: above,
+                              ),
                           child: row,
                         );
                     return switch (node) {

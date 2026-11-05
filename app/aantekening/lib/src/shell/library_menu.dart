@@ -14,6 +14,7 @@ import '../files/pdf_export.dart';
 import '../look/glass.dart';
 import '../look/icons.dart';
 import '../look/motion.dart';
+import '../reported.dart';
 import 'library_actions.dart';
 import 'new_page_dialog.dart';
 
@@ -40,16 +41,8 @@ Future<void> showLibraryMenu(
   final actions = ref.read(libraryActionsProvider);
   final clip = ref.read(libraryClipboardProvider);
 
-  Future<void> rename() async {
-    final title = await promptForName(
-      context,
-      title: 'Rename the ${_kindOf(node)}',
-      hint: displayTitle(node),
-      initial: node.title,
-      action: 'Rename',
-    );
-    if (title != null) await actions.rename(node, title);
-  }
+  Future<void> rename() =>
+      renameNamed(context, ref, node, asking: 'Rename the ${_kindOf(node)}');
 
   Future<void> delete() => deleteToBin(context, ref, node);
 
@@ -101,7 +94,7 @@ Future<void> showLibraryMenu(
   };
   final paste = MenuCommand(
     pasteLabel,
-    actions.canPaste(node) ? () => actions.paste(node) : null,
+    actions.canPaste(node) ? pasteOnto(context, ref, node) : null,
     icon: AppIcon.paste,
   );
 
@@ -116,12 +109,20 @@ Future<void> showLibraryMenu(
       if (node is PageRef)
         MenuCommand(
           'Open in new tab',
-          () => unawaited(actions.openInNewTab(node)),
+          reportedly(
+            context,
+            'The page could not be opened',
+            () => actions.openInNewTab(node),
+          ),
           icon: AppIcon.newTab,
         ),
       MenuCommand(
         'Ask AI',
-        () => unawaited(actions.openAi(node)),
+        reportedly(
+          context,
+          'The AI of the ${_kindOf(node)} could not be opened',
+          () => actions.openAi(node),
+        ),
         icon: AppIcon.ai,
       ),
       MenuCommand(
@@ -159,17 +160,38 @@ Future<void> showLibraryMenu(
   ]);
 }
 
+/// Asks for a new name for [node], [asking] so, and renames it.
+Future<void> renameNamed(
+  BuildContext context,
+  WidgetRef ref,
+  TreeNode node, {
+  required String asking,
+}) =>
+    runReported(context, 'The ${_kindOf(node)} could not be renamed', () async {
+      final title = await promptForName(
+        context,
+        title: asking,
+        hint: displayTitle(node),
+        initial: node.title,
+        action: 'Rename',
+      );
+      if (title != null) {
+        await ref.read(libraryActionsProvider).rename(node, title);
+      }
+    });
+
 /// Asks for a name and creates a notebook with it.
-Future<void> createNamedNotebook(BuildContext context, WidgetRef ref) async {
-  final title = await promptForName(
-    context,
-    title: 'New notebook',
-    hint: 'Notebook',
-  );
-  if (title != null) {
-    await ref.read(libraryActionsProvider).createNotebook(title);
-  }
-}
+Future<void> createNamedNotebook(BuildContext context, WidgetRef ref) =>
+    runReported(context, 'The notebook could not be made', () async {
+      final title = await promptForName(
+        context,
+        title: 'New notebook',
+        hint: 'Notebook',
+      );
+      if (title != null) {
+        await ref.read(libraryActionsProvider).createNotebook(title);
+      }
+    });
 
 /// Asks for a name and creates a section with it in [notebookId], as a
 /// subsection of [parentId] when given.
@@ -178,7 +200,7 @@ Future<void> createNamedSection(
   WidgetRef ref, {
   required String notebookId,
   String? parentId,
-}) async {
+}) => runReported(context, 'The section could not be made', () async {
   final title = await promptForName(
     context,
     title: parentId == null ? 'New section' : 'New subsection',
@@ -188,6 +210,40 @@ Future<void> createNamedSection(
   await ref
       .read(libraryActionsProvider)
       .createSection(notebookId: notebookId, title: title, parentId: parentId);
+});
+
+/// Pastes what is cut or copied onto [node], as a command, saying so if it
+/// cannot be.
+VoidCallback pasteOnto(BuildContext context, WidgetRef ref, TreeNode node) {
+  final actions = ref.read(libraryActionsProvider);
+  final pasted = switch (ref.read(libraryClipboardProvider)?.node) {
+    PageRef() => 'page',
+    _ => 'section',
+  };
+  return reportedly(
+    context,
+    'The $pasted could not be pasted',
+    () => actions.paste(node),
+  );
+}
+
+/// Puts [moved] above or below [beside], as [LibraryActions.arrange] does,
+/// saying so if it cannot be.
+void arrangeReported(
+  BuildContext context,
+  WidgetRef ref,
+  TreeNode moved,
+  TreeNode beside, {
+  required bool above,
+}) {
+  final actions = ref.read(libraryActionsProvider);
+  unawaited(
+    runReported(
+      context,
+      'The ${_kindOf(moved)} could not be moved',
+      () => actions.arrange(moved, beside, above: above),
+    ),
+  );
 }
 
 /// Asks for a name, returning it trimmed, or null if the dialog is
@@ -217,17 +273,25 @@ String _kindOf(TreeNode node) => switch (node) {
 
 /// Moves [node], and everything in it, to the bin, saying so, with a way
 /// to put it back. Nothing is lost by deleting, so nothing asks first.
-Future<void> deleteToBin(
-  BuildContext context,
-  WidgetRef ref,
-  TreeNode node,
-) async {
+Future<void> deleteToBin(BuildContext context, WidgetRef ref, TreeNode node) {
   final messenger = ScaffoldMessenger.maybeOf(context);
   final actions = ref.read(libraryActionsProvider);
-  await actions.delete(node);
-  messenger?.showUndoable(
-    '“${displayTitle(node)}” is in the bin.',
-    () => unawaited(actions.restore(node)),
+  final kind = _kindOf(node);
+  return runReported(
+    context,
+    'The $kind could not be moved to the bin',
+    () async {
+      await actions.delete(node);
+      if (messenger == null || !messenger.mounted) return;
+      messenger.showUndoable(
+        '“${displayTitle(node)}” is in the bin.',
+        reportedly(
+          messenger.context,
+          'The $kind could not be put back',
+          () => actions.restore(node),
+        ),
+      );
+    },
   );
 }
 

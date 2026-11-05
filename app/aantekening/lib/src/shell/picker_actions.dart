@@ -37,17 +37,7 @@ extension _Actions on _PickerState {
 
   Future<void> _rename() async {
     final node = _nodeAt(_column);
-    if (node == null) return;
-    final title = await promptForName(
-      context,
-      title: 'Rename',
-      hint: displayTitle(node),
-      initial: node.title,
-      action: 'Rename',
-    );
-    if (title != null) {
-      await ref.read(libraryActionsProvider).rename(node, title);
-    }
+    if (node != null) await renameNamed(context, ref, node, asking: 'Rename');
   }
 
   void _delete() {
@@ -64,9 +54,8 @@ extension _Actions on _PickerState {
 
   void _paste() {
     final node = _nodeAt(_column);
-    final actions = ref.read(libraryActionsProvider);
-    if (node != null && actions.canPaste(node)) {
-      unawaited(actions.paste(node));
+    if (node != null && ref.read(libraryActionsProvider).canPaste(node)) {
+      pasteOnto(context, ref, node)();
     }
   }
 
@@ -83,11 +72,7 @@ extension _Actions on _PickerState {
         .where((row) => !_beneath(row, moved));
     final beside = by > 0 ? to.firstOrNull : to.lastOrNull;
     if (beside == null) return;
-    unawaited(
-      ref
-          .read(libraryActionsProvider)
-          .arrange(moved, beside.node, above: by < 0),
-    );
+    arrangeReported(context, ref, moved, beside.node, above: by < 0);
   }
 
   /// What can be done to the row the cursor is on.
