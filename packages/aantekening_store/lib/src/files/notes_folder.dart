@@ -124,32 +124,13 @@ final class NotesFolder {
   String pathFor(EntityKind kind, String id) =>
       p.join(folderOf(kind).path, kind.fileName(id));
 
-  /// Every file of [kinds] in the folder, copies among them.
-  List<FolderEntry> entries([List<EntityKind> kinds = EntityKind.values]) {
-    final found = <FolderEntry>[];
-    for (final kind in kinds) {
-      final folder = folderOf(kind);
-      if (!folder.existsSync()) continue;
-      for (final entity in folder.listSync()) {
-        if (entity is! File) continue;
-        final name = p.basename(entity.path);
-        if (name.startsWith('.')) continue;
-        final id = _idOf(kind, name);
-        found.add(FolderEntry(kind, entity, id: id));
-      }
-    }
-    return found;
-  }
-
-  static final RegExp _ulid = RegExp(r'^[0-9A-HJKMNP-TV-Z]{26}$');
-
   /// The id a file named [name] is the file of, or null if it is named as
   /// no thing's file is.
   static String? _idOf(EntityKind kind, String name) {
     final suffix = kind.fileName('');
     if (!name.endsWith(suffix)) return null;
     final id = name.substring(0, name.length - suffix.length);
-    return _ulid.hasMatch(id) ? id : null;
+    return Ulid.isValid(id) ? id : null;
   }
 
   /// Whether [name] is a file this folder's kinds could hold at all.
@@ -238,29 +219,6 @@ final class NotesFolder {
     File(p.join(folderOf(listed.kind).path, listed.name)),
     id: _idOf(listed.kind, listed.name),
   );
-
-  /// Removes files left from writes a crash interrupted, older than
-  /// [age]: the file they were for still holds what it held before.
-  void removeLeftovers({Duration age = const Duration(hours: 1)}) {
-    final before = DateTime.now().subtract(age);
-    for (final kind in EntityKind.values) {
-      final folder = folderOf(kind);
-      if (!folder.existsSync()) continue;
-      for (final entity in folder.listSync()) {
-        final name = p.basename(entity.path);
-        if (entity is File &&
-            name.startsWith('.') &&
-            name.endsWith('.tmp') &&
-            entity.statSync().modified.isBefore(before)) {
-          try {
-            entity.deleteSync();
-          } on FileSystemException {
-            // In use, perhaps; it goes another time.
-          }
-        }
-      }
-    }
-  }
 
   /// Reads [file] whole, or null if it cannot be read now.
   static Uint8List? read(File file) {

@@ -55,11 +55,12 @@ abstract final class Ulid {
     return out.toString();
   }
 
-  /// Returns whether [id] is a syntactically valid ULID.
+  /// Whether [id] is written as [generate] writes one: [length] of the
+  /// alphabet's characters, in capitals.
   static bool isValid(String id) {
     if (id.length != length) return false;
     for (var i = 0; i < length; i++) {
-      if (!_alphabet.contains(id[i].toUpperCase())) return false;
+      if (!_alphabet.contains(id[i])) return false;
     }
     return true;
   }

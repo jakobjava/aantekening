@@ -21,6 +21,11 @@ void main() {
         isFalse,
         reason: 'U is not in the alphabet',
       );
+      expect(
+        Ulid.isValid(Ulid.generate().toLowerCase()),
+        isFalse,
+        reason: 'one is written in capitals',
+      );
     });
   });
 }

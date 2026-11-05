@@ -329,13 +329,10 @@ class PageDocument {
   /// Decodes a page document.
   ///
   /// Unknown element types are skipped rather than treated as corruption, so a
-  /// page written by a newer build still opens here.
+  /// page written by a newer build still opens here: whatever its
+  /// `formatVersion`, what this build understands of it is read, as a hard
+  /// failure would lock the user out of their own notes.
   factory PageDocument.fromJson(Map<String, Object?> json) {
-    final formatVersion = readInt(json, 'formatVersion', 1);
-    if (formatVersion > currentFormatVersion) {
-      // Forward compatibility is best-effort: read what this build understands.
-      // A hard failure here would lock the user out of their own notes.
-    }
     final elements = <NoteElement>[];
     for (final raw in readObjectList(json, 'elements')) {
       final element = NoteElement.fromJson(raw);
