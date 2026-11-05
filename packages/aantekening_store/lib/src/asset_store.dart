@@ -250,22 +250,9 @@ class AssetStore {
 
   static final RegExp _digest = RegExp(r'^[0-9a-f]{64}$');
 
-  /// Guesses a media type from a file extension.
-  ///
-  /// Only the formats the canvas can actually display are recognised; anything
-  /// else is stored as opaque bytes.
-  static String mimeTypeForPath(String path) {
-    return switch (p.extension(path).toLowerCase()) {
-      '.png' => 'image/png',
-      '.jpg' || '.jpeg' => 'image/jpeg',
-      '.gif' => 'image/gif',
-      '.webp' => 'image/webp',
-      '.bmp' => 'image/bmp',
-      '.svg' => 'image/svg+xml',
-      '.pdf' => 'application/pdf',
-      _ => 'application/octet-stream',
-    };
-  }
+  /// Guesses a media type from a file extension, as every way into the
+  /// notes does ([mimeTypeOfName]).
+  static String mimeTypeForPath(String path) => mimeTypeOfName(path);
 
   /// The asset a row of the assets table describes.
   static AssetRef assetOf(Row row) => AssetRef(

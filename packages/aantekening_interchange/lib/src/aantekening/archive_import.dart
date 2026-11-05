@@ -233,7 +233,7 @@ final class AantekeningImporter implements NotesImporter {
   /// A page file's [bytes] ungzipped, as [EntityFile.decode] would — but
   /// to a limit — or as they are if they are not gzipped, or damaged.
   static Uint8List _ungzip(Uint8List bytes) {
-    if (bytes.length < 3 || bytes[0] != 0x1F || bytes[1] != 0x8B) {
+    if (!isGzipped(bytes)) {
       return bytes;
     }
     try {

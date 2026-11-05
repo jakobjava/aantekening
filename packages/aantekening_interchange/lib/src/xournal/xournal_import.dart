@@ -131,7 +131,7 @@ final class _Reader {
     final XmlDocument xml;
     try {
       final bytes = file.readAsBytesSync();
-      final text = bytes.length > 2 && bytes[0] == 0x1F && bytes[1] == 0x8B
+      final text = isGzipped(bytes)
           ? utf8.decode(
               inflateAtMost(bytes, inflatedLimit(bytes.length)),
               allowMalformed: true,

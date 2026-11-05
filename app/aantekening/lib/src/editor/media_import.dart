@@ -7,8 +7,6 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:aantekening_core/aantekening_core.dart';
-import 'package:aantekening_interchange/aantekening_interchange.dart'
-    show mimeTypeOf;
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as p;

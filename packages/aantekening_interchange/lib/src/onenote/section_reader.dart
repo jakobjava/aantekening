@@ -3,8 +3,9 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:aantekening_core/aantekening_core.dart' show mimeTypeOf;
+
 import '../bytes.dart';
-import '../importer.dart';
 import '../onestore/revision_store.dart';
 import 'model.dart';
 import 'properties.dart';

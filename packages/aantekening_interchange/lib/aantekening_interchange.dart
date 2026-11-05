@@ -2,6 +2,10 @@
 /// again.
 library;
 
+// What kind of file bytes are, which the importers tell as the store and
+// the app do.
+export 'package:aantekening_core/aantekening_core.dart' show mimeTypeOf;
+
 export 'src/aantekening/archive_import.dart';
 export 'src/bytes.dart' show FormatDamage;
 export 'src/cabinet/cabinet.dart';

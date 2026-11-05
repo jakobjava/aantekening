@@ -30,4 +30,5 @@ export 'src/tree/tree.dart';
 export 'src/util/fractional_index.dart';
 export 'src/util/geometry.dart';
 export 'src/util/json_read.dart';
+export 'src/util/media_types.dart';
 export 'src/util/ulid.dart';

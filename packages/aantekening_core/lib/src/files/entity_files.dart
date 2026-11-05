@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import '../document/page_document.dart';
 import '../tree/tree.dart';
 import '../util/json_read.dart';
+import '../util/media_types.dart';
 
 /// The name of the list of what an export holds, beside the files of the
 /// notes folder it is made of: written by the store's `ArchiveExport`,
@@ -127,9 +128,7 @@ sealed class EntityFile {
 
   /// The JSON [bytes] hold, gzipped or not.
   static Object? _read(Uint8List bytes) => jsonDecode(
-    bytes.length > 2 && bytes[0] == 0x1F && bytes[1] == 0x8B
-        ? utf8.decode(gzip.decode(bytes))
-        : utf8.decode(bytes),
+    isGzipped(bytes) ? utf8.decode(gzip.decode(bytes)) : utf8.decode(bytes),
   );
 
   /// The version of the files this build writes.
