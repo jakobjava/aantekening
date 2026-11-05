@@ -414,9 +414,18 @@ final Map<String, MathSymbol> mathSymbols = <String, MathSymbol>{
   'highlight': const MathSymbol(r'\colorbox', SymbolRole.highlightConstruct),
 };
 
-/// Every word the parser knows, longest first.
+/// Every word the parser knows, by its first letter, longest first.
 ///
 /// The lexer walks this order so that `varepsilon` is matched before
-/// `varepsilo`n would ever be split, and `arcsin` before `arc`.
-final List<String> knownWordsByLength = mathSymbols.keys.toList()
-  ..sort((a, b) => b.length.compareTo(a.length));
+/// `varepsilo`n would ever be split, and `arcsin` before `arc`; and only
+/// the words beginning with the letter it is at.
+final Map<String, List<String>> knownWordsByLetter = () {
+  final words = <String, List<String>>{};
+  for (final word in mathSymbols.keys) {
+    (words[word[0]] ??= <String>[]).add(word);
+  }
+  for (final list in words.values) {
+    list.sort((a, b) => b.length.compareTo(a.length));
+  }
+  return words;
+}();

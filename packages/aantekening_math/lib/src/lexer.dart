@@ -179,9 +179,7 @@ class MathLexer {
         _offset++;
         // A power of ten in brackets may have units after it, as a number
         // does: `6,63 * 10^(-34) J s`.
-        _unitsMayFollow =
-            char == ')' &&
-            RegExp(r'10\^\(-?\d+\)$').hasMatch(source.substring(0, _offset));
+        _unitsMayFollow = char == ')' && _closesPowerOfTen(start);
         return structural;
       }
 
@@ -217,16 +215,34 @@ class MathLexer {
         _offset++;
       }
     }
-    final before = source.substring(0, start);
     _unitsMayFollow =
-        before.isEmpty ||
-        RegExp(r'[\s(\[{,;=<>+\-*:|~]$').hasMatch(before) ||
-        RegExp(r'10\^-?$').hasMatch(before);
+        start == 0 ||
+        _beforeUnits.matchAsPrefix(source, start - 1) != null ||
+        _endsPowerOfTen(start) ||
+        (source[start - 1] == '-' && _endsPowerOfTen(start - 1));
     return Token(
       type: TokenType.number,
       lexeme: source.substring(start, _offset),
       offset: start,
     );
+  }
+
+  /// What a number with units after it may follow.
+  static final RegExp _beforeUnits = RegExp(r'[\s(\[{,;=<>+\-*:|~]');
+
+  /// Whether `10^` ends just before [end].
+  bool _endsPowerOfTen(int end) =>
+      end >= 3 && source.startsWith('10^', end - 3);
+
+  /// Whether the `)` at [close] closes a power of ten: `10^(-34)`.
+  bool _closesPowerOfTen(int close) {
+    var at = close - 1;
+    while (at >= 0 && _isDigit(source[at])) {
+      at--;
+    }
+    if (at == close - 1) return false;
+    if (at >= 0 && source[at] == '-') at--;
+    return at >= 0 && source[at] == '(' && _endsPowerOfTen(at);
   }
 
   Token _text() {
@@ -566,7 +582,7 @@ class MathLexer {
 
   Token _word() {
     final start = _offset;
-    for (final word in knownWordsByLength) {
+    for (final word in knownWordsByLetter[source[start]] ?? const <String>[]) {
       if (source.startsWith(word, start)) {
         _offset = start + word.length;
         return Token(

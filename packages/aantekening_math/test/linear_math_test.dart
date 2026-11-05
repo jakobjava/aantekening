@@ -723,6 +723,10 @@ void main() {
         'h = 6,63 * 10^(-34) J s',
         r'h = 6{,}63 \cdot 10^{-34} \,\mathrm{J\,s}',
       );
+      expectLatex(
+        'q = 1,6 * 10^-19 C',
+        r'q = 1{,}6 \cdot 10^{-19} \,\mathrm{C}',
+      );
     });
 
     test('are a letter alone only where nothing follows it to multiply', () {
