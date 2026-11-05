@@ -60,7 +60,7 @@ extension _Clipboard on TextBoxEditorState {
     }
     if (_formula != null) {
       _undoSteps.breakStep();
-      _replaceInFormula(clip.plain.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' '));
+      _replaceInFormula(_onOneLine(clip.plain));
       return;
     }
     // At a bare caret, things from the page are pasted as themselves, on the

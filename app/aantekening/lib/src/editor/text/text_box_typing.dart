@@ -106,7 +106,7 @@ extension _Typing on TextBoxEditorState {
   void _insertText(String text) {
     if (text.isEmpty) return;
     if (_formula != null) {
-      _replaceInFormula(text.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' '));
+      _replaceInFormula(_onOneLine(text));
       return;
     }
 

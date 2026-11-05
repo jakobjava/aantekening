@@ -771,3 +771,9 @@ extension _Formulas on TextBoxEditorState {
     return null;
   }
 }
+
+/// [text] as a formula's source takes it, on one line: each line break,
+/// and the space about it, one space.
+String _onOneLine(String text) => text.replaceAll(_lineBreaks, ' ');
+
+final RegExp _lineBreaks = RegExp(r'\s*[\r\n]+\s*');

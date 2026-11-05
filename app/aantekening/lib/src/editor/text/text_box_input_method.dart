@@ -106,7 +106,7 @@ extension _InputMethod on TextBoxEditorState {
           RichPosition(caret.block, start + to),
         );
       });
-      _replaceInFormula(text.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' '));
+      _replaceInFormula(_onOneLine(text));
       return;
     }
     if (_blocks[caret.block].isEmbed) {

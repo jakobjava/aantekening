@@ -228,8 +228,12 @@ class PdfPageWords {
     return nearest;
   }
 
-  bool _inWord(int index) =>
-      RegExp(r"[\p{L}\p{N}_'’-]", unicode: true).hasMatch(text[index]);
+  bool _inWord(int index) => _wordCharacter.hasMatch(text[index]);
+
+  static final RegExp _wordCharacter = RegExp(
+    r"[\p{L}\p{N}_'’-]",
+    unicode: true,
+  );
 
   /// The lines [text] makes: a new one after each line break, and where
   /// the next character lies wholly below the one before it.
