@@ -27,6 +27,12 @@ class AboutSettings extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
+              'Free to use, change and share, under the MIT License or the '
+              'Apache License 2.0, whichever you choose.',
+              style: note,
+            ),
+            const SizedBox(height: 8),
+            Text(
               'The interface is set in IBM Plex Sans and IBM Plex Mono, '
               '© IBM Corp., under the SIL Open Font License 1.1.',
               style: note,

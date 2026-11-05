@@ -3,7 +3,8 @@
 # version and the sums. Built by hand, the build and the files it names
 # are put beside this file first:
 #
-#   aantekening-$pkgver-linux-x64.tar.gz   the bundle, in a folder aantekening
+#   aantekening-$pkgver-linux-x64.tar.gz   the bundle, in a folder aantekening,
+#                                          its licences beside the app
 #   dev.aantekening.aantekening.desktop    from packaging/linux
 #   aantekening.png                        from packaging/icon
 pkgname=aantekening
@@ -12,7 +13,7 @@ pkgrel=1
 pkgdesc='A powerful note application'
 arch=('x86_64')
 url='https://github.com/jakobjava/aantekening'
-license=('unknown')
+license=('MIT OR Apache-2.0')
 # The runner links Wayland's client library itself, for the trackpad's
 # gestures, as well as through GTK.
 depends=('gtk3' 'libsecret' 'libepoxy' 'fontconfig' 'glib2' 'gcc-libs' 'glibc'
@@ -32,4 +33,6 @@ package() {
     "$pkgdir/usr/share/applications/dev.aantekening.aantekening.desktop"
   install -Dm644 aantekening.png \
     "$pkgdir/usr/share/icons/hicolor/512x512/apps/dev.aantekening.aantekening.png"
+  install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" \
+    aantekening/LICENSE-MIT aantekening/LICENSE-APACHE
 }

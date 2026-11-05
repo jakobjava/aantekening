@@ -150,6 +150,11 @@ build/linux/x64/profile/bundle/aantekening
 
 ## Licences
 
+aantekening is under either the [MIT License](LICENSE-MIT) or the
+[Apache License 2.0](LICENSE-APACHE), whichever you choose; but for the
+files `aantekening_spell` ports from Hunspell, which keep Hunspell's licence
+(below). Anything you contribute is under both, as the app is.
+
 Built on Flutter and Dart (BSD-3), SQLite (public domain), `sqlite3.dart`,
 Riverpod, `pdfrx`, `archive` and `xml` (MIT), `flutter_math_fork`
 (MIT/Apache-2.0), PDFium (BSD-3/Apache-2.0), and `file_selector`, `http`,
