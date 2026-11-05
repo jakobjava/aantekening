@@ -25,17 +25,22 @@ abstract final class MediaImport {
   /// monitor would otherwise arrive wider than the whole page.
   static const double maxImageWidth = 800;
 
-  static const XTypeGroup _images = XTypeGroup(
+  /// The kinds of picture drawn on the page, by the endings of their
+  /// files.
+  static const Map<String, String> _pictures = <String, String>{
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'bmp': 'image/bmp',
+  };
+
+  static final XTypeGroup _images = XTypeGroup(
     label: 'Images',
-    extensions: <String>['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'],
-    mimeTypes: <String>[
-      'image/png',
-      'image/jpeg',
-      'image/gif',
-      'image/webp',
-      'image/bmp',
-    ],
-    uniformTypeIdentifiers: <String>['public.image'],
+    extensions: _pictures.keys.toList(),
+    mimeTypes: _pictures.values.toSet().toList(),
+    uniformTypeIdentifiers: const <String>['public.image'],
   );
 
   static const XTypeGroup _pdfs = XTypeGroup(
@@ -74,7 +79,7 @@ abstract final class MediaImport {
   ) async {
     final mimeType = AssetStore.mimeTypeForPath(file.path);
     if (mimeType == 'application/pdf') return _importPdf(store, file);
-    if (mimeType.startsWith('image/') && mimeType != 'image/svg+xml') {
+    if (isPicture(mimeType)) {
       // Read once, for the store and for the picture's size.
       final bytes = await file.readAsBytes();
       return <BlockEmbed>[
@@ -110,13 +115,7 @@ abstract final class MediaImport {
   }
 
   /// Whether a file of [mimeType] is a picture drawn on the page.
-  static bool isPicture(String mimeType) => const <String>{
-    'image/png',
-    'image/jpeg',
-    'image/gif',
-    'image/webp',
-    'image/bmp',
-  }.contains(mimeType);
+  static bool isPicture(String mimeType) => _pictures.containsValue(mimeType);
 
   static Future<BlockEmbed> _importImage(
     AantekeningStore store,
