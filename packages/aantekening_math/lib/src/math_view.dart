@@ -17,7 +17,7 @@ import 'tikz/tikz_view.dart';
 /// Typesetting happens natively through flutter_math_fork rather than in a web
 /// view: it keeps formulas as fast to paint as any other element on the canvas,
 /// and it works identically on Linux, Windows and Android.
-class MathView extends StatelessWidget {
+class MathView extends StatefulWidget {
   const MathView({
     required this.source,
     required this.mode,
@@ -27,7 +27,6 @@ class MathView extends StatelessWidget {
     this.packages = false,
   });
 
-  /// Renders the formula held by [element].
   /// The formula, in whichever syntax [mode] names.
   final String source;
 
@@ -69,14 +68,33 @@ class MathView extends StatelessWidget {
   }) {
     final ready = prepared(latex, preamble: preamble, packages: packages);
     if (TikzPicture.holds(ready)) return TikzPicture.problemIn(ready);
-    return switch (_parse(ready)) {
-      (_, final error?) => error.message,
-      _ => null,
-    };
+    final read = _parse(ready);
+    // Asked as a formula is typed, before the formula is typeset as it now
+    // stands: what was read is kept for the view that typesets it next.
+    _unshown.remove(ready);
+    if (_unshown.length >= _keptUnshown) _unshown.remove(_unshown.keys.first);
+    _unshown[ready] = read;
+    return read.$2?.message;
   }
+
+  /// Formulas read by [problemIn] and not yet typeset, by their prepared
+  /// LaTeX. A tree is given to one view only: the typesetter keeps what it
+  /// built from each node in the node, and two views showing one tree at
+  /// once would show one widget in two places.
+  static final Map<String, (SyntaxTree?, ParseException?)> _unshown =
+      <String, (SyntaxTree?, ParseException?)>{};
+
+  /// How many formulas [_unshown] keeps.
+  static const int _keptUnshown = 4;
+
+  /// How many formulas have been read by the typesetter.
+  @visibleForTesting
+  static int get reads => _reads;
+  static int _reads = 0;
 
   /// [latex] read by the typesetter, or why it cannot be.
   static (SyntaxTree?, ParseException?) _parse(String latex) {
+    _reads++;
     try {
       return (
         SyntaxTree(
@@ -95,45 +113,7 @@ class MathView extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    if (source.trim().isEmpty) {
-      return _Placeholder(style: textStyle);
-    }
-    final latex = prepared(
-      LinearMath.latexFor(mode, source),
-      preamble: MathPreamble.of(context),
-      packages: packages,
-    );
-    final style = textStyle ?? DefaultTextStyle.of(context).style;
-    if (TikzPicture.holds(latex)) {
-      try {
-        return TikzView(picture: TikzPicture.read(latex), style: style);
-      } on FormatException catch (e) {
-        return _MathError(message: e.message, source: source, style: style);
-      }
-    }
-    final (tree, error) = _parse(latex);
-    // One node for a screen reader, its source, rather than one for each
-    // of its glyphs: a page of formulas had thousands, worked out again as
-    // it scrolled.
-    return Semantics(
-      label: source,
-      excludeSemantics: true,
-      child: Math(
-        ast: tree,
-        parseError: error,
-        mathStyle: displayStyle ? MathStyle.display : MathStyle.text,
-        textStyle: style,
-        // A formula that TeX itself rejects still has to show something, or
-        // the page would appear to lose content while it is being edited.
-        onErrorFallback: (error) => _MathError(
-          message: error.messageWithType,
-          source: source,
-          style: textStyle,
-        ),
-      ),
-    );
-  }
+  State<MathView> createState() => _MathViewState();
 
   /// [node] with each highlight typeset as it should be: its colour painted,
   /// and what it marks at the size it would have without it.
@@ -190,6 +170,101 @@ class MathView extends StatelessWidget {
         )
         as T;
   }
+}
+
+class _MathViewState extends State<MathView> {
+  /// The formula as it was last typeset, and what it was typeset from.
+  /// Built again from the same, as an answer being written builds every
+  /// formula above it with each word, it is not read again.
+  _Typeset? _last;
+
+  _Typeset _typeset(LatexPreamble? preamble) {
+    final last = _last;
+    if (last != null &&
+        last.source == widget.source &&
+        last.mode == widget.mode &&
+        last.packages == widget.packages &&
+        identical(last.preamble, preamble)) {
+      return last;
+    }
+    final latex = MathView.prepared(
+      LinearMath.latexFor(widget.mode, widget.source),
+      preamble: preamble,
+      packages: widget.packages,
+    );
+    final kept = last != null && last.latex == latex ? last.read : null;
+    return _last = _Typeset(
+      source: widget.source,
+      mode: widget.mode,
+      packages: widget.packages,
+      preamble: preamble,
+      latex: latex,
+      read: TikzPicture.holds(latex)
+          ? null
+          : kept ?? MathView._unshown.remove(latex) ?? MathView._parse(latex),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final source = widget.source;
+    final textStyle = widget.textStyle;
+    if (source.trim().isEmpty) {
+      return _Placeholder(style: textStyle);
+    }
+    final typeset = _typeset(MathPreamble.of(context));
+    final style = textStyle ?? DefaultTextStyle.of(context).style;
+    final read = typeset.read;
+    if (read == null) {
+      try {
+        return TikzView(picture: TikzPicture.read(typeset.latex), style: style);
+      } on FormatException catch (e) {
+        return _MathError(message: e.message, source: source, style: style);
+      }
+    }
+    final (tree, error) = read;
+    // One node for a screen reader, its source, rather than one for each
+    // of its glyphs: a page of formulas had thousands, worked out again as
+    // it scrolled.
+    return Semantics(
+      label: source,
+      excludeSemantics: true,
+      child: Math(
+        ast: tree,
+        parseError: error,
+        mathStyle: widget.displayStyle ? MathStyle.display : MathStyle.text,
+        textStyle: style,
+        // A formula that TeX itself rejects still has to show something, or
+        // the page would appear to lose content while it is being edited.
+        onErrorFallback: (error) => _MathError(
+          message: error.messageWithType,
+          source: source,
+          style: textStyle,
+        ),
+      ),
+    );
+  }
+}
+
+/// A formula as a view typeset it: what it was typeset from, the LaTeX
+/// that came to, and that LaTeX as the typesetter read it, or null for a
+/// TikZ picture.
+class _Typeset {
+  const _Typeset({
+    required this.source,
+    required this.mode,
+    required this.packages,
+    required this.preamble,
+    required this.latex,
+    required this.read,
+  });
+
+  final String source;
+  final MathMode mode;
+  final bool packages;
+  final LatexPreamble? preamble;
+  final String latex;
+  final (SyntaxTree?, ParseException?)? read;
 }
 
 /// What every formula beneath it is typeset with: the commands and TikZ
