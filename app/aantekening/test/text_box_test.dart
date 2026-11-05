@@ -191,6 +191,45 @@ void main() {
     );
   });
 
+  testWidgets('a box is under the pointer on its lines of text, and beside '
+      'them not', (tester) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    await type(tester, 'a longer line first');
+    await press(tester, LogicalKeyboardKey.enter);
+    await type(tester, 'mid');
+    await press(tester, LogicalKeyboardKey.enter);
+    await type(tester, 'and a long line last');
+    await press(tester, LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    final placed = find.descendant(
+      of: find.byType(TextBoxEditor),
+      matching: find.byType(PlacedContent),
+    );
+    final content = tester.renderObject<RenderBox>(placed);
+    bool showsAt(Offset global) => tester
+        .widget<PlacedContent>(placed)
+        .showsAt(content.globalToLocal(global));
+    final lines = <Rect>[
+      for (final element
+          in find
+              .descendant(
+                of: find.byType(BlockParagraph),
+                matching: find.byType(RichText),
+              )
+              .evaluate())
+        tester.getRect(find.byElementPredicate((each) => each == element)),
+    ];
+    expect(lines, hasLength(3));
+
+    expect(
+      <bool>[for (final line in lines) showsAt(line.center)],
+      <bool>[true, true, true],
+    );
+    expect(showsAt(lines[1].centerRight + const Offset(30, 0)), isFalse);
+    expect(showsAt(lines[2].bottomCenter + const Offset(0, 12)), isFalse);
+  });
+
   testWidgets('a click on a box\'s text opens that box, though another '
       'box\'s paper lies over it', (tester) async {
     TextElement box(String id, String text, double x, int z) => TextElement(

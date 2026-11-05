@@ -82,15 +82,17 @@ extension _Layout on TextBoxEditorState {
   /// Whether [local], in the box's coordinates, lies on what it holds — a
   /// line's text, a list's mark, a picture or a table — rather than on the
   /// paper about it ([PlacedContent]).
+  ///
+  /// It is asked at every move of the mouse over the box: only the lines
+  /// level with the point are measured, and none below it.
   bool _showsAt(Offset local) {
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return true;
-    final global = box.localToGlobal(local);
+    Offset inside(RenderBox object) =>
+        object.globalToLocal(local, ancestor: box);
     bool within(RenderBox? object, {double inflate = 0}) =>
         object != null &&
-        (Offset.zero & object.size)
-            .inflate(inflate)
-            .contains(object.globalToLocal(global));
+        (Offset.zero & object.size).inflate(inflate).contains(inside(object));
     for (final table in TextTables.tablesIn(_blocks)) {
       if (within(_tableBox(table))) return true;
     }
@@ -102,7 +104,15 @@ extension _Layout on TextBoxEditorState {
       }
       final paragraph = _paragraph(i);
       if (paragraph == null) continue;
-      final at = paragraph.globalToLocal(global);
+      final at = inside(paragraph);
+      // Its lines lie within its height, as tall as the tallest on each;
+      // and the paragraphs after one below the point, but for the lines of
+      // a table's cells, which lie side by side, are lower still.
+      if (at.dy < -_reach) {
+        if (block.inTable) continue;
+        break;
+      }
+      if (at.dy > paragraph.size.height + _reach) continue;
       final marked = switch (block.kind) {
         TextBlockKind.bulleted ||
         TextBlockKind.numbered ||
