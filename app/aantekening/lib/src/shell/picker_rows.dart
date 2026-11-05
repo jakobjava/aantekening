@@ -5,55 +5,67 @@ part of 'picker.dart';
 /// move it.
 extension _Rows on _PickerState {
   /// [tree]'s rows, those beneath folded ones left out.
-  List<_Row> _treeOf<T extends TreeNode>(Hierarchy<T>? tree) => tree == null
-      ? const <_Row>[]
-      : <_Row>[
-          for (final (:item, :place) in treeRows(
-            tree,
-            ref.watch(collapsedRowsProvider),
-          ))
-            (node: item, place: place),
-        ];
+  List<_Row> _treeOf(Hierarchy<TreeNode> tree, Set<String> collapsed) => <_Row>[
+    for (final (:item, :place) in treeRows(tree, collapsed))
+      (node: item, place: place),
+  ];
 
-  List<_Row> _rowsOf(_Column column) {
-    switch (column) {
-      case _Column.notebooks:
-        return <_Row>[
-          for (final notebook
-              in ref.watch(notebooksProvider).value ?? const <Notebook>[])
-            (node: notebook, place: TreePlace(id: notebook.id)),
-        ];
-      case _Column.sections:
-        final notebook = _cursorOf(_Column.notebooks);
-        return notebook == null
-            ? const <_Row>[]
-            : _treeOf(ref.watch(sectionTreeProvider(notebook)).value);
-      case _Column.pages:
-        final section = _cursorOf(_Column.sections);
-        return section == null
-            ? const <_Row>[]
-            : _treeOf(ref.watch(pageTreeProvider(section)).value);
-    }
-  }
-
-  String? _wanted(_Column column) => switch (column) {
-    _Column.notebooks => _notebook,
-    _Column.sections => _section,
-    _Column.pages => _page,
-  };
+  List<_Row> _rowsOf(_Column column) => _listing(column).rows;
 
   /// The id the cursor is on in [column]: the one it was put on, if it is
   /// there, else the first.
-  String? _cursorOf(_Column column) {
-    final rows = _rowsOf(column);
-    final wanted = _wanted(column);
-    if (rows.any((row) => row.node.id == wanted)) return wanted;
-    return rows.firstOrNull?.node.id;
-  }
+  String? _cursorOf(_Column column) => _listing(column).node?.id;
 
-  TreeNode? _nodeAt(_Column column) {
-    final id = _cursorOf(column);
-    return _rowsOf(column).where((row) => row.node.id == id).firstOrNull?.node;
+  TreeNode? _nodeAt(_Column column) => _listing(column).node;
+
+  /// [column] as it is listed now. Its rows are worked out again only once
+  /// what they are listed from has changed — the notebooks, or the tree of
+  /// the notebook or section the column before has the cursor on, and the
+  /// rows folded — and where the cursor is once it is put elsewhere.
+  _Listing _listing(_Column column) {
+    final Object? from = switch (column) {
+      _Column.notebooks => ref.watch(notebooksProvider).value,
+      _Column.sections => switch (_cursorOf(_Column.notebooks)) {
+        final notebook? => ref.watch(sectionTreeProvider(notebook)).value,
+        null => null,
+      },
+      _Column.pages => switch (_cursorOf(_Column.sections)) {
+        final section? => ref.watch(pageTreeProvider(section)).value,
+        null => null,
+      },
+    };
+    final collapsed = ref.watch(collapsedRowsProvider);
+    final wanted = switch (column) {
+      _Column.notebooks => _notebook,
+      _Column.sections => _section,
+      _Column.pages => _page,
+    };
+    final kept = _listed[column];
+    final same =
+        kept != null &&
+        identical(kept.from, from) &&
+        identical(kept.collapsed, collapsed);
+    if (same && kept.wanted == wanted) return kept;
+    final rows = same
+        ? kept.rows
+        : switch (from) {
+            final List<Notebook> notebooks => <_Row>[
+              for (final notebook in notebooks)
+                (node: notebook, place: TreePlace(id: notebook.id)),
+            ],
+            final Hierarchy<TreeNode> tree => _treeOf(tree, collapsed),
+            _ => const <_Row>[],
+          };
+    final at =
+        rows.where((row) => row.node.id == wanted).firstOrNull ??
+        rows.firstOrNull;
+    return _listed[column] = (
+      from: from,
+      collapsed: collapsed,
+      wanted: wanted,
+      rows: rows,
+      node: at?.node,
+    );
   }
 
   void _put(_Column column, String? id) => _update(() {

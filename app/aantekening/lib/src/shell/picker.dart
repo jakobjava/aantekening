@@ -102,6 +102,17 @@ enum _Column {
 /// A row in a column: what it is, and where it stands in its tree.
 typedef _Row = ({TreeNode node, TreePlace place});
 
+/// A column's rows and what the cursor is on there, with what they were
+/// worked out from: the list or tree of them, the rows folded, and the id
+/// the cursor was put on.
+typedef _Listing = ({
+  Object? from,
+  Set<String> collapsed,
+  String? wanted,
+  List<_Row> rows,
+  TreeNode? node,
+});
+
 /// The picker itself: its views named along the top, and the one showing
 /// beneath — the columns, or the graph.
 class Picker extends ConsumerStatefulWidget {
@@ -135,6 +146,10 @@ class _PickerState extends ConsumerState<Picker> {
   String? _notebook;
   String? _section;
   String? _page;
+
+  /// Each column as it was last listed, kept until what it is listed from
+  /// changes, so the keys and a build list each once.
+  final Map<_Column, _Listing> _listed = <_Column, _Listing>{};
 
   bool _attached = false;
 
