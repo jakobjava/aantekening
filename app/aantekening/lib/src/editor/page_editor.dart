@@ -431,6 +431,12 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       ..placeholders = (() => _placed)
       ..passesOver = _onlyCaret
       ..addListener(_onCanvasChanged);
+    // How far the ink trails the pen, as the pen's settings have it.
+    ref.listenManual(
+      penPreferencesProvider,
+      (_, pen) => _controller.inkSmoothing = pen.smoothing.pixels,
+      fireImmediately: true,
+    );
     _stopTracingView = traceViewOf(_controller);
     _textController.formulaField.addListener(_onFormulaChanged);
     // The syntax formulas are typed in is the person's preference, which a
@@ -727,7 +733,6 @@ class _PageEditorState extends ConsumerState<PageEditor> {
 
   Widget _canvas(String pageId, SearchTerms? highlight) {
     final pen = ref.watch(penPreferencesProvider);
-    _controller.inkSmoothing = pen.smoothing.pixels;
     return CallbackShortcuts(
       bindings: _shortcuts(ref.watch(shortcutsProvider)),
       child: Focus(
