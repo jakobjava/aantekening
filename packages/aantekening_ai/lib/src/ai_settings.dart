@@ -157,13 +157,7 @@ class ProviderConfig {
 
   /// Whether the notes stay on this machine: a runtime on it, or on the
   /// loopback address whatever it is.
-  bool get local {
-    final host = Uri.tryParse(baseUrl)?.host ?? '';
-    return preset.local ||
-        host == 'localhost' ||
-        host == '127.0.0.1' ||
-        host == '::1';
-  }
+  bool get local => preset.local || isOnThisMachine(baseUrl);
 
   /// How many tokens a model on an OpenAI-compatible server is taken to
   /// have where neither the person nor the server says: runtimes on this

@@ -325,6 +325,33 @@ class Usage {
   );
 }
 
+/// Whether [url] is on this machine, however it is written: `localhost` or
+/// a name under it, a loopback address of either kind — `127.0.0.1`,
+/// `[::1]` — or `0.0.0.0`, which reaches this machine too.
+bool isOnThisMachine(String url) {
+  final host = (Uri.tryParse(url)?.host ?? '').toLowerCase();
+  if (host == 'localhost' || host.endsWith('.localhost')) return true;
+  List<int>? address(List<int> Function(String) parse) {
+    try {
+      return parse(host);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  if (address(Uri.parseIPv4Address) case final ip?) {
+    return ip[0] == 127 || ip.every((byte) => byte == 0);
+  }
+  if (address(Uri.parseIPv6Address) case final ip?) {
+    bool zero(int from, int to) => ip.sublist(from, to).every((b) => b == 0);
+    // `::1`, `::`, or a loopback address of the first kind written in the
+    // second: `::ffff:127.0.0.1`.
+    return zero(0, 15) && ip[15] <= 1 ||
+        zero(0, 10) && ip[10] == 0xff && ip[11] == 0xff && ip[12] == 127;
+  }
+  return false;
+}
+
 /// A provider failing: unreachable, refusing the key, overloaded.
 class AiException implements Exception {
   const AiException(

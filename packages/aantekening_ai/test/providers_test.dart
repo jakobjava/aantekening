@@ -1553,6 +1553,31 @@ void main() {
     });
   });
 
+  test('a server on this machine is known however it is written', () {
+    for (final url in <String>[
+      'http://localhost:11434',
+      'http://LOCALHOST:1234/v1',
+      'http://ollama.localhost/v1',
+      'http://127.0.0.1:8080/v1',
+      'http://127.1.2.3/v1',
+      'http://0.0.0.0:8000',
+      'http://[::1]:8000/v1',
+      'http://[0:0:0:0:0:0:0:1]/v1',
+      'http://[::ffff:127.0.0.1]/v1',
+    ]) {
+      expect(isOnThisMachine(url), isTrue, reason: url);
+    }
+    for (final url in <String>[
+      'https://api.openai.com/v1',
+      'http://192.168.1.20:11434',
+      'http://localhost.example.com/v1',
+      'http://[2001:db8::1]/v1',
+      'not a url',
+    ]) {
+      expect(isOnThisMachine(url), isFalse, reason: url);
+    }
+  });
+
   group('think tags', () {
     test('leave an answer without them as it is', () {
       final tags = ThinkTags();

@@ -10,7 +10,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
-import 'provider.dart' show AiException;
+import 'provider.dart' show AiException, isOnThisMachine;
 
 /// The kinds of speech API a voice provider speaks.
 enum SpeechKind {
@@ -182,13 +182,7 @@ class VoiceConfig {
   SpeechKind get kind => preset.kind;
 
   /// Whether what is spoken stays on this machine.
-  bool get local {
-    final host = Uri.tryParse(baseUrl)?.host ?? '';
-    return preset.local ||
-        host == 'localhost' ||
-        host == '127.0.0.1' ||
-        host == '::1';
-  }
+  bool get local => preset.local || isOnThisMachine(baseUrl);
 
   /// The voice the [index]th speaker of a podcast gets where they were
   /// given none.
