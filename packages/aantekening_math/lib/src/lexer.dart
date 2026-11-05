@@ -1,6 +1,8 @@
 /// Turns linear math input into a token stream.
 library;
 
+import 'package:aantekening_core/aantekening_core.dart' show LatexSource;
+
 import 'symbols.dart';
 import 'units.dart';
 
@@ -426,7 +428,7 @@ class MathLexer {
       if (next >= source.length) break;
       final open = source[next];
       if (open != '{' && open != '[') break;
-      _offset = _closing(next, open, open == '{' ? '}' : ']');
+      _offset = _closing(next);
       if (open == '{') left--;
     }
     return _rawFrom(start);
@@ -447,27 +449,11 @@ class MathLexer {
       return _rawFrom(start);
     }
     final name = source.substring(open + 1, close);
-    final begin = '\\begin{$name}';
-    final end = '\\end{$name}';
-    var depth = 1;
-    var at = close + 1;
-    while (depth > 0) {
-      final nextEnd = source.indexOf(end, at);
-      if (nextEnd < 0) {
-        diagnostics.add(MathDiagnostic(start, 'Missing "$end"'));
-        _offset = source.length;
-        return _rawFrom(start);
-      }
-      final nextBegin = source.indexOf(begin, at);
-      if (nextBegin >= 0 && nextBegin < nextEnd) {
-        depth++;
-        at = nextBegin + begin.length;
-      } else {
-        depth--;
-        at = nextEnd + end.length;
-      }
+    final end = LatexSource.environmentEnd(source, close + 1, name);
+    if (end == null) {
+      diagnostics.add(MathDiagnostic(start, 'Missing "\\end{$name}"'));
     }
-    _offset = at;
+    _offset = end ?? source.length;
     return _rawFrom(start);
   }
 
@@ -493,22 +479,16 @@ class MathLexer {
     return _rawFrom(start);
   }
 
-  /// Where the group opened by [open] at [from] closes, groups within it of
-  /// the same kind counted and escaped characters skipped: just past its
-  /// closing [close], or the end of the source.
-  int _closing(int from, String open, String close) {
-    var depth = 0;
-    for (var i = from; i < source.length; i++) {
-      final char = source[i];
-      if (char == r'\') {
-        i++;
-      } else if (char == open) {
-        depth++;
-      } else if (char == close && --depth == 0) {
-        return i + 1;
-      }
-    }
-    diagnostics.add(MathDiagnostic(from, 'Missing "$close"'));
+  /// Just past where the group or options opening at [from] close
+  /// ([LatexSource.closingBrace], [LatexSource.closingBracket]), or the end
+  /// of the source.
+  int _closing(int from) {
+    final brace = source[from] == '{';
+    final close = brace
+        ? LatexSource.closedBrace(source, from)
+        : LatexSource.closedBracket(source, from);
+    if (close != null) return close;
+    diagnostics.add(MathDiagnostic(from, 'Missing "${brace ? '}' : ']'}"'));
     return source.length;
   }
 
@@ -650,9 +630,6 @@ class MathLexer {
 
   static bool _isWhitespace(String char) => char.trim().isEmpty;
 
-  static bool _isLetter(String char) {
-    if (char.isEmpty) return false;
-    final code = char.codeUnitAt(0);
-    return (code >= 0x41 && code <= 0x5A) || (code >= 0x61 && code <= 0x7A);
-  }
+  static bool _isLetter(String char) =>
+      char.isNotEmpty && LatexSource.isLetter(char.codeUnitAt(0));
 }

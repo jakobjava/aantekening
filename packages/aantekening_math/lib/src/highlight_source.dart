@@ -292,10 +292,8 @@ abstract final class HighlightSource {
     return symbol != null && symbol.role != SymbolRole.atom ? start : open;
   }
 
-  static bool _isLetter(String char) {
-    final code = char.codeUnitAt(0);
-    return (code >= 0x41 && code <= 0x5A) || (code >= 0x61 && code <= 0x7A);
-  }
+  static bool _isLetter(String char) =>
+      LatexSource.isLetter(char.codeUnitAt(0));
 
   /// Every complete highlight in [source], typed in [syntax], in order.
   static Iterable<HighlightSpan> all(String source, MathMode syntax) sync* {
@@ -303,7 +301,10 @@ abstract final class HighlightSource {
     for (final match in (latex ? _latex : _linear).allMatches(source)) {
       final bodyStart = match.end;
       final close = latex
-          ? _closingBrace(source, bodyStart)
+          ? switch (LatexSource.closedBrace(source, match.end - 2)) {
+              final closed? => closed - 1,
+              null => null,
+            }
           : _closingParen(source, bodyStart);
       if (close == null) continue;
       // LaTeX's mark ends `$}`, the linear syntax's `)`.
@@ -321,24 +322,6 @@ abstract final class HighlightSource {
             : int.parse(hex.substring(1), radix: 16),
       );
     }
-  }
-
-  /// Where the brace closing the group that [from] is inside is, or null
-  /// where it is never closed.
-  static int? _closingBrace(String source, int from) {
-    var depth = 0;
-    for (var i = from; i < source.length; i++) {
-      switch (source[i]) {
-        case r'\':
-          i++;
-        case '{':
-          depth++;
-        case '}':
-          if (depth == 0) return i;
-          depth--;
-      }
-    }
-    return null;
   }
 
   /// Where the bracket closing the one opened before [from] is, or null

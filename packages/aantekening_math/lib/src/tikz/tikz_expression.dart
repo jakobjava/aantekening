@@ -4,6 +4,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:aantekening_core/aantekening_core.dart' show LatexSource;
+
 /// A number worked out from TikZ source, and whether it was a length: given
 /// in units, and so in points, rather than a bare number to be scaled.
 typedef TikzValue = ({double value, bool length});
@@ -150,14 +152,12 @@ class _Reader {
   /// The run of letters starting at [index], if any.
   String? _wordAt(int index) {
     var end = index;
-    while (end < source.length && _isLetter(source.codeUnitAt(end))) {
+    while (end < source.length &&
+        LatexSource.isLetter(source.codeUnitAt(end))) {
       end++;
     }
     return end == index ? null : source.substring(index, end);
   }
-
-  static bool _isLetter(int unit) =>
-      (unit >= 0x41 && unit <= 0x5A) || (unit >= 0x61 && unit <= 0x7A);
 
   double _primary() {
     skipSpaces();

@@ -58,6 +58,9 @@ const List<String> _simpleExamples = <String>[
   'a mod n <-> b',
   'E = highlight(m c^2)',
   'highlight(#A8E6B0, 1/2) x^highlight(2)',
+  // A brace alone in quoted text, escaped in LaTeX, closes nothing.
+  '"{" x',
+  '"a}b" + 1',
 ];
 
 void main() {

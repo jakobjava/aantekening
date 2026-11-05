@@ -2,6 +2,8 @@
 /// can be edited in Simple syntax.
 library;
 
+import 'package:aantekening_core/aantekening_core.dart' show LatexSource;
+
 import 'ast.dart';
 import 'lexer.dart';
 import 'symbols.dart';
@@ -515,12 +517,9 @@ abstract final class LinearWriter {
   static bool _runTogether(String previous, String next) {
     final a = previous.codeUnitAt(previous.length - 1);
     final b = next.codeUnitAt(0);
-    if (_isLetter(a) && _isLetter(b)) return true;
+    if (LatexSource.isLetter(a) && LatexSource.isLetter(b)) return true;
     return _isDigit(a) && (_isDigit(b) || b == 0x2E);
   }
-
-  static bool _isLetter(int code) =>
-      (code >= 0x41 && code <= 0x5A) || (code >= 0x61 && code <= 0x7A);
 
   static bool _isDigit(int code) => code >= 0x30 && code <= 0x39;
 }

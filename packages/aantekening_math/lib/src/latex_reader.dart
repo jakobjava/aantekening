@@ -330,19 +330,9 @@ class LatexReader {
   String _bracedText() {
     _skipSpace();
     if (_atEnd || _char != '{') return '';
-    final start = ++_i;
-    var depth = 1;
-    while (!_atEnd) {
-      if (_char == '{') depth++;
-      if (_char == '}') {
-        depth--;
-        if (depth == 0) break;
-      }
-      _i++;
-    }
-    final text = source.substring(start, _i);
-    if (!_atEnd) _i++;
-    return text;
+    final open = _i;
+    _i = LatexSource.closingBrace(source, open);
+    return LatexSource.inside(source, open, _i);
   }
 
   /// The text of `\text{…}` as the plain text it sets, its escaped
@@ -568,24 +558,7 @@ class LatexReader {
     if (!gridEnvironments.contains(environment)) {
       // Up to the `\end` that closes it, those of environments of the same
       // name within it counted, as the linear syntax reads one.
-      final begin = '\\begin{$environment}';
-      final end = '\\end{$environment}';
-      var depth = 1;
-      while (depth > 0) {
-        final nextEnd = source.indexOf(end, _i);
-        if (nextEnd < 0) {
-          _i = source.length;
-          break;
-        }
-        final nextBegin = source.indexOf(begin, _i);
-        if (nextBegin >= 0 && nextBegin < nextEnd) {
-          depth++;
-          _i = nextBegin + begin.length;
-        } else {
-          depth--;
-          _i = nextEnd + end.length;
-        }
-      }
+      _i = LatexSource.environmentEnd(source, _i, environment) ?? source.length;
       return RawNode(source.substring(start, _i));
     }
     final rows = <List<MathNode>>[<MathNode>[]];
@@ -620,10 +593,8 @@ class LatexReader {
   static bool _isDigit(String char) =>
       char.codeUnitAt(0) >= 0x30 && char.codeUnitAt(0) <= 0x39;
 
-  static bool _isLetter(String char) {
-    final code = char.codeUnitAt(0);
-    return (code >= 0x41 && code <= 0x5A) || (code >= 0x61 && code <= 0x7A);
-  }
+  static bool _isLetter(String char) =>
+      LatexSource.isLetter(char.codeUnitAt(0));
 }
 
 /// Where a sequence being read ends, besides the end of the source and a

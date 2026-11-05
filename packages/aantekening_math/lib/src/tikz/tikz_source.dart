@@ -5,6 +5,8 @@ library;
 import 'dart:math' as math;
 import 'dart:ui' show Color;
 
+import 'package:aantekening_core/aantekening_core.dart' show LatexSource;
+
 import 'tikz_expression.dart';
 
 /// One option from a `[…]` list: its key, and its value if it has one.
@@ -55,7 +57,9 @@ class TikzScanner {
   bool takeWord(String word) {
     if (!sees(word)) return false;
     final end = at + word.length;
-    if (end < source.length && _isLetter(source.codeUnitAt(end))) return false;
+    if (end < source.length && LatexSource.isLetter(source.codeUnitAt(end))) {
+      return false;
+    }
     at = end;
     return true;
   }
@@ -101,9 +105,6 @@ class TikzScanner {
     final end = (at + 30).clamp(0, source.length);
     return source.substring(at, end).trim();
   }
-
-  static bool _isLetter(int unit) =>
-      (unit >= 0x41 && unit <= 0x5A) || (unit >= 0x61 && unit <= 0x7A);
 
   /// Where the [close] matching the [open] at [start] in [source] is, or -1.
   /// Braces inside are skipped whole.
