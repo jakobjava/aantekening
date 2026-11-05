@@ -155,55 +155,65 @@ Future<List<T>> _ordered<T extends TreeNode>(
   );
 }
 
+// The notebooks' sections, and the sections' pages, by id, are each kept a
+// while after nothing shows them, as pictures are (KeepAWhile), not for the
+// rest of the session: every notebook, section and page ever opened would
+// be otherwise.
+
 /// Every section of a notebook, at any depth, in their tree, each level in
 /// the order the sections are listed in.
-final sectionTreeProvider = FutureProvider.family<Hierarchy<Section>, String>((
-  ref,
-  notebookId,
-) async {
-  ref.watch(libraryRevisionProvider);
-  final order = ref.watch(listOrderProvider(OrderedList.sections));
-  final store = await ref.watch(storeProvider.future);
-  return Section.hierarchy(
-    await _ordered(
-      ref,
-      order,
-      await store.library.listAllSections(notebookId),
-      () => store.library.sectionChanges(notebookId),
-    ),
-  );
-});
+final sectionTreeProvider = FutureProvider.autoDispose
+    .family<Hierarchy<Section>, String>((ref, notebookId) async {
+      ref
+        ..keepAWhile()
+        ..watch(libraryRevisionProvider);
+      final order = ref.watch(listOrderProvider(OrderedList.sections));
+      final store = await ref.watch(storeProvider.future);
+      return Section.hierarchy(
+        await _ordered(
+          ref,
+          order,
+          await store.library.listAllSections(notebookId),
+          () => store.library.sectionChanges(notebookId),
+        ),
+      );
+    });
 
 /// One section.
-final sectionProvider = FutureProvider.family<Section?, String>((
+final sectionProvider = FutureProvider.autoDispose.family<Section?, String>((
   ref,
   sectionId,
 ) async {
-  ref.watch(libraryRevisionProvider);
+  ref
+    ..keepAWhile()
+    ..watch(libraryRevisionProvider);
   final store = await ref.watch(storeProvider.future);
   return store.library.findSection(sectionId);
 });
 
 /// The pages of a section, in their tree, each level in the order the
 /// pages are listed in.
-final pageTreeProvider = FutureProvider.family<Hierarchy<PageRef>, String>((
-  ref,
-  sectionId,
-) async {
-  ref
-    ..watch(libraryRevisionProvider)
-    ..watch(pageContentsRevisionProvider);
-  final order = ref.watch(listOrderProvider(OrderedList.pages));
-  final store = await ref.watch(storeProvider.future);
-  return PageRef.hierarchy(order.sort(await store.pages.listPages(sectionId)));
-});
+final pageTreeProvider = FutureProvider.autoDispose
+    .family<Hierarchy<PageRef>, String>((ref, sectionId) async {
+      ref
+        ..keepAWhile()
+        ..watch(libraryRevisionProvider)
+        ..watch(pageContentsRevisionProvider);
+      final order = ref.watch(listOrderProvider(OrderedList.pages));
+      final store = await ref.watch(storeProvider.future);
+      return PageRef.hierarchy(
+        order.sort(await store.pages.listPages(sectionId)),
+      );
+    });
 
 /// One page's metadata, its title and date among them.
-final pageProvider = FutureProvider.family<PageRef?, String>((
+final pageProvider = FutureProvider.autoDispose.family<PageRef?, String>((
   ref,
   pageId,
 ) async {
-  ref.watch(libraryRevisionProvider);
+  ref
+    ..keepAWhile()
+    ..watch(libraryRevisionProvider);
   final store = await ref.watch(storeProvider.future);
   return store.pages.findPage(pageId);
 });
