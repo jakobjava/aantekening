@@ -9,18 +9,27 @@ import '../shell/library_menu.dart';
 import 'visual_renderer.dart';
 
 /// Reads the workspace for the AI: what a notebook or section holds, pages
-/// taken apart, searches, and visuals drawn — each page read once for each
-/// version of it.
+/// taken apart, searches, and visuals drawn — each page taken apart once
+/// for each version of it.
 class WorkspaceReader implements NoteReader {
   WorkspaceReader(this.store) : _renderer = VisualRenderer(store);
 
   final AantekeningStore store;
   final VisualRenderer _renderer;
 
-  /// Pages read, with the version each was read at.
-  final Map<String, ({int revision, PageDocument document, PageDigest digest})>
-  _read =
-      <String, ({int revision, PageDocument document, PageDigest digest})>{};
+  /// Pages taken apart, with the version each was read at: their words
+  /// and what their visuals are, not their ink, so every page of a large
+  /// notebook asked about can be kept.
+  final Map<String, ({int revision, PageDigest digest})> _digests =
+      <String, ({int revision, PageDigest digest})>{};
+
+  /// The pages last read whole, to draw their visuals from, the latest
+  /// last: a few, as a page with its ink and pictures is large.
+  final Map<String, ({int revision, PageDocument document})> _documents =
+      <String, ({int revision, PageDocument document})>{};
+
+  /// How many pages are kept whole at most.
+  static const int documentsKept = 8;
 
   @override
   Future<ScopeInfo?> scope(NoteLink link) async {
@@ -61,13 +70,20 @@ class WorkspaceReader implements NoteReader {
     final sections = Section.hierarchy(
       await store.library.listAllSections(section.notebookId),
     );
-    return <String>[
-      ?notebook?.title,
-      for (final above in sections.ancestorsOf(id).toList().reversed)
-        ?sections[above]?.title,
-      section.title,
-    ];
+    return _pathIn(notebook?.title, sections, section);
   }
+
+  /// The path down to [section] of [sections], under [notebook].
+  static List<String> _pathIn(
+    String? notebook,
+    Hierarchy<Section> sections,
+    Section section,
+  ) => <String>[
+    ?notebook,
+    for (final above in sections.ancestorsOf(section.id).toList().reversed)
+      ?sections[above]?.title,
+    section.title,
+  ];
 
   @override
   Future<List<PageEntry>> pagesIn(NoteLink scope) async {
@@ -93,6 +109,7 @@ class WorkspaceReader implements NoteReader {
     String notebookId, {
     String? within,
   }) async {
+    final notebook = (await store.library.findNotebook(notebookId))?.title;
     final sections = Section.hierarchy(
       await store.library.listAllSections(notebookId),
     );
@@ -103,7 +120,8 @@ class WorkspaceReader implements NoteReader {
           !sections.isWithin(entry.id, within)) {
         continue;
       }
-      final path = await _sectionPath(entry.id);
+      // From the sections in hand, not asked for again for each.
+      final path = _pathIn(notebook, sections, entry.item);
       final pages = PageRef.hierarchy(await store.pages.listPages(entry.id));
       for (final page in pages.walk()) {
         out.add(await _entry(page.item, path));
@@ -119,32 +137,43 @@ class WorkspaceReader implements NoteReader {
     createdAt: DateTime.fromMillisecondsSinceEpoch(page.createdAt),
   );
 
-  /// Page [pageId] read and taken apart, or null if it is gone.
-  Future<({int revision, PageDocument document, PageDigest digest})?> _page(
-    String pageId,
-  ) async {
+  /// Page [pageId] as it is now, or null if it is gone — and forgotten.
+  Future<PageRef?> _live(String pageId) async {
     final page = await store.pages.findPage(pageId);
-    if (page == null || page.isDeleted) return null;
-    final kept = _read[pageId];
-    if (kept != null && kept.revision == page.revision) return kept;
-    final document =
-        await store.pages.loadDocument(pageId) ??
-        PageDocument.empty(id: pageId);
-    final read = (
-      revision: page.revision,
-      document: document,
-      digest: PageDigest.of(
-        document,
-        title: displayTitle(page),
-        createdAt: DateTime.fromMillisecondsSinceEpoch(page.createdAt),
-      ),
-    );
-    return _read[pageId] = read;
+    if (page != null && !page.isDeleted) return page;
+    _digests.remove(pageId);
+    _documents.remove(pageId);
+    return null;
+  }
+
+  /// [page] read whole, at its version now.
+  Future<PageDocument> _document(PageRef page) async {
+    final kept = _documents.remove(page.id);
+    final document = kept != null && kept.revision == page.revision
+        ? kept.document
+        : await store.pages.loadDocument(page.id) ??
+              PageDocument.empty(id: page.id);
+    _documents[page.id] = (revision: page.revision, document: document);
+    while (_documents.length > documentsKept) {
+      _documents.remove(_documents.keys.first);
+    }
+    return document;
   }
 
   @override
-  Future<PageDigest?> digest(String pageId) async =>
-      (await _page(pageId))?.digest;
+  Future<PageDigest?> digest(String pageId) async {
+    final page = await _live(pageId);
+    if (page == null) return null;
+    final kept = _digests[pageId];
+    if (kept != null && kept.revision == page.revision) return kept.digest;
+    final digest = PageDigest.of(
+      await _document(page),
+      title: displayTitle(page),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(page.createdAt),
+    );
+    _digests[pageId] = (revision: page.revision, digest: digest);
+    return digest;
+  }
 
   @override
   Future<List<String>> searchPages(
@@ -169,8 +198,12 @@ class WorkspaceReader implements NoteReader {
 
   @override
   Future<ImagePart?> render(String pageId, DigestVisual visual) async {
-    final page = await _page(pageId);
+    final page = await _live(pageId);
     if (page == null) return null;
-    return _renderer.render(page.document, visual, revision: page.revision);
+    return _renderer.render(
+      await _document(page),
+      visual,
+      revision: page.revision,
+    );
   }
 }
