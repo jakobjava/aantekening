@@ -78,8 +78,7 @@ class SmallButton extends StatelessWidget {
       ),
       child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
     );
-    final tooltip = this.tooltip;
-    return tooltip == null ? button : Tooltip(message: tooltip, child: button);
+    return withTooltip(tooltip, button);
   }
 }
 
@@ -149,6 +148,38 @@ class SmallCaps extends StatelessWidget {
       letterSpacing: 0.9,
       fontWeight: FontWeight.w600,
       color: color ?? context.tones.muted,
+    ),
+  );
+}
+
+/// [child] with [tooltip] shown over it, if there is one.
+Widget withTooltip(String? tooltip, Widget child) =>
+    tooltip == null ? child : Tooltip(message: tooltip, child: child);
+
+/// The keys a pane answers to, along its foot: [children] across a strip
+/// with a line above it.
+class KeyStrip extends StatelessWidget {
+  const KeyStrip({
+    required this.children,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+    this.spacing = 16,
+    this.runSpacing = 0,
+    super.key,
+  });
+
+  final List<Widget> children;
+  final EdgeInsets padding;
+  final double spacing;
+  final double runSpacing;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      border: Border(top: BorderSide(color: context.tones.glassRim)),
+    ),
+    child: Padding(
+      padding: padding,
+      child: Wrap(spacing: spacing, runSpacing: runSpacing, children: children),
     ),
   );
 }
@@ -407,8 +438,7 @@ class _Choice extends StatelessWidget {
         ),
       ),
     );
-    final tooltip = this.tooltip;
-    return tooltip == null ? choice : Tooltip(message: tooltip, child: choice);
+    return withTooltip(tooltip, choice);
   }
 }
 
@@ -1031,8 +1061,7 @@ class PillButton extends StatelessWidget {
         ],
       ),
     );
-    final tooltip = this.tooltip;
-    return tooltip == null ? button : Tooltip(message: tooltip, child: button);
+    return withTooltip(tooltip, button);
   }
 }
 

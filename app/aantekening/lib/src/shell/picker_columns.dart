@@ -369,36 +369,29 @@ class _Footer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tones = context.tones;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: tones.glassRim)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 7),
-        child: Wrap(
-          spacing: 14,
-          runSpacing: 4,
-          children: <Widget>[
-            for (final (key, called) in _most)
-              if (layer.actionFor(key) case final action?)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    KeyCap(key),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        called ?? action.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: tones.muted),
-                      ),
-                    ),
-                  ],
+    return KeyStrip(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 7),
+      spacing: 14,
+      runSpacing: 4,
+      children: <Widget>[
+        for (final (key, called) in _most)
+          if (layer.actionFor(key) case final action?)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                KeyCap(key),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    called ?? action.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: tones.muted),
+                  ),
                 ),
-          ],
-        ),
-      ),
+              ],
+            ),
+      ],
     );
   }
 }

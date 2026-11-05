@@ -318,16 +318,6 @@ class _Footer extends StatelessWidget {
   final List<String> keys;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      border: Border(top: BorderSide(color: context.tones.glassRim)),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-      child: Wrap(
-        spacing: 16,
-        children: <Widget>[for (final key in keys) KeyHint(key)],
-      ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      KeyStrip(children: <Widget>[for (final key in keys) KeyHint(key)]);
 }
