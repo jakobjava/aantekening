@@ -500,8 +500,9 @@ class PageRepository {
   /// — as the file has it, re-indexed for search. Pictures it shows that
   /// are stored here under another name already are shown by that name.
   ///
-  /// Synchronous, so that it can be part of a larger transaction.
-  void putPage(PageFile file) {
+  /// Synchronous, so that it can be part of a larger transaction. [text],
+  /// if given, is the text of its contents, already taken from them.
+  void putPage(PageFile file, {String? text}) {
     _db.transaction(() {
       final renamed = <String, String>{};
       for (final asset in file.assets) {
@@ -568,7 +569,7 @@ class PageRepository {
       );
       _writeBody(page.id, document);
       // In the bin or not, as [deletePage] has it: search passes over it.
-      _reindex(page.id, page.title, document.extractSearchText());
+      _reindex(page.id, page.title, text ?? document.extractSearchText());
       _syncAssets(page.id, document.referencedAssetIds);
       _db.run('DELETE FROM page_tags WHERE page_id = ?', <Object?>[page.id]);
       for (final name in file.tags) {

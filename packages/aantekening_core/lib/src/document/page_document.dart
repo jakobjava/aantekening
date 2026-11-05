@@ -242,11 +242,14 @@ class PageDocument {
       List<Object?>() => <Object?>[for (final item in value) rename(item)],
       _ => value,
     };
-    // Handwriting, most of a page by weight, names no asset.
+    // Only what names one of [ids] is written out and read again:
+    // handwriting, most of a page by weight, names no asset at all.
+    bool names(NoteElement element) => element.assetIds.any(ids.containsKey);
+    if (!elements.any(names)) return this;
     return copyWith(
       elements: <NoteElement>[
         for (final element in elements)
-          if (element is InkElement)
+          if (!names(element))
             element
           else
             ?NoteElement.fromJson(

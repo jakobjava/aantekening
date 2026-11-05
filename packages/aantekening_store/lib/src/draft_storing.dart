@@ -171,6 +171,7 @@ final class _Writer {
         canvas: source.canvas,
         elements: source.elements,
       );
+      final text = document.extractSearchText();
       _storing._pages.putPage(
         PageFile(
           page: PageRef(
@@ -185,11 +186,12 @@ final class _Writer {
             ),
             createdAt: draft.createdAt,
             updatedAt: _now,
-            preview: PageRepository.previewOf(document.extractSearchText()),
+            preview: PageRepository.previewOf(text),
             revision: document.revision,
           ),
           document: document,
         ),
+        text: text,
       );
       firstPage ??= (notebookId: notebookId!, sectionId: sectionId, pageId: id);
       pages(draft.subpages, sectionId: sectionId, parentId: id);

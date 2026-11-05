@@ -292,6 +292,49 @@ void main() {
       expect(renamed.elements.first, same(ink));
     });
 
+    test('leaves as it is what names none of the assets renamed', () {
+      const other = ImageElement(
+        id: 'other',
+        frame: Frame(x: 0, y: 0, width: 40, height: 30),
+        createdAt: _now,
+        updatedAt: _now,
+        assetId: 'kept',
+      );
+      final document = PageDocument(
+        id: 'PAGE01',
+        elements: <NoteElement>[
+          other,
+          TextElement(
+            id: 'text',
+            frame: const Frame(x: 0, y: 40, width: 40, height: 30),
+            createdAt: _now,
+            updatedAt: _now,
+            blocks: <TextBlock>[
+              TextBlock.plain('above'),
+              const TextBlock.embedded(
+                BlockEmbed(
+                  kind: EmbedKind.image,
+                  assetId: 'old',
+                  width: 10,
+                  height: 10,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+
+      expect(
+        document.withAssetsRenamed(<String, String>{'gone': 'new'}),
+        same(document),
+      );
+      final renamed = document.withAssetsRenamed(<String, String>{
+        'old': 'new',
+      });
+      expect(renamed.elements.first, same(other));
+      expect(renamed.referencedAssetIds, <String>{'kept', 'new'});
+    });
+
     test('writes handwriting as its JSON does, whatever the numbers', () {
       final random = math.Random(7);
       final values = <double>[
