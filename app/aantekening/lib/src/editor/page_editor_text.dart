@@ -205,17 +205,19 @@ extension _TextEditing on _PageEditorState {
     _insertFormula();
   }
 
+  /// Where a caret placed in the middle of the view is: a new box's width
+  /// about it.
+  Offset get _caretInView {
+    final center = _controller.viewCenter;
+    return Offset(center.dx - TextBoxEditor.newBoxSize.width / 2, center.dy);
+  }
+
   /// Places a caret in the middle of the view, for typing without first
   /// clicking the page.
   void _insertTextBox() {
     _stopEditing(refocusCanvas: false);
     _controller.setTool(CanvasTool.select);
-    final center = _controller.viewCenter;
-    _startEditing(
-      _createTextBox(
-        Offset(center.dx - TextBoxEditor.newBoxSize.width / 2, center.dy),
-      ),
-    );
+    _startEditing(_createTextBox(_caretInView));
   }
 
   /// Writes a formula: in the box being edited, or in a new box in view.
@@ -225,11 +227,7 @@ extension _TextEditing on _PageEditorState {
       return;
     }
     _controller.setTool(CanvasTool.select);
-    final center = _controller.viewCenter;
-    final id = _createTextBox(
-      Offset(center.dx - TextBoxEditor.newBoxSize.width / 2, center.dy),
-    );
-    _startEditing(id, inFormula: true);
+    _startEditing(_createTextBox(_caretInView), inFormula: true);
   }
 
   /// Asks for LaTeX, and puts what it writes — text, formulas, lists,

@@ -128,12 +128,7 @@ extension _Media on _PageEditorState {
     int? at,
   }) {
     final first = (at ?? _controller.currentSheet) + (onNew ? 1 : 0);
-    final blank = <SheetTemplate>[
-      for (final _ in printout) SheetTemplate.blank,
-    ];
-    final turned = <SheetOrientation>[
-      for (final page in printout) _turnedFor(page),
-    ];
+    final (:blank, :turned) = _sheetsFor(printout);
     // On sheets of their own, they are what the sheets are printed with,
     // each turned as its page is.
     final placed = _onSheets(
@@ -161,10 +156,18 @@ extension _Media on _PageEditorState {
     );
   }
 
-  /// Which way up a sheet for [page] of a printout is turned: as it is.
-  static SheetOrientation _turnedFor(BlockEmbed page) => page.aspectRatio > 1
-      ? SheetOrientation.landscape
-      : SheetOrientation.portrait;
+  /// The sheets [printout] is printed on, one to each of its pages: blank,
+  /// and each turned as its page is.
+  static ({List<SheetTemplate> blank, List<SheetOrientation> turned})
+  _sheetsFor(List<BlockEmbed> printout) => (
+    blank: <SheetTemplate>[for (final _ in printout) SheetTemplate.blank],
+    turned: <SheetOrientation>[
+      for (final page in printout)
+        page.aspectRatio > 1
+            ? SheetOrientation.landscape
+            : SheetOrientation.portrait,
+    ],
+  );
 
   /// [printout]'s pages on the sheets from [first] on, each as large as its
   /// sheet takes it, in its middle: set as their background, to be written
@@ -199,12 +202,8 @@ extension _Media on _PageEditorState {
     if (store == null || pageId == null || printout.isEmpty) return;
     final file = await store.assets.find(printout.first.assetId);
     if (!mounted) return;
-    final sheets = Sheets(
-      templates: <SheetTemplate>[for (final _ in printout) SheetTemplate.blank],
-      orientations: <SheetOrientation>[
-        for (final page in printout) _turnedFor(page),
-      ],
-    );
+    final (:blank, :turned) = _sheetsFor(printout);
+    final sheets = Sheets(templates: blank, orientations: turned);
     await ref
         .read(libraryActionsProvider)
         .createPageHolding(
