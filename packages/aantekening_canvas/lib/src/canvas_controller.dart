@@ -437,22 +437,27 @@ class CanvasController extends ChangeNotifier {
   void zoomAtCenter(double factor) =>
       zoomBy(factor, Offset(viewSize.width / 2, viewSize.height / 2));
 
-  /// Frames the whole page within a view of [size]: on sheets, the whole
-  /// of the sheet in the middle of the view.
-  void zoomToFit(Size size) {
+  /// Frames the whole page within the view: on sheets, the whole of the
+  /// sheet in the middle of it.
+  void zoomToFit() {
     final fold = _fold;
     final bounds = fold == null
         ? contentBounds
         : _document.canvas.sheets!.bandOf(currentSheet);
     viewport = bounds.isEmpty
         ? CanvasViewport(fold: fold)
-        : viewport.fit(bounds, size, padding: fold == null ? 48 : deskMargin);
+        : viewport.fit(
+            bounds,
+            viewSize,
+            padding: fold == null ? 48 : deskMargin,
+          );
   }
 
   /// Resets to 100% zoom around the centre of the view.
-  void resetZoom(Size size) {
-    final center = viewport.toPage(Offset(size.width / 2, size.height / 2));
-    viewport = viewport.zoomAround(1, Offset.zero).centeredOn(center, size);
+  void resetZoom() {
+    viewport = viewport
+        .zoomAround(1, Offset.zero)
+        .centeredOn(viewCenter, viewSize);
   }
 
   /// Scrolls just far enough to show [bounds] with [margin] screen pixels

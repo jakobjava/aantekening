@@ -688,6 +688,26 @@ void main() {
       );
     });
 
+    test('fits the page to the view, and goes back to its own size about '
+        'the middle of the view', () {
+      final controller = CanvasController()
+        ..viewSize = const Size(800, 600)
+        ..addElement(_text('a', size: 1000))
+        ..addElement(_text('b', x: 1000, y: 1000, size: 1000));
+
+      controller.zoomToFit();
+      final fitted = controller.viewport;
+      expect(fitted.zoom, lessThan(1));
+      final seen = fitted.visibleBounds(controller.viewSize);
+      expect(seen.containsBox(controller.contentBounds), isTrue);
+
+      final middle = controller.viewCenter;
+      controller.resetZoom();
+      expect(controller.viewport.zoom, 1);
+      expect(controller.viewCenter.dx, closeTo(middle.dx, 1e-6));
+      expect(controller.viewCenter.dy, closeTo(middle.dy, 1e-6));
+    });
+
     test('a placeholder is no part of what the page holds', () {
       final controller = CanvasController()
         ..placeholders = (() => const <String>{'caret'})

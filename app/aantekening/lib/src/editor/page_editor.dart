@@ -317,8 +317,8 @@ class _PageEditorState extends ConsumerState<PageEditor> {
     onInsertLatex: () => unawaited(_insertLatex()),
     onZoomIn: () => _controller.zoomAtCenter(_zoomStep),
     onZoomOut: () => _controller.zoomAtCenter(1 / _zoomStep),
-    onFitPage: () => _controller.zoomToFit(_controller.viewSize),
-    onActualSize: () => _controller.resetZoom(_controller.viewSize),
+    onFitPage: _controller.zoomToFit,
+    onActualSize: _controller.resetZoom,
     onMathInsert: _insertMath,
   );
 
