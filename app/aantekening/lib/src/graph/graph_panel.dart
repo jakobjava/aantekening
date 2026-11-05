@@ -372,6 +372,10 @@ class _GraphPainter extends CustomPainter {
   static const double _labelZoom = 0.6;
   static const double _pageLabelZoom = 1.4;
 
+  /// How far past a node's dot its name can reach: half the widest name,
+  /// and the height of one in large type below it.
+  static const double _nameReach = 90;
+
   @override
   void paint(Canvas canvas, Size size) {
     final layout = state._layout;
@@ -409,10 +413,15 @@ class _GraphPainter extends CustomPainter {
     // Notebooks solid in the accent, sections rings of it, pages small and
     // quieter: told apart by their shape as well as their colour.
     final names = <({int rank, int node, Offset center, double radius})>[];
+    final view = Offset.zero & size;
     for (var i = 0; i < graph.nodes.length; i++) {
       final node = graph.nodes[i];
       final center = toView(i);
       final radius = math.max(2.0, ForceLayout.radiusOf(node) * zoom);
+      // A node out of view is neither drawn nor named; it is out of view
+      // with its ring and the longest name it could have, laid out at most
+      // 160 wide below it.
+      if (!view.inflate(radius + _nameReach).contains(center)) continue;
       final faded = dimmed && !lit.contains(i);
       final color = switch (node.kind) {
         GraphNodeKind.page => tones.muted,
@@ -470,8 +479,7 @@ class _GraphPainter extends CustomPainter {
     names.sort(
       (a, b) => a.rank != b.rank ? a.rank - b.rank : a.node.compareTo(b.node),
     );
-    final view = Offset.zero & size;
-    final taken = <Rect>[];
+    final taken = _Taken();
     final ground = Paint()..color = tones.base.withValues(alpha: 0.85);
     for (final name in names) {
       final label = state._label(
@@ -482,7 +490,7 @@ class _GraphPainter extends CustomPainter {
       );
       final at = name.center + Offset(-label.width / 2, name.radius + 3);
       final box = (at & label.size).inflate(2);
-      if (!view.overlaps(box) || taken.any(box.overlaps)) continue;
+      if (!view.overlaps(box) || taken.overlaps(box)) continue;
       taken.add(box);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
@@ -500,4 +508,38 @@ class _GraphPainter extends CustomPainter {
       oldDelegate.current != current ||
       oldDelegate.tones != tones ||
       oldDelegate.labelStyle != labelStyle;
+}
+
+/// The boxes names are drawn in, kept by the squares of the view they cover
+/// so a new one is held against only those near it.
+class _Taken {
+  static const double _square = 64;
+
+  final Map<(int, int), List<Rect>> _bySquare = <(int, int), List<Rect>>{};
+
+  Iterable<(int, int)> _squaresOf(Rect box) sync* {
+    for (
+      var column = (box.left / _square).floor();
+      column <= (box.right / _square).floor();
+      column++
+    ) {
+      for (
+        var row = (box.top / _square).floor();
+        row <= (box.bottom / _square).floor();
+        row++
+      ) {
+        yield (column, row);
+      }
+    }
+  }
+
+  bool overlaps(Rect box) =>
+      _squaresOf(box)
+          .any((square) => _bySquare[square]?.any(box.overlaps) ?? false);
+
+  void add(Rect box) {
+    for (final square in _squaresOf(box)) {
+      (_bySquare[square] ??= <Rect>[]).add(box);
+    }
+  }
 }

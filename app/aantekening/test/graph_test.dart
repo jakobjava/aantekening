@@ -137,5 +137,62 @@ void main() {
       expect(layout.isSettled, isTrue);
       expect(layout.positions[node], isNot(const Offset(500, 500)));
     });
+
+    test('pushes a large graph apart much as working out every pair would', () {
+      final graph = _large(600);
+      final start = ForceLayout(graph).positions;
+      final exact = ForceLayout(graph, exactUpTo: graph.nodes.length)..step();
+      final tree = ForceLayout(graph, exactUpTo: 0)..step();
+
+      var moved = 0.0;
+      var apart = 0.0;
+      for (var i = 0; i < graph.nodes.length; i++) {
+        moved += (exact.positions[i] - start[i]).distance;
+        apart += (exact.positions[i] - tree.positions[i]).distance;
+      }
+      expect(apart, lessThan(moved * 0.01));
+    });
+
+    test('settles through its quadtree, every node apart from every other', () {
+      final graph = _graph();
+      // Every node starts on top of every other.
+      final layout = ForceLayout(
+        graph,
+        previous: <String, Offset>{
+          for (final node in graph.nodes) node.id: Offset.zero,
+        },
+        exactUpTo: 0,
+      );
+      for (var i = 0; i < 1000 && !layout.isSettled; i++) {
+        layout.step();
+      }
+
+      expect(layout.isSettled, isTrue);
+      for (var i = 0; i < layout.positions.length; i++) {
+        for (var j = i + 1; j < layout.positions.length; j++) {
+          expect(
+            (layout.positions[i] - layout.positions[j]).distance,
+            greaterThan(10),
+          );
+        }
+      }
+    });
   });
 }
+
+/// Five notebooks of ten sections each, holding [pages] pages between them,
+/// a third of them under another page.
+NoteGraph _large(int pages) => NoteGraph.of(
+  notebooks: <Notebook>[for (var n = 0; n < 5; n++) _notebook('n$n')],
+  sections: <Section>[
+    for (var s = 0; s < 50; s++) _section('s$s', 'n${s % 5}'),
+  ],
+  pages: <PageRef>[
+    for (var p = 0; p < pages; p++)
+      _page(
+        'p$p',
+        's${p % 50}',
+        parentId: p >= 100 && p % 3 == 0 ? 'p${p - 100}' : null,
+      ),
+  ],
+);
