@@ -770,7 +770,7 @@ class Measures {
   /// every notebook, section and page.
   Future<void> _goTo() async {
     await _show(notes.ordinary);
-    await _measure('goto: opened', (run) async {
+    Future<void> open(Run run) async {
       final began = now();
       final shown = Frames.shows(
         () => maybeFind<Chooser>() != null,
@@ -787,8 +787,17 @@ class Measures {
       );
       run
         ..shown('key to first frame', began, frame)
-        ..shown('key to the pages listed', began, listed);
-    });
+        ..shown('key to the pages listed', began, listed)
+        ..shown('key to settled', began, await Frames.settled());
+    }
+
+    // The first time glass floats in, in a window just opened, and again:
+    // what the first costs alone is paid once a session.
+    await _measure('goto: opened', open);
+    await _command('Esc');
+    await Frames.settled();
+    await wait(const Duration(milliseconds: 300));
+    await _measure('goto: opened again', open);
     await _field(box: false);
     await _measure('goto: a name typed', (run) async {
       await _type(
@@ -822,6 +831,12 @@ class Measures {
         run.shown('key to settled', began, await Frames.settled());
       }
     });
+    await _command('Esc');
+    await Frames.settled();
+    await wait(const Duration(milliseconds: 300));
+    await _measure('picker: opened again', _openPicker);
+    await _command('Esc');
+    await Frames.settled();
   }
 
   /// Opens the picker with its shortcut, Ctrl+Shift+E, noting in [run], if

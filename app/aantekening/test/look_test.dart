@@ -315,6 +315,71 @@ void main() {
         reason: 'no part of it is left clear, its shadow cast round it',
       );
     });
+
+    testWidgets('floating in, grows all but its frost, and what is on it '
+        'as a picture until it has come', (tester) async {
+      final arriving = AnimationController(
+        vsync: tester,
+        duration: const Duration(milliseconds: 200),
+      );
+      addTearDown(arriving.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: FloatingIn(
+              animation: arriving,
+              child: const Glass(
+                child: SizedBox(width: 300, height: 200, child: Text('On it')),
+              ),
+            ),
+          ),
+        ),
+      );
+      Rect onScreen(Finder finder) {
+        final box = tester.renderObject<RenderBox>(finder);
+        return MatrixUtils.transformRect(
+          box.getTransformTo(null),
+          Offset.zero & box.size,
+        );
+      }
+
+      final within = find.descendant(
+        of: find.byType(Glass),
+        matching: find.byType(BackdropFilter),
+      );
+      final words = find.text('On it');
+      SnapshotController picture() => tester
+          .widget<SnapshotWidget>(
+            find.descendant(
+              of: find.byType(Glass),
+              matching: find.byType(SnapshotWidget),
+            ),
+          )
+          .controller;
+      final whole = onScreen(find.byType(Glass));
+
+      unawaited(arriving.forward());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // The frost at the pane's full size from the first: laid at a new
+      // size each frame, it took many times as long to draw.
+      expect(onScreen(within), whole);
+      expect(onScreen(words).width, lessThan(tester.getSize(words).width));
+      expect(picture().allowSnapshotting, isTrue);
+
+      await tester.pumpAndSettle();
+      expect(onScreen(within), whole);
+      expect(onScreen(words).size, tester.getSize(words));
+      expect(picture().allowSnapshotting, isFalse, reason: 'itself again');
+
+      // And as a picture again as it floats away.
+      unawaited(arriving.reverse());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(picture().allowSnapshotting, isTrue);
+      await tester.pumpAndSettle();
+    });
   });
 
   group('Chooser', () {

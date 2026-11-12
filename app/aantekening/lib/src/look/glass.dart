@@ -142,7 +142,16 @@ class Glass extends StatelessWidget {
     final tones = context.tones;
     // Floating in, it fades in by itself: never under a layer that fades
     // it, which would draw what lies beneath again, blurred, every frame.
-    final arriving = GlassArriving._of(context);
+    final coming = context.dependOnInheritedWidgetOfExactType<GlassArriving>();
+    final arriving = coming?.arriving;
+    final growing = coming?.growing;
+    // Grown the last little way to its size, as it floats in: all of it
+    // but the frost, which is laid at the pane's full size throughout.
+    // Laid at a new size each frame, the first pane of glass to float in
+    // took 18 to 45 ms a frame to draw, in the app's benchmark; so, 2.
+    Widget grown(Widget part) => growing == null
+        ? part
+        : ScaleTransition(scale: growing, alignment: coming!.from, child: part);
     Widget pane = DecoratedBox(
       decoration: BoxDecoration(
         color: tones.glass,
@@ -159,11 +168,15 @@ class Glass extends StatelessWidget {
         // glass on it arrives by itself.
         child: Material(
           type: MaterialType.transparency,
-          child: GlassArriving(arriving: null, child: child),
+          child: _HeldStill(
+            arriving: arriving,
+            child: GlassArriving(arriving: null, child: child),
+          ),
         ),
       ),
     );
     if (arriving != null) pane = FadeTransition(opacity: arriving, child: pane);
+    pane = grown(pane);
     if (tones.frosted) {
       final brightness = tones.brightness;
       pane = arriving == null
@@ -194,12 +207,75 @@ class Glass extends StatelessWidget {
         Positioned.fill(
           child: arriving == null
               ? cast
-              : FadeTransition(opacity: arriving, child: cast),
+              : grown(FadeTransition(opacity: arriving, child: cast)),
         ),
         pane,
       ],
     );
   }
+}
+
+/// What is on a pane of glass, drawn once and kept as a picture while the
+/// pane floats in or away, and as itself the rest of the time.
+///
+/// A pane grows the last little way to its size as it floats in, and what
+/// is on it with it. Its words were set again at every size on the way —
+/// each a new size to the renderer, every letter of it drawn afresh — so a
+/// frame of Go to arriving took 18 to 39 ms to draw, and of the picker 44
+/// to 50, where one of a pane already there takes 2. A picture of them
+/// grows as cheaply as it is moved, as the framework's own pages do
+/// zooming in; a quarter of a second on, the words are themselves again.
+class _HeldStill extends StatefulWidget {
+  const _HeldStill({required this.arriving, required this.child});
+
+  /// How far the pane has come in, or null for one that is simply there.
+  final Animation<double>? arriving;
+  final Widget child;
+
+  @override
+  State<_HeldStill> createState() => _HeldStillState();
+}
+
+class _HeldStillState extends State<_HeldStill> {
+  final SnapshotController _picture = SnapshotController();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.arriving?.addStatusListener(_onStatus);
+    _onStatus(widget.arriving?.status);
+  }
+
+  @override
+  void didUpdateWidget(_HeldStill oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.arriving == widget.arriving) return;
+    oldWidget.arriving?.removeStatusListener(_onStatus);
+    widget.arriving?.addStatusListener(_onStatus);
+    _onStatus(widget.arriving?.status);
+  }
+
+  @override
+  void dispose() {
+    widget.arriving?.removeStatusListener(_onStatus);
+    _picture.dispose();
+    super.dispose();
+  }
+
+  /// A picture while the pane is on its way in or out, and only then.
+  void _onStatus(AnimationStatus? status) {
+    _picture.allowSnapshotting =
+        status == AnimationStatus.forward || status == AnimationStatus.reverse;
+  }
+
+  @override
+  Widget build(BuildContext context) => SnapshotWidget(
+    controller: _picture,
+    // What cannot be kept as a picture is drawn as itself, as before.
+    mode: SnapshotMode.permissive,
+    autoresize: true,
+    child: widget.child,
+  );
 }
 
 /// How far the [Glass] beneath it has come in, as it floats in: from 0,
@@ -208,17 +284,26 @@ class GlassArriving extends InheritedWidget {
   const GlassArriving({
     required this.arriving,
     required super.child,
+    this.growing,
+    this.from = Alignment.center,
     super.key,
   });
 
   final Animation<double>? arriving;
 
-  static Animation<double>? _of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<GlassArriving>()?.arriving;
+  /// How large the glass is on its way in, as a share of its size — it
+  /// grows the last little way — or null for glass that does not grow.
+  /// The glass grows itself, so that its frost need not.
+  final Animation<double>? growing;
+
+  /// Where it grows from.
+  final Alignment from;
 
   @override
   bool updateShouldNotify(GlassArriving oldWidget) =>
-      oldWidget.arriving != arriving;
+      oldWidget.arriving != arriving ||
+      oldWidget.growing != growing ||
+      oldWidget.from != from;
 }
 
 /// The light liquid glass catches: along its edge, brightest at the top

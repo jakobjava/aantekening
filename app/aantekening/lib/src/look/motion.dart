@@ -151,11 +151,9 @@ class _FloatingInState extends State<FloatingIn> {
   @override
   Widget build(BuildContext context) => GlassArriving(
     arriving: _arriving,
-    child: ScaleTransition(
-      scale: _scale,
-      alignment: widget.alignment,
-      child: widget.child,
-    ),
+    growing: _scale,
+    from: widget.alignment,
+    child: widget.child,
   );
 }
 
