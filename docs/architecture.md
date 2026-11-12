@@ -177,4 +177,8 @@ fatal, every package's tests — `--coverage` saying how much of each package
 the tests reach, and `--deep` running the fuzzers and the simulation tens of
 thousands of times, as CI does nightly. `store/benchmark/store_benchmark.dart`
 times the store over thousands of pages, and how long the window waits on it;
-`app/benchmark/canvas_benchmark.dart` the frames of a heavy page.
+`app/benchmark/canvas_benchmark.dart` the frames of a heavy page; and
+`app/benchmark/app_benchmark.dart` the whole app on notes of thousands of
+pages, worked by the keys, the mouse and the pen as a person works it —
+starting, opening pages, writing, typing, selecting, searching — each run
+kept in a file that `app/benchmark/compare.dart` sets beside another.

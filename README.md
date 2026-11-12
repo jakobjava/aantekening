@@ -149,6 +149,26 @@ flutter build linux --profile -t benchmark/canvas_benchmark.dart
 build/linux/x64/profile/bundle/aantekening
 ```
 
+To measure the rest of what a person feels — starting the app, opening a
+heavy page, writing with the pen, typing, selecting, searching, going
+about the notebooks and changing them — on made-up notes of two thousand
+pages, kept in a temporary folder, build and run the app benchmark the
+same way. It opens the app's window several times and works it by the
+keys, the mouse and the pen, so leave the computer alone meanwhile, plugged
+in. It ends with a table, and keeps every number in a file it names;
+`AANTEKENING_BENCH_SIZE=large` measures on ten thousand pages, and
+`AANTEKENING_BENCH_ONLY=typing` only what its name holds:
+
+```bash
+cd app/aantekening
+flutter build linux --profile -t benchmark/app_benchmark.dart
+AANTEKENING_BENCH_JSON=before.json build/linux/x64/profile/bundle/aantekening
+dart benchmark/compare.dart before.json after.json
+```
+
+The last line sets two runs side by side, and marks what got slower or
+faster by more than the runs differ by themselves.
+
 ## Licences
 
 aantekening is under either the [MIT License](LICENSE-MIT) or the
