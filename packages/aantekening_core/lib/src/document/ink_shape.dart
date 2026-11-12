@@ -87,6 +87,20 @@ enum ShapeKind {
     _ => false,
   };
 
+  /// How many of the lines it is drawn with, the first of them, are drawn
+  /// as the pen's line is: dashed or dotted with it. The way of a line or
+  /// an arrow is, and an outline; an arrow's head, the ticks of a number
+  /// line, and graphs and solids, which have dashes of their own, are
+  /// always drawn whole.
+  int get styledLines => switch (this) {
+    line || arrow || doubleArrow || polyline || polygon => 1,
+    _ => family == ShapeFamily.outlines ? 1 : 0,
+  };
+
+  /// Whether it goes round something that can be filled with a colour: an
+  /// outline does, and a closed outline of straight sides.
+  bool get fills => family == ShapeFamily.outlines || this == polygon;
+
   /// The shapes offered in [family], in order.
   static List<ShapeKind> of(ShapeFamily family) => <ShapeKind>[
     for (final kind in values)
@@ -156,7 +170,10 @@ sealed class InkShape {
   /// [width] wide: arrowheads, ticks and dashes are sized to the pen.
   List<List<Vec2>> lines(double width);
 
-  /// The strokes it is drawn with, in [tool], [color] and [width].
+  /// The strokes it is drawn with, in [tool], [color] and [width]: its
+  /// way or outline drawn as [line] is ([ShapeKind.styledLines]), and
+  /// filled with [fill] if it is a shape that goes round something
+  /// ([ShapeKind.fills]).
   ///
   /// Every sample is pressed alike, so it is drawn at the pen's width all
   /// along. Its corners are kept corners by how ink is drawn, which goes
@@ -165,15 +182,19 @@ sealed class InkShape {
     required InkTool tool,
     required int color,
     required double width,
+    InkLine line = InkLine.solid,
+    int? fill,
   }) => <InkStroke>[
-    for (final line in lines(width))
-      if (line.length > 1)
+    for (final (index, each) in lines(width).indexed)
+      if (each.length > 1)
         InkStroke.fromPoints(
           tool: tool,
           color: color,
           width: width,
-          xs: <double>[for (final point in line) point.x],
-          ys: <double>[for (final point in line) point.y],
+          xs: <double>[for (final point in each) point.x],
+          ys: <double>[for (final point in each) point.y],
+          line: index < kind.styledLines ? line : InkLine.solid,
+          fill: index == 0 && kind.fills ? fill : null,
         ),
   ];
 }

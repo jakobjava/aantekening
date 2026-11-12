@@ -437,6 +437,13 @@ class _PageEditorState extends ConsumerState<PageEditor> {
       (_, pen) => _controller.inkSmoothing = pen.smoothing.pixels,
       fireImmediately: true,
     );
+    // The pen and the highlighter as they were last set, on any page; and
+    // as another page open beside this one sets them.
+    ref.listenManual(inkPensProvider, (_, pens) {
+      _controller
+        ..setPen(pens.pen)
+        ..setPen(pens.highlighter);
+    }, fireImmediately: true);
     _stopTracingView = traceViewOf(_controller);
     _textController.formulaField.addListener(_onFormulaChanged);
     // The syntax formulas are typed in is the person's preference, which a

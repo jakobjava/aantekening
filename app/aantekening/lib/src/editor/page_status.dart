@@ -3,7 +3,8 @@
 library;
 
 import 'package:aantekening_canvas/aantekening_canvas.dart';
-import 'package:aantekening_core/aantekening_core.dart' show NoteColors;
+import 'package:aantekening_core/aantekening_core.dart'
+    show InkLine, NoteColors;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -100,6 +101,10 @@ class _InHand extends StatelessWidget {
       if (name == null) return const SizedBox.shrink();
       final inked = tool != CanvasTool.eraser;
       final width = pen.width.toStringAsFixed(pen.width % 1 == 0 ? 0 : 1);
+      final line = pen.strokeLine == InkLine.solid
+          ? ''
+          : '  ${pen.strokeLine.label.toLowerCase()}';
+      final fill = pen.shapeFill;
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
@@ -107,7 +112,14 @@ class _InHand extends StatelessWidget {
             _Ink(color: pen.color),
             const SizedBox(width: 6),
           ],
-          Text(inked ? '$name  $width pt' : name, style: _quiet(context)),
+          Text(inked ? '$name  $width pt$line' : name, style: _quiet(context)),
+          // What shapes are filled with, while they are being drawn.
+          if (tool == CanvasTool.shape && fill != null) ...<Widget>[
+            const SizedBox(width: 8),
+            Text('filled', style: _quiet(context)),
+            const SizedBox(width: 6),
+            _Ink(color: fill | 0xFF000000),
+          ],
         ],
       );
     },

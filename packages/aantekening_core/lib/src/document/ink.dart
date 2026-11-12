@@ -28,6 +28,22 @@ enum InkTool {
   marker,
 }
 
+/// How the line of a stroke is drawn along its way.
+enum InkLine {
+  /// Unbroken.
+  solid('Solid'),
+
+  /// In dashes, a few widths long.
+  dashed('Dashed'),
+
+  /// In dots, as wide as the line.
+  dotted('Dotted');
+
+  const InkLine(this.label);
+
+  final String label;
+}
+
 /// A single continuous stroke.
 ///
 /// Points are held in one [Float32List] rather than a list of objects: a long
@@ -40,6 +56,8 @@ class InkStroke {
     required this.color,
     required this.width,
     required this.points,
+    this.line = InkLine.solid,
+    this.fill,
   });
 
   /// Builds a stroke from separate coordinate lists, padding the optional
@@ -52,6 +70,8 @@ class InkStroke {
     required List<double> ys,
     List<double>? pressures,
     List<double>? tilts,
+    InkLine line = InkLine.solid,
+    int? fill,
   }) {
     final count = math.min(xs.length, ys.length);
     final buffer = Float32List(count * stride);
@@ -64,7 +84,14 @@ class InkStroke {
           : 1.0;
       buffer[base + 3] = (tilts != null && i < tilts.length) ? tilts[i] : 0.0;
     }
-    return InkStroke(tool: tool, color: color, width: width, points: buffer);
+    return InkStroke(
+      tool: tool,
+      color: color,
+      width: width,
+      points: buffer,
+      line: line,
+      fill: fill,
+    );
   }
 
   /// Number of floats per sample: x, y, pressure, tilt.
@@ -80,6 +107,61 @@ class InkStroke {
 
   /// Flat sample buffer of `[x, y, pressure, tilt]` tuples.
   final Float32List points;
+
+  /// How the line is drawn along its way. A highlighter's is always
+  /// [InkLine.solid]; one dashed or dotted is as wide all along as the pen
+  /// is, however it was pressed.
+  final InkLine line;
+
+  /// The colour what the stroke goes round is filled with, as 32-bit ARGB,
+  /// or null for none: the area within its way, closed from its end back
+  /// to its start. Translucent, it lets what it lies on show through.
+  final int? fill;
+
+  /// Whether the stroke ends where it began, as the outline of a shape
+  /// does: within its own width of it, or a hundredth of its way round.
+  bool get isClosed {
+    final count = pointCount;
+    if (count < 3) return false;
+    final dx = xAt(count - 1) - xAt(0);
+    final dy = yAt(count - 1) - yAt(0);
+    var length = 0.0;
+    for (var i = 1; i < count; i++) {
+      final stepX = xAt(i) - xAt(i - 1);
+      final stepY = yAt(i) - yAt(i - 1);
+      length += math.sqrt(stepX * stepX + stepY * stepY);
+    }
+    final near = math.max(width, length / 100);
+    return dx * dx + dy * dy <= near * near;
+  }
+
+  /// A copy drawn in [color], [width] wide, with its line drawn as [line],
+  /// each where given; and filled with [fill], or not at all with
+  /// [unfilled].
+  InkStroke restyled({
+    int? color,
+    double? width,
+    InkLine? line,
+    int? fill,
+    bool unfilled = false,
+  }) => InkStroke(
+    tool: tool,
+    color: color ?? this.color,
+    width: width ?? this.width,
+    points: points,
+    line: line ?? this.line,
+    fill: unfilled ? null : fill ?? this.fill,
+  );
+
+  /// A copy through [points], [width] wide, otherwise as this one is.
+  InkStroke _through(Float32List points, {double? width}) => InkStroke(
+    tool: tool,
+    color: color,
+    width: width ?? this.width,
+    points: points,
+    line: line,
+    fill: fill,
+  );
 
   Aabb? _bounds;
 
@@ -124,7 +206,7 @@ class InkStroke {
       moved[i] += dx;
       moved[i + 1] += dy;
     }
-    return InkStroke(tool: tool, color: color, width: width, points: moved);
+    return _through(moved);
   }
 
   /// Returns a copy scaled about ([originX], [originY]).
@@ -142,12 +224,7 @@ class InkStroke {
       scaled[i] = originX + (scaled[i] - originX) * scaleX;
       scaled[i + 1] = originY + (scaled[i + 1] - originY) * scaleY;
     }
-    return InkStroke(
-      tool: tool,
-      color: color,
-      width: width * (scaleX.abs() + scaleY.abs()) / 2,
-      points: scaled,
-    );
+    return _through(scaled, width: width * (scaleX.abs() + scaleY.abs()) / 2);
   }
 
   /// Returns a copy with [transform] applied to every sample. The width
@@ -159,12 +236,7 @@ class InkStroke {
       moved[i] = point.x;
       moved[i + 1] = point.y;
     }
-    return InkStroke(
-      tool: tool,
-      color: color,
-      width: width * transform.meanScale,
-      points: moved,
-    );
+    return _through(moved, width: width * transform.meanScale);
   }
 
   /// The share of this stroke's samples that fall [inside] a region: a
@@ -188,8 +260,12 @@ class InkStroke {
   /// samples themselves. A line drawn quickly can leave its samples tens of
   /// pixels apart, and testing only those would let the eraser pass straight
   /// through the middle of a visible stroke.
+  ///
+  /// What a stroke is filled with is part of it: a point within a filled
+  /// stroke's way is on it.
   bool hitTest(double x, double y, double radius) {
     if (!bounds.inflate(radius).containsPoint(x, y)) return false;
+    if (fill != null && _goesRound(x, y)) return true;
 
     final threshold = radius + width / 2;
     final thresholdSquared = threshold * threshold;
@@ -216,10 +292,33 @@ class InkStroke {
     return false;
   }
 
+  /// Whether the stroke's way, closed from its end back to its start, goes
+  /// round ([x], [y]): by how many of its sides a line from the point
+  /// leftwards crosses, as its fill is drawn.
+  bool _goesRound(double x, double y) {
+    final count = pointCount;
+    if (count < 3) return false;
+    var inside = false;
+    for (var i = 0, j = count - 1; i < count; j = i++) {
+      final xi = xAt(i);
+      final yi = yAt(i);
+      final xj = xAt(j);
+      final yj = yAt(j);
+      if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
   /// Serialises the stroke, rounding coordinates to two decimals.
   ///
   /// Sub-hundredth-of-a-pixel precision is not perceivable but costs roughly a
   /// third of the file size on ink-heavy pages.
+  ///
+  /// How its line is drawn and what it is filled with are written only
+  /// where they are not the usual, so most strokes are written as they
+  /// always were; a build from before either reads the stroke without.
   Map<String, Object?> toJson() {
     final flat = List<double>.filled(points.length, 0);
     for (var i = 0; i < points.length; i++) {
@@ -229,6 +328,8 @@ class InkStroke {
       'tool': tool.name,
       'color': color,
       'width': width,
+      if (line != InkLine.solid) 'line': line.name,
+      if (fill != null) 'fill': fill,
       'points': flat,
     };
   }
@@ -248,6 +349,8 @@ class InkStroke {
       color: readInt(json, 'color', 0xFF000000),
       width: readDouble(json, 'width', 2),
       points: buffer,
+      line: readEnum(json, 'line', InkLine.values, InkLine.solid),
+      fill: readIntOrNull(json, 'fill'),
     );
   }
 
@@ -264,8 +367,19 @@ class InkStroke {
       ..write('","color":')
       ..write(color)
       ..write(',"width":')
-      ..write(jsonEncode(width))
-      ..write(',"points":[');
+      ..write(jsonEncode(width));
+    if (line != InkLine.solid) {
+      json
+        ..write(',"line":"')
+        ..write(line.name)
+        ..write('"');
+    }
+    if (fill != null) {
+      json
+        ..write(',"fill":')
+        ..write(fill);
+    }
+    json.write(',"points":[');
     for (var i = 0; i < points.length; i++) {
       if (i > 0) json.write(',');
       _writeHundredths(json, points[i]);

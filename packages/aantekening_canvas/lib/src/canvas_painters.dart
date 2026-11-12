@@ -405,13 +405,16 @@ class InkPainter extends CustomPainter {
     final cached = cache[element];
     if (cached is ui.Picture) return cached;
     if (cached != null) return null;
-    if (!element.strokes.any(layer.accepts)) {
+    if (!element.strokes.any(layer.holds)) {
       cache[element] = _none;
       return null;
     }
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     for (final stroke in element.strokes) {
+      // What a stroke is filled with lies beneath its line, and beneath
+      // the strokes after it.
+      if (layer.fills(stroke)) paintFill(canvas, stroke);
       if (!layer.accepts(stroke)) continue;
       var shape = _shapes[stroke];
       if (shape == null) {
@@ -440,9 +443,27 @@ class InkPainter extends CustomPainter {
     _recordedWhole[element] = true;
   }
 
-  /// Paints one stroke in page space, its [shape] given if it has been
-  /// worked out already ([_shapeOf]). Inverting ink is painted white, to
-  /// be laid on what is beneath with [InkLayer.inverting]'s blend.
+  /// What strokes are filled with, worked out once for each.
+  static final Expando<Path> _fills = Expando<Path>('fills');
+
+  /// Paints what [stroke] is filled with, in page space: nothing, for a
+  /// stroke that is not filled or a highlighter's.
+  static void paintFill(Canvas canvas, InkStroke stroke) {
+    final fill = stroke.fill;
+    if (fill == null || stroke.tool == InkTool.highlighter) return;
+    canvas.drawPath(
+      _fills[stroke] ??= StrokeGeometry.filledPath(stroke),
+      Paint()
+        ..color = Color(fill)
+        ..style = PaintingStyle.fill
+        ..isAntiAlias = true,
+    );
+  }
+
+  /// Paints the line of one stroke in page space, its [shape] given if it
+  /// has been worked out already ([_shapeOf]); what it is filled with is
+  /// painted by [paintFill]. Inverting ink is painted white, to be laid on
+  /// what is beneath with [InkLayer.inverting]'s blend.
   static void paintStroke(Canvas canvas, InkStroke stroke, {Path? shape}) {
     shape ??= _shapeOf(stroke);
     if (stroke.tool == InkTool.highlighter) {
@@ -483,17 +504,21 @@ class InkPainter extends CustomPainter {
   /// Whether [stroke] is drawn as an outline filled, its width varying with
   /// the pressure on the pen; otherwise it is a line drawn [InkStroke.width]
   /// wide.
+  ///
+  /// A line dashed or dotted is as wide all along as the pen is: dashes
+  /// that swelled and thinned with the hand would not read as dashes.
   static bool _isOutline(InkStroke stroke) =>
       stroke.tool != InkTool.marker &&
+      stroke.line == InkLine.solid &&
       StrokeGeometry.hasPressureVariation(stroke);
 
   /// The shape [stroke] is drawn as: the highlighter's chisel, an outline
-  /// filled, or the line the pen took.
+  /// filled, or the line the pen took, whole or in dashes or dots.
   static Path _shapeOf(InkStroke stroke) => stroke.tool == InkTool.highlighter
       ? StrokeGeometry.chiselPath(stroke)
       : _isOutline(stroke)
       ? StrokeGeometry.pressurePath(stroke)
-      : StrokeGeometry.smoothPath(stroke);
+      : StrokeGeometry.brokenPath(stroke);
 
   /// Translucent [argb] laid on white, opaque: multiplied by what is
   /// beneath, as [BlendMode.modulate] does, it gives what [argb] itself
@@ -736,7 +761,7 @@ class InkTiles {
       }
       for (var j = had.length; j < has.length; j++) {
         final stroke = has[j];
-        if (layer.accepts(stroke) && stroke.bounds.intersects(about)) {
+        if (layer.holds(stroke) && stroke.bounds.intersects(about)) {
           return false;
         }
       }
@@ -833,12 +858,24 @@ enum InkLayer {
   /// by [blendMode], leaves it as it is — clear, or white to multiply by.
   final Color ground;
 
+  /// Whether the line of [stroke] is drawn on this layer.
   bool accepts(InkStroke stroke) => switch (this) {
     InkLayer.inverting => stroke.color == NoteColors.inverse,
     _ when stroke.color == NoteColors.inverse => false,
     InkLayer.marking => stroke.tool == InkTool.highlighter,
     InkLayer.above => stroke.tool != InkTool.highlighter,
   };
+
+  /// Whether what [stroke] is filled with is drawn on this layer: with the
+  /// pen's ink, whatever its line is drawn in — a line that inverts what
+  /// is beneath it inverts its own fill there too.
+  bool fills(InkStroke stroke) =>
+      this == InkLayer.above &&
+      stroke.fill != null &&
+      stroke.tool != InkTool.highlighter;
+
+  /// Whether anything of [stroke] is drawn on this layer.
+  bool holds(InkStroke stroke) => accepts(stroke) || fills(stroke);
 }
 
 /// Draws the stroke currently under the pointer, or the shape it became.
@@ -887,17 +924,34 @@ class WetInkPainter extends CustomPainter {
     }
   }
 
-  void _paint(Canvas canvas, List<InkStroke> strokes, Aabb visible) => _drawInk(
-    canvas,
-    viewport,
-    visible,
-    inverting: strokes.first.color == NoteColors.inverse,
-    draw: () {
-      for (final stroke in strokes) {
-        InkPainter.paintStroke(canvas, stroke);
-      }
-    },
-  );
+  void _paint(Canvas canvas, List<InkStroke> strokes, Aabb visible) {
+    // What a shape is filled with is laid down first, as it is: beneath
+    // its line, and not inverted with it.
+    if (strokes.any((stroke) => stroke.fill != null)) {
+      _drawInk(
+        canvas,
+        viewport,
+        visible,
+        inverting: false,
+        draw: () {
+          for (final stroke in strokes) {
+            InkPainter.paintFill(canvas, stroke);
+          }
+        },
+      );
+    }
+    _drawInk(
+      canvas,
+      viewport,
+      visible,
+      inverting: strokes.first.color == NoteColors.inverse,
+      draw: () {
+        for (final stroke in strokes) {
+          InkPainter.paintStroke(canvas, stroke);
+        }
+      },
+    );
+  }
 
   @override
   bool shouldRepaint(WetInkPainter old) =>

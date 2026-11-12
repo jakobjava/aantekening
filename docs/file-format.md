@@ -58,7 +58,7 @@ picked, moved or erased until it is taken out of the background again.
 | `type` | Payload |
 | --- | --- |
 | `text` | `blocks`: see [Rich text](#rich-text) below |
-| `ink` | `strokes`: `{tool, color, width, points}` |
+| `ink` | `strokes`: `{tool, color, width, line?, fill?, points}` |
 | `image` | `assetId`, `fit`, `altText?`, `recognizedText?` |
 | `pdf` | `assetId`, `pageIndex`, `extractedText?` |
 
@@ -81,6 +81,14 @@ text's marks, is no colour but the inverse of what lies beneath: drawn white
 and laid on the page by difference. A build that does not know it draws
 nothing there, rather than a colour it never was. Shapes have no type of
 their own: they are ink, their corners sampled twice so they stay sharp.
+
+A stroke's `line` is `dashed` or `dotted`, and left out for a whole line;
+its `fill` is the colour what it goes round is filled with, the area within
+its points closed from the last back to the first, and left out for none.
+Both are new in 0.1.19, and written only where they are not the usual, so
+ink that has neither is written as it always was. A build before reads a
+stroke that has them as a whole line with no fill — and writes it so, if
+the page is changed there.
 
 `points` is a flat array of `[x, y, pressure, tilt]` tuples, rounded to two
 decimals. Flat rather than nested because a handwritten page holds hundreds of

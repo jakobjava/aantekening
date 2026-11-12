@@ -6,6 +6,7 @@ import 'package:aantekening/src/look/chooser.dart';
 import 'package:aantekening/src/look/glass.dart';
 import 'package:aantekening/src/modes/editor_mode.dart';
 import 'package:aantekening/src/modes/key_guide.dart';
+import 'package:aantekening/src/preferences.dart';
 import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
@@ -337,6 +338,178 @@ void main() {
     expect(canvas.highlighterSettings.width, greaterThan(width));
     await typeKeys(tester, '[[');
     expect(canvas.highlighterSettings.width, lessThan(width));
+  });
+
+  testWidgets('in draw mode - draws the line dashed, dotted and whole '
+      'again, f fills shapes and o more strongly; and the pen is kept so '
+      'for the next page', (tester) async {
+    final preferences = Preferences.inMemory();
+    await openEditor(tester, store, pageId, preferences: preferences);
+    final canvas = _canvas(tester);
+
+    await typeKeys(tester, 'd-');
+    expect(canvas.penSettings.line, InkLine.dashed);
+    await typeKeys(tester, '-');
+    expect(canvas.penSettings.line, InkLine.dotted);
+    await typeKeys(tester, '--');
+    expect(canvas.penSettings.line, InkLine.dashed);
+
+    expect(canvas.penSettings.fill, isNull);
+    await typeKeys(tester, 'f');
+    expect(_guideTitled('Fill shapes'), findsOneWidget);
+    await tester.tap(find.byTooltip('Green'));
+    await tester.pumpAndSettle();
+    expect(canvas.penSettings.fill, 0x8034A853, reason: 'half as strong');
+    await typeKeys(tester, 'o');
+    expect(canvas.penSettings.fill, 0xFF34A853);
+    await typeKeys(tester, 'o');
+    expect(canvas.penSettings.fill, 0x4034A853);
+
+    // A shape dragged out now is dashed and filled.
+    await typeKeys(tester, 's');
+    await tester.tap(find.byTooltip('Rectangle'));
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(
+      const Offset(300, 300),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveTo(const Offset(500, 420));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    final shape = canvas.document.elements.whereType<InkElement>().single;
+    expect(shape.strokes.single.line, InkLine.dashed);
+    expect(shape.strokes.single.fill, 0x4034A853);
+
+    expect(preferences['pen.ink'], <String, Object?>{
+      'pen': <String, Object?>{
+        'color': 0xFF000000,
+        'width': 2.2,
+        'line': 'dashed',
+        'fill': 0x4034A853,
+      },
+      'highlighter': <String, Object?>{'color': 0xFFFFD60A, 'width': 22.0},
+    });
+
+    // No fill takes it away again.
+    await typeKeys(tester, 'f');
+    await tester.tap(find.byTooltip('No fill'));
+    await tester.pumpAndSettle();
+    expect(canvas.penSettings.fill, isNull);
+  });
+
+  testWidgets('a page is drawn on with the pen as it was last set', (
+    tester,
+  ) async {
+    await openEditor(
+      tester,
+      store,
+      pageId,
+      preferences: Preferences.inMemory(<String, Object?>{
+        'pen.ink': <String, Object?>{
+          'pen': <String, Object?>{
+            'color': 0xFF1A73E8,
+            'width': 5.0,
+            'line': 'dotted',
+            'fill': 0x80D93025,
+          },
+          'highlighter': <String, Object?>{
+            'color': 0xFF34A853,
+            'width': 30.0,
+            // A highlighter is never dashed nor filled, whatever is kept.
+            'line': 'dashed',
+            'fill': 0xFF000000,
+          },
+        },
+      }),
+    );
+    final canvas = _canvas(tester);
+
+    expect(
+      canvas.penSettings,
+      const PenSettings(
+        color: 0xFF1A73E8,
+        width: 5,
+        line: InkLine.dotted,
+        fill: 0x80D93025,
+      ),
+    );
+    expect(
+      canvas.highlighterSettings,
+      PenSettings.defaultHighlighter.copyWith(color: 0xFF34A853, width: 30),
+    );
+  });
+
+  testWidgets('in select mode s draws the ink picked another way: its '
+      'colour, width and line, and what closes filled', (tester) async {
+    InkStroke through(List<double> xs, List<double> ys) => InkStroke.fromPoints(
+      tool: InkTool.pen,
+      color: 0xFF000000,
+      width: 2.2,
+      xs: xs,
+      ys: ys,
+    );
+    await tester.runAsync(
+      () => store.pages.saveDocument(
+        pageId,
+        PageDocument.empty(id: pageId).withElementAdded(
+          InkElement(
+            id: 'drawn',
+            frame: const Frame(x: 0, y: 0, width: 0, height: 0),
+            createdAt: 0,
+            updatedAt: 0,
+          ).withStrokes(<InkStroke>[
+            through(
+              <double>[100, 300, 300, 100, 100],
+              <double>[100, 100, 200, 200, 100],
+            ),
+            through(<double>[100, 300], <double>[300, 300]),
+          ]),
+        ),
+      ),
+    );
+    await openEditor(tester, store, pageId);
+    final canvas = _canvas(tester);
+    List<InkStroke> strokes() =>
+        (canvas.document.elements.single as InkElement).strokes;
+
+    // With nothing picked there is none to draw another way.
+    await typeKeys(tester, 'vs');
+    expect(_guideTitled('Ink picked'), findsNothing);
+    await typeKeys(tester, 'as');
+    expect(_guideTitled('Ink picked'), findsOneWidget);
+
+    await typeKeys(tester, '-');
+    expect(strokes().map((stroke) => stroke.line), <InkLine>[
+      InkLine.dashed,
+      InkLine.dashed,
+    ]);
+    await typeKeys(tester, ']');
+    expect(strokes().first.width, 3.5);
+
+    await typeKeys(tester, 'f');
+    await tester.tap(find.byTooltip('Yellow'));
+    await tester.pumpAndSettle();
+    expect(strokes().first.fill, 0x80FFD60A);
+    expect(strokes().last.fill, isNull, reason: 'it goes round nothing');
+
+    await typeKeys(tester, 'sc');
+    await tester.tap(find.byTooltip('Red'));
+    await tester.pumpAndSettle();
+    expect(strokes().every((stroke) => stroke.color == 0xFFD93025), isTrue);
+    expect(canvas.selection, <String>{'drawn'}, reason: 'still picked');
+
+    // Each of those is a step undo takes back.
+    canvas.undo();
+    expect(strokes().first.color, 0xFF000000);
+
+    // A right-click on it offers the same, in the menu.
+    await rightClick(
+      tester,
+      tester.getTopLeft(find.byType(InfiniteCanvas)) + const Offset(200, 150),
+    );
+    expect(_guideTitled('Menu'), findsOneWidget);
+    await typeKeys(tester, 'I');
+    expect(_guideTitled('Ink picked'), findsOneWidget);
   });
 
   testWidgets('a sheet is added printed as chosen, and moved', (tester) async {

@@ -628,4 +628,90 @@ void main() {
       expect(copy.blocks, original.blocks);
     });
   });
+
+  group('a stroke dashed or filled', () {
+    InkStroke square({InkLine line = InkLine.solid, int? fill}) =>
+        InkStroke.fromPoints(
+          tool: InkTool.pen,
+          color: 0xFF000000,
+          width: 2,
+          xs: <double>[0, 100, 100, 0, 0],
+          ys: <double>[0, 0, 100, 100, 0],
+          line: line,
+          fill: fill,
+        );
+
+    test('is written with how its line is drawn and what it is filled '
+        'with, and read back so, either way it is written', () {
+      final stroke = square(line: InkLine.dashed, fill: 0x80D93025);
+
+      final read = InkStroke.fromJson(
+        jsonDecode(jsonEncode(stroke)) as Map<String, Object?>,
+      );
+      expect(read.line, InkLine.dashed);
+      expect(read.fill, 0x80D93025);
+
+      final written = StringBuffer();
+      stroke.writeJson(written);
+      expect(jsonDecode(written.toString()), jsonDecode(jsonEncode(stroke)));
+    });
+
+    test('a whole line with no fill is written as strokes always were, and '
+        'one written before either is read as that', () {
+      final json = square().toJson();
+      expect(json.keys, <String>['tool', 'color', 'width', 'points']);
+
+      final read = InkStroke.fromJson(json);
+      expect(read.line, InkLine.solid);
+      expect(read.fill, isNull);
+      // A way of drawing a line this build does not know is a whole line.
+      expect(
+        InkStroke.fromJson(<String, Object?>{...json, 'line': 'wavy'}).line,
+        InkLine.solid,
+      );
+    });
+
+    test('stays dashed and filled moved, resized and turned', () {
+      final stroke = square(line: InkLine.dotted, fill: 0xFF34A853);
+      for (final moved in <InkStroke>[
+        stroke.translate(10, 10),
+        stroke.scale(2, 3),
+        stroke.transformed(Affine2D.rotation(0.5)),
+      ]) {
+        expect(moved.line, InkLine.dotted);
+        expect(moved.fill, 0xFF34A853);
+      }
+    });
+
+    test('filled, is touched anywhere within it; not filled, only on its '
+        'line', () {
+      expect(square().hitTest(50, 50, 4), isFalse);
+      expect(square().hitTest(50, 1, 4), isTrue);
+      expect(square(fill: 0x40000000).hitTest(50, 50, 4), isTrue);
+      expect(square(fill: 0x40000000).hitTest(150, 50, 4), isFalse);
+    });
+
+    test('closes if it ends where it began, as an outline does', () {
+      expect(square().isClosed, isTrue);
+      final open = InkStroke.fromPoints(
+        tool: InkTool.pen,
+        color: 0xFF000000,
+        width: 2,
+        xs: <double>[0, 100, 100],
+        ys: <double>[0, 0, 100],
+      );
+      expect(open.isClosed, isFalse);
+    });
+
+    test('restyled, keeps what is not changed, and loses its fill only '
+        'when told to', () {
+      final stroke = square(line: InkLine.dashed, fill: 0xFF34A853);
+      final wider = stroke.restyled(width: 5);
+      expect(wider.width, 5);
+      expect(wider.line, InkLine.dashed);
+      expect(wider.fill, 0xFF34A853);
+      expect(wider.points, same(stroke.points));
+      expect(stroke.restyled(unfilled: true).fill, isNull);
+    });
+  });
 }

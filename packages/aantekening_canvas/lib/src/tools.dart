@@ -52,6 +52,8 @@ class PenSettings {
     this.color = 0xFF000000,
     this.width = 2.2,
     this.pressureSensitive = true,
+    this.line = InkLine.solid,
+    this.fill,
   });
 
   /// The pen a page starts with.
@@ -83,6 +85,30 @@ class PenSettings {
   /// Whether stylus pressure modulates the stroke width.
   final bool pressureSensitive;
 
+  /// How the pen's line is drawn along its way, and the outline of a shape
+  /// drawn in its ink. A highlighter's is always whole.
+  final InkLine line;
+
+  /// What a shape drawn in the pen's ink is filled with, as 32-bit ARGB —
+  /// translucent, it lets what it lies on show through — or null for
+  /// nothing. Handwriting is never filled, nor a highlighter's shape.
+  final int? fill;
+
+  /// How opaque a fill is at each strength it is offered at, from one that
+  /// tints what it lies on to one that covers it.
+  static const List<({String label, int alpha})> fillStrengths =
+      <({String label, int alpha})>[
+        (label: 'Light', alpha: 0x40),
+        (label: 'Half', alpha: 0x80),
+        (label: 'Solid', alpha: 0xFF),
+      ];
+
+  /// How the line of a stroke made with these is drawn.
+  InkLine get strokeLine => tool == InkTool.highlighter ? InkLine.solid : line;
+
+  /// What a shape made with these is filled with.
+  int? get shapeFill => tool == InkTool.highlighter ? null : fill;
+
   /// The colour strokes are stored with. A pen can draw in the inverse of
   /// what is beneath it ([NoteColors.inverse]); a highlighter cannot, and
   /// is made translucent.
@@ -95,11 +121,16 @@ class PenSettings {
     int? color,
     double? width,
     bool? pressureSensitive,
+    InkLine? line,
+    int? fill,
+    bool unfilled = false,
   }) => PenSettings(
     tool: tool ?? this.tool,
     color: color ?? this.color,
     width: width ?? this.width,
     pressureSensitive: pressureSensitive ?? this.pressureSensitive,
+    line: line ?? this.line,
+    fill: unfilled ? null : fill ?? this.fill,
   );
 
   @override
@@ -108,10 +139,13 @@ class PenSettings {
       other.tool == tool &&
       other.color == color &&
       other.width == width &&
-      other.pressureSensitive == pressureSensitive;
+      other.pressureSensitive == pressureSensitive &&
+      other.line == line &&
+      other.fill == fill;
 
   @override
-  int get hashCode => Object.hash(tool, color, width, pressureSensitive);
+  int get hashCode =>
+      Object.hash(tool, color, width, pressureSensitive, line, fill);
 }
 
 /// What pressing a pen's barrel button does, held as the pen touches the

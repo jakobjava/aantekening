@@ -177,6 +177,8 @@ class CanvasController extends ChangeNotifier {
         tool: settings.tool,
         color: settings.strokeColor,
         width: settings.width,
+        line: settings.strokeLine,
+        fill: settings.shapeFill,
       );
     }
     if (_wetPoints.length < InkStroke.stride) return const <InkStroke>[];
@@ -186,6 +188,7 @@ class CanvasController extends ChangeNotifier {
         color: settings.strokeColor,
         width: settings.width,
         points: Float32List.fromList(_wetPoints),
+        line: settings.strokeLine,
       ),
     ];
   }
@@ -1129,6 +1132,53 @@ class CanvasController extends ChangeNotifier {
     );
   }
 
+  /// Whether any ink is picked: handwriting or shapes, not a highlighter's
+  /// alone, whose line is neither dashed nor filled.
+  bool get selectionHasInk {
+    for (final id in _selection) {
+      final element = _byId[id];
+      if (element is InkElement && !element.locked) return true;
+    }
+    return false;
+  }
+
+  /// The ink picked, as [restyle] makes each of its strokes: in another
+  /// colour, wider, dashed, filled. A stroke [restyle] gives back as it was
+  /// is left as it is, and nothing is done if every one is.
+  void restyleSelection(InkStroke Function(InkStroke stroke) restyle) {
+    var changed = false;
+    final elements = <NoteElement>[
+      for (final element in _document.elements)
+        if (element is InkElement &&
+            !element.locked &&
+            _selection.contains(element.id))
+          () {
+            var any = false;
+            final strokes = <InkStroke>[
+              for (final stroke in element.strokes)
+                () {
+                  final styled = restyle(stroke);
+                  if (!identical(styled, stroke)) any = true;
+                  return styled;
+                }(),
+            ];
+            if (!any) return element;
+            changed = true;
+            return element.withStrokes(
+              strokes,
+              updatedAt: DateTime.now().millisecondsSinceEpoch,
+            );
+          }()
+        else
+          element,
+    ];
+    if (!changed) return;
+    _activeInkElementId = null;
+    _apply(
+      _document.copyWith(revision: _document.revision + 1, elements: elements),
+    );
+  }
+
   // ------------------------------------------------------------ ink capture
 
   /// Begins a stroke at a page-space point, letting go of what was picked
@@ -1320,6 +1370,8 @@ class CanvasController extends ChangeNotifier {
         tool: settings.tool,
         color: settings.strokeColor,
         width: settings.width,
+        line: settings.strokeLine,
+        fill: settings.shapeFill,
       ),
       DateTime.now().millisecondsSinceEpoch,
     );

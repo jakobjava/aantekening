@@ -14,7 +14,8 @@ thousands of pages instant.
 - **Pages that run on without end.** Type anywhere, and text boxes form
   around what you type. Draw with a pressure-sensitive pen or highlighter;
   hold the pen still and a stroke becomes the shape it was drawn as, or drag
-  out shapes, axes and solids from the Draw tab. Move, resize and rotate
+  out shapes, axes and solids from the Draw tab — their lines whole, dashed
+  or dotted, and outlines filled with a colour. Move, resize and rotate
   anything, or pick out handwriting with the lasso.
 - **Or pages, as in a paper notebook.** Show any page as sheets of A4 or
   Letter — blank, lined, squared, dotted, music staves or Cornell — in the

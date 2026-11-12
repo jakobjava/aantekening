@@ -430,4 +430,46 @@ void main() {
       expect(axes.lines(2), hasLength(2 + 2 + 2 * 9));
     });
   });
+
+  group('a shape drawn dashed and filled', () {
+    List<InkStroke> drawn(ShapeKind kind) =>
+        InkShape.placed(kind, const Vec2(100, 100)).strokes(
+          tool: InkTool.pen,
+          color: 0xFF000000,
+          width: 2,
+          line: InkLine.dashed,
+          fill: 0x801A73E8,
+        );
+
+    test('an outline is dashed all round, and filled', () {
+      for (final kind in ShapeKind.of(ShapeFamily.outlines)) {
+        final stroke = drawn(kind).single;
+        expect(stroke.line, InkLine.dashed, reason: kind.label);
+        expect(stroke.fill, 0x801A73E8, reason: kind.label);
+        expect(stroke.isClosed, isTrue, reason: kind.label);
+      }
+    });
+
+    test('an arrow is dashed along its way, its head whole, and neither '
+        'is filled', () {
+      final strokes = drawn(ShapeKind.arrow);
+      expect(strokes, hasLength(2));
+      expect(strokes.first.line, InkLine.dashed);
+      expect(strokes.last.line, InkLine.solid);
+      expect(strokes.every((stroke) => stroke.fill == null), isTrue);
+    });
+
+    test('graphs and solids, which have ticks and dashes of their own, '
+        'are drawn as they always are', () {
+      for (final kind in <ShapeKind>[
+        ...ShapeKind.of(ShapeFamily.graphs),
+        ...ShapeKind.of(ShapeFamily.solids),
+      ]) {
+        for (final stroke in drawn(kind)) {
+          expect(stroke.line, InkLine.solid, reason: kind.label);
+          expect(stroke.fill, isNull, reason: kind.label);
+        }
+      }
+    });
+  });
 }

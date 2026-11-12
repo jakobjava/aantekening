@@ -289,6 +289,8 @@ class PageLayers {
   KeyLayer draw() {
     final tool = _canvas.tool;
     final ink = commands.ink;
+    final pen = _canvas.penSettings;
+    final fill = pen.fill;
     KeyAction take(String key, CanvasTool each, String label) => KeyAction(
       key,
       label,
@@ -337,6 +339,102 @@ class PageLayers {
             stays: true,
           ),
         ],
+      ),
+      // How the pen's line is drawn, and what the shapes drawn in its ink
+      // are filled with: the highlighter has neither.
+      KeyGroup(title: 'Line and fill', <KeyAction>[
+        KeyAction(
+          '-',
+          'Line: ${pen.line.label}',
+          run: commands.stepInkLine,
+          stays: true,
+        ),
+        KeyAction(
+          'f',
+          fill == null
+              ? 'Fill shapes: no'
+              : 'Fill shapes: ${NotePalette.nameOf(fill)}',
+          layer: () => colours(
+            'Fill shapes',
+            current: fill,
+            noneLabel: 'No fill',
+            onPicked: commands.fillShapesWith,
+          ),
+          preview: _Dot(fill),
+        ),
+        KeyAction(
+          'o',
+          fill == null
+              ? 'Fill strength'
+              : 'Fill strength: ${PageCommands.fillStrengthOf(fill)}',
+          run: commands.stepFillStrength,
+          stays: true,
+          enabled: fill != null,
+        ),
+      ]),
+    ]);
+  }
+
+  /// The ink picked, drawn another way: its colour, its width, its line
+  /// and what it is filled with.
+  KeyLayer inkPicked() {
+    final stroke = commands.pickedStroke;
+    final fill = commands.pickedFilled?.fill;
+    final penned = stroke != null && stroke.tool != InkTool.highlighter;
+    return KeyLayer.of('Ink picked', <KeyAction>[
+      KeyAction(
+        'c',
+        stroke == null
+            ? 'Colour'
+            : 'Colour: ${NotePalette.nameOf(stroke.color)}',
+        layer: () => colours(
+          'Ink picked',
+          current: stroke?.color,
+          offersInverse: penned,
+          onPicked: (color) =>
+              commands.colourPicked(NotePalette.opaque(color!)),
+        ),
+        preview: _Dot(stroke?.color),
+      ),
+      KeyAction(
+        ']',
+        stroke == null ? 'Thicker' : 'Thicker: ${_points(stroke.width)} pt',
+        run: () => commands.stepPickedWidth(1),
+        stays: true,
+      ),
+      KeyAction(
+        '[',
+        'Thinner',
+        run: () => commands.stepPickedWidth(-1),
+        stays: true,
+      ),
+      KeyAction(
+        '-',
+        penned ? 'Line: ${stroke.line.label}' : 'Line',
+        run: commands.stepPickedLine,
+        stays: true,
+        enabled: penned,
+      ),
+      KeyAction(
+        'f',
+        fill == null ? 'Fill: no' : 'Fill: ${NotePalette.nameOf(fill)}',
+        layer: () => colours(
+          'Fill what is picked',
+          current: fill,
+          noneLabel: 'No fill',
+          onPicked: commands.fillPicked,
+        ),
+        preview: _Dot(fill),
+        enabled: penned,
+      ),
+      KeyAction(
+        'o',
+        fill == null
+            ? 'Fill strength'
+            : 'Fill strength: ${PageCommands.fillStrengthOf(fill)}',
+        run: commands.stepPickedFillStrength,
+        stays: true,
+        enabled: fill != null,
       ),
     ]);
   }

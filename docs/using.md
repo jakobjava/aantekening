@@ -26,10 +26,10 @@ As in vim, what a key does depends on the mode:
 
 | Mode | Entered by | Its keys |
 | --- | --- | --- |
-| **Normal** | Esc | h j k l, or the arrows, go from thing to thing on the page, keeping to a line or a column; f puts a label on everything in view, to jump to by typing it; i or Enter types in the box picked, or a new one; o in a new box below; `$` a formula; x deletes, y copies, p pastes, u undoes, U redoes; m moves what is picked (h j k l or the arrows a step, H J K L ten); gg the top, G the foot; J K the next and previous page; H L back and forward; / search; : commands; Esc lets go of what is picked and what is searched for |
+| **Normal** | Esc | h j k l, or the arrows, go from thing to thing on the page, keeping to a line or a column; f puts a label on everything in view, to jump to by typing it; i or Enter types in the box picked, or a new one; o in a new box below; `$` a formula; x deletes, y copies, p pastes, u undoes, U redoes; s draws the ink picked another way; m moves what is picked (h j k l or the arrows a step, H J K L ten); gg the top, G the foot; J K the next and previous page; H L back and forward; / search; : commands; Esc lets go of what is picked and what is searched for |
 | **Insert** | i, or a click in text | Typing, as anywhere; Esc goes back to normal |
-| **Draw** | d | p pen, h highlighter, e eraser, s shapes, l lasso; 1–9 the palette's colours; [ and ] thinner and thicker; c any colour |
-| **Select** | v | The lasso; h j k l (or the arrows), and f, pick what is that way, or labelled, as well; d deletes, y copies, c cuts, m moves, a picks everything |
+| **Draw** | d | p pen, h highlighter, e eraser, s shapes, l lasso; 1–9 the palette's colours; [ and ] thinner and thicker; c any colour; - the line whole, dashed or dotted; f what shapes are filled with, o how strongly |
+| **Select** | v | The lasso; h j k l (or the arrows), and f, pick what is that way, or labelled, as well; d deletes, y copies, c cuts, m moves, a picks everything; s draws the ink picked another way |
 | **AI** | a, or Ctrl+J | o the overview; 1–9 a set to study; i the question; n a new conversation; c a conversation or an answer kept, by name; q a question ready to ask; h j k l (or the arrows) go to anything in it, ringed, Enter or Space pressing it; Esc lets go of it, and then goes back to the notes |
 
 **?** shows the keys of the mode the page is in. A pause in the middle of
@@ -220,6 +220,28 @@ their hidden edges dashed. A click puts one down at its usual size. Shift
 keeps a box square and a line to steps of 15°. Shapes are drawn in the
 pen's colour and width, and are ink once drawn: picked, moved, resized,
 turned and erased as handwriting is.
+
+**The line** of the pen is whole, dashed or dotted (- in draw mode steps
+through the three): handwriting, lines and arrows — an arrow's head stays
+whole — and the outlines of shapes. Dashes and dots are sized to the pen,
+and as wide all along as it is, however it is pressed. Graphs and solids,
+which have ticks and dashes of their own, are always drawn as they are.
+
+**Shapes are filled** with a colour chosen with f in draw mode — outlines,
+and an outline of straight sides a stroke became; not handwriting — and o
+makes the fill light, half or solid. Ink lies over text and pictures, so a
+fill that is not solid lets what it is drawn round be read; a solid one
+covers it. A filled shape is picked or erased by pressing anywhere within
+it.
+
+**Ink picked** is drawn another way with s, in normal and select mode, or
+from the menu a right-click on it opens: its colour, its width a step
+thicker or thinner, its line whole, dashed or dotted, and what it is filled
+with — any stroke that ends where it began is filled, a loop drawn by hand
+as much as a shape's outline.
+
+The pen and the highlighter stay as they were last set — colour, width,
+line and fill — from page to page, and the next time the app is opened.
 
 **Settings → Pen** steadies the pen's line (Smoothing: the line trails the
 pen a little, as if pulled on a string, and catches up where it lifts), sets

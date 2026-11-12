@@ -1176,4 +1176,254 @@ void main() {
       }
     });
   });
+
+  group('lines dashed and dotted, and shapes filled', () {
+    InkElement ink(List<InkStroke> strokes) => InkElement(
+      id: 'ink',
+      frame: const Frame(x: 0, y: 0, width: 0, height: 0),
+      createdAt: 0,
+      updatedAt: 0,
+    ).withStrokes(strokes);
+
+    InkStroke level({
+      InkLine line = InkLine.solid,
+      int color = 0xFF000000,
+      List<double>? pressures,
+    }) => InkStroke.fromPoints(
+      tool: InkTool.pen,
+      color: color,
+      width: 4,
+      xs: <double>[20, 100, 180],
+      ys: <double>[50, 50, 50],
+      pressures: pressures,
+      line: line,
+    );
+
+    InkStroke box({InkLine line = InkLine.solid, int? fill, int? color}) =>
+        InkStroke.fromPoints(
+          tool: InkTool.pen,
+          color: color ?? 0xFF000000,
+          width: 4,
+          xs: <double>[40, 160, 160, 40, 40],
+          ys: <double>[20, 20, 80, 80, 20],
+          line: line,
+          fill: fill,
+        );
+
+    /// Every layer of [strokes] drawn on white, 200 by 100, a pixel to a
+    /// unit: what is read is each pixel's red, green and blue.
+    Future<(int, int, int) Function(int x, int y)> drawn(
+      List<InkStroke> strokes,
+    ) async {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder)
+        ..drawColor(const Color(0xFFFFFFFF), BlendMode.src);
+      for (final layer in InkLayer.values) {
+        InkPainter(
+          elements: <InkElement>[ink(strokes)],
+          viewport: const CanvasViewport(),
+          layer: layer,
+        ).paint(canvas, const Size(200, 100));
+      }
+      final image = await recorder.endRecording().toImage(200, 100);
+      final bytes = (await image.toByteData())!.buffer.asUint8List();
+      image.dispose();
+      return (int x, int y) {
+        final at = (y * 200 + x) * 4;
+        return (bytes[at], bytes[at + 1], bytes[at + 2]);
+      };
+    }
+
+    /// How many times the line along y = 50 starts, from 10 to 190.
+    int runsAlong((int, int, int) Function(int x, int y) pixel) {
+      var runs = 0;
+      var inked = false;
+      for (var x = 10; x < 190; x++) {
+        final dark = pixel(x, 50).$1 < 128;
+        if (dark && !inked) runs++;
+        inked = dark;
+      }
+      return runs;
+    }
+
+    test('a whole line is drawn in one piece, a dashed one in a few, a '
+        'dotted one in many', () async {
+      expect(runsAlong(await drawn(<InkStroke>[level()])), 1);
+      final dashes = runsAlong(
+        await drawn(<InkStroke>[level(line: InkLine.dashed)]),
+      );
+      final dots = runsAlong(
+        await drawn(<InkStroke>[level(line: InkLine.dotted)]),
+      );
+      // 160 units of a line 4 wide: a dash and its gap 20, a dot and its
+      // gap 8.
+      expect(dashes, inInclusiveRange(7, 9));
+      expect(dots, inInclusiveRange(18, 22));
+    });
+
+    test('a dashed line begins and ends with a dash', () async {
+      final pixel = await drawn(<InkStroke>[level(line: InkLine.dashed)]);
+      expect(pixel(21, 50).$1, lessThan(128));
+      expect(pixel(179, 50).$1, lessThan(128));
+    });
+
+    test('a dashed line is as wide all along as the pen, however it was '
+        'pressed', () async {
+      final pixel = await drawn(<InkStroke>[
+        level(line: InkLine.dashed, pressures: <double>[0.1, 1, 0.1]),
+      ]);
+      // Two units either side of its middle, at its lightly pressed start.
+      expect(pixel(22, 49).$1, lessThan(128));
+      expect(pixel(22, 51).$1, lessThan(128));
+      expect(runsAlong(pixel), inInclusiveRange(7, 9));
+    });
+
+    test('the dashes round an outline are alike, one astride where it '
+        'starts', () {
+      final path = StrokeGeometry.brokenPath(box(line: InkLine.dashed));
+      final lengths = <double>[
+        for (final metric in path.computeMetrics()) metric.length,
+      ];
+      // 360 units round, in dashes of 8 with gaps of about 12; the one
+      // astride the corner it starts at is in two halves.
+      expect(lengths.length, 19);
+      expect(lengths.where((length) => (length - 8).abs() < 0.01).length, 17);
+      expect(lengths.where((length) => (length - 4).abs() < 0.01).length, 2);
+    });
+
+    test('a filled shape is its fill within and its line round it; '
+        'unfilled, paper within', () async {
+      var pixel = await drawn(<InkStroke>[box()]);
+      expect(pixel(100, 50), (255, 255, 255));
+      expect(pixel(100, 20).$1, lessThan(40));
+
+      pixel = await drawn(<InkStroke>[box(fill: 0xFFFF0000)]);
+      expect(pixel(100, 50), (255, 0, 0));
+      expect(pixel(100, 20).$1, lessThan(40), reason: 'its line over it');
+      expect(pixel(20, 50), (255, 255, 255), reason: 'paper outside');
+    });
+
+    test('a fill not solid lets what it lies on show through', () async {
+      final pixel = await drawn(<InkStroke>[box(fill: 0x80FF0000)]);
+      final (red, green, blue) = pixel(100, 50);
+      expect(red, 255);
+      expect(green, inInclusiveRange(120, 135));
+      expect(blue, inInclusiveRange(120, 135));
+    });
+
+    test('a line drawn in the inverse of what is beneath inverts its own '
+        'fill, which is drawn as it is', () async {
+      final pixel = await drawn(<InkStroke>[
+        box(color: NoteColors.inverse, fill: 0xFFFF0000),
+      ]);
+      expect(pixel(100, 50), (255, 0, 0));
+      expect(pixel(100, 20), (0, 255, 255));
+    });
+
+    test('a shape is dragged out dashed and filled as the pen is set, '
+        'and looks so while it is dragged', () {
+      final controller = CanvasController()
+        ..setPen(
+          PenSettings.defaultPen.copyWith(
+            line: InkLine.dashed,
+            fill: 0x8034A853,
+          ),
+        )
+        ..setShapeKind(ShapeKind.rectangle)
+        ..setTool(CanvasTool.shape)
+        ..beginShape(const Offset(100, 100))
+        ..extendStroke(const Offset(300, 220));
+      addTearDown(controller.dispose);
+
+      expect(controller.wetStrokes.single.fill, 0x8034A853);
+      expect(controller.wetStrokes.single.line, InkLine.dashed);
+
+      final stroke = controller.endStroke()!.strokes.single;
+      expect(stroke.line, InkLine.dashed);
+      expect(stroke.fill, 0x8034A853);
+    });
+
+    test('handwriting is dashed with the pen, and never filled; a '
+        'highlighter is neither', () {
+      final controller = CanvasController()
+        ..setPen(
+          PenSettings.defaultPen.copyWith(
+            line: InkLine.dotted,
+            fill: 0xFF34A853,
+          ),
+        )
+        ..setTool(CanvasTool.pen)
+        ..beginStroke(Offset.zero)
+        ..extendStroke(const Offset(40, 10))
+        ..extendStroke(const Offset(80, 0));
+      addTearDown(controller.dispose);
+      final written = controller.endStroke()!.strokes.single;
+      expect(written.line, InkLine.dotted);
+      expect(written.fill, isNull);
+
+      controller
+        ..setPen(
+          PenSettings.defaultHighlighter.copyWith(
+            line: InkLine.dashed,
+            fill: 0xFF34A853,
+          ),
+        )
+        ..setTool(CanvasTool.highlighter)
+        ..beginStroke(const Offset(0, 400))
+        ..extendStroke(const Offset(40, 400))
+        ..extendStroke(const Offset(80, 400));
+      final marked = controller.endStroke()!.strokes.single;
+      expect(marked.line, InkLine.solid);
+      expect(marked.fill, isNull);
+    });
+
+    test('the ink picked is drawn another way in one step, which undo '
+        'takes back; what is not picked stays as it was', () {
+      final controller = CanvasController()
+        ..addElement(ink(<InkStroke>[box(), level()]))
+        ..addElement(
+          InkElement(
+            id: 'other',
+            frame: const Frame(x: 0, y: 0, width: 0, height: 0),
+            createdAt: 0,
+            updatedAt: 0,
+          ).withStrokes(<InkStroke>[level()]),
+        );
+      addTearDown(controller.dispose);
+      InkElement at(String id) => controller.elementById(id)! as InkElement;
+
+      expect(controller.selectionHasInk, isFalse);
+      controller.select('ink');
+      expect(controller.selectionHasInk, isTrue);
+
+      controller.restyleSelection(
+        (stroke) => stroke.isClosed
+            ? stroke.restyled(fill: 0xFFFFD60A, line: InkLine.dashed)
+            : stroke,
+      );
+      expect(at('ink').strokes.first.fill, 0xFFFFD60A);
+      expect(at('ink').strokes.first.line, InkLine.dashed);
+      expect(at('ink').strokes.last.fill, isNull, reason: 'it does not close');
+      expect(at('other').strokes.single.line, InkLine.solid);
+      expect(controller.selection, <String>{'ink'});
+
+      controller.undo();
+      expect(at('ink').strokes.first.fill, isNull);
+
+      // Nothing to do is nothing done: no step to undo is added.
+      final before = controller.document;
+      controller.restyleSelection((stroke) => stroke);
+      expect(controller.document, same(before));
+    });
+
+    test('a filled shape is picked, and erased, by pressing within it', () {
+      final controller = CanvasController()
+        ..addElement(ink(<InkStroke>[box(fill: 0x40FF0000)]));
+      addTearDown(controller.dispose);
+
+      expect(controller.hitTest(const Offset(100, 50))?.id, 'ink');
+      expect(controller.eraseAt(const Offset(100, 50)), isTrue);
+      expect(controller.document.elements, isEmpty);
+    });
+  });
 }

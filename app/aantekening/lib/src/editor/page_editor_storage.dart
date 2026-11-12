@@ -105,6 +105,10 @@ extension _Storage on _PageEditorState {
     }
     final tool = _controller.tool;
     if (tool.draws) _lastInkTool = tool;
+    // The pen as it is now is the pen the next page is drawn on with.
+    ref
+        .read(inkPensProvider.notifier)
+        .keep(_controller.penSettings, _controller.highlighterSettings);
     _syncBoxFormatting();
 
     final editingId = _editingId;

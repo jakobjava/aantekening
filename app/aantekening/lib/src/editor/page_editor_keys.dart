@@ -118,6 +118,15 @@ extension _Keys on _PageEditorState {
     KeyAction('m', 'Formulas', layer: _layers.math),
   ];
 
+  /// Drawing the ink picked another way — its colour, its width, its line
+  /// and what it is filled with — by [key], while any is picked.
+  KeyAction _inkPickedKey(String key) => KeyAction(
+    key,
+    'Ink picked: colour, line, fill',
+    layer: _layers.inkPicked,
+    enabled: _controller.selectionHasInk,
+  );
+
   /// Undo and redo, by the same keys in every mode that has them.
   List<KeyAction> _undoKeys() => <KeyAction>[
     KeyAction('u', 'Undo', run: _controller.undo, enabled: _controller.canUndo),
@@ -222,6 +231,7 @@ extension _Keys on _PageEditorState {
           run: _deleteSelection,
           enabled: some,
         ),
+        if (_controller.selectionHasInk) _inkPickedKey('I'),
         if (picture is TikzElement)
           KeyAction(
             'T',
@@ -362,6 +372,7 @@ extension _Keys on _PageEditorState {
           'Paste text only',
           run: () => unawaited(_paste(textOnly: true)),
         ),
+        _inkPickedKey('s'),
         ..._undoKeys(),
       ]),
       KeyGroup(title: 'Go', <KeyAction>[
@@ -427,8 +438,9 @@ extension _Keys on _PageEditorState {
             ),
             checked: ink.color == colour.color,
           ),
-        ...draw.groups.last.actions,
+        ...draw.groups[1].actions,
       ]),
+      draw.groups[2],
       KeyGroup(title: 'Modes', <KeyAction>[
         KeyAction(ModeKey.escape, 'Back to normal', run: _toNormal),
         KeyAction('v', 'Select', run: () => _selectTool(CanvasTool.lasso)),
@@ -476,6 +488,7 @@ extension _Keys on _PageEditorState {
         enabled: some,
       ),
       KeyAction('p', 'Paste', run: () => unawaited(_paste())),
+      _inkPickedKey('s'),
       ..._undoKeys(),
       KeyAction(ModeKey.space, 'Menu', layer: _menu),
       KeyAction('?', 'These keys', layer: _selectKeys),

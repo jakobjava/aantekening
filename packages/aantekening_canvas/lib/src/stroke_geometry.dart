@@ -69,6 +69,72 @@ abstract final class StrokeGeometry {
     return path;
   }
 
+  /// The line through a stroke's samples in dashes or dots, as
+  /// [InkStroke.line] says: pieces of [smoothPath], to be drawn with round
+  /// ends as wide as the stroke.
+  ///
+  /// A dash is two widths of the way and a round end beyond each, three
+  /// widths drawn; a dot is no way at all, and so its round ends alone.
+  /// The gaps are stretched to fit a whole number of them: a line begins
+  /// and ends with a dash, and round an outline that closes they are all
+  /// alike, one astride where it starts.
+  static Path brokenPath(InkStroke stroke) {
+    final whole = smoothPath(stroke);
+    if (stroke.pointCount < 2 || stroke.line == InkLine.solid) return whole;
+    final width = math.max(stroke.width, 0.5);
+    final dotted = stroke.line == InkLine.dotted;
+    // A dot is a little of the way, not none, which is not drawn at all.
+    final on = dotted ? width * 0.02 : width * 2;
+    final off = dotted ? width * 2 : width * 3;
+    // Nearer than this, the round ends of two would touch.
+    final least = width * 1.4;
+    final count = stroke.pointCount;
+    final closed =
+        (stroke.xAt(0) - stroke.xAt(count - 1)).abs() < 0.01 &&
+        (stroke.yAt(0) - stroke.yAt(count - 1)).abs() < 0.01;
+
+    final path = Path();
+    for (final metric in whole.computeMetrics()) {
+      final length = metric.length;
+      if (closed) {
+        var dashes = math.max(1, (length / (on + off)).round());
+        while (dashes > 1 && length / dashes - on < least) {
+          dashes--;
+        }
+        final step = length / dashes;
+        if (step - on < least) return whole;
+        for (var i = 0; i < dashes; i++) {
+          final from = i * step - on / 2;
+          if (from < 0) {
+            path
+              ..addPath(metric.extractPath(length + from, length), Offset.zero)
+              ..addPath(metric.extractPath(0, from + on), Offset.zero);
+          } else {
+            path.addPath(metric.extractPath(from, from + on), Offset.zero);
+          }
+        }
+        continue;
+      }
+      var dashes = math.max(1, ((length + off) / (on + off)).round());
+      while (dashes > 1 && (length - dashes * on) / (dashes - 1) < least) {
+        dashes--;
+      }
+      if (dashes == 1) {
+        path.addPath(metric.extractPath(0, length), Offset.zero);
+        continue;
+      }
+      final step = on + (length - dashes * on) / (dashes - 1);
+      for (var i = 0; i < dashes; i++) {
+        path.addPath(metric.extractPath(i * step, i * step + on), Offset.zero);
+      }
+    }
+    return path;
+  }
+
+  /// The area a stroke's way goes round, closed from its end back to its
+  /// start: what its fill covers.
+  static Path filledPath(InkStroke stroke) => smoothPath(stroke)..close();
+
   /// Whether the way turns at sample [i] of [stroke], within it, more
   /// sharply than [_sharpestTurn], between sides long enough for the turn
   /// to show beyond the line's own width.
