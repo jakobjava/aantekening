@@ -140,8 +140,12 @@ extension _View on TextBoxEditorState {
       caret: focused && _selection.isCollapsed && here
           ? view.toView(caret.offset)
           : null,
-      caretAffinity: _affinity,
-      typingStyle: _typingStyle(index),
+      // Which side of a line's end the caret is on, and the size it is
+      // drawn at for what is typed next, are the caret's own: a block
+      // without it is drawn the same whatever they are, and is not built
+      // again as they change.
+      caretAffinity: here ? _affinity : TextAffinity.downstream,
+      typingStyle: here ? _typingStyle(index) : null,
       composing: here ? _input.composing : null,
       matches: matches,
       misspellings: misspellings,
@@ -298,8 +302,8 @@ extension _View on TextBoxEditorState {
       caret: here ? caret.offset : null,
       collapsed: here && _selection.isCollapsed,
       composing: here ? _input.composing : null,
-      affinity: _affinity,
-      pendingMarks: _pendingMarks,
+      affinity: here ? _affinity : TextAffinity.downstream,
+      pendingMarks: here ? _pendingMarks : null,
     );
     while (_builtRows.length <= index) {
       _builtRows.add(null);
@@ -309,6 +313,8 @@ extension _View on TextBoxEditorState {
     final row = _rowOf(index, base, paint, ordinal, focused, autoWidth);
     final placed = autoWidth
         ? AlignedRow(
+            // Moved with its block, as the row within it is.
+            key: ValueKey<GlobalKey>(_rowKeys[index]),
             across: switch (_blocks[index].align) {
               BlockAlign.start => 0,
               BlockAlign.center => 0.5,

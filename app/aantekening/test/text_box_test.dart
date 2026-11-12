@@ -1617,6 +1617,57 @@ void main() {
     );
   });
 
+  testWidgets('a line begun or taken out near the top builds none of the '
+      'paragraphs below it again', (tester) async {
+    await openEditor(tester, store, pageId);
+    await startTextBox(tester);
+    for (final (index, line) in <String>['one', 'two', 'three'].indexed) {
+      if (index > 0) await press(tester, LogicalKeyboardKey.enter);
+      await type(tester, line);
+    }
+    await tester.pumpAndSettle();
+    List<BlockParagraph> paragraphs() =>
+        tester.widgetList<BlockParagraph>(find.byType(BlockParagraph)).toList();
+    List<Element> placed() => find.byType(BlockParagraph).evaluate().toList();
+    // To the end of the first line, and a line begun after it.
+    for (var i = 0; i < 2; i++) {
+      await press(tester, LogicalKeyboardKey.arrowUp);
+    }
+    await press(tester, LogicalKeyboardKey.end);
+    await tester.pumpAndSettle();
+    final before = paragraphs();
+    final places = placed();
+    await press(tester, LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(textOf(tester), 'one\n\ntwo\nthree');
+    var after = paragraphs();
+    expect(after, hasLength(4));
+    expect(identical(after[2], before[1]), isTrue, reason: 'two, as built');
+    expect(identical(after[3], before[2]), isTrue, reason: 'three, as built');
+    // Moved down as they are, not made again where they now stand.
+    expect(identical(placed()[2], places[1]), isTrue);
+    expect(identical(placed()[3], places[2]), isTrue);
+
+    // Typed into, the new line is the only one built.
+    await type(tester, 'x');
+    await tester.pumpAndSettle();
+    after = paragraphs();
+    expect(identical(after[2], before[1]), isTrue);
+    expect(identical(after[3], before[2]), isTrue);
+
+    // Taken out again, those below move back up as they are.
+    await press(tester, LogicalKeyboardKey.backspace);
+    await press(tester, LogicalKeyboardKey.backspace);
+    await tester.pumpAndSettle();
+    expect(textOf(tester), 'one\ntwo\nthree');
+    after = paragraphs();
+    expect(identical(after[1], before[1]), isTrue);
+    expect(identical(after[2], before[2]), isTrue);
+    expect(identical(placed()[1], places[1]), isTrue);
+    expect(identical(placed()[2], places[2]), isTrue);
+  });
+
   testWidgets('an abandoned empty box is removed', (tester) async {
     await openEditor(tester, store, pageId);
     await startTextBox(tester);

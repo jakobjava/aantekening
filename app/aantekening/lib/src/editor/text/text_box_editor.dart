@@ -388,6 +388,11 @@ class TextBoxEditorState extends State<TextBoxEditor>
   /// letter typed builds the paragraph it is typed into and no other.
   final List<(_RowBuild, Widget)?> _builtRows = <(_RowBuild, Widget)?>[];
 
+  /// The blocks the keys and the rows built were last set against: where
+  /// blocks have come or gone since, the keys and rows of those after
+  /// them go with them ([_ensureKeys]).
+  List<TextBlock> _keyedBlocks = const <TextBlock>[];
+
   /// How many times verdicts on the spelling have come in, each of which
   /// every row is built again for.
   int _proofreadings = 0;
@@ -787,7 +792,67 @@ class TextBoxEditorState extends State<TextBoxEditor>
 
   // ------------------------------------------------------------------ build
 
+  /// Keeps a key for every block, and each block's key and built row with
+  /// it as blocks come and go before it.
+  ///
+  /// Kept by where a block stood, every paragraph below a line begun with
+  /// Enter had the key and the row of the one before it: all of them were
+  /// built again, four hundred for a line begun at the top of a long box.
+  /// The blocks unchanged at the start and at the end are found, and keys
+  /// and rows are put in or taken out after what changed between them, so
+  /// those after keep their own, and the framework only moves them.
   void _ensureKeys() {
+    final before = _keyedBlocks;
+    final now = _blocks;
+    if (!identical(before, now)) {
+      _keyedBlocks = now;
+      if (before.length != now.length) {
+        final most = math.min(before.length, now.length);
+        var head = 0;
+        while (head < most && identical(before[head], now[head])) {
+          head++;
+        }
+        var tail = 0;
+        while (tail < most - head &&
+            identical(
+              before[before.length - 1 - tail],
+              now[now.length - 1 - tail],
+            )) {
+          tail++;
+        }
+        final was = before.length - head - tail;
+        final are = now.length - head - tail;
+        // What changed keeps the keys it had, block for block, and what
+        // came or went does so at its end.
+        final at = head + (was < are ? was : are);
+        if (are > was) {
+          final more = are - was;
+          if (at <= _rowKeys.length) {
+            _rowKeys.insertAll(at, <GlobalKey>[
+              for (var i = 0; i < more; i++) GlobalKey(),
+            ]);
+            _contentKeys.insertAll(at, <GlobalKey>[
+              for (var i = 0; i < more; i++) GlobalKey(),
+            ]);
+          }
+          if (at <= _builtRows.length) {
+            _builtRows.insertAll(
+              at,
+              List<(_RowBuild, Widget)?>.filled(more, null),
+            );
+          }
+        } else {
+          final to = at + (was - are);
+          if (to <= _rowKeys.length) {
+            _rowKeys.removeRange(at, to);
+            _contentKeys.removeRange(at, to);
+          }
+          if (at < _builtRows.length) {
+            _builtRows.removeRange(at, math.min(to, _builtRows.length));
+          }
+        }
+      }
+    }
     while (_rowKeys.length < _blocks.length) {
       _rowKeys.add(GlobalKey());
       _contentKeys.add(GlobalKey());
