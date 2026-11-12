@@ -568,6 +568,72 @@ void main() {
       expect(element.bounds.right, lessThan(20));
     });
 
+    test('moved step by step, is where it was moved to in one: its bounds '
+        'at once, its strokes when asked for, and as it is written', () {
+      final element =
+          InkElement(
+            id: 'ink',
+            frame: const Frame(x: 0, y: 0, width: 0, height: 0),
+            createdAt: _now,
+            updatedAt: _now,
+          ).withStrokes(<InkStroke>[
+            InkStroke.fromPoints(
+              tool: InkTool.pen,
+              color: 0xFF000000,
+              width: 2,
+              xs: <double>[10, 40, 70],
+              ys: <double>[10, 30, 10],
+              line: InkLine.dashed,
+            ),
+            InkStroke.fromPoints(
+              tool: InkTool.highlighter,
+              color: 0x70FFD60A,
+              width: 22,
+              xs: <double>[0, 80],
+              ys: <double>[50, 50],
+            ),
+          ]);
+
+      var moved = element;
+      for (var step = 0; step < 25; step++) {
+        moved = moved.withFrame(moved.frame.translate(2, -1));
+      }
+      final atOnce = element.withFrame(element.frame.translate(50, -25));
+
+      // One step back to ink that was drawn, however many it was moved in.
+      expect(moved.movedFrom!.from, same(element));
+      expect(moved.movedFrom!.dx, 50);
+      expect(moved.movedFrom!.dy, -25);
+      expect(moved.bounds, atOnce.bounds);
+      expect(moved.bounds, element.bounds.translate(50, -25));
+      expect(moved.strokes, hasLength(2));
+      expect(moved.strokes, same(moved.strokes), reason: 'moved once');
+      expect(moved.strokes.first.xAt(0), 60);
+      expect(moved.strokes.first.yAt(0), -15);
+      expect(moved.strokes.first.line, InkLine.dashed);
+      expect(moved.strokes.last.tool, InkTool.highlighter);
+      expect(moved.encode(), atOnce.encode());
+      expect(element.strokes.first.xAt(0), 10, reason: 'left where it was');
+
+      // Changed otherwise, it is ink of its own, moved from nothing.
+      expect(moved.copyWith(z: 3).movedFrom, isNull);
+      expect(moved.copyWith(z: 3).strokes.first.xAt(0), 60);
+      // Resized is not only moved.
+      expect(
+        moved
+            .withFrame(
+              Frame(
+                x: moved.frame.x,
+                y: moved.frame.y,
+                width: moved.frame.width * 2,
+                height: moved.frame.height,
+              ),
+            )
+            .movedFrom,
+        isNull,
+      );
+    });
+
     test('moving the frame translates the underlying samples', () {
       final element = InkElement(
         id: 'ink',

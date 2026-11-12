@@ -405,6 +405,24 @@ class InkPainter extends CustomPainter {
     final cached = cache[element];
     if (cached is ui.Picture) return cached;
     if (cached != null) return null;
+    // Ink only moved is what it was moved from, drawn that far on: a
+    // picture of a picture, where working out every stroke's shape again
+    // at each step of a drag left what was dragged behind the pointer.
+    // Its own strokes are not looked at, which would move them.
+    if (element.movedFrom case (:final from, :final dx, :final dy)) {
+      final unmoved = _recorded(layer, from);
+      if (unmoved == null) {
+        cache[element] = _none;
+        return null;
+      }
+      final recorder = ui.PictureRecorder();
+      Canvas(recorder)
+        ..translate(dx, dy)
+        ..drawPicture(unmoved);
+      final picture = recorder.endRecording();
+      cache[element] = picture;
+      return picture;
+    }
     if (!element.strokes.any(layer.holds)) {
       cache[element] = _none;
       return null;
@@ -753,6 +771,8 @@ class InkTiles {
       final now = inked[i];
       if (identical(was, now)) continue;
       if (was.id != now.id) return false;
+      // Moved, it is drawn elsewhere, and its strokes are left unasked for.
+      if (now.movedFrom != null) return false;
       final had = was.strokes;
       final has = now.strokes;
       if (has.length <= had.length) return false;

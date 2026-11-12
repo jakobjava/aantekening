@@ -345,12 +345,53 @@ final class InkElement extends NoteElement {
     required super.updatedAt,
     super.z,
     super.locked,
-    this.strokes = const <InkStroke>[],
-  });
+    List<InkStroke> this._strokes = const <InkStroke>[],
+  }) : _movedFrom = null,
+       _movedDx = 0,
+       _movedDy = 0;
 
-  final List<InkStroke> strokes;
+  /// [from], moved ([dx], [dy]) and nothing else, to [frame]: its strokes
+  /// not moved until they are asked for.
+  InkElement._moved(
+    InkElement from,
+    double dx,
+    double dy, {
+    required super.id,
+    required super.frame,
+    required super.createdAt,
+    required super.updatedAt,
+    super.z,
+    super.locked,
+  }) : _movedFrom = from,
+       _movedDx = dx,
+       _movedDy = dy;
+
+  /// The strokes, in the order they were drawn.
+  ///
+  /// Those of ink only moved ([movedFrom]) are moved when first asked for,
+  /// not as the ink is: a step of a drag of a page of handwriting copied
+  /// every sample of it, though nothing looks at them until it is let go.
+  List<InkStroke> get strokes => _strokes ??= <InkStroke>[
+    for (final stroke in _movedFrom!.strokes)
+      stroke.translate(_movedDx, _movedDy),
+  ];
+  List<InkStroke>? _strokes;
 
   Aabb? _bounds;
+
+  /// The ink this is, moved and nothing else: what it was before it was
+  /// first moved, and how far it has been moved from there since. What
+  /// draws it can draw that again, moved, rather than work out every
+  /// stroke's shape anew at each step of a drag. Null for ink that has
+  /// been changed in any other way since it was drawn or read.
+  ({InkElement from, double dx, double dy})? get movedFrom {
+    final from = _movedFrom;
+    return from == null ? null : (from: from, dx: _movedDx, dy: _movedDy);
+  }
+
+  final InkElement? _movedFrom;
+  final double _movedDx;
+  final double _movedDy;
 
   @override
   String get type => 'ink';
@@ -361,6 +402,11 @@ final class InkElement extends NoteElement {
   Aabb get bounds {
     final cached = _bounds;
     if (cached != null) return cached;
+    // Ink only moved, its strokes not yet: what it was moved from covers,
+    // moved as far.
+    if (_strokes == null) {
+      return _bounds = _movedFrom!.bounds.translate(_movedDx, _movedDy);
+    }
     if (strokes.isEmpty) return _bounds = frame.bounds;
     var box = strokes.first.bounds;
     for (var i = 1; i < strokes.length; i++) {
@@ -440,15 +486,32 @@ final class InkElement extends NoteElement {
     }
     final scaleX = frame.width / from.width;
     final scaleY = frame.height / from.height;
-    final moved = <InkStroke>[
-      for (final stroke in strokes)
-        (scaleX == 1 && scaleY == 1)
-            ? stroke.translate(frame.x - from.x, frame.y - from.y)
-            : stroke
-                  .scale(scaleX, scaleY, originX: from.x, originY: from.y)
-                  .translate(frame.x - from.x, frame.y - from.y),
-    ];
-    return copyWith(frame: frame, strokes: moved);
+    final dx = frame.x - from.x;
+    final dy = frame.y - from.y;
+    if (scaleX == 1 && scaleY == 1) {
+      // Moved from what this was moved from, if it was: one step back to
+      // ink whose strokes have been drawn, however many steps a drag took.
+      return InkElement._moved(
+        _movedFrom ?? this,
+        _movedDx + dx,
+        _movedDy + dy,
+        id: id,
+        frame: frame,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        z: z,
+        locked: locked,
+      );
+    }
+    return copyWith(
+      frame: frame,
+      strokes: <InkStroke>[
+        for (final stroke in strokes)
+          stroke
+              .scale(scaleX, scaleY, originX: from.x, originY: from.y)
+              .translate(dx, dy),
+      ],
+    );
   }
 
   @override

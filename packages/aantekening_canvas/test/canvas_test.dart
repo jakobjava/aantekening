@@ -835,6 +835,77 @@ void main() {
       // Recorded anew with each stroke, it was 1 + 2 + … + 30 = 465.
       expect(InkPainter.shapesWorkedOut - before, 30);
     });
+
+    test('ink dragged is drawn as it was, moved: no stroke of it is '
+        'worked out again at any step, and it looks as ink drawn there '
+        'does', () async {
+      InkStroke stroke(double x, double y) => InkStroke.fromPoints(
+        tool: InkTool.pen,
+        color: 0xFF000000,
+        width: 4,
+        xs: <double>[x, x + 30, x + 60],
+        ys: <double>[y, y + 20, y],
+        pressures: <double>[0.2, 1, 0.4],
+      );
+      InkElement ink(String id, List<InkStroke> strokes) => InkElement(
+        id: id,
+        frame: const Frame(x: 0, y: 0, width: 0, height: 0),
+        createdAt: 0,
+        updatedAt: 0,
+      ).withStrokes(strokes);
+      final controller = CanvasController()
+        ..addElement(
+          ink('a', <InkStroke>[stroke(20, 20), stroke(40, 60), stroke(10, 90)]),
+        )
+        ..selectEverything();
+      addTearDown(controller.dispose);
+      InkElement drawn() => controller.document.elements.single as InkElement;
+
+      /// The ink, 200 by 160, on white.
+      Future<List<int>> pixels(InkElement element) async {
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder)
+          ..drawColor(const Color(0xFFFFFFFF), BlendMode.src);
+        InkPainter(
+          elements: <InkElement>[element],
+          viewport: const CanvasViewport(),
+          layer: InkLayer.above,
+        ).paint(canvas, const Size(200, 160));
+        final image = await recorder.endRecording().toImage(200, 160);
+        final bytes = (await image.toByteData())!.buffer.asUint8List();
+        image.dispose();
+        return bytes;
+      }
+
+      InkPainter.record(drawn());
+      final before = InkPainter.shapesWorkedOut;
+      for (var step = 0; step < 40; step++) {
+        controller.translateSelection(
+          const Offset(1, 0.5),
+          recordUndo: step == 0,
+        );
+        InkPainter.record(drawn());
+      }
+      expect(InkPainter.shapesWorkedOut - before, 0);
+      // One step back to ink whose strokes were drawn, not forty.
+      expect(drawn().movedFrom!.from.movedFrom, isNull);
+      expect(drawn().movedFrom!.dx, 40);
+      expect(drawn().movedFrom!.dy, 20);
+
+      final moved = await pixels(drawn());
+      final there = await pixels(
+        ink('b', <InkStroke>[stroke(60, 40), stroke(80, 80), stroke(50, 110)]),
+      );
+      var apart = 0;
+      for (var i = 0; i < moved.length; i++) {
+        if ((moved[i] - there[i]).abs() > 24) apart++;
+      }
+      expect(apart, 0);
+
+      // Changed in any other way, it is ink of its own again.
+      controller.restyleSelection((stroke) => stroke.restyled(width: 6));
+      expect(drawn().movedFrom, isNull);
+    });
   });
 
   group('InkTiles', () {
