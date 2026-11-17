@@ -27,7 +27,13 @@ void main() {
       final folder = Directory.systemTemp.createTempSync(
         'aantekening_bench_test_',
       );
-      addTearDown(() => folder.deleteSync(recursive: true));
+      AantekeningStore? store;
+      // Closed first, whatever became of the test: Windows deletes no file
+      // still open.
+      addTearDown(() async {
+        await store?.close();
+        folder.deleteSync(recursive: true);
+      });
       Future<AantekeningStore> open() => AantekeningStore.open(
         notesFolder: '${folder.path}/notes',
         indexFolder: '${folder.path}/index',
@@ -44,7 +50,7 @@ void main() {
         printout: 2,
       );
 
-      var store = await open();
+      store = await open();
       final made = await makeUpNotes(
         store,
         Directory('${folder.path}/made')..createSync(),
@@ -119,7 +125,9 @@ void main() {
       );
       expect(told.ink, made.ink);
       expect(told.holds, made.holds);
-    });
+      // Hundreds of files written and read again: a second on Linux, but
+      // past half a minute on a busy Windows runner.
+    }, timeout: const Timeout(Duration(minutes: 3)));
 
     test('are as large as the environment says', () {
       expect(
