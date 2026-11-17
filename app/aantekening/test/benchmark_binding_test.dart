@@ -1,3 +1,8 @@
+// The keys it presses are those Linux's window hands over, and the
+// benchmarks are built for Linux and run there only.
+@TestOn('linux')
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

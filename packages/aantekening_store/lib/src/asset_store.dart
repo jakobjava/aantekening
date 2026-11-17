@@ -31,14 +31,55 @@ class AssetStore {
 
   final DateTime Function() _clock;
 
+  /// The imports under way, by the hash of their bytes.
+  final Map<String, Future<AssetRef>> _importing = <String, Future<AssetRef>>{};
+
   /// Imports [bytes], reusing an existing asset when the contents already exist.
+  ///
+  /// The same bytes imported again before the first import is done share
+  /// that import, rather than writing their file a second time beside it:
+  /// on Windows, two files moved over one name at once can leave the second
+  /// refused.
   Future<AssetRef> importBytes(
     Uint8List bytes, {
     required String mimeType,
     String? originalName,
-  }) async {
+  }) {
     final digest = sha256.convert(bytes).toString();
+    if (_importing[digest] case final underway?) return underway;
+    return _importing[digest] = _import(
+      digest,
+      bytes,
+      mimeType: mimeType,
+      originalName: originalName,
+    );
+  }
 
+  Future<AssetRef> _import(
+    String digest,
+    Uint8List bytes, {
+    required String mimeType,
+    String? originalName,
+  }) async {
+    try {
+      return await _importAnew(
+        digest,
+        bytes,
+        mimeType: mimeType,
+        originalName: originalName,
+      );
+    } finally {
+      // Not remove(), which hands back this very import to be awaited.
+      _importing.removeWhere((underway, _) => underway == digest);
+    }
+  }
+
+  Future<AssetRef> _importAnew(
+    String digest,
+    Uint8List bytes, {
+    required String mimeType,
+    String? originalName,
+  }) async {
     // Known here, its bytes are written again all the same if they are not
     // here: an asset another computer added can arrive before its file does,
     // and a file can go missing while its asset stays.
@@ -48,9 +89,8 @@ class AssetStore {
         : fileForHash(digest);
     if (existing != null && file.existsSync()) return existing;
 
-    // Whole or not at all under its name, as every file of the notes is:
-    // neither a crash nor the same bytes imported at once leaves a file
-    // cut short where it is read.
+    // Whole or not at all under its name, as every file of the notes is: a
+    // crash leaves no file cut short where it is read.
     await NotesFolder.writeAtomically(file.path, bytes);
     if (existing != null) return existing;
 
@@ -62,8 +102,8 @@ class AssetStore {
       createdAt: _clock().millisecondsSinceEpoch,
       originalName: originalName,
     );
-    // The same bytes imported twice at once are stored once, under the id
-    // the first to get here gave them.
+    // Bytes another store over the same database imported meanwhile are
+    // stored once, under the id the first to get here gave them.
     addRow(_db, asset);
     return (await findByHash(digest))!;
   }

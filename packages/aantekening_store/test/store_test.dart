@@ -1415,10 +1415,12 @@ void main() {
     test('keeps one copy of content imported twice at once', () async {
       final bytes = Uint8List.fromList(List<int>.generate(64, (i) => i));
 
-      final both = await Future.wait(<Future<AssetRef>>[
-        store.assets.importBytes(bytes, mimeType: 'image/png'),
-        store.assets.importBytes(bytes, mimeType: 'image/png'),
-      ]);
+      final first = store.assets.importBytes(bytes, mimeType: 'image/png');
+      final second = store.assets.importBytes(bytes, mimeType: 'image/png');
+      // One import, its file written once: on Windows two files moved over
+      // one name at once can leave the second refused.
+      expect(second, same(first));
+      final both = await Future.wait(<Future<AssetRef>>[first, second]);
 
       expect(both.last.id, both.first.id);
       expect(await store.assets.totalBytes(), 64);
