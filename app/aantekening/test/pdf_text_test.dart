@@ -94,6 +94,19 @@ void main() {
       expect(words.textOf(words.lines[1].start, words.lines[1].end), _sheet[1]);
     });
 
+    test('is in words, each with the box round its letters', () {
+      final split = words.words;
+      expect(
+        <String>[for (final word in split) word.text],
+        <String>[for (final line in _sheet) ...line.split(' ')],
+      );
+      // "frequentie", the second word of the second line.
+      final word = split[4];
+      expect(word.box.left, closeTo(_lineStart(1).dx + 3 * _letter, 1e-9));
+      expect(word.box.right, closeTo(_lineStart(1).dx + 13 * _letter, 1e-9));
+      expect(word.box.top, closeTo(_lineStart(1).dy, 1e-9));
+    });
+
     test('is found where it lies, and not beside it', () {
       expect(words.lineAt(_at(0, 3)), isNotNull);
       expect(words.lineAt(_at(1, 30)), isNull, reason: 'past the line');

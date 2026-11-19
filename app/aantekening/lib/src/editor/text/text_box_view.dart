@@ -372,6 +372,7 @@ extension _View on TextBoxEditorState {
     final blockStyle = RichTextStyles.blockStyleOf(block, base);
     final paragraph = BlockParagraph(
       key: _contentKeys[index],
+      view: view,
       decoration: _decorationFor(index, view, focused),
       paint: paint,
       caretVisible: _blink.visible,

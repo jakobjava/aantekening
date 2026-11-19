@@ -15,6 +15,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../ai/offscreen_text.dart';
 import '../editor/media_views.dart';
+import '../editor/pdf_text.dart';
 
 /// A strip of a sheet of paper drawn as pixels: [width] by [height], four
 /// bytes to a pixel as Flutter gives them, [top] pixels down the sheet.
@@ -161,6 +162,36 @@ class PagePrinter {
       ));
     }
     return strips;
+  }
+
+  /// The words of the printout [element] and where they lie on its page,
+  /// in page units, from its PDF's own text: none for a page whose PDF has
+  /// no text, or cannot be read, or that is turned.
+  Future<List<SheetGlyph>> wordsOf(PdfElement element) async {
+    final frame = element.frame;
+    if (frame.rotation != 0) return const <SheetGlyph>[];
+    final document = await (_pdfs[element.assetId] ??= _open(element.assetId));
+    if (document == null) return const <SheetGlyph>[];
+    try {
+      final words = (await PdfWordsCache.readPage(
+        document,
+        element.pageIndex,
+      ))?.words;
+      return <SheetGlyph>[
+        for (final word in words ?? const <({String text, Rect box})>[])
+          (
+            text: word.text,
+            box: Aabb(
+              frame.x + word.box.left * frame.width,
+              frame.y + word.box.top * frame.height,
+              frame.x + word.box.right * frame.width,
+              frame.y + word.box.bottom * frame.height,
+            ),
+          ),
+      ];
+    } on Object {
+      return const <SheetGlyph>[];
+    }
   }
 
   /// Closes the PDFs opened to draw printouts.

@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:aantekening/src/editor/page_title.dart';
 import 'package:aantekening/src/files/pdf_export.dart';
+import 'package:aantekening_canvas/aantekening_canvas.dart';
 import 'package:aantekening_core/aantekening_core.dart';
 import 'package:aantekening_store/aantekening_store.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -117,6 +119,16 @@ Uint8List unfilter(List<int> filtered, int width, int height) {
   }
   return out;
 }
+
+/// The text laid unseen over [pdf]'s pages, a line to each, in the order
+/// it is written, without the space each is followed by.
+List<String> textOf(String pdf) => <String>[
+  for (final shown in RegExp('<([0-9A-F]+)> Tj').allMatches(pdf))
+    String.fromCharCodes(<int>[
+      for (var i = 0; i < shown.group(1)!.length; i += 4)
+        int.parse(shown.group(1)!.substring(i, i + 4), radix: 16),
+    ]).trimRight(),
+];
 
 /// A text box of [lines] lines of X, from [y] down.
 TextElement linesBox(String id, double y, int lines, {int z = 0}) =>
@@ -264,6 +276,100 @@ void main() {
     expect(read.at(500, 600), (255, 255, 255), reason: 'paper beside it');
   });
 
+  testWidgets('its text is in it as text, under its title and where it '
+      'is, a formula as its LaTeX', (tester) async {
+    final notes = await page('Kreisbewegung', <NoteElement>[
+      TextElement(
+        id: 'text',
+        frame: const Frame(x: 48, y: 140, width: 500, height: 120),
+        createdAt: 0,
+        updatedAt: 0,
+        blocks: <TextBlock>[
+          TextBlock.plain('Bahngeschwindigkeit'),
+          const TextBlock(
+            runs: <TextRun>[
+              TextRun('Es gilt '),
+              TextRun.math(r'v = \omega r', MathMode.latex),
+              TextRun('.'),
+            ],
+          ),
+          TextBlock.plain('erstens', kind: TextBlockKind.numbered),
+        ],
+      ),
+    ]);
+    final (_, pdf) = (await tester.runAsync(() async {
+      final path = '${folder.path}/text.pdf';
+      final contents = await PdfContents.of(store, notes);
+      await writePdf(
+        store,
+        contents,
+        path,
+        choices: const PdfChoices(quality: PdfQuality.small),
+        headerOf: (page) => CanvasHeader(
+          frame: PageTitle.frame,
+          child: PrintedTitle(
+            title: page.title,
+            date: const <String>['Thursday 17 September 2026', '08:15'],
+          ),
+        ),
+      );
+      return (null, latin1.decode(File(path).readAsBytesSync()));
+    }))!;
+    final text = textOf(pdf);
+    expect(text.take(6), <String>[
+      'School › Physics',
+      'Kreisbewegung',
+      'Thursday 17 September 2026',
+      '08:15',
+      'Bahngeschwindigkeit',
+      r'Es gilt $v = \omega r$.',
+    ]);
+    // The list's mark is with it, though the test's font, a square to a
+    // letter, breaks "1." in two in the mark's narrow room.
+    expect(text.skip(6), containsAll(<String>['1', 'erstens']));
+    expect(pdf, contains('3 Tr'), reason: 'laid over the page unseen');
+  });
+
+  testWidgets('what is typed onto a printout without text of its own is '
+      'marked as typed, and the files on a page are attached', (tester) async {
+    final assetId = (await tester.runAsync(
+      () => store.assets.importBytes(
+        redPng,
+        mimeType: 'image/png',
+        originalName: 'Arbeitsblatt.png',
+      ),
+    ))!.id;
+    final sheet = await page('Blatt', <NoteElement>[
+      ImageElement(
+        id: 'sheet',
+        frame: const Frame(x: 40, y: 40, width: 500, height: 700),
+        createdAt: 0,
+        updatedAt: 0,
+        assetId: assetId,
+        recognizedText: 'Name:',
+      ),
+      TextElement(
+        id: 'answer',
+        frame: const Frame(x: 120, y: 44, width: 200, height: 30),
+        createdAt: 0,
+        updatedAt: 0,
+        z: 1,
+        blocks: <TextBlock>[TextBlock.plain('Max')],
+      ),
+    ]);
+    final (_, pdf) = await save(tester, sheet);
+    expect(textOf(pdf), <String>['Name:', '⟦Max⟧']);
+    expect(pdf, contains('/EmbeddedFiles'));
+    expect(pdf, contains(_utf16('Arbeitsblatt.png')));
+
+    final (_, without) = await save(
+      tester,
+      sheet,
+      choices: const PdfChoices(quality: PdfQuality.small, attach: false),
+    );
+    expect(without, isNot(contains('/EmbeddedFiles')));
+  });
+
   testWidgets('a section is saved with its pages and subsections as '
       'bookmarks, in the order the panes list them', (tester) async {
     final first = await page('Waves', <NoteElement>[linesBox('a', 40, 3)]);
@@ -349,3 +455,7 @@ void main() {
     expect(File('$path.part').existsSync(), isFalse);
   });
 }
+
+/// [text] as a PDF text string: UTF-16, in hexadecimal.
+String _utf16(String text) =>
+    '<FEFF${text.codeUnits.map((unit) => unit.toRadixString(16).padLeft(4, '0').toUpperCase()).join()}>';

@@ -7,6 +7,7 @@ library;
 
 export 'src/digest/page_digest.dart';
 export 'src/digest/rich_markdown.dart';
+export 'src/digest/sheet_reading.dart';
 export 'src/document/elements.dart';
 export 'src/document/ink.dart';
 export 'src/document/ink_shape.dart';

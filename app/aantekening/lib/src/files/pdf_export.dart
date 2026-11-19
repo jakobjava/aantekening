@@ -28,6 +28,7 @@ import '../shell/library_menu.dart';
 import 'export_flow.dart' show fileName;
 import 'notes_keeper.dart';
 import 'page_printer.dart';
+import 'printed_text.dart';
 
 /// How sharp the pages of a PDF are drawn.
 enum PdfQuality {
@@ -44,32 +45,49 @@ enum PdfQuality {
 }
 
 /// How a PDF is made: how a page without sheets is put on paper — A4, as
-/// the paper is where the notes are kept — and how sharp.
+/// the paper is where the notes are kept — how sharp, and whether the
+/// files the notes hold are attached to it.
 @immutable
 class PdfChoices {
   const PdfChoices({
     this.print = CanvasPrint.sheets,
     this.quality = PdfQuality.standard,
+    this.attach = true,
   });
 
   final CanvasPrint print;
   final PdfQuality quality;
 
-  PdfChoices copyWith({CanvasPrint? print, PdfQuality? quality}) =>
-      PdfChoices(print: print ?? this.print, quality: quality ?? this.quality);
+  /// Whether the PDFs, pictures and files on the pages are attached to the
+  /// PDF as they were brought in: whole, sharp, every page of a PDF.
+  final bool attach;
+
+  PdfChoices copyWith({
+    CanvasPrint? print,
+    PdfQuality? quality,
+    bool? attach,
+  }) => PdfChoices(
+    print: print ?? this.print,
+    quality: quality ?? this.quality,
+    attach: attach ?? this.attach,
+  );
 
   @override
   bool operator ==(Object other) =>
-      other is PdfChoices && other.print == print && other.quality == quality;
+      other is PdfChoices &&
+      other.print == print &&
+      other.quality == quality &&
+      other.attach == attach;
 
   @override
-  int get hashCode => Object.hash(print, quality);
+  int get hashCode => Object.hash(print, quality, attach);
 }
 
 /// The choices the last PDF was made with, offered for the next.
 class PdfChoicesController extends Notifier<PdfChoices> {
   static const String _print = 'pdf.print';
   static const String _quality = 'pdf.quality';
+  static const String _attach = 'pdf.attach';
 
   @override
   PdfChoices build() {
@@ -77,6 +95,7 @@ class PdfChoicesController extends Notifier<PdfChoices> {
     return PdfChoices(
       print: ref.enumPreference(_print, CanvasPrint.values, start.print),
       quality: ref.enumPreference(_quality, PdfQuality.values, start.quality),
+      attach: ref.preference(_attach) as bool? ?? start.attach,
     );
   }
 
@@ -85,7 +104,8 @@ class PdfChoicesController extends Notifier<PdfChoices> {
     state = choices;
     ref
       ..savePreference(_print, choices.print.name)
-      ..savePreference(_quality, choices.quality.name);
+      ..savePreference(_quality, choices.quality.name)
+      ..savePreference(_attach, choices.attach);
   }
 }
 
@@ -111,6 +131,7 @@ class PdfContents {
     required this.title,
     required this.pages,
     this.marks = const <PdfMark>[],
+    this.paths = const <String, List<String>>{},
   });
 
   final String title;
@@ -119,31 +140,75 @@ class PdfContents {
   /// The bookmarks: none for a single page.
   final List<PdfMark> marks;
 
+  /// Where each page is, by its id: the notebook, sections and pages it is
+  /// in, outermost first.
+  final Map<String, List<String>> paths;
+
   /// What [node] holds.
   static Future<PdfContents> of(AantekeningStore store, TreeNode node) async {
     final title = displayTitle(node);
-    if (node is PageRef) {
-      return PdfContents(title: title, pages: <PageRef>[node]);
-    }
+    final sectionId = switch (node) {
+      PageRef(:final sectionId) => sectionId,
+      Section(:final id) => id,
+      _ => null,
+    };
     final notebookId = switch (node) {
       Section(:final notebookId) => notebookId,
+      PageRef() =>
+        (await store.library.findSection(sectionId!))?.notebookId ?? '',
       _ => node.id,
     };
+    final notebook = (await store.library.findNotebook(notebookId))?.title;
     final sections = Section.hierarchy(
       await store.library.listAllSections(notebookId),
     );
     final pages = <PageRef>[];
+    final paths = <String, List<String>>{};
 
-    List<PdfMark> marksOfPages(Hierarchy<PageRef> tree, List<PageRef> level) {
+    /// The notebook and sections down to [section].
+    List<String> pathTo(Section section) => <String>[
+      ?notebook,
+      for (final above in sections.ancestorsOf(section.id).toList().reversed)
+        ?sections[above]?.title,
+      section.title,
+    ];
+
+    if (node is PageRef) {
+      final section = sections[node.sectionId];
+      final tree = PageRef.hierarchy(
+        await store.pages.listPages(node.sectionId),
+      );
+      return PdfContents(
+        title: title,
+        pages: <PageRef>[node],
+        paths: <String, List<String>>{
+          node.id: <String>[
+            if (section != null) ...pathTo(section),
+            for (final above in tree.ancestorsOf(node.id).toList().reversed)
+              if (tree[above] case final parent?) displayTitle(parent),
+          ],
+        },
+      );
+    }
+
+    List<PdfMark> marksOfPages(
+      Hierarchy<PageRef> tree,
+      List<PageRef> level,
+      List<String> path,
+    ) {
       final marks = <PdfMark>[];
       for (final page in level) {
         final index = pages.length;
         pages.add(page);
+        paths[page.id] = path;
         marks.add(
           PdfMark(
             displayTitle(page),
             index,
-            marksOfPages(tree, tree.childrenOf(page.id)),
+            marksOfPages(tree, tree.childrenOf(page.id), <String>[
+              ...path,
+              displayTitle(page),
+            ]),
           ),
         );
       }
@@ -156,7 +221,7 @@ class PdfContents {
         final first = pages.length;
         final tree = PageRef.hierarchy(await store.pages.listPages(section.id));
         final within = <PdfMark>[
-          ...marksOfPages(tree, tree.roots),
+          ...marksOfPages(tree, tree.roots, pathTo(section)),
           ...await marksOfSections(sections.childrenOf(section.id)),
         ];
         // A section with no pages anywhere in it leads nowhere.
@@ -171,7 +236,7 @@ class PdfContents {
         ? (await marksOfSections(<Section>[node])).firstOrNull?.children ??
               const <PdfMark>[]
         : await marksOfSections(sections.roots);
-    return PdfContents(title: title, pages: pages, marks: marks);
+    return PdfContents(title: title, pages: pages, marks: marks, paths: paths);
   }
 }
 
@@ -202,6 +267,8 @@ Future<bool> writePdf(
   // Each note page's first page of the PDF.
   final firsts = <int>[];
   var queued = 0;
+  // The files the pages hold, to be attached, each once.
+  final assets = <String>{};
   // A sheet's pictures are made ready on an isolate while the next sheet is
   // drawn.
   Future<void> ready = Future<void>.value();
@@ -223,8 +290,15 @@ Future<bool> writePdf(
         header: header,
         print: choices.print,
       );
+      final lines = await printedText(
+        document,
+        wordsOf: printer.wordsOf,
+        header: header,
+        path: contents.paths[page.id] ?? const <String>[],
+      );
+      if (choices.attach) assets.addAll(document.referencedAssetIds);
       firsts.add(queued);
-      for (final sheet in sheets) {
+      for (final (index, sheet) in sheets.indexed) {
         if (stopped?.call() ?? false) return false;
         final strips = await printer.draw(
           document,
@@ -233,6 +307,7 @@ Future<bool> writePdf(
           header: header,
         );
         final encoding = _encodeAway(strips);
+        final text = _textOn(sheet, lines, document, first: index == 0);
         await ready;
         queued++;
         ready = encoding.then(
@@ -240,11 +315,14 @@ Future<bool> writePdf(
             width: sheet.widthInPoints,
             height: sheet.heightInPoints,
             pictures: _placed(sheet, strips, images),
+            text: text,
           ),
         );
       }
     }
     await ready;
+    if (stopped?.call() ?? false) return false;
+    await _attach(store, writer, assets);
     if (stopped?.call() ?? false) return false;
     PdfOutline outlineOf(PdfMark mark) => PdfOutline(
       mark.title,
@@ -275,6 +353,97 @@ Future<bool> writePdf(
   }
   return true;
 }
+
+/// The lines of [lines] — the text of [document] — that lie on [sheet],
+/// as they lie on its paper: the title and where the page is on the
+/// [first] sheet; on a sheet of a page shown as sheets, what is in what
+/// has its middle on it, as it is drawn; on paper a page without sheets is
+/// cut onto, each line whose middle is on it.
+List<PdfText> _textOn(
+  PrintedSheet sheet,
+  List<PrintedLine> lines,
+  PageDocument document, {
+  required bool first,
+}) {
+  final sheets = sheet.sheet == null ? null : document.canvas.sheets;
+  final region = sheet.region;
+  final points = sheet.widthInPoints / region.width;
+  bool onIt(PrintedLine line) {
+    final id = line.elementId;
+    if (id == null) return first;
+    if (sheets != null) {
+      final frame = document.elementById(id)?.frame;
+      return frame != null &&
+          sheets.sheetAt(frame.y + frame.height / 2) == sheet.sheet;
+    }
+    final shown = sheet.shown;
+    final x = line.box.centerX;
+    final y = line.box.centerY;
+    return x >= shown.left &&
+        x <= shown.right &&
+        y >= shown.top &&
+        y < shown.bottom;
+  }
+
+  return <PdfText>[
+    for (final line in lines)
+      if (onIt(line))
+        (
+          text: line.text,
+          x: (line.box.left - region.left) * points,
+          y: (line.box.top - region.top) * points,
+          width: line.box.width * points,
+          height: line.box.height * points,
+        ),
+  ];
+}
+
+/// The files [assetIds] attached to [writer] as they were brought in, each
+/// by the name it came with — "Foto 2.png" for a second picture that came
+/// as "Foto.png" — so nothing the notes hold is missing from the PDF.
+Future<void> _attach(
+  AantekeningStore store,
+  PdfWriter writer,
+  Set<String> assetIds,
+) async {
+  // Taken, as a file system that ignores case compares names.
+  final taken = <String>{};
+  String free(String name) {
+    final dot = name.lastIndexOf('.');
+    final stem = dot > 0 ? name.substring(0, dot) : name;
+    final extension = dot > 0 ? name.substring(dot) : '';
+    for (var n = 1; ; n++) {
+      final candidate = n == 1 ? name : '$stem $n$extension';
+      if (taken.add(candidate.toLowerCase())) return candidate;
+    }
+  }
+
+  for (final assetId in assetIds) {
+    final asset = await store.assets.find(assetId);
+    if (asset == null) continue;
+    final bytes = await store.assets.readBytes(assetId);
+    if (bytes == null) continue;
+    final given = asset.originalName?.trim() ?? '';
+    writer.attach(
+      free(
+        given.isEmpty ? '${asset.id}${_extensionOf(asset.mimeType)}' : given,
+      ),
+      bytes,
+      mimeType: asset.mimeType,
+    );
+  }
+}
+
+/// What a file of [mimeType] is named with, for one that came with no name.
+String _extensionOf(String mimeType) => switch (mimeType) {
+  'application/pdf' => '.pdf',
+  'image/png' => '.png',
+  'image/jpeg' => '.jpg',
+  'image/gif' => '.gif',
+  'image/webp' => '.webp',
+  'image/svg+xml' => '.svg',
+  _ => '',
+};
 
 /// [strips] made ready for a PDF on an isolate of their own.
 ///
@@ -431,7 +600,10 @@ class _PdfChoicesDialogState extends State<_PdfChoicesDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Text(
-              'A page shown as sheets is saved a sheet to a page, as it is.',
+              'A page shown as sheets is saved a sheet to a page, as it is. '
+              'Its text is in the PDF as text, to select, search and copy '
+              'and for an AI to read: formulas as LaTeX, and what is typed '
+              'onto a printout in its text, where it was typed.',
               style: about,
             ),
             if (widget.canvas) ...<Widget>[
@@ -469,6 +641,16 @@ class _PdfChoicesDialogState extends State<_PdfChoicesDialog> {
                 onSelected: (quality) =>
                     _set(_choices.copyWith(quality: quality)),
               ),
+            ),
+            const SizedBox(height: 8),
+            CheckRow(
+              title: 'Attach the files on the pages',
+              description:
+                  'The PDFs, pictures and files as they were brought in — '
+                  'whole and sharp, every page of a PDF — kept in this one, '
+                  'to be saved from it again.',
+              value: _choices.attach,
+              onChanged: (attach) => _set(_choices.copyWith(attach: attach)),
             ),
           ],
         ),

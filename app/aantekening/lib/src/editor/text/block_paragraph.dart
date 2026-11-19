@@ -9,6 +9,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+import 'block_view.dart';
+
 /// What to draw over and under one block's text, in laid-out offsets.
 @immutable
 class BlockDecoration {
@@ -138,8 +140,13 @@ class BlockParagraph extends SingleChildRenderObjectWidget {
     required this.paint,
     required this.caretVisible,
     required RichText super.child,
+    this.view,
     super.key,
   });
+
+  /// The block as it is laid out, for what reads the text as it was
+  /// written — a formula as its source — where it lies.
+  final BlockView? view;
 
   final BlockDecoration decoration;
   final BlockPaint paint;

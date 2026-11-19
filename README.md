@@ -55,7 +55,10 @@ thousands of pages instant.
 - **PDFs of the notes.** Save a page, section or notebook as a PDF, with
   its sections and pages as bookmarks: sheets a page each, and an endless
   page cut onto paper between lines and drawings, never through them,
-  each sheet turned or made smaller as what is on it needs.
+  each sheet turned or made smaller as what is on it needs. Its text is
+  in it as text, for people and AIs to read — formulas as LaTeX, what was
+  typed onto a worksheet in its blanks — and the files the notes hold
+  are attached.
 - **Import.** OneNote notebooks (`.onepkg`, `.one`) and Xournal++ documents
   (`.xopp`), with their layout, formatting, handwriting and equations; LaTeX
   documents (`.tex`), or LaTeX pasted in, as text and typeset formulas, with

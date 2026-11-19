@@ -96,6 +96,40 @@ class PdfPageWords {
   ];
   late final List<PdfLine> _lines = _linesOf(text, _across);
 
+  /// Its words, each with the box round its characters: the text split
+  /// where it has a space or a break, or where the next character stands
+  /// on another line.
+  List<({String text, Rect box})> get words {
+    final out = <({String text, Rect box})>[];
+    final word = StringBuffer();
+    Rect? box;
+    void end() {
+      if (word.isNotEmpty && box != null) {
+        out.add((text: word.toString(), box: box!));
+      }
+      word.clear();
+      box = null;
+    }
+
+    for (var i = 0; i < text.length; i++) {
+      final char = text[i];
+      final at = boxes[i];
+      if (char.trim().isEmpty || at.isEmpty) {
+        end();
+        continue;
+      }
+      final around = box;
+      if (around != null &&
+          (at.top >= around.bottom || at.bottom <= around.top)) {
+        end();
+      }
+      word.write(char);
+      box = box?.expandToInclude(at) ?? at;
+    }
+    end();
+    return out;
+  }
+
   /// The lines the characters make, in the order the PDF holds them.
   @visibleForTesting
   late final List<PdfLine> lines = <PdfLine>[
@@ -408,6 +442,15 @@ class PdfWordsCache {
   ) async {
     final document = await open();
     if (document == null) throw StateError('the PDF is not open');
+    return readPage(document, pageIndex);
+  }
+
+  /// The text of page [pageIndex] of [document]: null where there is no
+  /// such page. Throws where it could not be read.
+  static Future<PdfPageWords?> readPage(
+    PdfDocument document,
+    int pageIndex,
+  ) async {
     if (pageIndex >= document.pages.length) return null;
     final page = document.pages[pageIndex];
     final text = await page.loadStructuredText();

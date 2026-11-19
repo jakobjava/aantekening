@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io' show ZLibDecoder;
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -191,10 +191,187 @@ void main() {
       expect(text, contains('q 100 0 0 50.5 10 729.5 cm /Im0 Do Q'));
     });
 
+    test('lays its text unseen over the page, where it is seen', () {
+      final text = latin1.decode(
+        pdfOf(
+          (writer) => writer
+            ..addPage(
+              width: 600,
+              height: 800,
+              text: <PdfText>[
+                (text: 'Ab', x: 10, y: 20, width: 40, height: 10),
+                (text: '', x: 0, y: 0, width: 5, height: 5),
+              ],
+            )
+            ..addPage(width: 600, height: 800)
+            ..finish(),
+        ),
+      );
+      // Not painted, ten points high, its two characters and the space
+      // after them, five points each, stretched to forty, its foot ten
+      // points below its top.
+      expect(
+        text,
+        contains(
+          'BT 3 Tr\n/T1 10 Tf 266.667 Tz 1 0 0 1 10 770 Tm <004100620020> Tj\nET',
+        ),
+      );
+      expect(RegExp('Tj').allMatches(text), hasLength(1), reason: 'none empty');
+      expect(RegExp('/Font << /T1').allMatches(text), hasLength(1));
+      expect(text, contains('/Subtype /CIDFontType2'));
+      expect(text, contains('/Encoding /Identity-H'));
+    });
+
+    test('writes no font where it has no text', () {
+      final text = latin1.decode(
+        pdfOf(
+          (writer) => writer
+            ..addPage(width: 600, height: 800)
+            ..finish(),
+        ),
+      );
+      expect(text, isNot(contains('/Font')));
+      expect(text, isNot(contains('/EmbeddedFiles')));
+    });
+
+    test('keeps files attached to it, named', () {
+      final text = latin1.decode(
+        pdfOf(
+          (writer) => writer
+            ..addPage(width: 600, height: 800)
+            ..attach(
+              'Übung.pdf',
+              Uint8List.fromList(<int>[1, 2, 3]),
+              mimeType: 'application/pdf',
+            )
+            ..attach('a.png', Uint8List(4), mimeType: 'image/png')
+            ..finish(),
+        ),
+      );
+      expect(text, contains('/Type /EmbeddedFile /Subtype /application#2Fpdf'));
+      // The names in the order of their characters: "a" before "Ü".
+      final names = RegExp(
+        r'/EmbeddedFiles << /Names \[<FEFF(\w+)> \d+ 0 R <FEFF(\w+)>',
+      ).firstMatch(text)!;
+      expect(names.group(1), '0061002E0070006E0067');
+      expect(names.group(2), startsWith('00DC'));
+      expect(text, contains('/F <FEFF005F'), reason: 'Ü as _ for old readers');
+    });
+
+    test('refuses two files of one name', () {
+      final writer = PdfWriter((_) {})..attach('a.pdf', Uint8List(1));
+      expect(() => writer.attach('a.pdf', Uint8List(1)), throwsArgumentError);
+    });
+
+    group('read by Poppler and Ghostscript', () {
+      final tools = <String, bool>{
+        for (final tool in <String>['pdftotext', 'pdfdetach', 'gs'])
+          tool: _has(tool),
+      };
+      late Directory folder;
+      setUp(() => folder = Directory.systemTemp.createTempSync('pdf_text_'));
+      tearDown(() => folder.deleteSync(recursive: true));
+
+      File write() {
+        final file = File('${folder.path}/notes.pdf');
+        final image = PdfImage.rgba(pattern(4, 4), 4, 4);
+        file.writeAsBytesSync(
+          pdfOf(
+            (writer) => writer
+              ..addPage(
+                width: 595,
+                height: 842,
+                pictures: <PdfPlacement>[
+                  (image: image, x: 0, y: 0, width: 595, height: 842),
+                ],
+                text: <PdfText>[
+                  (text: 'Kreisbewegung', x: 50, y: 50, width: 200, height: 18),
+                  (
+                    text: r'Name: ⟦Max⟧ — $\omega = 2\pi f$ 😀',
+                    x: 50,
+                    y: 100,
+                    width: 300,
+                    height: 12,
+                  ),
+                ],
+              )
+              ..attach(
+                'Arbeitsblatt Ü.pdf',
+                Uint8List.fromList(utf8.encode('x')),
+              )
+              ..finish(title: 'Physik'),
+          ),
+        );
+        return file;
+      }
+
+      test('its text is read as it was written', () {
+        final file = write();
+        final out = Process.runSync('pdftotext', <String>[
+          '-raw',
+          '-enc',
+          'UTF-8',
+          file.path,
+          '-',
+        ], stdoutEncoding: utf8);
+        expect(out.exitCode, 0, reason: '${out.stderr}');
+        expect(out.stderr, isEmpty);
+        expect(
+          (out.stdout as String).trim(),
+          'Kreisbewegung\nName: ⟦Max⟧ — \$\\omega = 2\\pi f\$ 😀',
+        );
+      }, skip: tools['pdftotext']! ? false : 'pdftotext is not installed');
+
+      test('its files are there to save', () {
+        final file = write();
+        final list = Process.runSync('pdfdetach', <String>[
+          '-list',
+          '-enc',
+          'UTF-8',
+          file.path,
+        ], stdoutEncoding: utf8);
+        expect(list.stdout, contains('1: Arbeitsblatt Ü.pdf'));
+        final saved = '${folder.path}/saved';
+        Process.runSync('pdfdetach', <String>[
+          '-save',
+          '1',
+          '-o',
+          saved,
+          file.path,
+        ]);
+        expect(File(saved).readAsStringSync(), 'x');
+      }, skip: tools['pdfdetach']! ? false : 'pdfdetach is not installed');
+
+      test('it is drawn without a warning', () {
+        final file = write();
+        final out = Process.runSync('gs', <String>[
+          '-dNOPAUSE',
+          '-dBATCH',
+          '-dQUIET',
+          '-sDEVICE=nullpage',
+          file.path,
+        ]);
+        expect(out.exitCode, 0);
+        expect('${out.stdout}${out.stderr}'.trim(), isEmpty);
+      }, skip: tools['gs']! ? false : 'Ghostscript is not installed');
+    });
+
     test('is finished once', () {
       final writer = PdfWriter((_) {})..finish();
       expect(writer.finish, throwsStateError);
       expect(() => writer.addPage(width: 1, height: 1), throwsStateError);
     });
   });
+}
+
+/// Whether [tool] can be run here.
+bool _has(String tool) {
+  try {
+    return Process.runSync(Platform.isWindows ? 'where' : 'which', <String>[
+          tool,
+        ]).exitCode ==
+        0;
+  } on ProcessException {
+    return false;
+  }
 }

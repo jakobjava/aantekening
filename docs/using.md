@@ -589,8 +589,16 @@ instead to have the whole page on a single page, as it looks on the screen.
 **Sharpness** sets how fine the pages are drawn: **Sharp** for printing,
 **Small** for a smaller file.
 
-The pages are pictures: their text cannot be selected or searched in the
-PDF.
+The pages are drawn as they look, and their text lies over them, unseen,
+to select, search and copy, and for an AI to read: typed text where it
+stands, formulas as their LaTeX, and a printout's own text line by line,
+with what you typed onto it put where you typed it, between ⟦ and ⟧
+(`Name: ⟦Max⟧`). Above each page's title is the notebook and section it
+is in. Handwriting is only in the picture.
+
+**Attach the files on the pages** keeps the PDFs, pictures and files you
+brought in inside the PDF, whole and sharp, to be saved from it again:
+a reader lists them as attachments. Turn it off for a smaller file.
 
 ## If something goes wrong
 

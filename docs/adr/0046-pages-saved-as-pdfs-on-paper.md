@@ -1,6 +1,6 @@
 # 46. Pages saved as PDFs, on paper
 
-**Status:** accepted
+**Status:** accepted; the text laid over the pages and the files attached are added by ADR 52
 
 ## Context
 
